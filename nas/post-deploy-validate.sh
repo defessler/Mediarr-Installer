@@ -1,8 +1,8 @@
 #!/bin/bash
 # ── Post-Deploy Validation ──
 #
-# Run after docker-compose up -d to verify the stack is working correctly.
-# Checks external Plex access, all dashboard pages, and media visibility.
+# Run after docker compose up -d to verify the stack is working correctly.
+# Checks containers, dashboard pages, VPN, and media visibility.
 #
 # Usage:
 #   bash /volume1/docker/media/post-deploy-validate.sh
@@ -35,7 +35,7 @@ echo "============================================="
 
 section "Containers"
 
-CONTAINERS=(plex tautulli seerr prowlarr sonarr radarr bazarr lidarr gluetun qbittorrent sabnzbd recyclarr unpackerr)
+CONTAINERS=(plex tautulli seerr homepage prowlarr flaresolverr sonarr radarr bazarr lidarr gluetun qbittorrent sabnzbd recyclarr unpackerr)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -64,6 +64,7 @@ check_url() {
     fi
 }
 
+check_url "Homepage"     "http://$LAN_IP:3000"
 check_url "Plex"         "http://$LAN_IP:32400/web"
 check_url "Sonarr"       "http://$LAN_IP:49152"
 check_url "Radarr"       "http://$LAN_IP:49151"
@@ -74,6 +75,7 @@ check_url "SABnzbd"      "http://$LAN_IP:49155"
 check_url "qBittorrent"  "http://$LAN_IP:49156"
 check_url "Seerr"        "http://$LAN_IP:5056"
 check_url "Tautulli"     "http://$LAN_IP:8181"
+check_url "Flaresolverr" "http://$LAN_IP:8191"
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
@@ -126,16 +128,16 @@ check_media() {
     if [ "$count" -gt 0 ]; then
         ok "$label — $count items found ($container:$path)"
     else
-        warn "$label — no items found ($container:$path) — folder may be empty or not mounted"
+        warn "$label — folder is empty ($container:$path)"
     fi
 }
 
-check_media "sonarr"  "/data/Media/TV Shows"    "TV Shows"
-check_media "sonarr"  "/data/Media/Anime/TV Shows" "Anime TV"
-check_media "radarr"  "/data/Media/Movies"      "Movies"
-check_media "radarr"  "/data/Media/Anime/Movies" "Anime Movies"
-check_media "lidarr"  "/data/Media/Music"       "Music"
-check_media "sonarr"  "/data/Downloads"         "Downloads folder"
+check_media "sonarr" "/data/Media/TV Shows"       "TV Shows"
+check_media "sonarr" "/data/Media/Anime/TV Shows" "Anime TV"
+check_media "radarr" "/data/Media/Movies"         "Movies"
+check_media "radarr" "/data/Media/Anime/Movies"   "Anime Movies"
+check_media "lidarr" "/data/Media/Music"          "Music"
+check_media "sonarr" "/data/Downloads"            "Downloads folder"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 

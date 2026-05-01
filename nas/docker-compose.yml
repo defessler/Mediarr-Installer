@@ -17,7 +17,7 @@ services:
     volumes:
       - /volume1/docker/media/plex/config:/config
       - /volume1/Data/Media:/media
-    # Uncomment for Intel Arc GPU transcoding later:
+    # Uncomment for Intel Arc / NVIDIA GPU transcoding:
     # devices:
     #   - /dev/dri:/dev/dri
     restart: unless-stopped
@@ -58,6 +58,22 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # ── Dashboard ─────────────────────────────────────────────
+
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    networks: [media]
+    environment:
+      - TZ=${TZ}
+      - HOMEPAGE_ALLOWED_HOSTS=*
+    ports:
+      - ${LAN_IP}:3000:3000
+    volumes:
+      - /volume1/docker/media/homepage/config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
   # ── Indexer / Management ──────────────────────────────────
 
   prowlarr:
@@ -72,6 +88,31 @@ services:
       - ${LAN_IP}:49150:9696
     volumes:
       - /volume1/docker/media/prowlarr/config:/config
+    healthcheck:
+      test: curl -sf http://localhost:9696/api/v1/system/status?apikey=none > /dev/null || exit 0
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    networks: [media]
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=${TZ}
+    ports:
+      - ${LAN_IP}:8191:8191
+    healthcheck:
+      test: curl -sf http://localhost:8191/ || exit 1
+      start_period: 20s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   sonarr:
@@ -88,6 +129,12 @@ services:
     volumes:
       - /volume1/docker/media/sonarr/config:/config
       - /volume1/Data:/data
+    healthcheck:
+      test: curl -sf http://localhost:8989/api/v3/system/status > /dev/null || exit 1
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   radarr:
@@ -104,6 +151,12 @@ services:
     volumes:
       - /volume1/docker/media/radarr/config:/config
       - /volume1/Data:/data
+    healthcheck:
+      test: curl -sf http://localhost:7878/api/v3/system/status > /dev/null || exit 1
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   bazarr:
@@ -136,6 +189,12 @@ services:
     volumes:
       - /volume1/docker/media/lidarr/config:/config
       - /volume1/Data:/data
+    healthcheck:
+      test: curl -sf http://localhost:8686/api/v1/system/status > /dev/null || exit 1
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   # ── Download Clients ──────────────────────────────────────
@@ -151,6 +210,7 @@ services:
       - VPN_TYPE=${VPN_TYPE}
       - WIREGUARD_PRIVATE_KEY=${NORDVPN_PRIVATE_KEY}
       - SERVER_COUNTRIES=${VPN_COUNTRIES}
+      # Allow LAN to reach the qBittorrent WebUI through the VPN container
       - FIREWALL_INPUT_PORTS=49156
     ports:
       - ${LAN_IP}:49156:49156
@@ -198,6 +258,8 @@ services:
       - /volume1/docker/media/sabnzbd/config:/config
       - /volume1/Data/Downloads/Usenet:/data
     restart: unless-stopped
+
+  # ── Maintenance ───────────────────────────────────────────
 
   recyclarr:
     image: ghcr.io/recyclarr/recyclarr:latest

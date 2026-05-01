@@ -15,14 +15,14 @@ echo "  ✔ $SCRIPT_DIR"
 
 echo ""
 echo "Setting permissions on scripts..."
-for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh qbittorrent-init.sh; do
+for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
         echo "  ✔ $script"
     fi
 done
 
-for script in migration/fix-qbit-paths.sh migration/fix-plex-paths.py indexers/setup-indexers.py indexers/setup-bazarr-providers.py; do
+for script in migration/fix-qbit-paths.sh migration/fix-plex-paths.py indexers/setup-indexers.py indexers/setup-bazarr-providers.py setup-arr-config.py; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
         echo "  ✔ $script"

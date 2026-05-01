@@ -8,12 +8,24 @@ Safe to re-run — skips items already configured.
 Usage:
     python3 /volume1/docker/media/setup-arr-config.py
 
+What this configures automatically:
+    Sonarr      — root folders, download clients, remote path mappings, hardlinks, auth
+    Radarr      — same as Sonarr
+    Lidarr      — same, with music paths
+    Prowlarr    — connects Sonarr/Radarr/Lidarr; Flaresolverr proxy; auth
+    SABnzbd     — download dirs, categories, host whitelist
+    Bazarr      — Sonarr/Radarr connections, auth
+    Seerr       — Sonarr/Radarr connections (after wizard — see notes below)
+    qBittorrent — watched folder (/downloads/ToFetch → auto-add torrents)
+    Unpackerr   — generates unpackerr.conf
+    Recyclarr   — generates recyclarr.yml
+    Homepage    — generates service dashboard config
+
 Still requires manual setup after:
-    Tautulli    — Setup wizard at http://<NAS>:8181  (needs your Plex token)
-    Prowlarr    — Add your indexers manually
-    qBittorrent — Settings → Downloads → add watched folder: /downloads/ToFetch
-    Seerr       — Run setup wizard first, then re-run this script to wire up
-                  Sonarr/Radarr. Plex connection still needs manual setup.
+    Seerr       — Complete the setup wizard first, connect Plex, then re-run this script
+    Tautulli    — Connect to Plex via http://plex:32400 with your Plex token
+    SABnzbd     — Add your usenet provider under Config → Servers
+    Recyclarr   — Customise recyclarr.yml, then: docker exec recyclarr recyclarr sync
 """
 
 import json
@@ -58,7 +70,6 @@ def read_env(path):
                 if not line or line.startswith('#') or '=' not in line:
                     continue
                 k, _, v = line.partition('=')
-                # Strip inline comments
                 v = v.split('#')[0].strip()
                 if v:
                     env[k.strip()] = v
@@ -90,9 +101,7 @@ def read_sabnzbd_key(ini_path):
     return None
 
 def read_bazarr_key(config_dir):
-    """Read API key from Bazarr's config file.
-    Tries both the given directory and a nested config/ subdirectory,
-    and several filenames — Bazarr versions differ on location and name."""
+    """Read API key from Bazarr's config file."""
     search_dirs = [config_dir, os.path.join(config_dir, 'config')]
     for d in search_dirs:
         for filename in ('config.yaml', 'config.ini', 'config'):
@@ -104,8 +113,6 @@ def read_bazarr_key(config_dir):
                               content, re.MULTILINE)
                 if m:
                     return m.group(1)
-            except FileNotFoundError:
-                continue
             except Exception:
                 continue
     return None
@@ -132,7 +139,6 @@ def _request(url, headers, method='GET', data=None):
             return json.loads(content) if content else {}
     except HTTPError as e:
         body_text = e.read().decode(errors='replace')
-        # Expose the status code and body to callers that want to inspect it
         e._body_text = body_text
         print(f"    HTTP {e.code}: {body_text[:200]}")
         raise
@@ -153,7 +159,6 @@ def _safe_request(url, headers, method='GET', data=None):
         return None, e.code
     except (URLError, OSError):
         return None, None
-
 
 def _arr_headers(key):
     return {'X-Api-Key': key, 'Content-Type': 'application/json',
@@ -202,7 +207,7 @@ def sabnzbd_ini_set(ini_path, keyword, value):
             content, flags=re.MULTILINE
         )
         if n == 0:
-            return False  # keyword not present in ini — can't add safely
+            return False
         with open(ini_path, 'w') as f:
             f.write(new_content)
         return True
@@ -249,7 +254,6 @@ def wait_ready(name, base, key, check_path, retries=60, interval=5):
             elapsed = i * interval
             print(f"{GREEN}✔{RESET} ({elapsed}s)"); return True
         sys.stdout.write("."); sys.stdout.flush()
-        # Print elapsed time every 30s so it's clear the script isn't frozen
         if (i + 1) % 6 == 0:
             elapsed = (i + 1) * interval
             sys.stdout.write(f" {elapsed}s "); sys.stdout.flush()
@@ -266,7 +270,6 @@ def add_root_folder(base, key, api, path, extra_fields=None):
         fail(f"Root folder: can't reach API"); return
     if any(f['path'] == path for f in existing):
         skip(f"Root folder: {path}"); return
-    # Lidarr requires a 'name' field; Sonarr/Radarr accept but ignore it
     name = os.path.basename(path.rstrip('/')) or path
     payload = {"path": path, "name": name}
     if extra_fields:
@@ -281,7 +284,6 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
 
     existing_client = next((c for c in existing if c['name'] == name), None)
     if existing_client:
-        # Check if any field values differ — update if so (e.g. API key changed)
         field_map = {f['name']: i for i, f in enumerate(existing_client.get('fields', []))}
         needs_update = any(
             fname in field_map and
@@ -316,7 +318,6 @@ def add_remote_path_mapping(base, key, api, host, remote, local):
     existing = GET(base, key, f"/{api}/remotePathMapping")
     if existing is None:
         fail("Remote path mapping: can't reach API"); return
-    # Check by remote path alone — host may be stored differently (e.g. qbittorrent vs gluetun)
     if any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
         skip(f"Remote path: {remote} → {local}"); return
     result, status = POST_status(base, key, f"/{api}/remotePathMapping",
@@ -324,13 +325,12 @@ def add_remote_path_mapping(base, key, api, host, remote, local):
     if result is not None:
         ok(f"Remote path: {host} {remote} → {local}")
     elif status == 500:
-        # "RemotePath already configured" — treat as already set
         skip(f"Remote path: {remote} → {local} (already configured)")
     else:
         fail(f"Remote path: {host} {remote} → {local}")
 
 def configure_auth(base, key, api, username, password):
-    """Set Forms authentication on a *arr service, bypassed for local addresses."""
+    """Set Forms authentication, bypassed for local addresses."""
     config = GET(base, key, f"/{api}/config/host")
     if config is None:
         fail("Auth: can't get host config"); return
@@ -412,6 +412,34 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
     result = POST(prowlarr_base, prowlarr_key, "/api/v1/applications", data)
     ok(f"Prowlarr app: {app_name}") if result else fail(f"Prowlarr app: {app_name}")
 
+def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
+    """Wire Flaresolverr into Prowlarr so CloudFlare-protected indexers work."""
+    existing = GET(prowlarr_base, prowlarr_key, "/api/v1/indexerProxy")
+    if existing is None:
+        fail("Flaresolverr proxy: can't reach Prowlarr API"); return
+    if any(p.get('implementation') == 'FlareSolverr' for p in existing):
+        skip("Flaresolverr proxy (already configured)"); return
+
+    schemas = GET(prowlarr_base, prowlarr_key, "/api/v1/indexerProxy/schema") or []
+    schema = next((s for s in schemas if s.get('implementation') == 'FlareSolverr'), None)
+    if schema is None:
+        # Prowlarr may not have the schema yet — try posting without schema lookup
+        warn("Flaresolverr schema not found in Prowlarr — may need to restart Prowlarr")
+        return
+
+    schema = json.loads(json.dumps(schema))  # deep copy
+    schema['name'] = 'FlareSolverr'
+    schema['tags'] = []  # empty tags = applies to all indexers
+
+    fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
+    for fname, fval in [('host', 'http://flaresolverr:8191'), ('requestTimeout', 60)]:
+        if fname in fm:
+            schema['fields'][fm[fname]]['value'] = fval
+
+    result = POST(prowlarr_base, prowlarr_key, "/api/v1/indexerProxy", schema)
+    ok("Flaresolverr proxy: configured (CloudFlare bypass active)") if result \
+        else fail("Flaresolverr proxy: failed to add")
+
 # ── SABnzbd ───────────────────────────────────────────────────────────────────
 
 def configure_sabnzbd(base, key, ini_path):
@@ -419,7 +447,6 @@ def configure_sabnzbd(base, key, ini_path):
     if not key:
         fail("API key not found — is the container running?"); return
 
-    # Test connection
     resp = sab_api(base, key, {'mode': 'version'})
     if not resp:
         fail("Can't reach SABnzbd API"); return
@@ -428,18 +455,15 @@ def configure_sabnzbd(base, key, ini_path):
     ini_modified = False
 
     def _sab_set(label, keyword, value, extra_params=None):
-        """Try set_config via API; fall back to direct ini edit on failure."""
         nonlocal ini_modified
         params = {'mode': 'set_config', 'section': 'misc',
                   'keyword': keyword, 'value': value}
         if extra_params:
             params.update(extra_params)
         result = sab_api(base, key, params)
-        # status can be True (success) or False (failure); None means API error
         if result is not None and result.get('status') is not False:
             ok(f"{label}: {value}")
             return True
-        # API failed — try editing the ini file directly
         if sabnzbd_ini_set(ini_path, keyword, value):
             ok(f"{label}: {value}  (ini edit — SABnzbd restart needed)")
             ini_modified = True
@@ -447,15 +471,12 @@ def configure_sabnzbd(base, key, ini_path):
         fail(f"{label}: failed to set {value}")
         return False
 
-    # Add all service hostnames to host_whitelist so Docker containers can reach
-    # SABnzbd. We read the current value first and merge so the container's own
-    # hostname (auto-added by SABnzbd) is preserved alongside our service names.
+    # Host whitelist — all Docker service names must be allowed
     REQUIRED_HOSTS = {'sabnzbd', 'sonarr', 'radarr', 'lidarr',
                       'bazarr', 'prowlarr', 'localhost', '127.0.0.1'}
     cur = sab_api(base, key, {'mode': 'get_config', 'section': 'misc',
                                'keyword': 'host_whitelist'})
     existing_raw = (cur or {}).get('config', {}).get('misc', {}).get('host_whitelist', '')
-    # SABnzbd API may return host_whitelist as a list or a comma-separated string
     if isinstance(existing_raw, list):
         existing = {h.strip() for h in existing_raw if h.strip()}
     else:
@@ -486,8 +507,7 @@ def configure_sabnzbd(base, key, ini_path):
             skip(f"{label}: {value}"); continue
         _sab_set(label, keyword, value)
 
-    # Categories — add tv / movies / music if not present.
-    # Uses pp=3 (repair + unpack + delete) per SABnzbd's category API.
+    # Categories — tv / movies / music
     cats_resp = sab_api(base, key, {'mode': 'get_config', 'section': 'categories'})
     existing_cats = {c['name'] for c in
                      (cats_resp or {}).get('config', {}).get('categories', [])}
@@ -506,13 +526,55 @@ def configure_sabnzbd(base, key, ini_path):
         else:
             fail(f"Category: {cat_name}")
 
-    # SABnzbd uses API key auth for all container-to-container communication,
-    # so username/password credentials are not needed and would force a browser
-    # login prompt with no way to bypass it for local connections.
-
     if ini_modified:
         warn("SABnzbd config was edited directly — restart to apply:")
-        warn("  docker-compose restart sabnzbd")
+        warn("  docker compose restart sabnzbd")
+
+# ── qBittorrent ───────────────────────────────────────────────────────────────
+
+def configure_qbittorrent(base, username, password):
+    """Set qBittorrent preferences via the Web API (cookie auth)."""
+    section("qBittorrent")
+
+    import http.cookiejar
+    from urllib.request import build_opener, HTTPCookieProcessor
+
+    cj = http.cookiejar.CookieJar()
+    opener = build_opener(HTTPCookieProcessor(cj))
+
+    # Login
+    try:
+        login_data = urlencode({'username': username, 'password': password}).encode()
+        resp = opener.open(f"{base}/api/v2/auth/login", login_data, timeout=10)
+        result = resp.read().decode()
+        if result.strip() != 'Ok.':
+            warn(f"qBittorrent login failed: {result.strip()[:80]}")
+            warn("Watched folder not configured — set manually in Settings → Downloads")
+            return
+        ok("qBittorrent authenticated")
+    except Exception as e:
+        warn(f"qBittorrent not reachable ({e}) — skipping watch folder setup")
+        return
+
+    # Get current scan_dirs
+    try:
+        resp = opener.open(f"{base}/api/v2/app/preferences", timeout=10)
+        prefs = json.loads(resp.read())
+    except Exception as e:
+        warn(f"qBittorrent: can't read preferences ({e})")
+        return
+
+    scan_dirs = prefs.get('scan_dirs', {})
+    if '/downloads/ToFetch' in scan_dirs:
+        skip("Watched folder: /downloads/ToFetch (already configured)")
+    else:
+        try:
+            prefs_json = json.dumps({'scan_dirs': {'/downloads/ToFetch': 1}})
+            set_data = urlencode({'json': prefs_json}).encode()
+            opener.open(f"{base}/api/v2/app/setPreferences", set_data, timeout=10)
+            ok("Watched folder: /downloads/ToFetch → auto-add torrents")
+        except Exception as e:
+            fail(f"qBittorrent: failed to set watched folder ({e})")
 
 # ── Bazarr ────────────────────────────────────────────────────────────────────
 
@@ -520,10 +582,9 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
                      username=None, password=None):
     section("Bazarr")
     if not key:
-        # Config file not present yet — wait for Bazarr to start and write it
         sys.stdout.write("  Waiting for Bazarr config ")
         sys.stdout.flush()
-        for _ in range(24):  # up to 2 minutes
+        for _ in range(24):
             time.sleep(5)
             key = read_bazarr_key(config_path)
             if key:
@@ -533,7 +594,7 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
             sys.stdout.flush()
         else:
             print(f"{RED}✘ timed out{RESET}")
-            fail("Bazarr config not found — visit the Bazarr UI once to trigger config creation, then re-run")
+            fail("Bazarr config not found — visit the Bazarr UI once, then re-run")
             return
 
     settings = bazarr_get(base, key, "/api/system/settings")
@@ -565,7 +626,6 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
     else:
         skip("Bazarr → Sonarr (already set)" if sonarr_key else "Bazarr → Sonarr (no Sonarr key)")
 
-    # Radarr connection
     if radarr_key and radarr_cfg.get('apikey') != radarr_key:
         form_data['settings-radarr-ip']          = 'radarr'
         form_data['settings-radarr-port']        = '7878'
@@ -595,23 +655,19 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
 
 # ── Seerr ─────────────────────────────────────────────────────────────────────
 
-def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
-                    username=None, password=None):
+def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key):
     section("Seerr")
     if not key:
-        warn("settings.json not found — complete the Seerr setup wizard first,")
-        warn("then re-run this script to wire up Sonarr/Radarr automatically.")
+        warn("Seerr settings.json not found — complete the setup wizard first.")
+        warn("Then re-run:  python3 /volume1/docker/media/setup-arr-config.py")
         return
 
-    # Test connection
     main_settings = GET(base, key, "/api/v1/settings/main")
     if main_settings is None:
-        warn("Seerr setup wizard not yet complete — skipping.")
-        warn("Visit http://<NAS>:5056, run the wizard, then re-run this script.")
+        warn("Seerr setup wizard not yet complete — skipping Sonarr/Radarr wiring.")
+        warn("Visit http://<NAS>:5056, finish the wizard, then re-run this script.")
         return
 
-    # Ensure local (username/password) login is enabled so LAN users can log in
-    # without needing Plex auth
     if main_settings.get('localLogin') is False:
         main_settings['localLogin'] = True
         result = POST(base, key, "/api/v1/settings/main", main_settings)
@@ -619,62 +675,42 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
     else:
         skip("Local login (already enabled)")
 
-    # Sonarr
     if sonarr_key:
         existing = GET(base, key, "/api/v1/settings/sonarr") or []
         if any(s.get('hostname') == 'sonarr' for s in existing):
             skip("Seerr → Sonarr (already set)")
         else:
-            profile_id, profile_name = get_quality_profile(sonarr_base, sonarr_key,
-                                                            "api/v3", "1080p")
+            profile_id, profile_name = get_quality_profile(sonarr_base, sonarr_key, "api/v3", "1080p")
             lang_id = get_language_profile(sonarr_base, sonarr_key)
             result = POST(base, key, "/api/v1/settings/sonarr", {
-                "name":                "Sonarr",
-                "hostname":            "sonarr",
-                "port":                8989,
-                "apiKey":              sonarr_key,
-                "useSsl":              False,
-                "baseUrl":             "",
-                "activeProfileId":     profile_id or 1,
-                "activeProfileName":   profile_name or "HD-1080p",
-                "activeDirectory":     "/data/Media/TV Shows",
-                "is4k":                False,
-                "isDefault":           True,
-                "syncEnabled":         False,
-                "preventSearch":       False,
-                "seasons":             True,
-                "enableSeasonFolders": True,
-                "tags":                [],
-                "animeDirectory":      "/data/Media/Anime/TV Shows",
-                "languageProfileId":   lang_id,
+                "name": "Sonarr", "hostname": "sonarr", "port": 8989,
+                "apiKey": sonarr_key, "useSsl": False, "baseUrl": "",
+                "activeProfileId": profile_id or 1,
+                "activeProfileName": profile_name or "HD-1080p",
+                "activeDirectory": "/data/Media/TV Shows",
+                "is4k": False, "isDefault": True, "syncEnabled": False,
+                "preventSearch": False, "seasons": True,
+                "enableSeasonFolders": True, "tags": [],
+                "animeDirectory": "/data/Media/Anime/TV Shows",
+                "languageProfileId": lang_id,
             })
             ok("Seerr → Sonarr connection set") if result else fail("Seerr → Sonarr: failed")
 
-    # Radarr
     if radarr_key:
         existing = GET(base, key, "/api/v1/settings/radarr") or []
         if any(r.get('hostname') == 'radarr' for r in existing):
             skip("Seerr → Radarr (already set)")
         else:
-            profile_id, profile_name = get_quality_profile(radarr_base, radarr_key,
-                                                            "api/v3", "1080p")
+            profile_id, profile_name = get_quality_profile(radarr_base, radarr_key, "api/v3", "1080p")
             result = POST(base, key, "/api/v1/settings/radarr", {
-                "name":                "Radarr",
-                "hostname":            "radarr",
-                "port":                7878,
-                "apiKey":              radarr_key,
-                "useSsl":              False,
-                "baseUrl":             "",
-                "activeProfileId":     profile_id or 1,
-                "activeProfileName":   profile_name or "HD-1080p",
-                "activeDirectory":     "/data/Media/Movies",
-                "is4k":                False,
-                "isDefault":           True,
-                "syncEnabled":         False,
-                "preventSearch":       False,
-                "minimumAvailability": "released",
-                "tags":                [],
-                "animeDirectory":      "/data/Media/Anime/Movies",
+                "name": "Radarr", "hostname": "radarr", "port": 7878,
+                "apiKey": radarr_key, "useSsl": False, "baseUrl": "",
+                "activeProfileId": profile_id or 1,
+                "activeProfileName": profile_name or "HD-1080p",
+                "activeDirectory": "/data/Media/Movies",
+                "is4k": False, "isDefault": True, "syncEnabled": False,
+                "preventSearch": False, "minimumAvailability": "released",
+                "tags": [], "animeDirectory": "/data/Media/Anime/Movies",
             })
             ok("Seerr → Radarr connection set") if result else fail("Seerr → Radarr: failed")
 
@@ -724,23 +760,149 @@ RECYCLARR_CONF = """\
 # Recyclarr Configuration — generated by setup-arr-config.py
 # https://recyclarr.dev/wiki/
 #
-# This is a minimal starter config. Customize quality profiles and
-# custom formats to your preference — see the Recyclarr wiki for examples.
+# Recyclarr syncs TRaSH Guide quality profiles and custom formats into
+# Sonarr and Radarr. This is a starter config — customise it and run:
+#
+#   docker exec recyclarr recyclarr sync
+#
+# Browse available TRaSH Guide presets:
+#   https://recyclarr.dev/wiki/guide-configs/
+#
+# Example: add quality profile presets by enabling the include block below.
 
 sonarr:
   main:
     base_url: http://sonarr:8989
     api_key: {sonarr_key}
+    # Uncomment to sync TRaSH Guide quality profiles:
+    # include:
+    #   - template: sonarr-quality-definition-series
+    #   - template: sonarr-v4-quality-profile-web-1080p
+    #   - template: sonarr-v4-custom-formats-web-1080p
 
 radarr:
   main:
     base_url: http://radarr:7878
     api_key: {radarr_key}
+    # Uncomment to sync TRaSH Guide quality profiles:
+    # include:
+    #   - template: radarr-quality-definition-movie
+    #   - template: radarr-quality-profile-hd-bluray-web
+    #   - template: radarr-custom-formats-hd-bluray-web
+"""
+
+HOMEPAGE_SERVICES = """\
+# Homepage service config — generated by setup-arr-config.py
+# Edit this file to customise your dashboard.
+# Docs: https://gethomepage.dev/configs/services/
+
+- Media:
+    - Plex:
+        href: http://{ip}:32400/web
+        description: Media server
+        icon: plex.png
+        siteMonitor: http://{ip}:32400
+    - Tautulli:
+        href: http://{ip}:8181
+        description: Plex analytics
+        icon: tautulli.png
+        siteMonitor: http://{ip}:8181
+    - Seerr:
+        href: http://{ip}:5056
+        description: Request movies & TV
+        icon: overseerr.png
+        siteMonitor: http://{ip}:5056
+
+- Automation:
+    - Sonarr:
+        href: http://{ip}:49152
+        description: TV show automation
+        icon: sonarr.png
+        siteMonitor: http://{ip}:49152
+    - Radarr:
+        href: http://{ip}:49151
+        description: Movie automation
+        icon: radarr.png
+        siteMonitor: http://{ip}:49151
+    - Lidarr:
+        href: http://{ip}:49154
+        description: Music automation
+        icon: lidarr.png
+        siteMonitor: http://{ip}:49154
+    - Bazarr:
+        href: http://{ip}:49153
+        description: Subtitle automation
+        icon: bazarr.png
+        siteMonitor: http://{ip}:49153
+    - Prowlarr:
+        href: http://{ip}:49150
+        description: Indexer manager
+        icon: prowlarr.png
+        siteMonitor: http://{ip}:49150
+
+- Downloads:
+    - SABnzbd:
+        href: http://{ip}:49155
+        description: Usenet client
+        icon: sabnzbd.png
+        siteMonitor: http://{ip}:49155
+    - qBittorrent:
+        href: http://{ip}:49156
+        description: Torrent client (VPN)
+        icon: qbittorrent.png
+        siteMonitor: http://{ip}:49156
+"""
+
+HOMEPAGE_SETTINGS = """\
+# Homepage settings — generated by setup-arr-config.py
+# Docs: https://gethomepage.dev/configs/settings/
+
+title: Media Stack
+startUrl: /
+theme: dark
+color: slate
+
+layout:
+  Media:
+    style: row
+    columns: 3
+  Automation:
+    style: row
+    columns: 3
+  Downloads:
+    style: row
+    columns: 2
+"""
+
+HOMEPAGE_WIDGETS = """\
+# Homepage widgets — generated by setup-arr-config.py
+# Docs: https://gethomepage.dev/widgets/
+
+- datetime:
+    text_size: xl
+    format:
+      dateStyle: long
+      timeStyle: short
+      hour12: true
+
+- search:
+    provider: google
+    target: _blank
 """
 
 def write_config_file(label, path, content):
     if os.path.exists(path):
         skip(f"{label} config (already exists)"); return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write(content)
+        ok(f"{label} config written → {path}")
+    except Exception as e:
+        fail(f"{label} config: {e}")
+
+def overwrite_config_file(label, path, content):
+    """Write config, overwriting existing — used for generated files that should stay fresh."""
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'w') as f:
@@ -761,7 +923,7 @@ def main():
     ARR_USER = env.get('ARR_USERNAME', '')
     ARR_PASS = env.get('ARR_PASSWORD', '')
 
-    if not LAN_IP:  print("Error: LAN_IP not set in .env");        sys.exit(1)
+    if not LAN_IP:  print("Error: LAN_IP not set in .env");           sys.exit(1)
     if not QB_PASS: print("Error: QBITTORRENT_PASS not set in .env"); sys.exit(1)
 
     # ── Service URLs (host-mapped, used by this script) ───────────────────────
@@ -772,17 +934,17 @@ def main():
     SABNZBD  = f"http://{LAN_IP}:49155"
     BAZARR   = f"http://{LAN_IP}:49153"
     SEERR    = f"http://{LAN_IP}:5056"
+    QBIT     = f"http://{LAN_IP}:49156"
 
     # ── Docker-internal URLs (written into service configs) ───────────────────
     SONARR_INT = "http://sonarr:8989"
     RADARR_INT = "http://radarr:7878"
     LIDARR_INT = "http://lidarr:8686"
 
-    # ── API keys — .env takes priority, config files are the fallback ───────────
+    # ── API keys — .env takes priority, config files are the fallback ─────────
     B = "/volume1/docker/media"
 
-    # On first boot, services write config.xml after a few seconds of startup.
-    # Poll all four config files together rather than reading once and giving up.
+    # Poll all config files together until available (up to 120s)
     arr_configs = {
         'sonarr':   (env.get('SONARR_API_KEY'),   f"{B}/sonarr/config/config.xml"),
         'radarr':   (env.get('RADARR_API_KEY'),   f"{B}/radarr/config/config.xml"),
@@ -821,7 +983,7 @@ def main():
     BAZARR_KEY   = env.get('BAZARR_API_KEY')   or read_bazarr_key(f"{B}/bazarr/config")
     SEERR_KEY    = env.get('SEERR_API_KEY')    or read_json_key(f"{B}/seerr/config/settings.json", "main", "apiKey")
 
-    # qBittorrent shares Gluetun's network namespace
+    # qBittorrent shares Gluetun's network namespace — use gluetun as host
     QB_HOST = "gluetun"
     QB_PORT = 49156
 
@@ -836,7 +998,7 @@ def main():
         s = f"{GREEN}✔{RESET} {key[:8]}..." if key else f"{RED}✘{RESET} not found"
         print(f"  {name:<12} {s}")
 
-    # ── SABnzbd (configure first so Sonarr/Radarr/Lidarr can connect to it) ────
+    # ── SABnzbd (configure first so Sonarr/Radarr/Lidarr can connect to it) ──
 
     configure_sabnzbd(SABNZBD, SABNZBD_KEY, f"{B}/sabnzbd/config/sabnzbd.ini")
 
@@ -900,8 +1062,6 @@ def main():
     if not LIDARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Lidarr", LIDARR, LIDARR_KEY, "/api/v1/system/status"):
-        # Lidarr root folder requires qualityProfileId and metadataProfileId
-        # (Sonarr/Radarr don't need these but accept them harmlessly)
         lidarr_quality_id, _ = get_quality_profile(LIDARR, LIDARR_KEY, "api/v1")
         lidarr_meta_profiles = GET(LIDARR, LIDARR_KEY, "/api/v1/metadataprofile") or []
         lidarr_meta_id = lidarr_meta_profiles[0]['id'] if lidarr_meta_profiles else 1
@@ -934,6 +1094,7 @@ def main():
     if not PROWLARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Prowlarr", PROWLARR, PROWLARR_KEY, "/api/v1/system/status"):
+        add_flaresolverr_proxy(PROWLARR, PROWLARR_KEY)
         if SONARR_KEY:
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Sonarr", "Sonarr",
                              "SonarrSettings", SONARR_INT, SONARR_KEY,
@@ -949,6 +1110,10 @@ def main():
         if ARR_USER and ARR_PASS:
             configure_auth(PROWLARR, PROWLARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 
+    # ── qBittorrent ───────────────────────────────────────────────────────────
+
+    configure_qbittorrent(QBIT, QB_USER, QB_PASS)
+
     # ── Bazarr ────────────────────────────────────────────────────────────────
 
     configure_bazarr(BAZARR, BAZARR_KEY, SONARR_KEY, RADARR_KEY,
@@ -957,8 +1122,7 @@ def main():
 
     # ── Seerr ─────────────────────────────────────────────────────────────────
 
-    configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY,
-                    username=ARR_USER or None, password=ARR_PASS or None)
+    configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY)
 
     # ── Config files ──────────────────────────────────────────────────────────
 
@@ -971,7 +1135,7 @@ def main():
             lidarr_key=LIDARR_KEY or 'REPLACE_WITH_LIDARR_KEY',
         ))
     if SONARR_KEY or RADARR_KEY:
-        warn("Restart unpackerr:  docker-compose restart unpackerr")
+        warn("Restart unpackerr:  docker compose restart unpackerr")
 
     section("Recyclarr")
     write_config_file("Recyclarr",
@@ -981,7 +1145,30 @@ def main():
             radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
         ))
     if SONARR_KEY or RADARR_KEY:
-        warn("Recyclarr is a starter config — customise quality profiles in the wiki")
+        warn("Customise recyclarr.yml then run:  docker exec recyclarr recyclarr sync")
+
+    section("Homepage Dashboard")
+    homepage_cfg = f"{B}/homepage/config"
+    write_config_file("Homepage services",
+        f"{homepage_cfg}/services.yaml",
+        HOMEPAGE_SERVICES.format(ip=LAN_IP))
+    write_config_file("Homepage settings",
+        f"{homepage_cfg}/settings.yaml",
+        HOMEPAGE_SETTINGS)
+    write_config_file("Homepage widgets",
+        f"{homepage_cfg}/widgets.yaml",
+        HOMEPAGE_WIDGETS)
+    # bookmarks.yaml — create empty so Homepage doesn't complain
+    bookmarks_path = f"{homepage_cfg}/bookmarks.yaml"
+    if not os.path.exists(bookmarks_path):
+        try:
+            os.makedirs(homepage_cfg, exist_ok=True)
+            open(bookmarks_path, 'w').close()
+            ok(f"Homepage bookmarks.yaml created")
+        except Exception as e:
+            fail(f"Homepage bookmarks.yaml: {e}")
+    else:
+        skip("Homepage bookmarks.yaml")
 
     # ── Summary ───────────────────────────────────────────────────────────────
 
@@ -993,11 +1180,11 @@ def main():
 
     print(f"""
   Still needs manual setup:
-  • Prowlarr    http://{LAN_IP}:49150  → add your indexers
-  • qBittorrent http://{LAN_IP}:49156  → Settings → Downloads → watched folder:
-                                         /downloads/ToFetch
-  • Seerr       http://{LAN_IP}:5056   → Plex connection (needs your Plex token)
-  • Tautulli    http://{LAN_IP}:8181   → full setup wizard (needs Plex token)
+  • SABnzbd     http://{LAN_IP}:49155  → Config → Servers → add usenet provider
+  • Seerr       http://{LAN_IP}:5056   → complete setup wizard, then re-run script
+  • Tautulli    http://{LAN_IP}:8181   → connect Plex (needs your Plex token)
+  • Recyclarr   customise recyclarr.yml then: docker exec recyclarr recyclarr sync
+  • qBittorrent http://{LAN_IP}:49156  → Settings → BitTorrent → set seeding limits
 """)
     print('═' * 52)
     sys.exit(0 if errors == 0 else 1)

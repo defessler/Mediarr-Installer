@@ -12,6 +12,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASS=0
 FAIL=0
 
+# ── Detect docker compose command ────────────────────────────────────────────
+
+COMPOSE=""
+if docker compose version &>/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    COMPOSE="docker-compose"
+else
+    echo "Error: neither 'docker compose' nor 'docker-compose' found."
+    echo "Install Docker Desktop or the Docker Compose plugin first."
+    exit 1
+fi
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 run_step() {
@@ -29,7 +42,7 @@ run_step() {
         PASS=$((PASS + 1))
     else
         echo ""
-        echo "  ✘ Step $step failed — fix errors above and re-run."
+        echo "  ✘ Step $step failed — fix the errors above and re-run."
         FAIL=$((FAIL + 1))
     fi
 }
@@ -38,8 +51,9 @@ abort_if_failed() {
     if [ $FAIL -gt 0 ]; then
         echo ""
         echo "============================================="
-        echo "  Setup halted."
-        echo "  All steps are safe to re-run after fixing."
+        echo "  Setup halted — fix the errors above."
+        echo "  All steps are safe to re-run."
+        echo "  sudo bash $SCRIPT_DIR/setup.sh"
         echo "============================================="
         exit 1
     fi
@@ -49,11 +63,11 @@ wait_for_services() {
     local max_wait=600
     local interval=10
     local elapsed=0
-    local services="sonarr radarr lidarr prowlarr sabnzbd bazarr"
+    local services="sonarr radarr lidarr prowlarr sabnzbd bazarr flaresolverr"
 
     echo ""
-    echo "  Waiting for containers to start..."
-    echo "  (First run pulls images — this may take several minutes)"
+    echo "  Waiting for containers to become healthy..."
+    echo "  (First run pulls images — this may take 5-15 minutes)"
     echo ""
 
     while [ $elapsed -lt $max_wait ]; do
@@ -75,7 +89,7 @@ wait_for_services() {
 
         if $all_up; then
             echo ""
-            echo "  ✔ All containers running — waiting 20s for web UIs to initialise..."
+            echo "  ✔ All containers running — waiting 20s for services to initialise..."
             sleep 20
             return 0
         fi
@@ -86,15 +100,17 @@ wait_for_services() {
 
     echo ""
     echo "  ✘ Containers did not start within ${max_wait}s"
-    echo "  Check logs:  docker-compose logs"
+    echo "  Check logs:  $COMPOSE logs"
     return 1
 }
 
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 
+echo ""
 echo "============================================="
 echo "  Media Stack Setup"
 echo "============================================="
+echo "  Using: $COMPOSE"
 echo "  This script runs the full first-time install."
 echo "  Safe to re-run — all steps skip what's already done."
 
@@ -121,7 +137,7 @@ abort_if_failed
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
 run_step 6 "Start the stack" \
-    bash -c "cd '$SCRIPT_DIR' && docker-compose up -d"
+    bash -c "cd '$SCRIPT_DIR' && $COMPOSE up -d"
 
 abort_if_failed
 
@@ -131,7 +147,8 @@ wait_for_services || { FAIL=$((FAIL + 1)); abort_if_failed; }
 
 echo ""
 echo "  Note: configuring Sonarr, Radarr, Lidarr, Prowlarr, SABnzbd, Bazarr, Seerr,"
-echo "        Unpackerr, and Recyclarr via their APIs — skips anything already set up"
+echo "        Flaresolverr proxy, qBittorrent watch folder, and more via API."
+echo "        Skips anything already configured."
 run_step 7 "Configure all services" \
     python3 "$SCRIPT_DIR/setup-arr-config.py"
 
@@ -142,10 +159,17 @@ run_step 8 "Add Prowlarr indexers" \
     python3 "$SCRIPT_DIR/indexers/setup-indexers.py"
 
 echo ""
-echo "  Note: enabling free subtitle providers (YIFY, Podnapisi, Subscene...) and any"
-echo "        account-based providers (OpenSubtitles, Addic7ed) configured in .env"
+echo "  Note: enabling free subtitle providers and any account-based providers"
+echo "        (OpenSubtitles, Addic7ed) configured in .env"
 run_step 9 "Enable Bazarr subtitle providers" \
     python3 "$SCRIPT_DIR/indexers/setup-bazarr-providers.py"
+
+# ── Post-deploy validation ────────────────────────────────────────────────────
+
+echo ""
+echo "  Note: running post-deploy health checks on all services"
+run_step 10 "Verify stack health" \
+    bash "$SCRIPT_DIR/post-deploy-validate.sh"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
@@ -167,16 +191,10 @@ fi
 echo ""
 echo "  ✔ Setup complete!"
 echo ""
-echo "  ── One remaining manual step ─────────────────"
-echo "  Seerr requires its setup wizard before it can"
-echo "  be connected to Sonarr and Radarr:"
+echo "  ── Dashboard ──────────────────────────────────"
+echo "  Homepage     http://${IP}:3000           ← start here"
 echo ""
-echo "    1. Open http://${IP}:5056"
-echo "    2. Connect Plex when prompted: http://plex:32400"
-echo "    3. Finish the wizard, then run:"
-echo "       python3 $SCRIPT_DIR/setup-arr-config.py"
-echo ""
-echo "  ── Service URLs ──────────────────────────────"
+echo "  ── Services ───────────────────────────────────"
 echo "  Plex         http://${IP}:32400/web"
 echo "  Sonarr       http://${IP}:49152"
 echo "  Radarr       http://${IP}:49151"
@@ -188,6 +206,22 @@ echo "  Bazarr       http://${IP}:49153"
 echo "  Seerr        http://${IP}:5056"
 echo "  Tautulli     http://${IP}:8181"
 echo ""
-echo "  ── For updates ───────────────────────────────"
+echo "  ── Remaining manual steps ─────────────────────"
+echo "  1. Seerr wizard: http://${IP}:5056"
+echo "     Connect Plex with: http://plex:32400"
+echo "     Then re-run: python3 $SCRIPT_DIR/setup-arr-config.py"
+echo ""
+echo "  2. Tautulli: http://${IP}:8181"
+echo "     Connect Plex with token from:"
+echo "     Plex → Settings → Troubleshooting → Get X-Plex-Token"
+echo ""
+echo "  3. SABnzbd usenet server: http://${IP}:49155"
+echo "     Add your usenet provider under Config → Servers"
+echo ""
+echo "  4. Recyclarr quality profiles:"
+echo "     docker exec recyclarr recyclarr sync"
+echo "     (customise /volume1/docker/media/recyclarr/config/recyclarr.yml first)"
+echo ""
+echo "  ── Updates ────────────────────────────────────"
 echo "  cd $SCRIPT_DIR"
-echo "  docker-compose pull && docker-compose up -d"
+echo "  $COMPOSE pull && $COMPOSE up -d"

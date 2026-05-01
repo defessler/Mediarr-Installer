@@ -1,7 +1,7 @@
 #!/bin/bash
 # ── Stack Validation ──
 #
-# Checks that everything is correctly configured before running docker-compose.
+# Checks that everything is correctly configured before running docker compose.
 #
 # Usage:
 #   bash /volume1/docker/media/setup-validate.sh
@@ -36,10 +36,10 @@ section "Files"
 [ -f "$SCRIPT_DIR/docker-compose.yml" ] && ok "docker-compose.yml exists" || fail "docker-compose.yml not found"
 [ -r "$SCRIPT_DIR/docker-compose.yml" ] && ok "docker-compose.yml is readable" || fail "docker-compose.yml is not readable — run setup-chmod.sh"
 
-[ -f "$ENV_FILE" ]  && ok ".env exists"       || fail ".env not found"
+[ -f "$ENV_FILE" ]  && ok ".env exists"       || fail ".env not found — copy .env.example to .env and fill in your values"
 [ -r "$ENV_FILE" ]  && ok ".env is readable"  || fail ".env is not readable — run setup-chmod.sh"
 
-for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh; do
+for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         [ -x "$SCRIPT_DIR/$script" ] && ok "$script is executable" || fail "$script is not executable — run setup-chmod.sh"
     else
@@ -73,13 +73,13 @@ check_var "NORDVPN_PRIVATE_KEY"
 check_var "QBITTORRENT_USER"
 check_var "QBITTORRENT_PASS"
 
-# API keys are filled in by setup-arr-config.py after first boot — warn only
+# API keys are auto-discovered from config.xml after first boot — warn only
 check_var_warn() {
     local key="$1"
     local val
     val=$(env_val "$key")
     if [ -z "$val" ]; then
-        warn "$key not set — will be filled in automatically by setup-arr-config.py"
+        warn "$key not set — auto-discovered from config.xml by setup-arr-config.py"
     else
         ok "$key is set"
     fi
@@ -96,7 +96,7 @@ else
 fi
 
 # Validate WireGuard key length (should be 44 chars)
-# NordVPN's API sometimes returns 43 chars (missing trailing =) — auto-fix it.
+# NordVPN's API sometimes returns 43 chars — auto-fix by padding.
 WG_KEY=$(env_val "NORDVPN_PRIVATE_KEY")
 if [ -n "$WG_KEY" ]; then
     KEY_LEN=${#WG_KEY}
@@ -136,6 +136,7 @@ REQUIRED_DIRS=(
     /volume1/docker/media/sabnzbd/config
     /volume1/docker/media/recyclarr/config
     /volume1/docker/media/unpackerr/config
+    /volume1/docker/media/homepage/config
     /volume1/Data/Media/Movies
     "/volume1/Data/Media/TV Shows"
     /volume1/Data/Media/Anime/Movies
@@ -167,8 +168,6 @@ section "Firewall"
 check_port() {
     local port="$1"
     local label="$2"
-    # Use iptables -L to list rules and grep for the port number.
-    # This works regardless of which source subnet the rule uses.
     if iptables -L INPUT -n 2>/dev/null | grep -q "dpt:$port"; then
         ok "Port $port open ($label)"
     else
@@ -186,6 +185,7 @@ check_port 49155 "SABnzbd"
 check_port 49156 "qBittorrent"
 check_port 5056  "Seerr"
 check_port 8181  "Tautulli"
+check_port 3000  "Homepage"
 
 if [ -f /usr/local/etc/rc.d/media-firewall.sh ]; then
     ok "Firewall script installed in rc.d (survives reboots)"
@@ -209,10 +209,12 @@ else
     fail "Docker is not installed"
 fi
 
-if command -v docker-compose &>/dev/null; then
-    ok "docker-compose is installed"
+if docker compose version &>/dev/null 2>&1; then
+    ok "docker compose (v2) is available"
+elif command -v docker-compose &>/dev/null; then
+    ok "docker-compose (v1) is available — consider upgrading to Docker Compose v2"
 else
-    fail "docker-compose is not installed"
+    fail "Neither 'docker compose' nor 'docker-compose' is installed"
 fi
 
 # ── Network ───────────────────────────────────────────────────────────────────
@@ -233,12 +235,12 @@ echo "  Results: $PASS passed, $WARN warnings, $FAIL failed"
 echo "============================================="
 
 if [ $FAIL -gt 0 ]; then
-    echo "  Fix the failing checks above before running docker-compose."
+    echo "  Fix the failing checks above before running docker compose."
     exit 1
 elif [ $WARN -gt 0 ]; then
     echo "  All checks passed with warnings. Review above before proceeding."
     exit 0
 else
-    echo "  All checks passed. Ready to run docker-compose up -d"
+    echo "  All checks passed. Ready to run docker compose up -d"
     exit 0
 fi

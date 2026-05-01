@@ -13,7 +13,7 @@ ENV_FILE="$SCRIPT_DIR/.env"
 # Read PUID/PGID from .env — required, no fallback
 if [ ! -f "$ENV_FILE" ]; then
     echo "Error: .env not found at $ENV_FILE"
-    echo "Run setup-nordvpn.sh first, or create .env with PUID and PGID set."
+    echo "Copy .env.example to .env and fill in your values."
     exit 1
 fi
 
@@ -45,15 +45,16 @@ CONFIG_DIRS=(
     /volume1/docker/media/sabnzbd/config
     /volume1/docker/media/recyclarr/config
     /volume1/docker/media/unpackerr/config
+    /volume1/docker/media/homepage/config
 )
 
 # ── Media and download directories ────────────────────────────────────────────
 
 DATA_DIRS=(
-    /volume1/Data/Media/Movies
-    /volume1/Data/Media/TV\ Shows
-    /volume1/Data/Media/Anime/Movies
-    /volume1/Data/Media/Anime/TV\ Shows
+    "/volume1/Data/Media/Movies"
+    "/volume1/Data/Media/TV Shows"
+    "/volume1/Data/Media/Anime/Movies"
+    "/volume1/Data/Media/Anime/TV Shows"
     /volume1/Data/Media/Music
     /volume1/Data/Downloads/Torrents/ToFetch
     /volume1/Data/Downloads/Torrents/InProgress
@@ -93,16 +94,20 @@ for dir in "${DATA_DIRS[@]}"; do
     chmod -R 755 "$dir"
 done
 
+# ── qBittorrent credential + config init script ────────────────────────────────
+#
+# This script runs inside the qBittorrent container at startup (custom-cont-init.d).
+# Sets credentials, download paths, and the watched folder (/downloads/ToFetch).
+# A sentinel file ensures it only runs once — config is never wiped on restart.
+
 echo ""
-echo "Deploying qBittorrent credential init script..."
+echo "Deploying qBittorrent init script..."
 INIT_DST="/volume1/docker/media/qbittorrent/custom-cont-init.d/set-credentials.sh"
 cat > "$INIT_DST" << 'INITEOF'
 #!/bin/bash
-# Sets qBittorrent WebUI credentials from environment variables.
+# Sets qBittorrent credentials, download paths, and watched folder.
 # Runs inside the container at startup via /custom-cont-init.d.
-# Only runs once — uses a sentinel file so container restarts never
-# overwrite the config (which would cause qBittorrent to lose its
-# torrent list from BT_Backup on next boot).
+# Only runs once — sentinel file prevents re-running on restart.
 
 [ -z "$WEBUI_PASSWORD" ] && exit 0
 
@@ -110,7 +115,6 @@ CONF_DIR="/config/qBittorrent"
 CONF_FILE="$CONF_DIR/qBittorrent.conf"
 SENTINEL="/config/.credentials-set"
 
-# Already initialised — never touch the config again
 if [ -f "$SENTINEL" ]; then
     echo "[init] qBittorrent already initialised — skipping"
     exit 0
@@ -121,7 +125,7 @@ mkdir -p "$CONF_DIR"
 USERNAME="${WEBUI_USERNAME:-admin}"
 
 # Generate PBKDF2-HMAC-SHA512 hash — qBittorrent's WebUI password format
-HASH=$(python3 <<'PYEOF'
+HASH=$(python3 - <<'PYEOF'
 import hashlib, os, base64
 password = os.environ.get('WEBUI_PASSWORD', '').encode('utf-8')
 salt = os.urandom(16)
@@ -136,17 +140,17 @@ if [ -z "$HASH" ]; then
 fi
 
 if [ ! -f "$CONF_FILE" ]; then
-    printf '[LegalNotice]\nAccepted=true\n\n[BitTorrent]\nSession\DefaultSavePath=/downloads/Completed\nSession\TempPath=/downloads/InProgress\nSession\TempPathEnabled=true\n\n[Preferences]\nDownloads\SavePath=/downloads/Completed\nDownloads\TempPath=/downloads/InProgress\nDownloads\TempPathEnabled=true\nWebUI\\Username=%s\nWebUI\\Password_PBKDF2="%s"\nWebUI\\AuthSubnetWhitelistEnabled=true\nWebUI\\AuthSubnetWhitelist=192.168.1.0/24\n' \
+    printf '[LegalNotice]\nAccepted=true\n\n[BitTorrent]\nSession\\DefaultSavePath=/downloads/Completed\nSession\\TempPath=/downloads/InProgress\nSession\\TempPathEnabled=true\n\n[Preferences]\nDownloads\\SavePath=/downloads/Completed\nDownloads\\TempPath=/downloads/InProgress\nDownloads\\TempPathEnabled=true\nWebUI\\Username=%s\nWebUI\\Password_PBKDF2="%s"\nWebUI\\AuthSubnetWhitelistEnabled=true\nWebUI\\AuthSubnetWhitelist=192.168.0.0/16\n\n[ScanDirs]\nsize=1\n1\\dir=/downloads/ToFetch\n' \
         "$USERNAME" "$HASH" > "$CONF_FILE"
 else
-    printf '\nWebUI\\Username=%s\nWebUI\\Password_PBKDF2="%s"\nWebUI\\AuthSubnetWhitelistEnabled=true\nWebUI\\AuthSubnetWhitelist=192.168.1.0/24\n' \
+    printf '\nWebUI\\Username=%s\nWebUI\\Password_PBKDF2="%s"\nWebUI\\AuthSubnetWhitelistEnabled=true\nWebUI\\AuthSubnetWhitelist=192.168.0.0/16\n\n[ScanDirs]\nsize=1\n1\\dir=/downloads/ToFetch\n' \
         "$USERNAME" "$HASH" >> "$CONF_FILE"
 fi
 
-# Mark as done — this file's presence prevents any future runs
 touch "$SENTINEL"
-echo "[init] qBittorrent WebUI credentials and download paths configured (user: $USERNAME)"
+echo "[init] qBittorrent configured (user: $USERNAME, watched: /downloads/ToFetch)"
 INITEOF
+
 chown $PUID:$PGID "$INIT_DST"
 chmod 755 "$INIT_DST"
 echo "  Deployed: $INIT_DST"

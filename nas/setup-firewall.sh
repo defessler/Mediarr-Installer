@@ -52,6 +52,12 @@ add_rules() {
 
     # Tautulli
     iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8181 -j ACCEPT
+
+    # Homepage dashboard
+    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 3000 -j ACCEPT
+
+    # Flaresolverr (CloudFlare bypass — internal use by Prowlarr)
+    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8191 -j ACCEPT
 }
 
 remove_rules() {
@@ -93,6 +99,12 @@ remove_rules() {
 
     # Tautulli
     iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 8181 -j ACCEPT 2>/dev/null
+
+    # Homepage dashboard
+    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 3000 -j ACCEPT 2>/dev/null
+
+    # Flaresolverr
+    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 8191 -j ACCEPT 2>/dev/null
 }
 
 RC_SCRIPT=/usr/local/etc/rc.d/media-firewall.sh

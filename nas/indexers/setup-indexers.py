@@ -22,8 +22,12 @@ Usage:
     NINJACZENTRAL_API_KEY=
     TABULARASA_API_KEY=
 
+.env keys for anime usenet (AnimeTosho has optional account-based limits):
+    ANIMETOSHO_API_KEY=     # optional — increases rate limits; get from animetosho.org/api
+
 .env keys for private torrent trackers:
     AVISTAZ_USER=          AVISTAZ_PASS=        # Asian movies/TV (private)
+    HHD_API_KEY=                                # Korean movies/dramas
     ANIMEBYTES_USER=       ANIMEBYTES_PASS=     # Anime (invite-only)
     ANIMETORRENTS_USER=    ANIMETORRENTS_PASS=  # Anime (private)
 """
@@ -56,9 +60,10 @@ def section(title):
 
 # ── Indexer definitions ───────────────────────────────────────────────────────
 #
-# Each entry: (display_name, implementation, extra_fields_dict)
-# extra_fields_dict maps Prowlarr field names to values — only include fields
-# that differ from the schema defaults.
+# PUBLIC_TORRENT_INDEXERS: added automatically, no credentials needed.
+# USENET_INDEXERS: (display_name, api_url, env_key_name or None)
+#   env_key_name=None means free — added without a key (uses key if available)
+# PRIVATE_TORRENT_INDEXERS: (display_name, implementation, {field: env_var})
 
 PUBLIC_TORRENT_INDEXERS = [
     # ── General ───────────────────────────────────────────────────────────────
@@ -68,41 +73,40 @@ PUBLIC_TORRENT_INDEXERS = [
     "TorrentGalaxy",
     "LimeTorrents",
     "The Pirate Bay",
-    "Knaben",            # Large Norwegian index, good general coverage
+    "Knaben",            # Large Norwegian index, excellent general coverage
+    "Bitsearch",         # Good general tracker
+    "Solidtorrents",     # Aggregator with broad coverage
     # ── TV ────────────────────────────────────────────────────────────────────
     "ShowRSS",
     # ── Anime / Japanese ──────────────────────────────────────────────────────
     "Nyaa",              # Primary anime tracker
-    "SubsPlease",        # Simulcast rips
+    "SubsPlease",        # Simulcast rips — best for current-season anime
     "Tokyo Toshokan",    # Japanese media (long-running, broad)
 ]
 
 # Newznab-compatible usenet indexers.
-# Each entry: (display_name, api_url, env_key_name)
-# env_key_name=None means free — added without a key.
+# env_key_name=None → free, added regardless; uses key if present for higher limits.
 USENET_INDEXERS = [
-    # ── Free (no account required) ────────────────────────────────────────────
-    ("AnimeTosho",     "https://feed.animetosho.org",      None),              # Free anime NZBs — no account needed
-    ("ABNzb",          "https://abnzb.com",                None),              # Free general indexer
-    ("Althub",         "https://www.althub.co.za",         None),              # Free general indexer
+    # ── Free (no account required, or optional key for higher limits) ─────────
+    ("AnimeTosho",     "https://feed.animetosho.org",      None,                    "ANIMETOSHO_API_KEY"),
+    ("ABNzb",          "https://abnzb.com",                None,                    None),
+    ("Althub",         "https://www.althub.co.za",         None,                    None),
     # ── Account required ──────────────────────────────────────────────────────
-    ("NZBGeek",        "https://api.nzbgeek.info",         "NZBGEEK_API_KEY"),
-    ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY"),
-    ("DrunkenSlug",    "https://api.drunkenslug.com",      "DRUNKENSLUG_API_KEY"),
-    ("NZBPlanet",      "https://api.nzbplanet.net",        "NZBPLANET_API_KEY"),
-    ("NZBcat",         "https://nzb.cat",                  "NZBCAT_API_KEY"),
-    ("DogNZB",         "https://api.dognzb.cr",            "DOGNZB_API_KEY"),
-    ("NinjaCentral",   "https://www.ninjacentral.co.za",   "NINJACZENTRAL_API_KEY"),
-    ("Tabula Rasa",    "https://www.tabula-rasa.pw",       "TABULARASA_API_KEY"),
+    ("NZBGeek",        "https://api.nzbgeek.info",         "NZBGEEK_API_KEY",       None),
+    ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY",     None),
+    ("DrunkenSlug",    "https://api.drunkenslug.com",      "DRUNKENSLUG_API_KEY",   None),
+    ("NZBPlanet",      "https://api.nzbplanet.net",        "NZBPLANET_API_KEY",     None),
+    ("NZBcat",         "https://nzb.cat",                  "NZBCAT_API_KEY",        None),
+    ("DogNZB",         "https://api.dognzb.cr",            "DOGNZB_API_KEY",        None),
+    ("NinjaCentral",   "https://www.ninjacentral.co.za",   "NINJACZENTRAL_API_KEY", None),
+    ("Tabula Rasa",    "https://www.tabula-rasa.pw",       "TABULARASA_API_KEY",    None),
 ]
 
 # Private torrent trackers — added only if credentials are set in .env.
-# Each entry: (display_name, prowlarr_implementation, {field: env_var, ...})
-# These are the best sources for Korean and Japanese content.
 PRIVATE_TORRENT_INDEXERS = [
     # Asian content
     ("AvistaZ",         "AvistaZ",         {"username": "AVISTAZ_USER",       "password": "AVISTAZ_PASS"}),
-    ("HHD",             "HHD",             {"apiKey":   "HHD_API_KEY"}),        # Korean movies/dramas — get key at homiehelpdesk.net
+    ("HHD",             "HHD",             {"apiKey":   "HHD_API_KEY"}),
     # Anime
     ("AnimeTorrents",   "AnimeTorrents",   {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS"}),
     ("AnimeBytes",      "AnimeBytes",      {"username": "ANIMEBYTES_USER",    "password": "ANIMEBYTES_PASS"}),
@@ -130,8 +134,8 @@ def _request(url, headers, method='GET', data=None):
 def _prowlarr_error(body):
     """Extract a clean single-line error message from a Prowlarr JSON error body."""
     try:
-        errors = json.loads(body)
-        msgs = [e.get('errorMessage', '') for e in (errors if isinstance(errors, list) else [])]
+        errs = json.loads(body)
+        msgs = [e.get('errorMessage', '') for e in (errs if isinstance(errs, list) else [])]
         msgs = [m for m in msgs if m]
         return msgs[0] if msgs else body[:120]
     except Exception:
@@ -174,7 +178,7 @@ def _post_indexer(base, key, name, schema):
         if 'unique' in err_lower:
             skip(f"{name} (already added)")
         elif 'cloudflare' in err_lower or 'blocked by' in err_lower:
-            warn(f"{name}: added but unreachable — blocked by CloudFlare")
+            warn(f"{name}: added but blocked by CloudFlare (Flaresolverr should fix this)")
         elif 'redirect' in err_lower:
             warn(f"{name}: added but domain is redirecting (may be down)")
         elif 'unable to connect' in err_lower or 'unable to access' in err_lower:
@@ -185,8 +189,7 @@ def _post_indexer(base, key, name, schema):
         fail(f"{name}: request failed (HTTP {status})")
 
 def _find_schema(name, schemas):
-    """Find a schema by name, falling back to prefix match for common variations
-    like 'Nyaa' → 'Nyaa.si' or 'TorrentGalaxy' → 'TorrentGalaxyClone'."""
+    """Find a schema by name with fuzzy matching for common variations."""
     name_lower = name.lower()
     # 1. Exact case-insensitive
     s = next((s for s in schemas if s.get('name', '').lower() == name_lower), None)
@@ -198,7 +201,7 @@ def _find_schema(name, schemas):
                   and len(s.get('name', '')) > len(name)]
     if len(candidates) == 1:
         return candidates[0], candidates[0]['name']
-    # 3. Our name starts with schema name (e.g. user typed longer name)
+    # 3. Our name starts with schema name
     candidates = [s for s in schemas
                   if name_lower.startswith(s.get('name', '').lower())
                   and s.get('name', '')]
@@ -220,10 +223,8 @@ def add_indexer(base, key, name, schemas, existing_names):
         fail(f"{name}: not found in Prowlarr{hint}")
         return
 
-    if resolved_name != name:
-        # Re-check with the resolved name before adding
-        if resolved_name.lower() in existing_names:
-            skip(f"{name} → {resolved_name} (already added)"); return
+    if resolved_name != name and resolved_name.lower() in existing_names:
+        skip(f"{name} → {resolved_name} (already added)"); return
 
     schema['name'] = resolved_name
     schema['enable'] = True
@@ -251,33 +252,26 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
 
     _post_indexer(base, key, name, schema)
 
-def apply_public_settings(base, key, public_names,
-                           priority=50, seed_time_mins=1):
-    """Set priority and seed time on all public (no-login) indexers.
-    Runs after adds so it also covers indexers added in previous runs."""
+def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1):
+    """Set priority and seed time on all public (no-login) indexers."""
     indexers = GET(base, key, "/api/v1/indexer") or []
     public_lower = {n.lower() for n in public_names}
 
     for indexer in indexers:
         if indexer.get('name', '').lower() not in public_lower:
             continue
-
         changed = False
-
         if indexer.get('priority') != priority:
             indexer['priority'] = priority
             changed = True
-
         for field in indexer.get('fields', []):
             if field.get('name') == 'seedCriteria.seedTime':
                 if field.get('value') != seed_time_mins:
                     field['value'] = seed_time_mins
                     changed = True
-
         if not changed:
             skip(f"{indexer['name']} (priority={priority}, seedTime={seed_time_mins}m)")
             continue
-
         result = PUT(base, key, f"/api/v1/indexer/{indexer['id']}", indexer)
         if result:
             ok(f"{indexer['name']}: priority={priority}, seedTime={seed_time_mins}m")
@@ -299,7 +293,7 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names):
     schema['appProfileId'] = 1
 
     fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
-    for fname, fval in [('baseUrl', api_url), ('apiKey', api_key)]:
+    for fname, fval in [('baseUrl', api_url), ('apiKey', api_key or '')]:
         if fname in fm:
             schema['fields'][fm[fname]]['value'] = fval
 
@@ -324,7 +318,6 @@ def read_env(path):
     return env
 
 def read_env_merged(script_dir):
-    # .env lives in nas/ — walk up if this script is in a subdirectory
     candidates = [script_dir, os.path.dirname(script_dir)]
     env_dir = next((d for d in candidates if os.path.exists(os.path.join(d, '.env'))), script_dir)
     return read_env(os.path.join(env_dir, '.env'))
@@ -366,7 +359,6 @@ def main():
         print(f"{RED}Error: could not fetch indexer schemas from Prowlarr{RESET}")
         sys.exit(1)
 
-    # Get existing indexer names (lowercase for case-insensitive dedup)
     existing = GET(PROWLARR, PROWLARR_KEY, "/api/v1/indexer") or []
     existing_names = {i['name'].lower() for i in existing}
 
@@ -379,15 +371,21 @@ def main():
     # ── Usenet indexers ───────────────────────────────────────────────────────
 
     section("Usenet Indexers")
-    for name, api_url, env_key in USENET_INDEXERS:
-        if env_key is None:
-            # Free indexer — add without a key (use optional key if available)
-            api_key = env.get(name.upper().replace(' ', '_') + '_API_KEY', '')
+    for entry in USENET_INDEXERS:
+        name, api_url, required_key, optional_key = entry
+
+        if required_key is None:
+            # Free indexer — always add; use optional key for higher limits if available
+            api_key = env.get(optional_key, '') if optional_key else ''
+            if api_key:
+                ok_note = f"{name} (with API key — higher limits)"
+            else:
+                ok_note = name
             add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names)
         else:
-            api_key = env.get(env_key, '')
+            api_key = env.get(required_key, '')
             if not api_key:
-                skip(f"{name} (set {env_key} in .env to enable)")
+                skip(f"{name} (set {required_key} in .env to enable)")
             else:
                 add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names)
 
