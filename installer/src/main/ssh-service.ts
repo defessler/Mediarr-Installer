@@ -155,6 +155,7 @@ function execOnce(client: Client, cmd: string): Promise<ExecResult> {
       let stderr = ''
       stream.on('data', (d: Buffer) => { stdout += d.toString('utf8') })
       stream.stderr.on('data', (d: Buffer) => { stderr += d.toString('utf8') })
+      stream.on('error', (e: Error) => reject(e))
       stream.on('close', (code: number, signal: string) =>
         resolve({ exitCode: code, signal: signal ?? null, stdout, stderr }),
       )

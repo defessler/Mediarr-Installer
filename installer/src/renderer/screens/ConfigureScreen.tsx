@@ -2,12 +2,30 @@ import { useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
 import type { EnvFormValues } from '../../shared/env-render.js'
+import type { Country } from '../../shared/ipc.js'
 
 // Phase 1: a single tall scrollable form. Phase 2 splits this into
 // per-step screens with auto-detection and country pickers.
 export function ConfigureScreen() {
   const { config, setConfig, targetDir, setTargetDir, setStep } = useWizard()
   const [errors, setErrors] = useState<string[]>([])
+  const [vpnToken, setVpnToken] = useState('')
+  const [vpnBusy, setVpnBusy] = useState(false)
+  const [vpnError, setVpnError] = useState<string | null>(null)
+  const [countries, setCountries] = useState<Country[]>([])
+
+  async function fetchVpnKey() {
+    setVpnBusy(true); setVpnError(null)
+    try {
+      const r = await window.installer.vpn.fetchKey(vpnToken)
+      setConfig({ NORDVPN_PRIVATE_KEY: r.privateKey })
+      setCountries(r.countries)
+    } catch (e) {
+      setVpnError((e as Error).message)
+    } finally {
+      setVpnBusy(false)
+    }
+  }
 
   function update<K extends keyof EnvFormValues>(key: K, value: EnvFormValues[K] | undefined) {
     setConfig({ [key]: value } as Partial<EnvFormValues>)
@@ -72,13 +90,52 @@ export function ConfigureScreen() {
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">VPN (NordVPN WireGuard)</h2>
         <p className="text-sm text-slate-400">
-          Phase 1: paste your WireGuard private key (the bundled
-          <code className="bg-slate-800 px-1 rounded mx-1">setup-nordvpn.sh</code>
-          can also fetch it on the NAS — leave blank to defer).
+          Paste your NordVPN access token (Account &rarr; Set up NordVPN
+          manually). We&apos;ll fetch the WireGuard private key directly from
+          the NordVPN API.
         </p>
-        <Field label="Countries (comma-separated)" k="VPN_COUNTRIES" placeholder="United States,Canada" />
+
         <div>
-          <label className="block text-sm font-medium mb-1">WireGuard private key (44 chars)</label>
+          <label className="block text-sm font-medium mb-1">NordVPN access token</label>
+          <div className="flex gap-2">
+            <input
+              type="password" placeholder="64-char hex token"
+              className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              value={vpnToken} onChange={(e) => setVpnToken(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={fetchVpnKey}
+              disabled={vpnBusy || vpnToken.length < 16}
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+            >
+              {vpnBusy ? 'Fetching...' : 'Fetch key'}
+            </button>
+          </div>
+          {vpnError && (
+            <div className="mt-2 text-rose-300 text-sm">{vpnError}</div>
+          )}
+          {config.NORDVPN_PRIVATE_KEY && !vpnError && (
+            <div className="mt-2 text-emerald-300 text-sm">
+              Got it — {config.NORDVPN_PRIVATE_KEY.length}-char WireGuard key cached.
+            </div>
+          )}
+        </div>
+
+        <Field label="Countries (comma-separated)" k="VPN_COUNTRIES" placeholder="United States,Canada" />
+        {countries.length > 0 && (
+          <details className="text-xs text-slate-400">
+            <summary className="cursor-pointer">Available countries ({countries.length})</summary>
+            <div className="mt-2 max-h-32 overflow-y-auto font-mono">
+              {countries.map((c) => c.name).join(', ')}
+            </div>
+          </details>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            WireGuard private key (auto-filled by Fetch key)
+          </label>
           <textarea
             rows={2}
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
@@ -134,10 +191,10 @@ export function ConfigureScreen() {
 
       <div className="flex justify-between pt-4 border-t border-slate-800">
         <button
-          onClick={() => useWizard.getState().setStep('connect')}
+          onClick={() => useWizard.getState().setStep('detect')}
           className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md"
         >
-          ← Back
+          Back
         </button>
         <button
           onClick={go}

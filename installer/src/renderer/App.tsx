@@ -1,11 +1,13 @@
-import { useWizard } from './store/wizard.js'
+import { useWizard, type WizardStep } from './store/wizard.js'
 import { ConnectScreen } from './screens/ConnectScreen.js'
+import { EnvDetectScreen } from './screens/EnvDetectScreen.js'
 import { ConfigureScreen } from './screens/ConfigureScreen.js'
 import { RunScreen } from './screens/RunScreen.js'
 import { DoneScreen } from './screens/DoneScreen.js'
 
-const STEPS: { id: 'connect' | 'configure' | 'run' | 'done'; label: string }[] = [
+const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'connect',   label: 'Connect' },
+  { id: 'detect',    label: 'Detect' },
   { id: 'configure', label: 'Configure' },
   { id: 'run',       label: 'Install' },
   { id: 'done',      label: 'Done' },
@@ -45,6 +47,7 @@ export function App() {
 
       <main className="flex-1 min-h-0 overflow-hidden">
         {step === 'connect'   && <ConnectScreen />}
+        {step === 'detect'    && <EnvDetectScreen />}
         {step === 'configure' && <ConfigureScreen />}
         {step === 'run'       && <RunScreen />}
         {step === 'done'      && <DoneScreen />}

@@ -36,10 +36,12 @@ export interface EnvFormValues {
 
 const ESCAPE = (v: string) => {
   // .env consumed by docker compose: quote if value contains whitespace
-  // or special chars; escape embedded double quotes.
+  // or special chars; escape embedded double quotes, backslashes,
+  // dollar signs, and backticks (the last two trigger expansion inside
+  // double quotes).
   if (v === '') return ''
   if (/[\s"$`\\]/.test(v)) {
-    return `"${v.replace(/(["\\$`])/g, '\\$1')}"`
+    return `"${v.replace(/([\\"$`])/g, '\\$1')}"`
   }
   return v
 }

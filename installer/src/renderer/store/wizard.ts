@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { ConnectionConfig } from '../../shared/ipc.js'
 import type { EnvFormValues } from '../../shared/env-render.js'
 
-export type WizardStep = 'connect' | 'configure' | 'run' | 'done'
+export type WizardStep = 'connect' | 'detect' | 'configure' | 'run' | 'done'
 
 interface WizardState {
   step: WizardStep

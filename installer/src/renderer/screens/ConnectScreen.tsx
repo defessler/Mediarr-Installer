@@ -44,7 +44,7 @@ export function ConnectScreen() {
         passphrase: connection.authMethod === 'privateKey' ? passphrase : undefined,
       })
       setSessionId(r.sessionId)
-      setStep('configure')
+      setStep('detect')
     } catch (e) {
       setResult({ ok: false, error: { kind: 'unknown', message: (e as Error).message } })
     } finally {
