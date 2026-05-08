@@ -69,6 +69,13 @@ git push origin installer-v0.1.0
 The workflow runs three platform jobs in parallel, then a final job
 gathers their artifacts into a draft release for review.
 
+> **GitHub gotcha**: `workflow_dispatch` (manual trigger) and the
+> `gh workflow list` command both require the workflow file to be on
+> the **default branch**. If the installer branch hasn't been merged to
+> `master` yet, the release workflow only fires on tag push (which
+> always works regardless of branch). Merge the branch to enable the
+> manual trigger.
+
 ## Layout
 
 ```
