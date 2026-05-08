@@ -1,0 +1,151 @@
+import { useState } from 'react'
+import { useWizard } from '../store/wizard.js'
+import { envSchema } from '../../shared/env-schema.js'
+import type { EnvFormValues } from '../../shared/env-render.js'
+
+// Phase 1: a single tall scrollable form. Phase 2 splits this into
+// per-step screens with auto-detection and country pickers.
+export function ConfigureScreen() {
+  const { config, setConfig, targetDir, setTargetDir, setStep } = useWizard()
+  const [errors, setErrors] = useState<string[]>([])
+
+  function update<K extends keyof EnvFormValues>(key: K, value: EnvFormValues[K] | undefined) {
+    setConfig({ [key]: value } as Partial<EnvFormValues>)
+  }
+
+  function go() {
+    const parsed = envSchema.safeParse(config)
+    if (!parsed.success) {
+      setErrors(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`))
+      return
+    }
+    setErrors([])
+    setStep('run')
+  }
+
+  const Field = ({ label, k, type = 'text', placeholder }: {
+    label: string; k: keyof EnvFormValues; type?: string; placeholder?: string
+  }) => (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <input
+        type={type} placeholder={placeholder}
+        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+        value={(config[k] as string | undefined) ?? ''}
+        onChange={(e) => update(k, e.target.value || undefined)}
+      />
+    </div>
+  )
+
+  return (
+    <div className="max-w-3xl mx-auto p-8 space-y-8 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+      <header>
+        <h1 className="text-2xl font-semibold">Configure the stack</h1>
+        <p className="text-slate-400 mt-1 text-sm">
+          These values populate the <code className="bg-slate-800 px-1 rounded">.env</code> file
+          uploaded to your NAS. Defaults are sensible — review and adjust.
+        </p>
+      </header>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Install location</h2>
+        <div>
+          <label className="block text-sm font-medium mb-1">Target directory on NAS</label>
+          <input
+            type="text"
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+            value={targetDir} onChange={(e) => setTargetDir(e.target.value)}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Identity</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="PUID (user ID)" k="PUID" />
+          <Field label="PGID (group ID)" k="PGID" />
+        </div>
+        <Field label="Timezone (Area/City)" k="TZ" placeholder="America/New_York" />
+        <Field label="LAN IP of your NAS" k="LAN_IP" placeholder="192.168.1.10" />
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">VPN (NordVPN WireGuard)</h2>
+        <p className="text-sm text-slate-400">
+          Phase 1: paste your WireGuard private key (the bundled
+          <code className="bg-slate-800 px-1 rounded mx-1">setup-nordvpn.sh</code>
+          can also fetch it on the NAS — leave blank to defer).
+        </p>
+        <Field label="Countries (comma-separated)" k="VPN_COUNTRIES" placeholder="United States,Canada" />
+        <div>
+          <label className="block text-sm font-medium mb-1">WireGuard private key (44 chars)</label>
+          <textarea
+            rows={2}
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+            value={config.NORDVPN_PRIVATE_KEY ?? ''}
+            onChange={(e) => update('NORDVPN_PRIVATE_KEY', e.target.value || undefined)}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">qBittorrent WebUI</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Username" k="QBITTORRENT_USER" />
+          <Field label="Password (≥ 8 chars)" k="QBITTORRENT_PASS" type="password" />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Plex</h2>
+        <p className="text-sm text-slate-400">
+          Get a token from{' '}
+          <a className="text-emerald-400 underline" href="https://plex.tv/claim" target="_blank">plex.tv/claim</a>
+          {' '}— expires in 4 minutes.
+        </p>
+        <Field label="Plex claim token" k="PLEX_CLAIM" placeholder="claim-xxxx" />
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Optional indexers</h2>
+        <p className="text-sm text-slate-400">Leave blank to skip.</p>
+        <Field label="NZBGeek API key" k="NZBGEEK_API_KEY" />
+        <Field label="AnimeTosho API key" k="ANIMETOSHO_API_KEY" />
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Optional Bazarr providers</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="OpenSubtitles user" k="OPENSUBTITLES_USERNAME" />
+          <Field label="OpenSubtitles password" k="OPENSUBTITLES_PASSWORD" type="password" />
+          <Field label="Addic7ed user" k="ADDIC7ED_USERNAME" />
+          <Field label="Addic7ed password" k="ADDIC7ED_PASSWORD" type="password" />
+        </div>
+      </section>
+
+      {errors.length > 0 && (
+        <div className="bg-rose-900/40 text-rose-200 rounded-md p-3 text-sm">
+          <div className="font-medium mb-1">Fix these before continuing:</div>
+          <ul className="list-disc list-inside space-y-0.5">
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex justify-between pt-4 border-t border-slate-800">
+        <button
+          onClick={() => useWizard.getState().setStep('connect')}
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md"
+        >
+          ← Back
+        </button>
+        <button
+          onClick={go}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
+        >
+          Begin install →
+        </button>
+      </div>
+    </div>
+  )
+}

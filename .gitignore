@@ -1,2 +1,16 @@
 nas/.env
 nas/.env.local
+
+# Electron installer
+installer/node_modules/
+installer/out/
+installer/dist/
+installer/resources/nas-payload/
+installer/.vite/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+
+# Editor scratch
+.claude/
