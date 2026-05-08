@@ -2,11 +2,13 @@
 // short and makes the wire surface easy to audit.
 
 import { ipcMain } from 'electron'
-import { IPC, type ConnectionConfig } from '../shared/ipc.js'
+import { IPC, type ConnectionConfig, type SaveProfileInput } from '../shared/ipc.js'
 import * as ssh from './ssh-service.js'
 import * as sftp from './sftp-service.js'
 import { detectEnv } from './env-detector.js'
 import { fetchVpnKey } from './vpn-service.js'
+import * as profiles from './profile-store.js'
+import { saveTextToFile } from './dialog-service.js'
 
 export function registerIpcHandlers() {
   // ── SSH ────────────────────────────────────────────────────────────────────
@@ -30,4 +32,16 @@ export function registerIpcHandlers() {
   // ── Helpers ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.envDetect, (_e, args: { sessionId: string }) => detectEnv(args.sessionId))
   ipcMain.handle(IPC.vpnFetchKey, (_e, args: { token: string }) => fetchVpnKey(args.token))
+
+  // ── Profiles ──────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC.profileList, () => profiles.listProfiles())
+  ipcMain.handle(IPC.profileSave, (_e, args: SaveProfileInput) => profiles.saveProfile(args))
+  ipcMain.handle(IPC.profileDelete, (_e, args: { id: string }) => profiles.deleteProfile(args.id))
+  ipcMain.handle(IPC.profileGetSecret, (_e, args: { id: string }) => profiles.getSecret(args.id))
+  ipcMain.handle(IPC.profileTouch, (_e, args: { id: string }) => profiles.touchProfile(args.id))
+
+  // ── Dialogs ───────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC.dialogSaveText, (_e, args: { defaultName: string; content: string; title?: string }) =>
+    saveTextToFile(args),
+  )
 }

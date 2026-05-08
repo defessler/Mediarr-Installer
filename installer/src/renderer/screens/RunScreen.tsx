@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
+import { LogActions } from '../components/LogActions.js'
 import { renderEnv, type EnvFormValues } from '../../shared/env-render.js'
 import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
 
@@ -197,15 +198,24 @@ export function RunScreen() {
 
   return (
     <div className="h-full flex flex-col p-6 gap-4">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Installing the stack</h1>
-        <div className="text-sm text-slate-400">
-          {phase === 'idle' && 'Ready'}
-          {phase === 'uploading' && `Uploading files... ${progress?.pct ?? 0}%`}
-          {phase === 'writing-env' && 'Writing .env'}
-          {phase === 'running-setup' && 'Running setup.sh'}
-          {phase === 'done' && 'Setup complete'}
-          {phase === 'failed' && (errorMsg ? `Failed: ${errorMsg}` : `Setup exited ${exitCode}`)}
+        <div className="flex items-center gap-3">
+          {linesRef.current.length > 0 && (
+            <LogActions
+              lines={linesRef.current}
+              defaultName="nas-arr-install.log"
+              header={`exit=${exitCode ?? 'pending'} phase=${phase}`}
+            />
+          )}
+          <div className="text-sm text-slate-400">
+            {phase === 'idle' && 'Ready'}
+            {phase === 'uploading' && `Uploading files... ${progress?.pct ?? 0}%`}
+            {phase === 'writing-env' && 'Writing .env'}
+            {phase === 'running-setup' && 'Running setup.sh'}
+            {phase === 'done' && 'Setup complete'}
+            {phase === 'failed' && (errorMsg ? `Failed: ${errorMsg}` : `Setup exited ${exitCode}`)}
+          </div>
         </div>
       </header>
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
+import { LogActions } from '../components/LogActions.js'
 
 const SERVICES: { name: string; port: string; note?: string }[] = [
   { name: 'Homepage',    port: '3000',  note: 'Start here' },
@@ -156,10 +157,21 @@ export function DoneScreen() {
       </div>
 
       <details className="rounded-md border border-slate-800">
-        <summary className="cursor-pointer p-3 text-sm font-medium">
-          Validation log {exit !== null && (
-            <span className={`ml-2 text-xs ${exit === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-              (exit {exit})
+        <summary className="cursor-pointer p-3 text-sm font-medium flex items-center justify-between">
+          <span>
+            Validation log {exit !== null && (
+              <span className={`ml-2 text-xs ${exit === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                (exit {exit})
+              </span>
+            )}
+          </span>
+          {linesRef.current.length > 0 && (
+            <span onClick={(e) => e.stopPropagation()}>
+              <LogActions
+                lines={linesRef.current}
+                defaultName="nas-arr-validate.log"
+                header={`exit=${exit ?? 'pending'}`}
+              />
             </span>
           )}
         </summary>

@@ -10,6 +10,8 @@ import {
   type ConnectResult,
   type EnvDetectResult,
   type ExecResult,
+  type SavedProfile,
+  type SaveProfileInput,
   type SftpProgress,
   type SftpUploadResult,
   type SshStreamClose,
@@ -71,6 +73,19 @@ const installer = {
   vpn: {
     fetchKey: (token: string): Promise<VpnFetchResult> =>
       ipcRenderer.invoke(IPC.vpnFetchKey, { token }),
+  },
+  profiles: {
+    list:      (): Promise<SavedProfile[]> => ipcRenderer.invoke(IPC.profileList),
+    save:      (input: SaveProfileInput): Promise<SavedProfile> =>
+      ipcRenderer.invoke(IPC.profileSave, input),
+    delete:    (id: string): Promise<void> => ipcRenderer.invoke(IPC.profileDelete, { id }),
+    getSecret: (id: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.profileGetSecret, { id }),
+    touch:     (id: string): Promise<void> => ipcRenderer.invoke(IPC.profileTouch, { id }),
+  },
+  dialog: {
+    saveText: (args: { defaultName: string; content: string; title?: string }): Promise<{ saved: boolean; path: string | null }> =>
+      ipcRenderer.invoke(IPC.dialogSaveText, args),
   },
 }
 

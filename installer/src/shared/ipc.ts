@@ -85,6 +85,33 @@ export interface SftpUploadResult {
   bytesTotal: number
 }
 
+// ── Connection profiles ───────────────────────────────────────────────────────
+
+export interface SavedProfile {
+  id: string
+  label: string
+  host: string
+  port: number
+  user: string
+  authMethod: AuthMethod
+  privateKeyPath?: string
+  hasSecret: boolean
+  lastUsedAt: number
+}
+
+export interface SaveProfileInput {
+  label: string
+  host: string
+  port: number
+  user: string
+  authMethod: AuthMethod
+  privateKeyPath?: string
+  /** Plaintext; undefined to skip saving the secret */
+  secret?: string
+  /** Provide to overwrite an existing profile */
+  id?: string
+}
+
 // ── Streaming events (main → renderer) ───────────────────────────────────────
 
 export interface SshStreamData {
@@ -116,6 +143,14 @@ export const IPC = {
   envDetect:       'env:detect',
   vpnFetchKey:     'vpn:fetch-key',
   fsCheckTarget:   'fs:check-target',
+  // Profiles
+  profileList:     'profile:list',
+  profileSave:     'profile:save',
+  profileDelete:   'profile:delete',
+  profileGetSecret:'profile:get-secret',
+  profileTouch:    'profile:touch',
+  // Native dialogs
+  dialogSaveText:  'dialog:save-text',
   // Events
   evtStreamData:   'ssh:stream:data',
   evtStreamClose:  'ssh:stream:close',
