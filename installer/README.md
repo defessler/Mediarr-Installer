@@ -14,12 +14,28 @@ architecture and roadmap (Phase 2 = full wizard, Phase 3 = niceties).
 ```bash
 cd installer
 npm install
-npm run dev
+npm run dev          # talks to a real NAS over SSH
+npm run dev:mock     # stubs SSH/SFTP/env-detect/NordVPN — no NAS needed
 ```
 
 `npm run dev` runs the `copy-nas-payload` script first, which mirrors `../nas/`
 (minus `.env` and `migration/`) to `resources/nas-payload/`. Electron-vite then
 boots the main process and a Vite renderer with HMR.
+
+### Mock mode
+
+Set `INSTALLER_MOCK=1` (or use the `dev:mock` script) and the IPC handlers in
+`src/main/ipc-handlers.ts` swap the real ssh/sftp/env-detect/vpn services
+for mocks in `src/main/mock-services.ts`. The wizard runs end-to-end with no
+NAS contacted; the Run screen plays back a pre-recorded transcript that
+exercises the StepperRail's marker parser, and the Done screen plays back
+fake `post-deploy-validate` output that exercises the per-service health-dot
+parser. A yellow `MOCK MODE` banner appears at the top of the window.
+
+A few useful test flows:
+- enter `fail.example.com` as the host to exercise the auth-failed error UI
+- on the VPN screen, enter a token shorter than 16 chars to exercise the
+  validation error path
 
 ## Build a Windows installer
 

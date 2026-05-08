@@ -8,6 +8,7 @@
   "scripts": {
     "copy-payload": "node scripts/copy-nas-payload.mjs",
     "dev": "npm run copy-payload && electron-vite dev",
+    "dev:mock": "npm run copy-payload && cross-env INSTALLER_MOCK=1 electron-vite dev",
     "build": "npm run copy-payload && electron-vite build",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
@@ -31,6 +32,7 @@
     "@types/ssh2": "^1.15.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^7.0.3",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",

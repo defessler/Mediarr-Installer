@@ -85,6 +85,16 @@ export interface SftpUploadResult {
   bytesTotal: number
 }
 
+// ── App info ──────────────────────────────────────────────────────────────────
+
+export interface AppInfo {
+  /** True when launched with INSTALLER_MOCK=1 — services are stubbed. */
+  mock: boolean
+  version: string
+  /** Git SHA of the bundled nas/ payload, recorded by copy-nas-payload.mjs */
+  payloadSha: string | null
+}
+
 // ── Connection profiles ───────────────────────────────────────────────────────
 
 export interface SavedProfile {
@@ -151,6 +161,8 @@ export const IPC = {
   profileTouch:    'profile:touch',
   // Native dialogs
   dialogSaveText:  'dialog:save-text',
+  // App
+  appGetInfo:      'app:get-info',
   // Events
   evtStreamData:   'ssh:stream:data',
   evtStreamClose:  'ssh:stream:close',

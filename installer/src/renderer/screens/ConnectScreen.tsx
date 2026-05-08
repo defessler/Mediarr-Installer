@@ -3,7 +3,7 @@ import { useWizard } from '../store/wizard.js'
 import type { ConnectResult, SavedProfile } from '../../shared/ipc.js'
 
 export function ConnectScreen() {
-  const { connection, setConnection, setStep, setSessionId } = useWizard()
+  const { connection, setConnection, setStep, setSessionId, mode } = useWizard()
   const [password, setPassword] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [busy, setBusy] = useState(false)
@@ -89,7 +89,9 @@ export function ConnectScreen() {
         // Best effort — non-fatal if it fails (e.g. file locked)
         window.installer.profiles.touch(selectedId).catch(() => {})
       }
-      setStep('detect')
+      // Install flow probes the environment first; update flow jumps
+      // straight to running docker compose pull.
+      setStep(mode === 'update' ? 'run-update' : 'detect')
     } catch (e) {
       setResult({ ok: false, error: { kind: 'unknown', message: (e as Error).message } })
     } finally {
@@ -132,12 +134,25 @@ export function ConnectScreen() {
 
   return (
     <div className="max-w-2xl mx-auto p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Connect to your NAS</h1>
-        <p className="text-slate-400 mt-1 text-sm">
-          For the cleanest install, log in as <code className="bg-slate-800 px-1 rounded">root</code>.
-          On Synology: Control Panel &rarr; Terminal &rarr; enable SSH; then set a root password.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            Connect to your NAS
+            {mode === 'update' && (
+              <span className="ml-2 text-sm text-sky-400 align-middle">(update mode)</span>
+            )}
+          </h1>
+          <p className="text-slate-400 mt-1 text-sm">
+            For the cleanest install, log in as <code className="bg-slate-800 px-1 rounded">root</code>.
+            On Synology: Control Panel &rarr; Terminal &rarr; enable SSH; then set a root password.
+          </p>
+        </div>
+        <button
+          onClick={() => setStep('welcome')}
+          className="text-sm text-slate-400 hover:text-slate-200 shrink-0"
+        >
+          ← Back to start
+        </button>
       </div>
 
       {/* ── Saved profile picker ──────────────────────────────────────────── */}

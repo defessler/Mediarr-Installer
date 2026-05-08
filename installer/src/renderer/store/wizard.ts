@@ -3,11 +3,24 @@ import { persist } from 'zustand/middleware'
 import type { ConnectionConfig } from '../../shared/ipc.js'
 import type { EnvFormValues } from '../../shared/env-render.js'
 
-export type WizardStep = 'connect' | 'detect' | 'configure' | 'run' | 'done'
+export type WizardStep =
+  | 'welcome'
+  | 'connect'
+  | 'detect'
+  | 'configure'
+  | 'run'
+  | 'run-update'
+  | 'done'
+
+export type WizardMode = 'install' | 'update'
 
 interface WizardState {
   step: WizardStep
   setStep: (s: WizardStep) => void
+
+  /** install (full wizard) vs update (skip detect+configure, just pull+up) */
+  mode: WizardMode
+  setMode: (m: WizardMode) => void
 
   /** Connection: persisted minus the password */
   connection: Partial<ConnectionConfig>
@@ -40,8 +53,11 @@ const defaultConfig: Partial<EnvFormValues> = {
 export const useWizard = create<WizardState>()(
   persist(
     (set) => ({
-      step: 'connect',
+      step: 'welcome',
       setStep: (step) => set({ step }),
+
+      mode: 'install',
+      setMode: (mode) => set({ mode }),
 
       connection: { port: 22, user: 'root', authMethod: 'password' },
       setConnection: (c) => set((s) => ({ connection: { ...s.connection, ...c } })),
@@ -57,7 +73,8 @@ export const useWizard = create<WizardState>()(
 
       reset: () =>
         set({
-          step: 'connect',
+          step: 'welcome',
+          mode: 'install',
           sessionId: null,
           connection: { port: 22, user: 'root', authMethod: 'password' },
           config: defaultConfig,

@@ -5,9 +5,10 @@ import { app, BrowserWindow, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import log from 'electron-log/main.js'
-import { registerIpcHandlers } from './ipc-handlers.js'
+import { registerIpcHandlers, isMockMode } from './ipc-handlers.js'
 import * as ssh from './ssh-service.js'
 import * as sftp from './sftp-service.js'
+import * as mock from './mock-services.js'
 
 const __dirname_main = dirname(fileURLToPath(import.meta.url))
 
@@ -36,6 +37,12 @@ function createWindow() {
 
   ssh.bindMainWindow(mainWindow)
   sftp.bindMainWindow(mainWindow)
+  // Mock services share the same event-emit machinery so they can push
+  // ssh:stream:data / sftp:progress events on the right channel.
+  if (isMockMode()) {
+    mock.bindMainWindow(mainWindow)
+    log.info('NAS Arr Installer: MOCK MODE active — services are stubbed')
+  }
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
 
@@ -64,9 +71,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   ssh.shutdown()
+  if (isMockMode()) mock.shutdown()
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
   ssh.shutdown()
+  if (isMockMode()) mock.shutdown()
 })

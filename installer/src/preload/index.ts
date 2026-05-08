@@ -6,6 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   IPC,
+  type AppInfo,
   type ConnectionConfig,
   type ConnectResult,
   type EnvDetectResult,
@@ -86,6 +87,9 @@ const installer = {
   dialog: {
     saveText: (args: { defaultName: string; content: string; title?: string }): Promise<{ saved: boolean; path: string | null }> =>
       ipcRenderer.invoke(IPC.dialogSaveText, args),
+  },
+  app: {
+    getInfo: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.appGetInfo),
   },
 }
 
