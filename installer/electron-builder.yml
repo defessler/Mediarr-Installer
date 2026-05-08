@@ -12,12 +12,14 @@ extraResources:
     filter:
       - "**/*"
 asar: true
+# TODO: branding icons. Drop a 1024x1024 PNG at resources/icon.png and
+# electron-builder will auto-generate ICO/ICNS. Until then we let it fall
+# back to the default Electron icon.
 win:
   target:
     - target: nsis
       arch:
         - x64
-  icon: resources/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -29,12 +31,13 @@ mac:
       arch:
         - arm64
         - x64
-  icon: resources/icon.icns
   category: public.app-category.utilities
+  # macOS code signing skipped for v1 — set identity: null to opt out
+  # explicitly so electron-builder doesn't try ad-hoc signing on CI.
+  identity: null
 linux:
   target:
     - target: AppImage
       arch:
         - x64
-  icon: resources/icon.png
   category: Utility

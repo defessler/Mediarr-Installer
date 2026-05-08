@@ -37,15 +37,37 @@ A few useful test flows:
 - on the VPN screen, enter a token shorter than 16 chars to exercise the
   validation error path
 
-## Build a Windows installer
+## Build platform installers
 
 ```bash
-npm run build:win
+npm run build:win      # NSIS installer  → installer/dist/*Setup*.exe
+npm run build:mac      # arm64 + x64 dmg → installer/dist/*.dmg
+npm run build:linux    # AppImage        → installer/dist/*.AppImage
 ```
 
-Output lands in `installer/dist/`. The NSIS installer is
-~150 MB (Electron + the Node ssh2 binding); not signed for Phase 1, so
-SmartScreen will warn.
+Native deps (ssh2 → cpu-features) compile per host, so each platform must
+be built on its own runner. The artifacts are unsigned; Windows SmartScreen
+and macOS Gatekeeper will warn until we add signing.
+
+## CI / Releases
+
+Two GitHub Actions workflows under `.github/workflows/`:
+
+- **installer-ci.yml** — typecheck + electron-vite build on every PR and on
+  pushes to `master` / `electron-installer`. Catches type regressions
+  before they land.
+- **installer-release.yml** — matrix-builds Windows / macOS / Linux artifacts
+  on tag push (`installer-v*`) and attaches them to a draft GitHub Release.
+
+Cutting a release:
+
+```bash
+git tag installer-v0.1.0
+git push origin installer-v0.1.0
+```
+
+The workflow runs three platform jobs in parallel, then a final job
+gathers their artifacts into a draft release for review.
 
 ## Layout
 

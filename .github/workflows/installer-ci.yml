@@ -1,0 +1,59 @@
+name: Installer CI
+
+# Runs typecheck + electron-vite build on every PR and on push to the
+# main branches. Doesn't invoke electron-builder — that lives in
+# installer-release.yml on tag push.
+
+on:
+  pull_request:
+    paths:
+      - 'installer/**'
+      - 'nas/**'
+      - '.github/workflows/installer-ci.yml'
+  push:
+    branches:
+      - master
+      - electron-installer
+    paths:
+      - 'installer/**'
+      - 'nas/**'
+      - '.github/workflows/installer-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: installer/package-lock.json
+
+      # Native deps (ssh2 → cpu-features) need a C toolchain; ubuntu-latest
+      # already has gcc/python3, but pin python explicitly so node-gyp picks it up.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (vite bundles only — electron-builder lives in release.yml)
+        run: npm run build
+
+      - name: Upload Vite build output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-build-output
+          path: installer/out/
+          retention-days: 3

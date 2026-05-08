@@ -1,0 +1,127 @@
+name: Installer Release
+
+# Triggers on tag push matching `installer-v*` (e.g. installer-v0.1.0).
+# Builds Windows NSIS, macOS dmg (arm64+x64), Linux AppImage, then attaches
+# the artifacts to a draft GitHub Release that you review and publish.
+#
+# Tag the release like this:
+#   git tag installer-v0.1.0
+#   git push origin installer-v0.1.0
+
+on:
+  push:
+    tags:
+      - 'installer-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to attach the release to (e.g. installer-v0.1.0)'
+        required: false
+
+permissions:
+  contents: write    # required to create the GitHub release
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            artifact_glob: 'installer/dist/*Setup*.exe'
+          - os: macos-latest
+            target: mac
+            artifact_glob: 'installer/dist/*.dmg'
+          - os: ubuntu-latest
+            target: linux
+            artifact_glob: 'installer/dist/*.AppImage'
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: installer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: installer/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build (${{ matrix.target }})
+        run: npm run build:${{ matrix.target }}
+        env:
+          # electron-builder auto-publishes if GH_TOKEN is set. We do the
+          # release step manually below so each platform's artifacts
+          # gather into one release; clear it here.
+          GH_TOKEN: ''
+
+      - name: List dist contents (debug)
+        if: always()
+        run: |
+          echo "Contents of installer/dist:"
+          ls -la dist || dir dist
+        shell: bash
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nas-arr-installer-${{ matrix.target }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  release:
+    name: Create draft GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/installer-v')
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # for changelog generation
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts directory
+        run: |
+          mkdir -p release-files
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' \) \
+            -exec cp -v {} release-files/ \;
+          ls -la release-files/
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          files: release-files/*
+          body: |
+            ## NAS Arr Installer — ${{ github.ref_name }}
+
+            Desktop wizard that installs the Arr stack onto your Synology
+            NAS over SSH. Wraps the bash + Python automation in `nas/`.
+
+            ### Downloads
+            - **Windows**: `*Setup*.exe` — NSIS installer (unsigned; SmartScreen will warn)
+            - **macOS**: `*.dmg` — separate dmgs for arm64 and x64 (unsigned)
+            - **Linux**: `*.AppImage` — universal x64 build
+
+            See [installer/PLAN.md](https://github.com/${{ github.repository }}/blob/master/installer/PLAN.md)
+            for the architecture and roadmap.
