@@ -75,16 +75,20 @@ export const useWizard = create<WizardState>()(
           authMethod: s.connection.authMethod,
           privateKeyPath: s.connection.privateKeyPath,
         },
+        // Drop ALL secret fields from persistence — they live in memory
+        // only. We keep only PUID/PGID/TZ/LAN_IP/VPN_PROVIDER/VPN_TYPE/
+        // VPN_COUNTRIES/QBITTORRENT_USER/ARR_USERNAME, which are
+        // non-sensitive convenience defaults.
         config: {
-          ...s.config,
-          // Drop secrets from persistence — they live in memory only.
-          QBITTORRENT_PASS: undefined,
-          NORDVPN_PRIVATE_KEY: undefined,
-          PLEX_CLAIM: undefined,
-          NZBGEEK_API_KEY: undefined,
-          ANIMETOSHO_API_KEY: undefined,
-          OPENSUBTITLES_PASSWORD: undefined,
-          ADDIC7ED_PASSWORD: undefined,
+          PUID: s.config.PUID,
+          PGID: s.config.PGID,
+          TZ: s.config.TZ,
+          LAN_IP: s.config.LAN_IP,
+          VPN_PROVIDER: s.config.VPN_PROVIDER,
+          VPN_TYPE: s.config.VPN_TYPE,
+          VPN_COUNTRIES: s.config.VPN_COUNTRIES,
+          QBITTORRENT_USER: s.config.QBITTORRENT_USER,
+          ARR_USERNAME: s.config.ARR_USERNAME,
         },
         targetDir: s.targetDir,
       }),

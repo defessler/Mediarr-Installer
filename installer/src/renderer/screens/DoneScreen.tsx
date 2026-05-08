@@ -165,7 +165,7 @@ export function DoneScreen() {
         </summary>
         <div className="p-3 pt-0">
           <div style={{ height: 240 }}>
-            <LogPanel lines={linesRef.current.map(stripAnsi)} />
+            <LogPanel lines={linesRef.current} />
           </div>
         </div>
       </details>

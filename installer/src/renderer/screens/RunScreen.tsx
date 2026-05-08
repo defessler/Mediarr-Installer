@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { renderEnv, type EnvFormValues } from '../../shared/env-render.js'
+import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
 
 type Phase =
   | 'idle'
@@ -13,6 +14,16 @@ type Phase =
 
 const CHANNEL_ID = 'setup-sh-main'
 
+// setup.sh emits these markers in its run_step helper. We parse them
+// from the streaming log to drive the StepperRail.
+//
+// Header (start of step):       │ Step 3: Apply firewall rules
+// Footer (success):              ✔ Step 3 complete.
+// Footer (failure):              ✘ Step 3 failed
+const STEP_START_RE = /Step\s+(\d+):/
+const STEP_OK_RE    = /✔\s*Step\s+(\d+)\s+complete/
+const STEP_FAIL_RE  = /✘\s*Step\s+(\d+)\s+failed/
+
 export function RunScreen() {
   const { sessionId, targetDir, config, setStep } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
@@ -20,25 +31,84 @@ export function RunScreen() {
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const linesRef = useRef<string[]>([])
+  const [steps, setSteps] = useState<SetupStep[]>(() =>
+    SETUP_STEPS.map((s) => ({ ...s })),
+  )
   const [, setTick] = useState(0) // force re-render on log append
+
+  function resetSteps() {
+    setSteps(SETUP_STEPS.map((s) => ({ ...s })))
+  }
+
+  function applyStepMarkers(newLines: string[]) {
+    // Walk the new lines once and collect any state transitions we
+    // observe, then commit a single setSteps update.
+    const transitions: { idx: number; status: SetupStep['status'] }[] = []
+    for (const raw of newLines) {
+      const line = stripAnsi(raw)
+      // Header lines look like:  "│ Step N: <description>"
+      // The footer "✔ Step N complete." pattern is very similar — match
+      // success/fail first so a "Step N complete" line isn't claimed by the
+      // generic start matcher.
+      const ok = line.match(STEP_OK_RE)
+      if (ok) {
+        transitions.push({ idx: Number(ok[1]) - 1, status: 'ok' })
+        continue
+      }
+      const bad = line.match(STEP_FAIL_RE)
+      if (bad) {
+        transitions.push({ idx: Number(bad[1]) - 1, status: 'fail' })
+        continue
+      }
+      const start = line.match(STEP_START_RE)
+      if (start && line.includes('│')) {
+        transitions.push({ idx: Number(start[1]) - 1, status: 'running' })
+        continue
+      }
+    }
+    if (transitions.length === 0) return
+    setSteps((prev) => {
+      const next = prev.map((s) => ({ ...s }))
+      for (const t of transitions) {
+        if (t.idx >= 0 && t.idx < next.length) next[t.idx].status = t.status
+      }
+      return next
+    })
+  }
 
   function appendChunk(text: string) {
     // PTY chunks may straddle line boundaries. Concatenate the leading
     // piece onto the previous line, then push any complete new lines.
     const parts = text.split(/\r?\n/)
+    const newlyCompleted: string[] = []
+
     if (linesRef.current.length === 0) {
+      // First chunk: every part except the trailing partial is "complete".
       linesRef.current.push(...parts)
+      for (let i = 0; i < parts.length - 1; i++) newlyCompleted.push(parts[i])
     } else {
+      // The first part extends the prior trailing line.
       linesRef.current[linesRef.current.length - 1] += parts[0]
-      for (let i = 1; i < parts.length; i++) {
-        linesRef.current.push(parts[i])
+      // Any additional parts are new lines; the prior trailing line
+      // is now finalised and the new lines after it are complete except
+      // for the very last (which may itself be a trailing partial).
+      if (parts.length > 1) {
+        // The previously-trailing line just got terminated.
+        newlyCompleted.push(linesRef.current[linesRef.current.length - 1])
+        for (let i = 1; i < parts.length - 1; i++) {
+          linesRef.current.push(parts[i])
+          newlyCompleted.push(parts[i])
+        }
+        linesRef.current.push(parts[parts.length - 1])
       }
     }
-    // Cap memory. Setup output is usually a few thousand lines, but
-    // pathological cases (an image pull stuck retrying) could spam.
+
+    // Cap memory.
     if (linesRef.current.length > 20_000) {
       linesRef.current.splice(0, linesRef.current.length - 20_000)
     }
+
+    if (newlyCompleted.length > 0) applyStepMarkers(newlyCompleted)
     setTick((t) => t + 1)
   }
 
@@ -52,6 +122,14 @@ export function RunScreen() {
       if (d.channelId !== CHANNEL_ID) return
       setExitCode(d.exitCode)
       setPhase(d.exitCode === 0 ? 'done' : 'failed')
+      // Any remaining "running" steps after a clean exit are implicitly ok.
+      // After a failed exit, the failed step already got marked fail by
+      // the marker parser; leave others alone.
+      if (d.exitCode === 0) {
+        setSteps((prev) =>
+          prev.map((s) => (s.status === 'running' ? { ...s, status: 'ok' } : s)),
+        )
+      }
     })
     const offProg = window.installer.sftp.onProgress((p) => {
       setProgress({ pct: p.pctOverall, file: p.file })
@@ -71,6 +149,7 @@ export function RunScreen() {
     }
     setErrorMsg(null)
     linesRef.current = []
+    resetSteps()
     setTick((t) => t + 1)
 
     try {
@@ -136,8 +215,17 @@ export function RunScreen() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0">
-        <LogPanel lines={linesRef.current.map(stripAnsi)} />
+      {/* Two-pane: stepper rail on the left, streaming log on the right */}
+      <div className="flex-1 min-h-0 grid grid-cols-[260px_1fr] gap-4">
+        <aside className="overflow-y-auto rounded-md border border-slate-800 bg-slate-900/40 p-4">
+          <h2 className="text-xs uppercase tracking-wide text-slate-400 mb-3">
+            setup.sh steps
+          </h2>
+          <StepperRail steps={steps} />
+        </aside>
+        <div className="min-h-0">
+          <LogPanel lines={linesRef.current} />
+        </div>
       </div>
 
       <div className="flex justify-between">

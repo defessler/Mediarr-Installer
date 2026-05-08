@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
-import type { EnvFormValues } from '../../shared/env-render.js'
+import {
+  type EnvFormValues,
+  USENET_INDEXERS,
+  PRIVATE_TRACKERS,
+  BAZARR_PROVIDERS,
+} from '../../shared/env-render.js'
 import type { Country } from '../../shared/ipc.js'
+import { IndexerCard } from '../components/IndexerCard.js'
 
 // Phase 1: a single tall scrollable form. Phase 2 splits this into
 // per-step screens with auto-detection and country pickers.
@@ -146,10 +152,22 @@ export function ConfigureScreen() {
       </section>
 
       <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Arr Web UI auth</h2>
+        <p className="text-sm text-slate-400">
+          Optional. Applied to Sonarr, Radarr, Lidarr, Prowlarr by setup-arr-config.py.
+          LAN connections bypass the prompt automatically. Leave blank to skip.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Username" k="ARR_USERNAME" />
+          <Field label="Password" k="ARR_PASSWORD" type="password" />
+        </div>
+      </section>
+
+      <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">qBittorrent WebUI</h2>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Username" k="QBITTORRENT_USER" />
-          <Field label="Password (≥ 8 chars)" k="QBITTORRENT_PASS" type="password" />
+          <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
         </div>
       </section>
 
@@ -163,20 +181,38 @@ export function ConfigureScreen() {
         <Field label="Plex claim token" k="PLEX_CLAIM" placeholder="claim-xxxx" />
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Optional indexers</h2>
-        <p className="text-sm text-slate-400">Leave blank to skip.</p>
-        <Field label="NZBGeek API key" k="NZBGEEK_API_KEY" />
-        <Field label="AnimeTosho API key" k="ANIMETOSHO_API_KEY" />
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Usenet indexers</h2>
+        <p className="text-sm text-slate-400">
+          AnimeTosho, ABNzb, and Althub are added automatically (no key needed).
+          Toggle others on if you have an account.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {USENET_INDEXERS.map((d) => (
+            <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+          ))}
+        </div>
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Optional Bazarr providers</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="OpenSubtitles user" k="OPENSUBTITLES_USERNAME" />
-          <Field label="OpenSubtitles password" k="OPENSUBTITLES_PASSWORD" type="password" />
-          <Field label="Addic7ed user" k="ADDIC7ED_USERNAME" />
-          <Field label="Addic7ed password" k="ADDIC7ED_PASSWORD" type="password" />
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Private torrent trackers</h2>
+        <div className="grid grid-cols-2 gap-3">
+          {PRIVATE_TRACKERS.map((d) => (
+            <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Bazarr subtitle providers</h2>
+        <p className="text-sm text-slate-400">
+          Free providers (YIFY, Podnapisi) are added automatically. Add account-based
+          providers below for better coverage.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {BAZARR_PROVIDERS.map((d) => (
+            <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+          ))}
         </div>
       </section>
 
