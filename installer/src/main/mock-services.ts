@@ -225,7 +225,11 @@ const UPDATE_TRANSCRIPT: { delayMs: number; line: string }[] = [
   { delayMs: 200, line: 'Stack updated.' },
 ]
 
-async function streamTranscript(channelId: string, transcript: { delayMs: number; line: string }[]) {
+async function streamTranscript(
+  channelId: string,
+  transcript: { delayMs: number; line: string }[],
+  exitCode = 0,
+) {
   for (const { delayMs, line } of transcript) {
     if (delayMs > 0) await sleep(delayMs)
     send<SshStreamData>(IPC.evtStreamData, {
@@ -233,8 +237,36 @@ async function streamTranscript(channelId: string, transcript: { delayMs: number
     })
   }
   send<SshStreamClose>(IPC.evtStreamClose, {
-    channelId, exitCode: 0, signal: null,
+    channelId, exitCode, signal: null,
   })
+}
+
+// Map a re-run command (relative to targetDir) to a step number + label
+// so we can synthesize a short ✔/✘ transcript for it.
+const RERUN_TRANSCRIPT_FOR_CMD: Record<string, { step: number; label: string; lines: string[] }> = {
+  'bash setup-chmod.sh':                          { step: 1,  label: 'Set file permissions',           lines: ['Setting permissions...', '  [32m✔[0m all scripts executable'] },
+  'bash setup-folders.sh':                        { step: 2,  label: 'Create directories',             lines: ['Skipping existing dirs', '  [32m✔[0m all folders present'] },
+  'bash setup-firewall.sh':                       { step: 3,  label: 'Apply firewall rules',           lines: ['Applying iptables rules...', '  [32m✔[0m firewall rules applied'] },
+  'bash setup-nordvpn.sh':                        { step: 4,  label: 'Fetch NordVPN key',              lines: ['  [33m⚠[0m PRIVATE_KEY already set, skipping fetch'] },
+  'bash setup-validate.sh':                       { step: 5,  label: 'Validate configuration',         lines: ['Running 38 checks...', '  [32m✔[0m All checks passed'] },
+  'docker compose up -d':                         { step: 6,  label: 'Start the stack',                lines: ['[+] Running 14/14', ' [32m✔[0m All containers up'] },
+  'python3 setup-arr-config.py':                  { step: 7,  label: 'Configure all services',         lines: ['Configuring Sonarr...', '  [32m✔[0m Sonarr configured'] },
+  'python3 indexers/setup-indexers.py':           { step: 8,  label: 'Add Prowlarr indexers',          lines: ['Adding indexers...', '  [32m✔[0m 5 indexers added'] },
+  'python3 indexers/setup-bazarr-providers.py':   { step: 9,  label: 'Enable Bazarr providers',        lines: ['Enabling providers...', '  [32m✔[0m 4 providers enabled'] },
+  'bash post-deploy-validate.sh':                 { step: 10, label: 'Verify stack health',            lines: ['  [32m✔[0m All services healthy'] },
+}
+
+function buildRerunTranscript(rerunDef: typeof RERUN_TRANSCRIPT_FOR_CMD[string]) {
+  const lines: { delayMs: number; line: string }[] = [
+    { delayMs: 100, line: '' },
+    { delayMs: 0,   line: '┌─────────────────────────────────────────────' },
+    { delayMs: 0,   line: `│ Step ${rerunDef.step}: ${rerunDef.label}` },
+    { delayMs: 0,   line: '└─────────────────────────────────────────────' },
+  ]
+  for (const l of rerunDef.lines) lines.push({ delayMs: 150, line: l })
+  lines.push({ delayMs: 200, line: '' })
+  lines.push({ delayMs: 0,   line: `  [32m✔ Step ${rerunDef.step} complete.[0m` })
+  return lines
 }
 
 export async function execStream(args: {
@@ -247,6 +279,16 @@ export async function execStream(args: {
   let transcript = SETUP_TRANSCRIPT
   if (cmd.includes('post-deploy-validate')) transcript = VALIDATE_TRANSCRIPT
   else if (cmd.includes('compose pull') || cmd.includes('docker compose pull')) transcript = UPDATE_TRANSCRIPT
+  else {
+    // Re-run-a-step? The renderer prefixes with `cd ... && <rerun>`.
+    // Match the longest known suffix.
+    for (const key of Object.keys(RERUN_TRANSCRIPT_FOR_CMD)) {
+      if (cmd.endsWith(key)) {
+        transcript = buildRerunTranscript(RERUN_TRANSCRIPT_FOR_CMD[key])
+        break
+      }
+    }
+  }
 
   // Fire-and-forget — stream the transcript in the background so the
   // IPC promise resolves immediately (matches real ssh-service contract).
@@ -274,7 +316,7 @@ const FAKE_FILES = [
   'indexers/setup-bazarr-providers.py',
 ]
 
-export async function uploadDir(args: {
+export async function uploadDir(_args: {
   sessionId: string
   localDir: string
   remoteDir: string

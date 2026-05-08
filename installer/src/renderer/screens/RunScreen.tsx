@@ -14,6 +14,7 @@ type Phase =
   | 'failed'
 
 const CHANNEL_ID = 'setup-sh-main'
+const RERUN_CHANNEL_PREFIX = 'setup-sh-rerun-'
 
 // setup.sh emits these markers in its run_step helper. We parse them
 // from the streaming log to drive the StepperRail.
@@ -35,6 +36,7 @@ export function RunScreen() {
   const [steps, setSteps] = useState<SetupStep[]>(() =>
     SETUP_STEPS.map((s) => ({ ...s })),
   )
+  const [rerunningStep, setRerunningStep] = useState<number | null>(null)
   const [, setTick] = useState(0) // force re-render on log append
 
   function resetSteps() {
@@ -116,20 +118,36 @@ export function RunScreen() {
   useEffect(() => {
     if (!sessionId) return
     const offData = window.installer.ssh.onStreamData((d) => {
-      if (d.channelId !== CHANNEL_ID) return
+      // Forward both the main install stream and any per-step re-runs
+      // into the same log buffer.
+      if (d.channelId !== CHANNEL_ID && !d.channelId.startsWith(RERUN_CHANNEL_PREFIX)) return
       appendChunk(d.chunk)
     })
     const offClose = window.installer.ssh.onStreamClose((d) => {
-      if (d.channelId !== CHANNEL_ID) return
-      setExitCode(d.exitCode)
-      setPhase(d.exitCode === 0 ? 'done' : 'failed')
-      // Any remaining "running" steps after a clean exit are implicitly ok.
-      // After a failed exit, the failed step already got marked fail by
-      // the marker parser; leave others alone.
-      if (d.exitCode === 0) {
-        setSteps((prev) =>
-          prev.map((s) => (s.status === 'running' ? { ...s, status: 'ok' } : s)),
-        )
+      if (d.channelId === CHANNEL_ID) {
+        setExitCode(d.exitCode)
+        setPhase(d.exitCode === 0 ? 'done' : 'failed')
+        // Any remaining "running" steps after a clean exit are implicitly ok.
+        // After a failed exit, the failed step already got marked fail by
+        // the marker parser; leave others alone.
+        if (d.exitCode === 0) {
+          setSteps((prev) =>
+            prev.map((s) => (s.status === 'running' ? { ...s, status: 'ok' } : s)),
+          )
+        }
+        return
+      }
+      if (d.channelId.startsWith(RERUN_CHANNEL_PREFIX)) {
+        const stepNumber = Number(d.channelId.slice(RERUN_CHANNEL_PREFIX.length))
+        setRerunningStep(null)
+        // The transcript lines themselves carry "✔ Step N complete." or
+        // "✘ Step N failed" which the marker parser already handled. As
+        // a safety net, force the step to ok/fail based on exit code.
+        setSteps((prev) => prev.map((s) =>
+          s.number === stepNumber
+            ? { ...s, status: d.exitCode === 0 ? 'ok' : 'fail' }
+            : s,
+        ))
       }
     })
     const offProg = window.installer.sftp.onProgress((p) => {
@@ -141,6 +159,36 @@ export function RunScreen() {
       offProg()
     }
   }, [sessionId])
+
+  async function rerunStep(stepNumber: number) {
+    if (!sessionId || rerunningStep !== null) return
+    const step = steps.find((s) => s.number === stepNumber)
+    if (!step?.rerun) return
+
+    setRerunningStep(stepNumber)
+    setSteps((prev) =>
+      prev.map((s) => (s.number === stepNumber ? { ...s, status: 'running' } : s)),
+    )
+
+    // Echo a small banner into the log so the user can find this re-run later.
+    const banner = `\n--- Re-running step ${stepNumber}: ${step.label} ---\n`
+    appendChunk(banner)
+
+    try {
+      await window.installer.ssh.execStream({
+        sessionId,
+        cmd: `cd ${shellQuote(targetDir)} && ${step.rerun}`,
+        sudo: true,
+        channelId: `${RERUN_CHANNEL_PREFIX}${stepNumber}`,
+      })
+    } catch (e) {
+      appendChunk(`\nRe-run error: ${(e as Error).message}\n`)
+      setRerunningStep(null)
+      setSteps((prev) =>
+        prev.map((s) => (s.number === stepNumber ? { ...s, status: 'fail' } : s)),
+      )
+    }
+  }
 
   async function go() {
     if (!sessionId) {
@@ -231,7 +279,16 @@ export function RunScreen() {
           <h2 className="text-xs uppercase tracking-wide text-slate-400 mb-3">
             setup.sh steps
           </h2>
-          <StepperRail steps={steps} />
+          <StepperRail
+            steps={steps}
+            onRerun={phase === 'done' || phase === 'failed' ? rerunStep : undefined}
+            rerunningStep={rerunningStep}
+          />
+          {(phase === 'done' || phase === 'failed') && (
+            <p className="mt-3 text-xs text-slate-500">
+              Hover a finished step to re-run it. Each script is idempotent.
+            </p>
+          )}
         </aside>
         <div className="min-h-0">
           <LogPanel lines={linesRef.current} />
