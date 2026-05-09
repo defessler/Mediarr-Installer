@@ -221,7 +221,17 @@ export function RunScreen() {
       })
 
       // 2. Write the .env file with secrets.
+      // Back up any existing .env first so the user can recover if our
+      // form lost a value (we collect everything in .env.example, but a
+      // user might have hand-added something custom).
       setPhase('writing-env')
+      const ts = new Date().toISOString().replace(/[:.]/g, '-')
+      await window.installer.ssh.exec({
+        sessionId,
+        cmd: `[ -f ${shellQuote(`${targetDir}/.env`)} ] && cp -p ${shellQuote(`${targetDir}/.env`)} ${shellQuote(`${targetDir}/.env.backup-${ts}`)} || true`,
+        sudo: true,
+      })
+
       const envText = renderEnv(config as EnvFormValues)
       await window.installer.sftp.writeFile({
         sessionId,

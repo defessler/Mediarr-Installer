@@ -60,6 +60,8 @@ export function EnvDetectScreen() {
   )
 
   const r = result
+  const MIN_FREE_GIB = 20
+  const lowDisk = !!r?.disk && r.disk.freeGiB < MIN_FREE_GIB
   const allBlocking =
     !!r &&
     r.docker !== 'missing' &&
@@ -101,6 +103,37 @@ export function EnvDetectScreen() {
             <Check ok={r.volume1} label="/volume1 exists" value={r.volume1 ? 'yes' : 'no'} />
             <Check ok={!!r.python3} label="python3" value={r.python3 ?? 'missing'} />
             <Check ok={!!r.iptables} label="iptables" value={r.iptables ?? 'missing'} />
+          </section>
+
+          <section className="rounded-md border border-slate-800 p-4 space-y-1">
+            <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
+              Capacity & connectivity
+            </h2>
+            <Check
+              ok={!!r.disk && !lowDisk}
+              label="Disk space on /volume1"
+              value={r.disk
+                ? `${r.disk.freeGiB} GiB free of ${Math.round(r.disk.totalBytes / 1024 ** 3)} GiB`
+                : 'unknown'}
+            />
+            {lowDisk && r.disk && (
+              <p className="text-amber-300 text-xs ml-5 mt-1">
+                Stack images are ~10 GiB on first pull. We recommend at least
+                {' '}{MIN_FREE_GIB} GiB free.
+              </p>
+            )}
+            <Check ok={r.internet.dockerHub} label="Docker Hub reachable" value={r.internet.dockerHub ? 'yes' : 'no'} />
+            {!r.internet.dockerHub && (
+              <p className="text-rose-300 text-xs ml-5 mt-1">
+                Image pulls will fail. Check the NAS's DNS and outbound firewall.
+              </p>
+            )}
+            <Check ok={r.internet.plexTv} label="plex.tv reachable" value={r.internet.plexTv ? 'yes' : 'no'} />
+            {!r.internet.plexTv && (
+              <p className="text-amber-300 text-xs ml-5 mt-1">
+                Plex won't be able to validate your claim token. Other services unaffected.
+              </p>
+            )}
           </section>
 
           <section className="rounded-md border border-slate-800 p-4 space-y-1">

@@ -4,7 +4,7 @@
 // pre-existing install detection and port-conflict scan.
 
 import { exec } from './ssh-service.js'
-import type { EnvDetectResult, PortConflict } from '../shared/ipc.js'
+import type { DiskSpace, EnvDetectResult, InternetCheck, PortConflict } from '../shared/ipc.js'
 
 // Ports the stack binds. Mirrors docker-compose.yml + setup-firewall.sh.
 // If a port here is already in use by something else on the NAS, the
@@ -62,6 +62,53 @@ async function probePortConflicts(sessionId: string): Promise<PortConflict[]> {
   return STACK_PORTS
     .filter((p) => bound.has(p.port))
     .map((p) => ({ port: p.port, service: p.service, process: '' }))
+}
+
+async function probeDisk(sessionId: string): Promise<DiskSpace | null> {
+  // df -k gives sizes in 1024-byte blocks. BusyBox df on Synology
+  // truncates the device column on long filesystem names — using -P
+  // forces POSIX output where the columns are always: Filesystem,
+  // 1024-blocks, Used, Available, Capacity, Mounted-on.
+  const r = await run(
+    sessionId,
+    "df -kP /volume1 2>/dev/null | tail -n +2 | awk '{print $2, $4}'",
+  )
+  if (!r.ok || !r.out) return null
+  const [totalKBraw, freeKBraw] = r.out.split(/\s+/)
+  const totalKB = Number(totalKBraw)
+  const freeKB = Number(freeKBraw)
+  if (!Number.isFinite(totalKB) || !Number.isFinite(freeKB)) return null
+  const totalBytes = totalKB * 1024
+  const freeBytes = freeKB * 1024
+  return {
+    totalBytes,
+    freeBytes,
+    freeGiB: Math.floor(freeBytes / (1024 ** 3)),
+  }
+}
+
+async function probeInternet(sessionId: string): Promise<InternetCheck> {
+  // curl -sf returns 0 only on a successful 2xx. -m 5 caps the wait.
+  // Both endpoints are HEAD-friendly so this is cheap.
+  const [dh, plex] = await Promise.all([
+    run(sessionId, 'curl -sfm 5 -o /dev/null https://registry-1.docker.io/v2/ ; echo $?'),
+    run(sessionId, 'curl -sfm 5 -o /dev/null https://plex.tv ; echo $?'),
+  ])
+  // The endpoints return 401 (docker.io) or redirects (plex.tv) for an
+  // unauthenticated HEAD — we accept the connection succeeding regardless.
+  // Re-do without -f so 4xx/3xx don't fail.
+  const [dh2, plex2] = await Promise.all([
+    run(sessionId, 'curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/'),
+    run(sessionId, 'curl -sm 5 -o /dev/null -w "%{http_code}" https://plex.tv'),
+  ])
+  // Either the original -f succeeded, or we got *any* HTTP status code.
+  const ok = (a: { ok: boolean; out: string }, b: { ok: boolean; out: string }) =>
+    (a.out.trim().endsWith('0')) ||
+    (b.ok && /^\d{3}$/.test(b.out.trim()) && b.out.trim() !== '000')
+  return {
+    dockerHub: ok(dh, dh2),
+    plexTv: ok(plex, plex2),
+  }
 }
 
 async function probeExistingInstall(sessionId: string, targetDir: string) {
@@ -129,17 +176,16 @@ export async function detectEnv(
   else if (sudoNopw.out.trim().endsWith('0')) sudoMode = 'nopasswd'
 
   // Existing install + port conflict probes only run if Docker is present;
-  // they're useless otherwise.
+  // they're useless otherwise. Disk + internet probes always run.
   const dockerPresent = dockerV2.ok || dockerV1.ok
-  const [existingInstall, portConflicts] = dockerPresent
-    ? await Promise.all([
-        probeExistingInstall(sessionId, targetDir),
-        probePortConflicts(sessionId),
-      ])
-    : [
-        { hasCompose: false, hasEnv: false, runningContainers: [] },
-        [],
-      ]
+  const [existingInstall, portConflicts, disk, internet] = await Promise.all([
+    dockerPresent
+      ? probeExistingInstall(sessionId, targetDir)
+      : Promise.resolve({ hasCompose: false, hasEnv: false, runningContainers: [] }),
+    dockerPresent ? probePortConflicts(sessionId) : Promise.resolve([] as PortConflict[]),
+    probeDisk(sessionId),
+    probeInternet(sessionId),
+  ])
 
   return {
     docker: dockerV2.ok ? 'v2' : dockerV1.ok ? 'v1-legacy' : 'missing',
@@ -155,5 +201,7 @@ export async function detectEnv(
     sudoMode,
     existingInstall,
     portConflicts,
+    disk,
+    internet,
   }
 }

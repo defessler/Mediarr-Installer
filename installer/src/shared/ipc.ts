@@ -61,6 +61,22 @@ export interface PortConflict {
   process: string
 }
 
+export interface DiskSpace {
+  /** Free bytes on /volume1 (the install volume) */
+  freeBytes: number
+  /** Total bytes on /volume1 */
+  totalBytes: number
+  /** Convenience: GiB free as an integer */
+  freeGiB: number
+}
+
+export interface InternetCheck {
+  /** docker.io v2 endpoint reachable from the NAS — needed for image pulls */
+  dockerHub: boolean
+  /** plex.tv reachable — needed for claim token validation by Plex */
+  plexTv: boolean
+}
+
 export interface EnvDetectResult {
   docker: 'v2' | 'v1-legacy' | 'missing'
   volume1: boolean
@@ -78,6 +94,10 @@ export interface EnvDetectResult {
   existingInstall: ExistingInstall
   /** Ports our stack wants that are already bound by another process */
   portConflicts: PortConflict[]
+  /** /volume1 free space (null if df failed) */
+  disk: DiskSpace | null
+  /** Outbound reachability — image pulls + Plex claim need these */
+  internet: InternetCheck
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────

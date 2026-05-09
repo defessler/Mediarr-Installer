@@ -391,6 +391,12 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
           { port: 8181,  service: 'Tautulli', process: '' },
         ]
       : [],
+    disk: {
+      totalBytes: 4 * 1024 ** 4,        // 4 TiB total
+      freeBytes:  2.7 * 1024 ** 4,      // 2.7 TiB free
+      freeGiB: 2764,
+    },
+    internet: { dockerHub: true, plexTv: true },
   }
 }
 
