@@ -68,8 +68,8 @@ const installer = {
     },
   },
   env: {
-    detect: (sessionId: string): Promise<EnvDetectResult> =>
-      ipcRenderer.invoke(IPC.envDetect, { sessionId }),
+    detect: (sessionId: string, targetDir?: string): Promise<EnvDetectResult> =>
+      ipcRenderer.invoke(IPC.envDetect, { sessionId, targetDir }),
   },
   vpn: {
     fetchKey: (token: string): Promise<VpnFetchResult> =>

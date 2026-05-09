@@ -38,9 +38,23 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 interface MockSession {
   config: ConnectionConfig
+  /** Synthesized scenario flags drawn from the hostname so testers can
+   *  exercise different env-detect outcomes without code changes. */
+  scenario: {
+    existingInstall: boolean
+    portConflicts: boolean
+  }
 }
 
 const sessions = new Map<string, MockSession>()
+
+function scenarioFor(host: string): MockSession['scenario'] {
+  const h = host.toLowerCase()
+  return {
+    existingInstall: /(existing|update|installed)/.test(h),
+    portConflicts: /(conflict|busy)/.test(h),
+  }
+}
 
 // ── SSH ───────────────────────────────────────────────────────────────────────
 
@@ -56,7 +70,7 @@ export async function testConnect(cfg: ConnectionConfig): Promise<ConnectResult>
 export async function connect(cfg: ConnectionConfig): Promise<{ sessionId: string }> {
   await sleep(150)
   const sessionId = randomUUID()
-  sessions.set(sessionId, { config: cfg })
+  sessions.set(sessionId, { config: cfg, scenario: scenarioFor(cfg.host) })
   return { sessionId }
 }
 
@@ -348,8 +362,10 @@ export async function writeFile(_args: {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export async function detectEnv(_sessionId: string): Promise<EnvDetectResult> {
+export async function detectEnv(sessionId: string, _targetDir?: string): Promise<EnvDetectResult> {
   await sleep(400)
+  const sess = sessions.get(sessionId)
+  const sc = sess?.scenario ?? { existingInstall: false, portConflicts: false }
   return {
     docker: 'v2',
     volume1: true,
@@ -362,6 +378,19 @@ export async function detectEnv(_sessionId: string): Promise<EnvDetectResult> {
     python3: 'Python 3.11.4',
     iptables: 'iptables v1.8.9',
     sudoMode: 'root',
+    existingInstall: sc.existingInstall
+      ? {
+          hasCompose: true,
+          hasEnv: true,
+          runningContainers: ['plex', 'sonarr', 'radarr', 'gluetun', 'qbittorrent'],
+        }
+      : { hasCompose: false, hasEnv: false, runningContainers: [] },
+    portConflicts: sc.portConflicts
+      ? [
+          { port: 32400, service: 'Plex', process: 'plex-old/12345' },
+          { port: 8181,  service: 'Tautulli', process: '' },
+        ]
+      : [],
   }
 }
 

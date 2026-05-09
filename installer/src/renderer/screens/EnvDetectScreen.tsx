@@ -8,7 +8,7 @@ type Status = 'detecting' | 'ok' | 'failed'
 // then auto-fill what we can into the wizard's config so the user only
 // edits things we couldn't infer.
 export function EnvDetectScreen() {
-  const { sessionId, setStep, setConfig, config } = useWizard()
+  const { sessionId, setStep, setConfig, setMode, config, targetDir } = useWizard()
   const [status, setStatus] = useState<Status>('detecting')
   const [result, setResult] = useState<EnvDetectResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -22,7 +22,7 @@ export function EnvDetectScreen() {
     let cancelled = false
     ;(async () => {
       try {
-        const r = await window.installer.env.detect(sessionId)
+        const r = await window.installer.env.detect(sessionId, targetDir)
         if (cancelled) return
         setResult(r)
 
@@ -42,7 +42,7 @@ export function EnvDetectScreen() {
       }
     })()
     return () => { cancelled = true }
-  }, [sessionId])
+  }, [sessionId, targetDir])
 
   const Check = ({ ok, label, value }: { ok: boolean; label: string; value?: string | null }) => (
     <div className="flex items-center gap-3 py-1.5">
@@ -137,6 +137,70 @@ export function EnvDetectScreen() {
               </p>
             )}
           </section>
+
+          {/* Existing install banner — switch to Update mode when found */}
+          {(r.existingInstall.hasCompose || r.existingInstall.runningContainers.length > 0) && (
+            <section className="rounded-md border border-sky-700/50 bg-sky-900/20 p-4 space-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-400" />
+                <span className="font-medium">An install already exists at this path</span>
+              </div>
+              <ul className="text-slate-300 space-y-0.5 ml-5 list-disc list-inside text-xs">
+                {r.existingInstall.hasCompose && (
+                  <li><span className="font-mono">{targetDir}/docker-compose.yml</span> exists</li>
+                )}
+                {r.existingInstall.hasEnv && (
+                  <li><span className="font-mono">{targetDir}/.env</span> exists (we will not overwrite secrets)</li>
+                )}
+                {r.existingInstall.runningContainers.length > 0 && (
+                  <li>
+                    {r.existingInstall.runningContainers.length} stack container(s) running:{' '}
+                    <span className="font-mono">
+                      {r.existingInstall.runningContainers.slice(0, 5).join(', ')}
+                      {r.existingInstall.runningContainers.length > 5 && '...'}
+                    </span>
+                  </li>
+                )}
+              </ul>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setMode('update'); setStep('run-update') }}
+                  className="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-500 rounded-md"
+                >
+                  Switch to Update mode
+                </button>
+                <span className="text-xs text-slate-400 self-center">
+                  or continue and overwrite the install (.env preserved)
+                </span>
+              </div>
+            </section>
+          )}
+
+          {/* Port conflict callout — these would fail `docker compose up` */}
+          {r.portConflicts.length > 0 && (
+            <section className="rounded-md border border-rose-700/50 bg-rose-900/20 p-4 space-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-400" />
+                <span className="font-medium">Port conflicts detected</span>
+              </div>
+              <p className="text-slate-300 text-xs">
+                These ports are already bound by another process and will block
+                <code className="bg-slate-800 px-1 rounded mx-1">docker compose up</code>.
+                Stop the offending process or change the conflicting service&apos;s port
+                in <span className="font-mono">docker-compose.yml</span>.
+              </p>
+              <ul className="space-y-0.5 ml-5 list-disc list-inside text-xs text-slate-300">
+                {r.portConflicts.map((c) => (
+                  <li key={c.port}>
+                    Port <span className="font-mono">{c.port}</span> ({c.service})
+                    {c.process && (
+                      <span className="text-slate-500"> — held by {c.process}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
 

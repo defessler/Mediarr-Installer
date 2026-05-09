@@ -9,6 +9,7 @@ import {
 } from '../../shared/env-render.js'
 import type { Country } from '../../shared/ipc.js'
 import { IndexerCard } from '../components/IndexerCard.js'
+import { TimezoneSelect } from '../components/TimezoneSelect.js'
 
 // Phase 1: a single tall scrollable form. Phase 2 splits this into
 // per-step screens with auto-detection and country pickers.
@@ -89,7 +90,10 @@ export function ConfigureScreen() {
           <Field label="PUID (user ID)" k="PUID" />
           <Field label="PGID (group ID)" k="PGID" />
         </div>
-        <Field label="Timezone (Area/City)" k="TZ" placeholder="America/New_York" />
+        <TimezoneSelect
+          value={config.TZ ?? ''}
+          onChange={(tz) => update('TZ', tz || undefined)}
+        />
         <Field label="LAN IP of your NAS" k="LAN_IP" placeholder="192.168.1.10" />
       </section>
 

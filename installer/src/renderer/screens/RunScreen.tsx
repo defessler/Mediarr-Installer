@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
+import { PlexClaimRefresh } from '../components/PlexClaimRefresh.js'
 import { renderEnv, type EnvFormValues } from '../../shared/env-render.js'
 import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
 
@@ -27,7 +28,7 @@ const STEP_OK_RE    = /✔\s*Step\s+(\d+)\s+complete/
 const STEP_FAIL_RE  = /✘\s*Step\s+(\d+)\s+failed/
 
 export function RunScreen() {
-  const { sessionId, targetDir, config, setStep } = useWizard()
+  const { sessionId, targetDir, config, setConfig, setStep } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<{ pct: number; file: string } | null>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -294,6 +295,15 @@ export function RunScreen() {
           <LogPanel lines={linesRef.current} />
         </div>
       </div>
+
+      {/* Last-minute Plex claim refresh — visible only before/after a run.
+          During the run it'd be confusing to show it. */}
+      {(phase === 'idle' || phase === 'failed') && (
+        <PlexClaimRefresh
+          value={config.PLEX_CLAIM}
+          onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}
+        />
+      )}
 
       <div className="flex justify-between">
         <button

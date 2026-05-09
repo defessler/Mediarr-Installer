@@ -46,7 +46,9 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC.sftpWriteFile, (_e, args) => sftp.writeFile(args))
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.envDetect, (_e, args: { sessionId: string }) => detectEnv(args.sessionId))
+  ipcMain.handle(IPC.envDetect, (_e, args: { sessionId: string; targetDir?: string }) =>
+    detectEnv(args.sessionId, args.targetDir),
+  )
   ipcMain.handle(IPC.vpnFetchKey, (_e, args: { token: string }) => fetchVpnKey(args.token))
 
   // ── Profiles ──────────────────────────────────────────────────────────────

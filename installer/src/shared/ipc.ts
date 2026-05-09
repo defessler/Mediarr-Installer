@@ -43,6 +43,24 @@ export interface ExecResult {
 
 // ── Environment detection ─────────────────────────────────────────────────────
 
+export interface ExistingInstall {
+  /** True if the targetDir already has a docker-compose.yml — we'd be
+   *  overwriting an install. */
+  hasCompose: boolean
+  /** True if the targetDir already has a .env (don't overwrite secrets). */
+  hasEnv: boolean
+  /** Names of containers from this stack already running on the host. */
+  runningContainers: string[]
+}
+
+/** Port that's already bound on the host AND that our stack wants. */
+export interface PortConflict {
+  port: number
+  service: string
+  /** PID/program if `ss -p` returned one — empty string otherwise. */
+  process: string
+}
+
 export interface EnvDetectResult {
   docker: 'v2' | 'v1-legacy' | 'missing'
   volume1: boolean
@@ -56,6 +74,10 @@ export interface EnvDetectResult {
   iptables: string | null
   /** how we should run privileged commands once setup begins */
   sudoMode: 'root' | 'nopasswd' | 'password'
+  /** Pre-existing install at targetDir, if any */
+  existingInstall: ExistingInstall
+  /** Ports our stack wants that are already bound by another process */
+  portConflicts: PortConflict[]
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────
