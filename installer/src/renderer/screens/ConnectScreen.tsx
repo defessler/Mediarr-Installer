@@ -6,9 +6,12 @@ export function ConnectScreen() {
   const { connection, setConnection, setStep, setSessionId, mode } = useWizard()
   const [password, setPassword] = useState('')
   const [passphrase, setPassphrase] = useState('')
+  const [sudoPassword, setSudoPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ConnectResult | null>(null)
   const [testOk, setTestOk] = useState(false)
+
+  const isNonRoot = (connection.user ?? 'root') !== 'root'
 
   // ── Profiles ───────────────────────────────────────────────────────────────
   const [profiles, setProfiles] = useState<SavedProfile[]>([])
@@ -56,14 +59,21 @@ export function ConnectScreen() {
   }
 
   function commonConfig() {
+    const user = connection.user ?? 'root'
     return {
       host: connection.host ?? '',
       port: connection.port ?? 22,
-      user: connection.user ?? 'root',
+      user,
       authMethod: connection.authMethod ?? 'password',
       password: connection.authMethod === 'password' ? password : undefined,
       privateKeyPath: connection.authMethod === 'privateKey' ? connection.privateKeyPath : undefined,
       passphrase: connection.authMethod === 'privateKey' ? passphrase : undefined,
+      // Only relevant when user != 'root' — ssh-service ignores it otherwise.
+      // For password-auth as a non-root user, default to reusing the SSH
+      // password since most Synology setups have the same password for both.
+      sudoPassword: user !== 'root'
+        ? (sudoPassword || (connection.authMethod === 'password' ? password : undefined))
+        : undefined,
     } as const
   }
 
@@ -253,6 +263,33 @@ export function ConnectScreen() {
           </div>
         )}
       </div>
+
+      {/* Sudo password — only relevant for non-root SSH users.
+          Several setup steps (iptables, chmod, /usr/local/etc/rc.d
+          install) need root, so we wrap them in `sudo -S` and pipe
+          the password to stdin. */}
+      {isNonRoot && (
+        <div className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 space-y-2">
+          <label className="block text-sm font-medium">
+            Sudo password
+            <span className="ml-2 text-xs text-amber-300">
+              ({connection.user} is not root — needed for firewall + chmod steps)
+            </span>
+          </label>
+          <input
+            type="password"
+            placeholder={connection.authMethod === 'password'
+              ? 'Leave blank to reuse the SSH password'
+              : 'Required for non-root key auth'}
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+            value={sudoPassword} onChange={(e) => setSudoPassword(e.target.value)}
+          />
+          <p className="text-xs text-slate-400">
+            Stored in memory only — never written to disk or saved to your
+            connection profile.
+          </p>
+        </div>
+      )}
 
       {/* ── Save profile UI ───────────────────────────────────────────────── */}
       {savingProfile ? (
