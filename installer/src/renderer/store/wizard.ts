@@ -106,6 +106,13 @@ export const useWizard = create<WizardState>()(
           VPN_COUNTRIES: s.config.VPN_COUNTRIES,
           QBITTORRENT_USER: s.config.QBITTORRENT_USER,
           ARR_USERNAME: s.config.ARR_USERNAME,
+          // Usenet connection metadata is non-sensitive; host/port/conn
+          // count are persisted, but USER/PASS are NOT.
+          USENET_HOST: s.config.USENET_HOST,
+          USENET_PORT: s.config.USENET_PORT,
+          USENET_CONNECTIONS: s.config.USENET_CONNECTIONS,
+          USENET_SSL: s.config.USENET_SSL,
+          USENET_NAME: s.config.USENET_NAME,
         },
         targetDir: s.targetDir,
       }),

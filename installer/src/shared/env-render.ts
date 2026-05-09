@@ -21,6 +21,15 @@ export interface EnvFormValues {
   QBITTORRENT_USER: string
   QBITTORRENT_PASS: string
 
+  // ── SABnzbd usenet provider (optional — added on first install)
+  USENET_HOST?: string
+  USENET_PORT?: string
+  USENET_USER?: string
+  USENET_PASS?: string
+  USENET_CONNECTIONS?: string
+  USENET_SSL?: string         // '1' or '0'
+  USENET_NAME?: string
+
   // ── VPN
   VPN_PROVIDER: string          // 'nordvpn'
   VPN_TYPE: string              // 'wireguard'
@@ -102,6 +111,15 @@ export function renderEnv(v: EnvFormValues): string {
     '# qBittorrent WebUI',
     line('QBITTORRENT_USER', v.QBITTORRENT_USER),
     line('QBITTORRENT_PASS', v.QBITTORRENT_PASS),
+    '',
+    '# SABnzbd usenet provider (optional)',
+    line('USENET_HOST', v.USENET_HOST),
+    line('USENET_PORT', v.USENET_PORT || '563'),
+    line('USENET_USER', v.USENET_USER),
+    line('USENET_PASS', v.USENET_PASS),
+    line('USENET_CONNECTIONS', v.USENET_CONNECTIONS || '8'),
+    line('USENET_SSL', v.USENET_SSL || '1'),
+    line('USENET_NAME', v.USENET_NAME || 'primary'),
     '',
     '# VPN (NordVPN + WireGuard)',
     line('VPN_PROVIDER', v.VPN_PROVIDER),

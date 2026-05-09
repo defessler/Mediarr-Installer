@@ -194,10 +194,25 @@ export function DoneScreen() {
             Open <span className="font-mono text-emerald-400">http://{ip}:8181</span> for Tautulli.
             Get a Plex token from Plex &rarr; Settings &rarr; Troubleshooting &rarr; Get X-Plex-Token.
           </li>
-          <li>
-            Open SABnzbd at <span className="font-mono text-emerald-400">http://{ip}:49155</span>{' '}
-            and add your usenet provider under Config &rarr; Servers.
-          </li>
+          {!config.USENET_HOST && (
+            <li>
+              Open SABnzbd at <span className="font-mono text-emerald-400">http://{ip}:49155</span>{' '}
+              and add your usenet provider under Config &rarr; Servers.
+              {' '}
+              <span className="text-slate-500 italic">
+                (skip this if you don&apos;t use usenet, or fill in USENET_HOST/USER/PASS in
+                the wizard next time and we&apos;ll add it for you.)
+              </span>
+            </li>
+          )}
+          {config.USENET_HOST && (
+            <li className="text-emerald-400">
+              <span className="text-slate-300">SABnzbd usenet provider</span>{' '}
+              <span className="font-mono">{config.USENET_HOST}</span>
+              {' '}was added automatically. Verify connections at
+              {' '}<span className="font-mono">http://{ip}:49155 → Status</span>.
+            </li>
+          )}
         </ol>
       </section>
 

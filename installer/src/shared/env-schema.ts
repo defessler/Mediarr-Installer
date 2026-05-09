@@ -31,6 +31,21 @@ export const envSchema = z.object({
   QBITTORRENT_USER: z.string().min(1),
   QBITTORRENT_PASS: z.string().min(8, 'at least 8 characters'),
 
+  // SABnzbd usenet provider (all optional — host gates the rest)
+  USENET_HOST: optStr,
+  USENET_PORT: optStr.refine(
+    (v) => !v || /^\d+$/.test(v),
+    'must be a port number',
+  ),
+  USENET_USER: optStr,
+  USENET_PASS: optStr,
+  USENET_CONNECTIONS: optStr.refine(
+    (v) => !v || /^\d+$/.test(v),
+    'must be a positive integer',
+  ),
+  USENET_SSL: optStr,
+  USENET_NAME: optStr,
+
   // VPN
   VPN_PROVIDER: z.string().min(1),
   VPN_TYPE: z.literal('wireguard'),
@@ -68,6 +83,20 @@ export const envSchema = z.object({
   OPENSUBTITLESCOM_PASS: optStr,
   ADDIC7ED_USER: optStr,
   ADDIC7ED_PASS: optStr,
+}).superRefine((v, ctx) => {
+  // If a usenet host is provided, require credentials too — otherwise
+  // setup-arr-config.py would silently skip the server and the user
+  // wouldn't know why downloads aren't working.
+  if (v.USENET_HOST) {
+    if (!v.USENET_USER) {
+      ctx.addIssue({ code: 'custom', path: ['USENET_USER'],
+        message: 'username required when USENET_HOST is set' })
+    }
+    if (!v.USENET_PASS) {
+      ctx.addIssue({ code: 'custom', path: ['USENET_PASS'],
+        message: 'password required when USENET_HOST is set' })
+    }
+  }
 })
 
 export type EnvSchema = z.infer<typeof envSchema>

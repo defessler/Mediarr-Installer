@@ -181,6 +181,38 @@ export function ConfigureScreen() {
         <Field label="Plex claim token" k="PLEX_CLAIM" placeholder="claim-xxxx" />
       </section>
 
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">SABnzbd usenet provider</h2>
+        <p className="text-sm text-slate-400">
+          Optional. Adds a news server to SABnzbd at first install. Leave the
+          host blank to skip — you can always add servers later in
+          <a className="text-emerald-400 underline mx-1" href="#" onClick={(e) => e.preventDefault()}>
+            SABnzbd → Config → Servers
+          </a>.
+          Common providers: <code className="text-slate-300">news.eweka.nl</code>,
+          {' '}<code className="text-slate-300">news.usenetserver.com</code>,
+          {' '}<code className="text-slate-300">news.giganews.com</code>.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Host" k="USENET_HOST" placeholder="news.eweka.nl" />
+          <Field label="Port" k="USENET_PORT" placeholder="563" />
+          <Field label="Username" k="USENET_USER" />
+          <Field label="Password" k="USENET_PASS" type="password" />
+          <Field label="Connections" k="USENET_CONNECTIONS" placeholder="8" />
+          <div>
+            <label className="block text-sm font-medium mb-1">SSL</label>
+            <select
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              value={config.USENET_SSL ?? '1'}
+              onChange={(e) => update('USENET_SSL', e.target.value)}
+            >
+              <option value="1">On (recommended)</option>
+              <option value="0">Off</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
       <section className="space-y-3">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Usenet indexers</h2>
         <p className="text-sm text-slate-400">

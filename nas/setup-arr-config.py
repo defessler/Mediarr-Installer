@@ -530,6 +530,51 @@ def configure_sabnzbd(base, key, ini_path):
         warn("SABnzbd config was edited directly — restart to apply:")
         warn("  docker compose restart sabnzbd")
 
+
+def configure_sabnzbd_server(base, key, host, port, user, password,
+                              name='primary', connections=8, use_ssl=True):
+    """Add a usenet news server to SABnzbd.
+
+    Idempotent — looks up existing servers by `name` and skips if present.
+    Falls back gracefully if any field is missing (logs a skip and returns).
+    """
+    section("SABnzbd: Usenet provider")
+    if not host or not user or not password:
+        skip("Usenet provider (USENET_HOST/USER/PASS not set in .env)")
+        return
+    if not key:
+        fail("SABnzbd API key not found — can't add server"); return
+
+    # Check if a server with this name already exists.
+    existing_resp = sab_api(base, key, {'mode': 'get_config',
+                                         'section': 'servers'})
+    existing = (existing_resp or {}).get('config', {}).get('servers', [])
+    if any(s.get('name') == name for s in existing):
+        skip(f"Usenet provider '{name}' already configured ({host})")
+        return
+
+    # SABnzbd's set_config for the servers section uses a flat query string.
+    # Booleans become 0/1; everything else stringified.
+    params = {
+        'mode': 'set_config',
+        'section': 'servers',
+        'keyword': name,
+        'host': host,
+        'port': str(port),
+        'username': user,
+        'password': password,
+        'connections': str(connections),
+        'ssl': '1' if use_ssl else '0',
+        'enable': '1',
+        'priority': '0',
+    }
+    result = sab_api(base, key, params)
+    if result is not None and result.get('status') is not False:
+        masked = host[:max(3, len(host) - 6)] + '***'
+        ok(f"Usenet provider added: {masked}:{port} (user: {user[:3]}***, {connections} conn, SSL={'on' if use_ssl else 'off'})")
+    else:
+        fail(f"Failed to add usenet provider {host}:{port}")
+
 # ── qBittorrent ───────────────────────────────────────────────────────────────
 
 def configure_qbittorrent(base, username, password):
@@ -1001,6 +1046,22 @@ def main():
     # ── SABnzbd (configure first so Sonarr/Radarr/Lidarr can connect to it) ──
 
     configure_sabnzbd(SABNZBD, SABNZBD_KEY, f"{B}/sabnzbd/config/sabnzbd.ini")
+
+    # Optional usenet provider — if USENET_HOST is set in .env we add it
+    # to SABnzbd's news servers via the API. Otherwise the user wires it
+    # up manually at http://<NAS>:49155 → Config → Servers.
+    USENET_HOST = env.get('USENET_HOST', '')
+    USENET_PORT = int(env.get('USENET_PORT') or 563)
+    USENET_USER = env.get('USENET_USER', '')
+    USENET_PASS = env.get('USENET_PASS', '')
+    USENET_CONNECTIONS = int(env.get('USENET_CONNECTIONS') or 8)
+    USENET_SSL = (env.get('USENET_SSL', '1').strip() not in ('0', 'false', 'False', ''))
+    USENET_NAME = env.get('USENET_NAME', 'primary')
+
+    configure_sabnzbd_server(SABNZBD, SABNZBD_KEY,
+                              USENET_HOST, USENET_PORT, USENET_USER, USENET_PASS,
+                              name=USENET_NAME, connections=USENET_CONNECTIONS,
+                              use_ssl=USENET_SSL)
 
     # ── Sonarr ────────────────────────────────────────────────────────────────
 
