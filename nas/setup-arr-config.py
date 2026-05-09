@@ -128,6 +128,21 @@ def read_json_key(json_path, *keys):
     except Exception:
         return None
 
+
+def read_plex_prefs(prefs_path):
+    """Return a dict of attributes from Plex's Preferences.xml.
+
+    The file is a single self-closing <Preferences ... /> element with
+    attributes like PlexOnlineToken, MachineIdentifier, FriendlyName, etc.
+    Returns {} if the file is missing or unparseable — first run won't
+    have it until the server has registered with plex.tv.
+    """
+    try:
+        tree = ET.parse(prefs_path)
+        return dict(tree.getroot().attrib)
+    except Exception:
+        return {}
+
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 def _request(url, headers, method='GET', data=None):
@@ -529,6 +544,99 @@ def configure_sabnzbd(base, key, ini_path):
     if ini_modified:
         warn("SABnzbd config was edited directly — restart to apply:")
         warn("  docker compose restart sabnzbd")
+
+
+def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
+    """Wire Tautulli to the Plex container by writing its config.ini and
+    restarting the container to apply.
+
+    No user input needed — we read PlexOnlineToken from Plex's
+    Preferences.xml (populated when Plex registers with plex.tv via
+    PLEX_CLAIM on first run). Falls back to a manual-config warning if
+    Plex isn't claimed yet.
+    """
+    section("Tautulli")
+
+    prefs = read_plex_prefs(plex_prefs_path)
+    plex_token = prefs.get('PlexOnlineToken')
+    if not plex_token:
+        warn("Plex token not found — server not claimed yet?")
+        warn(f"  Preferences.xml: {plex_prefs_path}")
+        warn("  Configure Tautulli manually at http://<NAS>:8181, or run")
+        warn("  this script again after Plex claims successfully.")
+        return
+
+    if not os.path.exists(tautulli_ini_path):
+        warn(f"Tautulli config.ini not found at {tautulli_ini_path}")
+        warn("  Is the tautulli container running?")
+        return
+
+    import configparser
+    cp = configparser.ConfigParser()
+    cp.optionxform = str  # preserve case — Tautulli's keys are SCREAMING_CASE
+    try:
+        cp.read(tautulli_ini_path)
+    except Exception as e:
+        fail(f"Could not parse Tautulli config.ini: {e}")
+        return
+
+    # Idempotent: if everything we'd set already matches, skip.
+    pms = cp['PMS'] if cp.has_section('PMS') else {}
+    if (pms.get('pms_token') == plex_token
+            and pms.get('pms_ip') == 'plex'
+            and pms.get('pms_port') == '32400'):
+        skip("Tautulli already wired to plex:32400 with the current token")
+        return
+
+    # Write the [PMS] section. Tautulli expects lowercase keys despite
+    # the screaming-case names in its docs.
+    if not cp.has_section('PMS'):
+        cp.add_section('PMS')
+    cp.set('PMS', 'pms_ip', 'plex')
+    cp.set('PMS', 'pms_port', '32400')
+    cp.set('PMS', 'pms_token', plex_token)
+    cp.set('PMS', 'pms_ssl', '0')
+    cp.set('PMS', 'pms_is_remote', '0')
+    cp.set('PMS', 'pms_use_bif', '0')
+
+    machine_id = (prefs.get('MachineIdentifier')
+                  or prefs.get('ProcessedMachineIdentifier'))
+    if machine_id:
+        cp.set('PMS', 'pms_identifier', machine_id)
+    if prefs.get('FriendlyName'):
+        cp.set('PMS', 'pms_name', prefs['FriendlyName'])
+
+    # Skip the welcome wizard on next start.
+    if not cp.has_section('General'):
+        cp.add_section('General')
+    cp.set('General', 'first_run_complete', '1')
+
+    try:
+        with open(tautulli_ini_path, 'w') as f:
+            cp.write(f)
+        ok(f"Tautulli config written (PMS_IP=plex, token from Plex)")
+    except Exception as e:
+        fail(f"Could not write Tautulli config: {e}")
+        return
+
+    # Restart Tautulli so it re-reads config.ini. Brief downtime (~5s)
+    # but the alternative is asking the user to do it manually.
+    print("    Restarting Tautulli container to apply...")
+    import subprocess
+    try:
+        subprocess.run(
+            ['docker', 'compose', 'restart', 'tautulli'],
+            cwd=stack_dir, check=True, capture_output=True, timeout=60,
+        )
+        ok("Tautulli restarted — open http://<NAS>:8181 to verify")
+    except subprocess.CalledProcessError as e:
+        warn(f"docker compose restart failed: {e.stderr.decode(errors='replace')[:200]}")
+        warn("  Manually:  docker compose restart tautulli")
+    except subprocess.TimeoutExpired:
+        warn("Restart timed out — Tautulli may need a manual kick")
+    except FileNotFoundError:
+        warn("'docker' not found in PATH — restart Tautulli manually:")
+        warn("  docker compose restart tautulli")
 
 
 def configure_sabnzbd_server(base, key, host, port, user, password,
@@ -1062,6 +1170,12 @@ def main():
                               USENET_HOST, USENET_PORT, USENET_USER, USENET_PASS,
                               name=USENET_NAME, connections=USENET_CONNECTIONS,
                               use_ssl=USENET_SSL)
+
+    # ── Tautulli (auto-wires to Plex via PlexOnlineToken from Preferences.xml) ─
+
+    PLEX_PREFS = f"{B}/plex/config/Library/Application Support/Plex Media Server/Preferences.xml"
+    TAUTULLI_INI = f"{B}/tautulli/config/config.ini"
+    configure_tautulli(B, PLEX_PREFS, TAUTULLI_INI)
 
     # ── Sonarr ────────────────────────────────────────────────────────────────
 

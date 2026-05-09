@@ -190,10 +190,6 @@ export function DoneScreen() {
             the Seerr wizard. Connect Plex with the URL{' '}
             <span className="font-mono">http://plex:32400</span>.
           </li>
-          <li>
-            Open <span className="font-mono text-emerald-400">http://{ip}:8181</span> for Tautulli.
-            Get a Plex token from Plex &rarr; Settings &rarr; Troubleshooting &rarr; Get X-Plex-Token.
-          </li>
           {!config.USENET_HOST && (
             <li>
               Open SABnzbd at <span className="font-mono text-emerald-400">http://{ip}:49155</span>{' '}
@@ -205,15 +201,30 @@ export function DoneScreen() {
               </span>
             </li>
           )}
+        </ol>
+      </section>
+
+      <section className="space-y-2 border-t border-slate-800 pt-6">
+        <h2 className="text-lg font-medium text-emerald-400">Configured automatically</h2>
+        <ul className="list-disc list-inside space-y-1 text-sm text-slate-300">
+          <li>
+            Tautulli is wired to <span className="font-mono">plex:32400</span> using the
+            token Plex got from your claim. Visit{' '}
+            <span className="font-mono text-emerald-400">http://{ip}:8181</span> to verify.
+            {' '}
+            <span className="text-slate-500 italic">
+              (Note: if you ran the wizard before Plex finished its first-claim
+              handshake, re-run setup-arr-config.py once Plex is up.)
+            </span>
+          </li>
           {config.USENET_HOST && (
-            <li className="text-emerald-400">
-              <span className="text-slate-300">SABnzbd usenet provider</span>{' '}
-              <span className="font-mono">{config.USENET_HOST}</span>
-              {' '}was added automatically. Verify connections at
-              {' '}<span className="font-mono">http://{ip}:49155 → Status</span>.
+            <li>
+              SABnzbd usenet provider <span className="font-mono">{config.USENET_HOST}</span>
+              {' '}was added. Verify connections at
+              {' '}<span className="font-mono text-emerald-400">http://{ip}:49155 → Status</span>.
             </li>
           )}
-        </ol>
+        </ul>
       </section>
 
       <div className="flex justify-end pt-4 border-t border-slate-800">
