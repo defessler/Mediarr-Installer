@@ -63,7 +63,8 @@ export function ConfigureScreen() {
   )
 
   return (
-    <div className="max-w-3xl mx-auto p-8 space-y-8 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+    <div className="h-full overflow-y-auto">
+    <div className="max-w-3xl mx-auto p-8 space-y-8">
       <header>
         <h1 className="text-2xl font-semibold">Configure the stack</h1>
         <p className="text-slate-400 mt-1 text-sm">
@@ -275,6 +276,7 @@ export function ConfigureScreen() {
           Begin install →
         </button>
       </div>
+    </div>
     </div>
   )
 }

@@ -111,7 +111,8 @@ export function DoneScreen() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-8 space-y-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+    <div className="h-full overflow-y-auto">
+    <div className="max-w-3xl mx-auto p-8 space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Setup complete</h1>
@@ -235,6 +236,7 @@ export function DoneScreen() {
           Start over
         </button>
       </div>
+    </div>
     </div>
   )
 }
