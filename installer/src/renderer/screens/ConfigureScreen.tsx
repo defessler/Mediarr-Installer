@@ -14,12 +14,48 @@ import { TimezoneSelect } from '../components/TimezoneSelect.js'
 // Phase 1: a single tall scrollable form. Phase 2 splits this into
 // per-step screens with auto-detection and country pickers.
 export function ConfigureScreen() {
-  const { config, setConfig, targetDir, setTargetDir, setStep } = useWizard()
+  const { config, setConfig, sessionId, targetDir, setTargetDir, setStep } = useWizard()
   const [errors, setErrors] = useState<string[]>([])
   const [vpnToken, setVpnToken] = useState('')
   const [vpnBusy, setVpnBusy] = useState(false)
   const [vpnError, setVpnError] = useState<string | null>(null)
   const [countries, setCountries] = useState<Country[]>([])
+  const [containerUser, setContainerUser] = useState('')
+  const [userLookupBusy, setUserLookupBusy] = useState(false)
+  const [userLookupResult, setUserLookupResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  // Look up a user's UID and primary GID via `id <name>` over SSH.
+  // Sets PUID/PGID on success; renders an inline error otherwise.
+  async function lookupContainerUser() {
+    if (!sessionId || !containerUser.trim()) return
+    setUserLookupBusy(true); setUserLookupResult(null)
+    try {
+      const safeName = containerUser.trim().replace(/[^a-zA-Z0-9_.-]/g, '')
+      if (safeName !== containerUser.trim()) {
+        throw new Error('Username has invalid characters (allowed: letters, digits, _ . -)')
+      }
+      const r = await window.installer.ssh.exec({
+        sessionId,
+        cmd: `id ${safeName}`,
+      })
+      if (r.exitCode !== 0) {
+        throw new Error((r.stderr || `User '${safeName}' not found on the NAS`).trim())
+      }
+      // `id` output: "uid=1027(mediaserver) gid=100(users) groups=100(users),..."
+      const uidMatch = r.stdout.match(/uid=(\d+)/)
+      const gidMatch = r.stdout.match(/gid=(\d+)/)
+      if (!uidMatch || !gidMatch) {
+        throw new Error(`Couldn't parse id output: ${r.stdout.slice(0, 200)}`)
+      }
+      const puid = uidMatch[1], pgid = gidMatch[1]
+      setConfig({ PUID: puid, PGID: pgid })
+      setUserLookupResult({ ok: true, msg: `${safeName}: PUID=${puid}, PGID=${pgid}` })
+    } catch (e) {
+      setUserLookupResult({ ok: false, msg: (e as Error).message })
+    } finally {
+      setUserLookupBusy(false)
+    }
+  }
 
   async function fetchVpnKey() {
     setVpnBusy(true); setVpnError(null)
@@ -87,6 +123,48 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Identity</h2>
+
+        {/* Container user lookup — separate from the SSH/install user.
+            PUID/PGID are who the containers run as, which determines who
+            owns the media files. Usually a less-privileged regular user
+            (e.g. mediaserver, plex) — NOT the admin you SSH in as. */}
+        <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-2">
+          <label className="block text-sm font-medium">
+            Container user
+            <span className="text-slate-500 text-xs ml-2">
+              (the account that should own media files — usually different from the SSH user)
+            </span>
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="e.g. mediaserver, plex"
+              className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              value={containerUser}
+              onChange={(e) => setContainerUser(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupContainerUser() } }}
+            />
+            <button
+              type="button"
+              onClick={lookupContainerUser}
+              disabled={userLookupBusy || !containerUser.trim() || !sessionId}
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+            >
+              {userLookupBusy ? 'Looking up...' : 'Look up UID/GID'}
+            </button>
+          </div>
+          {userLookupResult && (
+            <div className={`text-xs ${userLookupResult.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
+              {userLookupResult.ok ? '✓ ' : '✘ '}{userLookupResult.msg}
+            </div>
+          )}
+          <p className="text-xs text-slate-500">
+            If you don&apos;t have a dedicated user yet, create one in DSM &rarr;
+            Control Panel &rarr; User &amp; Group, give it permission to your
+            media share, then come back.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <Field label="PUID (user ID)" k="PUID" />
           <Field label="PGID (group ID)" k="PGID" />

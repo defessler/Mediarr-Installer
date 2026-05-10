@@ -74,9 +74,11 @@ export function EnvDetectScreen() {
         setResult(r)
 
         // Auto-fill anything we detected that the user hasn't already typed.
+        // PUID/PGID intentionally NOT auto-filled from the SSH user —
+        // that's the install/admin account, which is usually different
+        // from the user that should own the media files. The Configure
+        // screen has a "Container user" lookup for that.
         const patch: Record<string, string> = {}
-        if (r.puid !== null && !config.PUID) patch.PUID = String(r.puid)
-        if (r.pgid !== null && !config.PGID) patch.PGID = String(r.pgid)
         if (r.tz && !config.TZ) patch.TZ = r.tz
         const lanIp = pickLanIp({
           defaultIp: r.defaultIp,
@@ -218,10 +220,24 @@ export function EnvDetectScreen() {
 
           <section className="rounded-md border border-slate-800 p-4 space-y-1">
             <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
+              SSH session info
+            </h2>
+            <Check
+              ok={!!r.username}
+              label="Logged in as"
+              value={r.username ? `${r.username} (uid=${r.puid}, gid=${r.pgid})` : null}
+            />
+            <p className="text-slate-500 text-xs ml-5">
+              This is the install user. The container user (PUID/PGID for
+              media files) is set separately on the next screen — it should
+              usually be a different, less-privileged account.
+            </p>
+          </section>
+
+          <section className="rounded-md border border-slate-800 p-4 space-y-1">
+            <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
               Auto-filled
             </h2>
-            <Check ok={r.puid !== null} label="PUID" value={r.puid !== null ? String(r.puid) : null} />
-            <Check ok={r.pgid !== null} label="PGID" value={r.pgid !== null ? String(r.pgid) : null} />
             <Check ok={!!r.tz} label="Timezone" value={r.tz} />
             <Check
               ok={r.lanIps.length > 0 || !!config.LAN_IP}
