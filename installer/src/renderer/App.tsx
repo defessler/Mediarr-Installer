@@ -37,7 +37,47 @@ export function App() {
   const activeProfileId = useWizard((s) => s.activeProfileId)
   const activeProfileLabel = useWizard((s) => s.activeProfileLabel)
   const setStep = useWizard((s) => s.setStep)
+  const loadFromProfile = useWizard((s) => s.loadFromProfile)
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [profileHydrated, setProfileHydrated] = useState(false)
+
+  // On launch, the persist middleware restores {step, mode,
+  // activeProfileId, activeProfileLabel}, but the connection / config /
+  // targetDir come from the (encrypted) profile on disk. Hydrate them
+  // now so the user lands on the right step with everything filled in,
+  // rather than having to bounce back to Welcome and re-select.
+  useEffect(() => {
+    if (!activeProfileId || profileHydrated) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const p = await window.installer.profiles.load(activeProfileId)
+        if (cancelled) return
+        if (p) {
+          loadFromProfile({
+            id: p.id,
+            label: p.label,
+            connection: p.connection,
+            config: p.config as Record<string, string>,
+            targetDir: p.targetDir,
+          })
+        } else {
+          // Profile referenced in persisted state was deleted on disk.
+          // Bounce to Welcome so the user can pick a real one.
+          useWizard.setState({
+            activeProfileId: null,
+            activeProfileLabel: null,
+            step: 'welcome',
+          })
+        }
+      } catch (e) {
+        if (!cancelled) reportError('Hydrate profile', e)
+      } finally {
+        if (!cancelled) setProfileHydrated(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeProfileId, profileHydrated, loadFromProfile])
 
   // Autosave per-profile changes whenever connection/config/targetDir
   // mutate. (No-op when activeProfileId is null.)

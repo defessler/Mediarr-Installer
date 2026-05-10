@@ -290,7 +290,28 @@ def add_root_folder(base, key, api, path, extra_fields=None):
     if extra_fields:
         payload.update(extra_fields)
     result = POST(base, key, f"/{api}/rootfolder", payload)
-    ok(f"Root folder: {path}") if result else fail(f"Root folder: {path}")
+    if result:
+        ok(f"Root folder: {path}")
+        return
+    # Failed. The arr returned "Path does not exist" or similar. The most
+    # common cause on Synology is that the container can't see the host
+    # bind mount — either because the host directory was created after
+    # container start, or because Synology's shared-folder ACL blocks the
+    # PUID we passed. Surface a diagnostic instead of leaving the user
+    # guessing.
+    host_path = path.replace('/data/', '/volume1/Data/', 1)
+    fail(f"Root folder: {path}")
+    print(f"      Most likely a shared-folder permission issue on Synology.")
+    print(f"      Host equivalent: {host_path}")
+    print(f"      Try, in order:")
+    print(f"        1. ls -ld '{host_path}'  — confirm the host path exists")
+    print(f"        2. ls -la /volume1/Data  — confirm the parent is browsable")
+    print(f"        3. In DSM → Control Panel → Shared Folder → Data → Edit →")
+    print(f"           Permissions, grant the container's user (PUID in .env)")
+    print(f"           read/write access. Synology's share ACLs override POSIX")
+    print(f"           perms set by chown — chmod alone isn't enough.")
+    print(f"        4. After fixing perms: `docker compose restart` and re-run")
+    print(f"           `python3 setup-arr-config.py`. Each step is idempotent.")
 
 def add_download_client(base, key, api, name, implementation, field_overrides):
     existing = GET(base, key, f"/{api}/downloadclient")
