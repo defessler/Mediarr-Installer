@@ -376,14 +376,19 @@ export function ConfigureScreen() {
         )}
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Plex</h2>
-        <p className="text-sm text-slate-400">
-          Get a token from{' '}
-          <a className="text-emerald-400 underline" href="https://plex.tv/claim" target="_blank">plex.tv/claim</a>
-          {' '}— expires in 4 minutes.
-        </p>
-        <Field label="Plex claim token" k="PLEX_CLAIM" placeholder="claim-xxxx" />
+      {/* Plex claim is collected on the Run screen instead — it expires
+          4 minutes after generation, so capturing it earlier risks the
+          token going stale while the user fills out other fields. The
+          RunScreen has a PlexClaimRefresh widget right above the Start
+          button with a live countdown and a "Get fresh token" link. */}
+      <section className="rounded-md border border-slate-800 bg-slate-900/30 p-3 text-sm text-slate-400 flex items-start gap-2">
+        <span className="text-emerald-400 shrink-0">i</span>
+        <span>
+          <strong className="text-slate-300">Plex claim token</strong> is
+          collected on the <em>next</em> screen, right before install starts —
+          tokens expire 4 minutes after you generate them, so we keep it for
+          last.
+        </span>
       </section>
 
       <section className="space-y-4">
