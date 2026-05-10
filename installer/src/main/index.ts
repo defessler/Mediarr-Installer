@@ -14,7 +14,7 @@ import * as mock from './mock-services.js'
 const __dirname_main = dirname(fileURLToPath(import.meta.url))
 
 log.initialize()
-log.info('=== NAS Arr Installer main process starting ===')
+log.info('=== Mediarr Installer main process starting ===')
 log.info('app.isPackaged:', app.isPackaged)
 log.info('app.getAppPath():', app.getAppPath())
 log.info('process.resourcesPath:', process.resourcesPath)
@@ -41,7 +41,7 @@ function createWindow() {
   // info — much better than a silent blank window.
   if (app.isPackaged && !existsSync(indexHtml)) {
     dialog.showErrorBox(
-      'NAS Arr Installer — bundle error',
+      'Mediarr Installer — bundle error',
       `The renderer's index.html was not found.\n\n` +
         `Expected at:\n${indexHtml}\n\n` +
         `__dirname: ${__dirname_main}\n` +
@@ -74,7 +74,7 @@ function createWindow() {
   sftp.bindMainWindow(mainWindow)
   if (isMockMode()) {
     mock.bindMainWindow(mainWindow)
-    log.info('NAS Arr Installer: MOCK MODE active — services are stubbed')
+    log.info('Mediarr Installer: MOCK MODE active — services are stubbed')
   }
 
   // External links open in the user's browser, never inside the wizard.

@@ -457,7 +457,7 @@ export function RunScreen() {
           {linesRef.current.length > 0 && (
             <LogActions
               lines={linesRef.current}
-              defaultName="nas-arr-install.log"
+              defaultName="mediarr-install.log"
               header={`exit=${exitCode ?? 'pending'} phase=${phase}`}
             />
           )}

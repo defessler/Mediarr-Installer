@@ -173,7 +173,7 @@ export function DoneScreen() {
             <span onClick={(e) => e.stopPropagation()}>
               <LogActions
                 lines={linesRef.current}
-                defaultName="nas-arr-validate.log"
+                defaultName="mediarr-validate.log"
                 header={`exit=${exit ?? 'pending'}`}
               />
             </span>

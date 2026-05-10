@@ -1,4 +1,4 @@
-# NAS Arr Installer (Phase 1 — walking skeleton)
+# Mediarr Installer (Phase 1 — walking skeleton)
 
 Electron desktop wizard that installs the Arr media stack onto a Synology NAS
 over SSH. Wraps the bash + Python automation in `../nas/`.
@@ -45,10 +45,10 @@ npm run build:mac      # → installer/dist/mac-arm64/  (or mac/)
 npm run build:linux    # → installer/dist/linux-unpacked/
 ```
 
-The Windows build produces an unpacked folder with `NAS Arr Installer.exe`
+The Windows build produces an unpacked folder with `Mediarr Installer.exe`
 and all its support files. Double-click the .exe inside the folder to run.
 Nothing gets installed to the system; per-user state (logs, saved SSH
-profiles) lives at `%APPDATA%\nas-arr-installer\`. To uninstall, just
+profiles) lives at `%APPDATA%\Mediarr Installer\`. To uninstall, just
 delete the folder.
 
 Native deps (ssh2 → cpu-features) compile per host, so each platform must

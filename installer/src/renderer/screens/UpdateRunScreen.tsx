@@ -89,7 +89,7 @@ export function UpdateRunScreen() {
           {linesRef.current.length > 0 && (
             <LogActions
               lines={linesRef.current}
-              defaultName="nas-arr-update.log"
+              defaultName="mediarr-update.log"
               header={`exit=${exitCode ?? 'pending'} phase=${phase}`}
             />
           )}

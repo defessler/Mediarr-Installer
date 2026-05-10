@@ -1,5 +1,5 @@
-appId: com.defessler.nas-arr-installer
-productName: NAS Arr Installer
+appId: com.defessler.mediarr-installer
+productName: Mediarr Installer
 directories:
   output: dist
   buildResources: resources
@@ -18,8 +18,8 @@ asar: true
 win:
   # `dir` target = unpacked folder only (dist/win-unpacked/). No
   # installer, no portable wrapper, no NSIS. Run by double-clicking
-  # `NAS Arr Installer.exe` inside the folder. Per-user data
-  # (logs, profiles) goes to %APPDATA%/nas-arr-installer.
+  # `Mediarr Installer.exe` inside the folder. Per-user data
+  # (logs, profiles) goes to %APPDATA%/Mediarr Installer.
   target:
     - target: dir
       arch:

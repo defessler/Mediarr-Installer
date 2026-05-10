@@ -1,7 +1,7 @@
 {
-  "name": "nas-arr-installer",
+  "name": "mediarr-installer",
   "version": "0.1.0",
-  "description": "Electron wizard that installs the Arr media stack onto a Synology NAS over SSH",
+  "description": "Mediarr Installer — Electron wizard that installs the Arr media stack onto a Synology NAS over SSH",
   "main": "out/main/index.js",
   "private": true,
   "type": "module",

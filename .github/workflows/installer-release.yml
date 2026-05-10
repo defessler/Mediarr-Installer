@@ -77,7 +77,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nas-arr-installer-${{ matrix.target }}
+          name: mediarr-installer-${{ matrix.target }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
 
@@ -113,7 +113,7 @@ jobs:
           generate_release_notes: true
           files: release-files/*
           body: |
-            ## NAS Arr Installer — ${{ github.ref_name }}
+            ## Mediarr Installer — ${{ github.ref_name }}
 
             Desktop wizard that installs the Arr stack onto your Synology
             NAS over SSH. Wraps the bash + Python automation in `nas/`.

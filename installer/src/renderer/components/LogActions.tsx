@@ -16,7 +16,7 @@ export function LogActions({ lines, defaultName, header }: Props) {
 
   function buildContent(): string {
     const ts = new Date().toISOString()
-    const head = `# NAS Arr Installer log — ${ts}${header ? '\n# ' + header : ''}\n\n`
+    const head = `# Mediarr Installer log — ${ts}${header ? '\n# ' + header : ''}\n\n`
     return head + lines.map(stripAnsi).join('\n')
   }
 
