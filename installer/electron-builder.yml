@@ -16,8 +16,11 @@ asar: true
 # electron-builder will auto-generate ICO/ICNS. Until then we let it fall
 # back to the default Electron icon.
 win:
+  # Portable target = a single self-contained .exe. Double-click to run,
+  # nothing installed to %LOCALAPPDATA% or the registry. Per-user data
+  # (logs, profiles) still goes to %APPDATA%/nas-arr-installer.
   target:
-    - target: nsis
+    - target: portable
       arch:
         - x64
   # Skip rcedit + signtool entirely. They live in the winCodeSign cache
@@ -25,11 +28,8 @@ win:
   # contains macOS dylib symlinks that need elevated privileges to write).
   # We don't sign and we don't need to rewrite the exe metadata for v0.1.
   signAndEditExecutable: false
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  perMachine: false
-  artifactName: "${productName}-${version}-Setup.${ext}"
+portable:
+  artifactName: "${productName}-${version}-portable.${ext}"
 mac:
   target:
     - target: dmg
