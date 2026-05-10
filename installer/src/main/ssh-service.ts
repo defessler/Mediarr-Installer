@@ -70,6 +70,19 @@ function classifyError(err: Error): ConnectResult['error'] {
   if (m.includes('econnrefused') || m.includes('ehostunreach') || m.includes('enotfound')) {
     return { kind: 'host-unreachable', message: err.message }
   }
+  // ssh2 throws messages like "Protocol mismatch", "Bad protocol version
+  // identification", or "Bad packet length" when the remote port responds
+  // with something other than the SSH banner — typically because the user
+  // pointed us at their DSM web UI (port 5000/5001) instead of SSH (22).
+  if (m.includes('protocol') || m.includes('bad packet length') || m.includes('http')) {
+    return {
+      kind: 'unknown',
+      message:
+        'Got a non-SSH response from the host. Likely wrong port — SSH is ' +
+        'usually 22, but you may have pointed at your DSM web UI (5000/5001). ' +
+        '\n\nOriginal error: ' + err.message,
+    }
+  }
   return { kind: 'unknown', message: err.message }
 }
 

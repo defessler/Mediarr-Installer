@@ -142,6 +142,23 @@ export function ConnectScreen() {
     await refreshProfiles()
   }
 
+  // Smart-parse the host field: strip http(s)://, trailing path, and
+  // pull `host:port` apart so the user can paste their DSM URL and we
+  // still get the right hostname for SSH.
+  function parseHost(input: string): { host: string; port?: number } {
+    let s = input.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
+    const m = s.match(/^([^:]+):(\d+)$/)
+    if (m) return { host: m[1], port: Number(m[2]) }
+    return { host: s }
+  }
+
+  function onHostChange(raw: string) {
+    const { host, port } = parseHost(raw)
+    const patch: { host: string; port?: number } = { host }
+    if (port !== undefined) patch.port = port
+    setConnection(patch)
+  }
+
   return (
     <div className="h-full overflow-y-auto">
     <div className="max-w-2xl mx-auto p-8 space-y-6">
@@ -201,20 +218,28 @@ export function ConnectScreen() {
         <div className="col-span-2">
           <label className="block text-sm font-medium mb-1">Host</label>
           <input
-            type="text" placeholder="192.168.1.10"
+            type="text" placeholder="192.168.1.10  (NOT your DSM URL — that's port 5000)"
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
             value={connection.host ?? ''}
-            onChange={(e) => setConnection({ host: e.target.value })}
+            onChange={(e) => onHostChange(e.target.value)}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Port</label>
+          <label className="block text-sm font-medium mb-1">
+            Port
+            <span className="text-slate-500 text-xs ml-1">(SSH = 22)</span>
+          </label>
           <input
             type="number"
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
             value={connection.port ?? 22}
             onChange={(e) => setConnection({ port: Number(e.target.value) || 22 })}
           />
+          {connection.port && [80, 443, 5000, 5001].includes(connection.port) && (
+            <p className="mt-1 text-xs text-amber-300">
+              Port {connection.port} is for HTTP/DSM, not SSH. Try 22.
+            </p>
+          )}
         </div>
       </div>
 
