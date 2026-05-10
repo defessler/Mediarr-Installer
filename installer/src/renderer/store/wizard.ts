@@ -86,37 +86,28 @@ export const useWizard = create<WizardState>()(
     }),
     {
       name: 'nas-installer-wizard',
-      // Never persist secrets or session-bound state.
+      // Persist EVERYTHING the user typed — including passwords, API
+      // keys, and the SSH password. Per user request: "save all the
+      // information I type in, including passwords."
+      //
+      // SECURITY TRADEOFF: Zustand persist writes to localStorage,
+      // which is plaintext on disk inside the app's userData folder
+      // (%APPDATA%/nas-arr-installer/Local Storage/...). Anyone with
+      // read access to the user's profile directory can read these
+      // values. Since this is a personal-use installer running on the
+      // user's own machine, that's acceptable — but DON'T copy the
+      // userData folder around or share it.
+      //
+      // For SSH credentials, the connection-profile feature in
+      // ConnectScreen offers a separately encrypted store (via
+      // Electron safeStorage). That's the right home for long-term
+      // creds. This in-store persistence is only the "remember what I
+      // typed last time" convenience.
       partialize: (s) => ({
-        connection: {
-          host: s.connection.host,
-          port: s.connection.port,
-          user: s.connection.user,
-          authMethod: s.connection.authMethod,
-          privateKeyPath: s.connection.privateKeyPath,
-        },
-        // Drop ALL secret fields from persistence — they live in memory
-        // only. We keep only PUID/PGID/TZ/LAN_IP/VPN_PROVIDER/VPN_TYPE/
-        // VPN_COUNTRIES/QBITTORRENT_USER/ARR_USERNAME, which are
-        // non-sensitive convenience defaults.
-        config: {
-          PUID: s.config.PUID,
-          PGID: s.config.PGID,
-          TZ: s.config.TZ,
-          LAN_IP: s.config.LAN_IP,
-          VPN_PROVIDER: s.config.VPN_PROVIDER,
-          VPN_TYPE: s.config.VPN_TYPE,
-          VPN_COUNTRIES: s.config.VPN_COUNTRIES,
-          QBITTORRENT_USER: s.config.QBITTORRENT_USER,
-          ARR_USERNAME: s.config.ARR_USERNAME,
-          // Usenet connection metadata is non-sensitive; host/port/conn
-          // count are persisted, but USER/PASS are NOT.
-          USENET_HOST: s.config.USENET_HOST,
-          USENET_PORT: s.config.USENET_PORT,
-          USENET_CONNECTIONS: s.config.USENET_CONNECTIONS,
-          USENET_SSL: s.config.USENET_SSL,
-          USENET_NAME: s.config.USENET_NAME,
-        },
+        step: s.step,
+        mode: s.mode,
+        connection: s.connection,   // includes password, passphrase, sudoPassword
+        config: s.config,           // includes all secrets
         targetDir: s.targetDir,
       }),
     },

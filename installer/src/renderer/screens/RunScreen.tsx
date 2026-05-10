@@ -155,6 +155,9 @@ export function RunScreen() {
     })
     const offProg = window.installer.sftp.onProgress((p) => {
       setProgress({ pct: p.pctOverall, file: p.file })
+      // Surface each file in the log too — so a wedged transfer is
+      // visibly stuck on a specific file.
+      appendChunk(`\x1b[36m[sftp]\x1b[0m ${p.pctOverall}% — ${p.file}\n`)
     })
     return () => {
       offData()
@@ -207,6 +210,12 @@ export function RunScreen() {
     resetSteps()
     setTick((t) => t + 1)
 
+    // Helper: log a wizard-internal action into the same panel that
+    // shows the streaming setup.sh output, so the user sees what's
+    // happening before/between/after the script run. Prefix [wizard]
+    // distinguishes our actions from setup.sh's output.
+    const wlog = (msg: string) => appendChunk(`\x1b[36m[wizard]\x1b[0m ${msg}\n`)
+
     try {
       // 1. Make sure the target dir exists AND is writable by the SSH user.
       // mkdir -p runs as root via sudo, which leaves the dir owned by root.
@@ -216,10 +225,11 @@ export function RunScreen() {
       // `id -u`/`id -g` (which return the SSH user's IDs without sudo).
       // Then SFTP can write to its heart's content.
       setPhase('uploading')
+      wlog(`Preparing target directory ${targetDir} (mkdir + chown)...`)
       const tq = shellQuote(targetDir)
       const prep = await window.installer.ssh.exec({
         sessionId,
-        cmd: `mkdir -p ${tq} && chown -R "$(id -u):$(id -g)" ${tq}`,
+        cmd: `mkdir -p ${tq} && chown -R "$(id -u):$(id -g)" ${tq} && echo "owner=$(stat -c '%U:%G' ${tq})"`,
         sudo: true,
       })
       if (prep.exitCode !== 0) {
@@ -227,13 +237,15 @@ export function RunScreen() {
           `Couldn't prepare ${targetDir}: ${(prep.stderr || prep.stdout || '').slice(0, 300)}`,
         )
       }
+      wlog(`Target ready (${prep.stdout.trim() || 'ok'})`)
 
       // The renderer can't read disk. We pass the sentinel "@payload" and
       // the main process's sftp-service resolves it via payload-resolver.
       // Renderer never learns absolute filesystem paths.
       // Wrap in a timeout so a wedged SFTP doesn't park the UI forever.
+      wlog('Uploading nas/ payload via SFTP...')
       const SFTP_TIMEOUT_MS = 5 * 60 * 1000
-      await Promise.race([
+      const uploadResult = await Promise.race([
         window.installer.sftp.uploadDir({
           sessionId,
           localDir: '@payload',
@@ -250,6 +262,7 @@ export function RunScreen() {
           ),
         ),
       ])
+      wlog(`Uploaded ${uploadResult.uploaded} files (${(uploadResult.bytesTotal / 1024).toFixed(1)} KiB)`)
 
       // 2. Write the .env file with secrets.
       // Back up any existing .env first so the user can recover if our
@@ -257,12 +270,14 @@ export function RunScreen() {
       // user might have hand-added something custom).
       setPhase('writing-env')
       const ts = new Date().toISOString().replace(/[:.]/g, '-')
+      wlog('Backing up any existing .env...')
       await window.installer.ssh.exec({
         sessionId,
-        cmd: `[ -f ${shellQuote(`${targetDir}/.env`)} ] && cp -p ${shellQuote(`${targetDir}/.env`)} ${shellQuote(`${targetDir}/.env.backup-${ts}`)} || true`,
+        cmd: `[ -f ${shellQuote(`${targetDir}/.env`)} ] && cp -p ${shellQuote(`${targetDir}/.env`)} ${shellQuote(`${targetDir}/.env.backup-${ts}`)} && echo "backed up to .env.backup-${ts}" || echo "(no prior .env)"`,
         sudo: true,
-      })
+      }).then((r) => wlog(r.stdout.trim() || '(done)'))
 
+      wlog(`Writing ${targetDir}/.env (${Object.keys(config).filter((k) => (config as Record<string, unknown>)[k]).length} populated keys)...`)
       const envText = renderEnv(config as EnvFormValues)
       await window.installer.sftp.writeFile({
         sessionId,
@@ -270,6 +285,9 @@ export function RunScreen() {
         content: envText,
         mode: 0o600,
       })
+      wlog('.env written (mode 0600)')
+
+      wlog('Starting setup.sh — output will stream below ↓')
 
       // 3. Stream-run setup.sh. PATH has to be augmented because SSH non-
       // interactive shells on Synology don't include the Docker package

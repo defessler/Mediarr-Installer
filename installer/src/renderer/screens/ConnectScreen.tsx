@@ -5,9 +5,15 @@ import { reportError } from '../store/errors.js'
 
 export function ConnectScreen() {
   const { connection, setConnection, setStep, setSessionId, mode } = useWizard()
-  const [password, setPassword] = useState('')
-  const [passphrase, setPassphrase] = useState('')
-  const [sudoPassword, setSudoPassword] = useState('')
+  // Passwords live in the wizard store (and therefore localStorage) so
+  // they're remembered between app launches — per user request. See
+  // the security note in store/wizard.ts.
+  const password = connection.password ?? ''
+  const setPassword = (v: string) => setConnection({ password: v })
+  const passphrase = connection.passphrase ?? ''
+  const setPassphrase = (v: string) => setConnection({ passphrase: v })
+  const sudoPassword = connection.sudoPassword ?? ''
+  const setSudoPassword = (v: string) => setConnection({ sudoPassword: v })
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ConnectResult | null>(null)
   const [testOk, setTestOk] = useState(false)
