@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import type { ConnectResult, SavedProfile } from '../../shared/ipc.js'
+import { reportError } from '../store/errors.js'
 
 export function ConnectScreen() {
   const { connection, setConnection, setStep, setSessionId, mode } = useWizard()
@@ -131,6 +132,7 @@ export function ConnectScreen() {
       await refreshProfiles()
     } catch (e) {
       setResult({ ok: false, error: { kind: 'unknown', message: 'Profile save failed: ' + (e as Error).message } })
+      reportError('Save profile', e)
     }
   }
 

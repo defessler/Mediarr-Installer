@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWizard, type WizardStep } from './store/wizard.js'
+import { useErrors, reportError } from './store/errors.js'
+import { ToastTray } from './components/ToastTray.js'
 import { WelcomeScreen } from './screens/WelcomeScreen.js'
 import { ConnectScreen } from './screens/ConnectScreen.js'
 import { EnvDetectScreen } from './screens/EnvDetectScreen.js'
@@ -33,7 +35,42 @@ export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null)
 
   useEffect(() => {
-    window.installer.app.getInfo().then(setInfo).catch(() => {})
+    window.installer.app.getInfo().then(setInfo).catch((e) =>
+      reportError('App info', e),
+    )
+  }, [])
+
+  // Catch-all surface for anything that escapes a try/catch in any
+  // renderer code path. Without these, a bad async chain just disappears
+  // into devtools and the user sees a frozen UI with no explanation.
+  useEffect(() => {
+    const onErr = (e: ErrorEvent) => {
+      reportError('Unhandled error', e.error ?? e.message)
+    }
+    const onRej = (e: PromiseRejectionEvent) => {
+      reportError('Unhandled promise rejection', e.reason)
+    }
+    window.addEventListener('error', onErr)
+    window.addEventListener('unhandledrejection', onRej)
+    return () => {
+      window.removeEventListener('error', onErr)
+      window.removeEventListener('unhandledrejection', onRej)
+    }
+  }, [])
+
+  // Watch every SSH stream close — if a remote command exits non-zero
+  // and the screen that owns the stream doesn't surface the error, the
+  // toast guarantees the user still sees it.
+  useEffect(() => {
+    const off = window.installer.ssh.onStreamClose((d) => {
+      if (d.exitCode != null && d.exitCode !== 0) {
+        useErrors.getState().pushWarn(
+          `Remote command exited with code ${d.exitCode}`,
+          `channel: ${d.channelId}${d.signal ? `\nsignal: ${d.signal}` : ''}`,
+        )
+      }
+    })
+    return () => { off() }
   }, [])
 
   const stepList = mode === 'update' ? UPDATE_STEPS : INSTALL_STEPS
@@ -93,6 +130,10 @@ export function App() {
           </span>
         </footer>
       )}
+
+      {/* Global toast tray — anything that calls reportError() or pushes
+          to useErrors() shows up here, on every screen. */}
+      <ToastTray />
     </div>
   )
 }

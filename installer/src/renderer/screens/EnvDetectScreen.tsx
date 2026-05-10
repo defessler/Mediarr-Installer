@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import type { EnvDetectResult } from '../../shared/ipc.js'
+import { reportError } from '../store/errors.js'
 
 type Status = 'detecting' | 'ok' | 'failed'
 
@@ -96,6 +97,7 @@ export function EnvDetectScreen() {
         if (cancelled) return
         setError((e as Error).message)
         setStatus('failed')
+        reportError('Environment detect', e)
       }
     })()
     return () => { cancelled = true }

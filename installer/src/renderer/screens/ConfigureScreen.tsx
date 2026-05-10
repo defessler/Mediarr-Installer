@@ -10,6 +10,7 @@ import {
 import type { Country } from '../../shared/ipc.js'
 import { IndexerCard } from '../components/IndexerCard.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
+import { reportError } from '../store/errors.js'
 
 // React component identity matters: a component defined inside a parent
 // function render gets a new reference every render, which React treats
@@ -93,7 +94,10 @@ export function ConfigureScreen() {
         setUsers(us.sort((a, b) => a.uid - b.uid))
         setGroups(gs.sort((a, b) => a.gid - b.gid))
       } catch (e) {
-        if (!cancelled) setUsersError((e as Error).message)
+        if (!cancelled) {
+          setUsersError((e as Error).message)
+          reportError('Load NAS users/groups', e)
+        }
       }
     })()
     return () => { cancelled = true }
@@ -133,6 +137,7 @@ export function ConfigureScreen() {
       setCountries(r.countries)
     } catch (e) {
       setVpnError((e as Error).message)
+      reportError('NordVPN key fetch', e)
     } finally {
       setVpnBusy(false)
     }

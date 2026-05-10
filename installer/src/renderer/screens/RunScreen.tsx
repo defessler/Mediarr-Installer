@@ -4,6 +4,7 @@ import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
 import { PlexClaimRefresh } from '../components/PlexClaimRefresh.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
+import { reportError } from '../store/errors.js'
 import { renderEnv, type EnvFormValues } from '../../shared/env-render.js'
 import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
 
@@ -191,6 +192,7 @@ export function RunScreen() {
       setSteps((prev) =>
         prev.map((s) => (s.number === stepNumber ? { ...s, status: 'fail' } : s)),
       )
+      reportError(`Re-run step ${stepNumber}`, e)
     }
   }
 
@@ -286,6 +288,7 @@ export function RunScreen() {
     } catch (e) {
       setErrorMsg((e as Error).message)
       setPhase('failed')
+      reportError('Install', e)
     }
   }
 

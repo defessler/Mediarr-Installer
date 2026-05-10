@@ -3,6 +3,7 @@ import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
+import { reportError } from '../store/errors.js'
 
 const SERVICES: { name: string; port: string; note?: string }[] = [
   { name: 'Homepage',    port: '3000',  note: 'Start here' },
@@ -98,6 +99,7 @@ export function DoneScreen() {
     } catch (e) {
       linesRef.current.push(`Error: ${(e as Error).message}`)
       setRunning(false)
+      reportError('Post-deploy validate', e)
     }
   }
 

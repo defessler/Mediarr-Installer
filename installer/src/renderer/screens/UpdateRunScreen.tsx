@@ -7,6 +7,7 @@ import { useWizard } from '../store/wizard.js'
 import { LogPanel } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
+import { reportError } from '../store/errors.js'
 
 const CHANNEL_ID = 'compose-update'
 
@@ -68,6 +69,7 @@ export function UpdateRunScreen() {
     } catch (e) {
       setErrorMsg((e as Error).message)
       setPhase('failed')
+      reportError('Update', e)
     }
   }
 
