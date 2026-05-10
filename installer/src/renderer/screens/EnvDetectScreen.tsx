@@ -7,8 +7,43 @@ type Status = 'detecting' | 'ok' | 'failed'
 // Translate a detect result into a vertical checklist with red/green dots,
 // then auto-fill what we can into the wizard's config so the user only
 // edits things we couldn't infer.
+// IPv4 in private RFC1918 / CGNAT ranges — the kind that should bind
+// the stack's ports. 10/8, 172.16/12, 192.168/16, plus 100.64/10 (CGNAT,
+// used by Tailscale; we deliberately rank it lower than RFC1918).
+function isPrivateIPv4(ip: string): 'rfc1918' | 'cgnat' | 'no' {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (!m) return 'no'
+  const [a, b] = [Number(m[1]), Number(m[2])]
+  if (a === 10) return 'rfc1918'
+  if (a === 192 && b === 168) return 'rfc1918'
+  if (a === 172 && b >= 16 && b <= 31) return 'rfc1918'
+  if (a === 100 && b >= 64 && b <= 127) return 'cgnat'
+  return 'no'
+}
+
+/** Pick the most likely LAN IP for binding the stack's ports.
+ *
+ *  Priority:
+ *    1. The exact IP the user typed in Connect (if it's an IPv4) —
+ *       it's by definition the address that worked, so it's the most
+ *       reliable choice.
+ *    2. The first detected RFC1918 IP from `ip addr show`.
+ *    3. The first detected CGNAT IP (Tailscale-style).
+ *    4. The first detected IP, whatever it is.
+ */
+function pickLanIp(connectionHost: string | undefined, detected: string[]): string | null {
+  if (connectionHost && /^\d+\.\d+\.\d+\.\d+$/.test(connectionHost)) {
+    return connectionHost
+  }
+  const rfc = detected.find((ip) => isPrivateIPv4(ip) === 'rfc1918')
+  if (rfc) return rfc
+  const cg = detected.find((ip) => isPrivateIPv4(ip) === 'cgnat')
+  if (cg) return cg
+  return detected[0] ?? null
+}
+
 export function EnvDetectScreen() {
-  const { sessionId, setStep, setConfig, setMode, config, targetDir } = useWizard()
+  const { sessionId, setStep, setConfig, setMode, config, connection, targetDir } = useWizard()
   const [status, setStatus] = useState<Status>('detecting')
   const [result, setResult] = useState<EnvDetectResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -31,7 +66,8 @@ export function EnvDetectScreen() {
         if (r.puid !== null && !config.PUID) patch.PUID = String(r.puid)
         if (r.pgid !== null && !config.PGID) patch.PGID = String(r.pgid)
         if (r.tz && !config.TZ) patch.TZ = r.tz
-        if (r.lanIps[0] && !config.LAN_IP) patch.LAN_IP = r.lanIps[0]
+        const lanIp = pickLanIp(connection.host, r.lanIps)
+        if (lanIp && !config.LAN_IP) patch.LAN_IP = lanIp
         if (Object.keys(patch).length > 0) setConfig(patch)
 
         setStatus('ok')
@@ -145,10 +181,55 @@ export function EnvDetectScreen() {
             <Check ok={r.pgid !== null} label="PGID" value={r.pgid !== null ? String(r.pgid) : null} />
             <Check ok={!!r.tz} label="Timezone" value={r.tz} />
             <Check
-              ok={r.lanIps.length > 0}
-              label={`LAN IP (${r.lanIps.length} found)`}
-              value={r.lanIps[0] ?? null}
+              ok={r.lanIps.length > 0 || !!config.LAN_IP}
+              label="LAN IP"
+              value={config.LAN_IP || null}
             />
+            {r.lanIps.length > 0 && (
+              <div className="ml-5 mt-1 text-xs">
+                <div className="text-slate-500 mb-1">
+                  Detected interfaces (click to use):
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {/* Connection host first if it's an IP and not already in the list */}
+                  {connection.host && /^\d+\.\d+\.\d+\.\d+$/.test(connection.host)
+                    && !r.lanIps.includes(connection.host) && (
+                      <button
+                        onClick={() => setConfig({ LAN_IP: connection.host })}
+                        className={
+                          'px-2 py-0.5 rounded font-mono ' +
+                          (config.LAN_IP === connection.host
+                            ? 'bg-emerald-700/50 text-emerald-200'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300')
+                        }
+                      >
+                        {connection.host} <span className="text-slate-500">(connected via)</span>
+                      </button>
+                  )}
+                  {r.lanIps.map((ip) => {
+                    const kind = isPrivateIPv4(ip)
+                    const tag =
+                      kind === 'rfc1918' ? '' :
+                      kind === 'cgnat' ? ' (CGNAT/Tailscale)' :
+                      ' (public?)'
+                    return (
+                      <button
+                        key={ip}
+                        onClick={() => setConfig({ LAN_IP: ip })}
+                        className={
+                          'px-2 py-0.5 rounded font-mono ' +
+                          (config.LAN_IP === ip
+                            ? 'bg-emerald-700/50 text-emerald-200'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300')
+                        }
+                      >
+                        {ip}{tag && <span className="text-slate-500">{tag}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="rounded-md border border-slate-800 p-4 text-sm">
