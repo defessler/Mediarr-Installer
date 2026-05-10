@@ -45,6 +45,9 @@ export function RunScreen() {
    *  yet. The first emit gets a fresh line; subsequent emits use \r to
    *  overwrite that line in place (one ticker, not 15 lines). */
   const sftpFirstRef = useRef(true)
+  /** Last time we received a chunk on the setup.sh stream — drives the
+   *  heartbeat in go() so the user knows we're not frozen. */
+  const lastChunkAtRef = useRef<number>(Date.now())
 
   function resetSteps() {
     setSteps(SETUP_STEPS.map((s) => ({ ...s })))
@@ -143,6 +146,7 @@ export function RunScreen() {
       // Forward both the main install stream and any per-step re-runs
       // into the same log buffer.
       if (d.channelId !== CHANNEL_ID && !d.channelId.startsWith(RERUN_CHANNEL_PREFIX)) return
+      lastChunkAtRef.current = Date.now()
       appendChunk(d.chunk)
     })
     const offClose = window.installer.ssh.onStreamClose((d) => {
@@ -356,15 +360,40 @@ export function RunScreen() {
       // paths by default, so setup.sh would otherwise see "docker: command
       // not found" even though docker is installed. The exit code arrives
       // via the stream-close event handled in useEffect.
+      //
+      // Heartbeat: if no output arrives for 30s+, log how long we've been
+      // waiting. Otherwise the user sees a frozen panel and assumes the
+      // worst.  Disabled once the first real chunk arrives (handled in
+      // the onStreamData effect via firstRealChunkSeen()).
       setPhase('running-setup')
-      await window.installer.ssh.execStream({
-        sessionId,
-        cmd:
-          PATH_PREFIX +
-          `bash ${shellQuote(`${targetDir}/setup.sh`)}`,
-        sudo: true,
-        channelId: CHANNEL_ID,
-      })
+      const setupStartTs = Date.now()
+      lastChunkAtRef.current = setupStartTs
+      const heartbeat = setInterval(() => {
+        const sinceLast = Date.now() - lastChunkAtRef.current
+        if (sinceLast > 25_000) {
+          wlog(`(still waiting — ${Math.floor((Date.now() - setupStartTs) / 1000)}s elapsed, ${Math.floor(sinceLast / 1000)}s since last output)`)
+          lastChunkAtRef.current = Date.now()
+        }
+      }, 10_000)
+      try {
+        await window.installer.ssh.execStream({
+          sessionId,
+          // Sentinel markers around bash invocation. If we see
+          // "before setup.sh" but never "after", we know setup.sh
+          // started and got stuck. If we never see "before", the
+          // exec/sudo didn't even reach bash. 2>&1 merges stderr
+          // so anything sudo or bash prints goes through our log.
+          cmd:
+            PATH_PREFIX +
+            `echo "[wizard-debug] before setup.sh: $(date)"; ` +
+            `bash ${shellQuote(`${targetDir}/setup.sh`)} 2>&1; ` +
+            `rc=$?; echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
+          sudo: true,
+          channelId: CHANNEL_ID,
+        })
+      } finally {
+        clearInterval(heartbeat)
+      }
     } catch (e) {
       setErrorMsg((e as Error).message)
       setPhase('failed')
