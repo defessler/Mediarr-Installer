@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
 import {
@@ -20,41 +20,61 @@ export function ConfigureScreen() {
   const [vpnBusy, setVpnBusy] = useState(false)
   const [vpnError, setVpnError] = useState<string | null>(null)
   const [countries, setCountries] = useState<Country[]>([])
-  const [containerUser, setContainerUser] = useState('')
-  const [userLookupBusy, setUserLookupBusy] = useState(false)
-  const [userLookupResult, setUserLookupResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  // Users and groups discovered on the NAS — populated on mount via SSH.
+  interface NasUser  { name: string; uid: number; gid: number; comment: string }
+  interface NasGroup { name: string; gid: number }
+  const [users, setUsers] = useState<NasUser[]>([])
+  const [groups, setGroups] = useState<NasGroup[]>([])
+  const [usersError, setUsersError] = useState<string | null>(null)
 
-  // Look up a user's UID and primary GID via `id <name>` over SSH.
-  // Sets PUID/PGID on success; renders an inline error otherwise.
-  async function lookupContainerUser() {
-    if (!sessionId || !containerUser.trim()) return
-    setUserLookupBusy(true); setUserLookupResult(null)
-    try {
-      const safeName = containerUser.trim().replace(/[^a-zA-Z0-9_.-]/g, '')
-      if (safeName !== containerUser.trim()) {
-        throw new Error('Username has invalid characters (allowed: letters, digits, _ . -)')
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        // Pull both files in one exec. Filter to:
+        //   users:  uid 0 (root) OR uid in 1024..59999 (Synology user range)
+        //   groups: gid 0, gid 100 ('users'), or 1024..59999
+        const cmd =
+          `awk -F: '$3 == 0 || ($3 >= 1024 && $3 < 60000) ` +
+          `{ print "U:" $1 ":" $3 ":" $4 ":" $5 }' /etc/passwd; ` +
+          `awk -F: '$3 == 0 || $3 == 100 || ($3 >= 1024 && $3 < 60000) ` +
+          `{ print "G:" $1 ":" $3 }' /etc/group`
+        const r = await window.installer.ssh.exec({ sessionId, cmd })
+        if (cancelled) return
+        if (r.exitCode !== 0) {
+          throw new Error((r.stderr || 'Failed to read /etc/passwd').trim())
+        }
+        const us: NasUser[] = []; const gs: NasGroup[] = []
+        for (const line of r.stdout.split('\n')) {
+          const p = line.split(':')
+          if (p[0] === 'U' && p.length >= 5) {
+            us.push({ name: p[1], uid: Number(p[2]), gid: Number(p[3]), comment: p[4] || '' })
+          } else if (p[0] === 'G' && p.length >= 3) {
+            gs.push({ name: p[1], gid: Number(p[2]) })
+          }
+        }
+        setUsers(us.sort((a, b) => a.uid - b.uid))
+        setGroups(gs.sort((a, b) => a.gid - b.gid))
+      } catch (e) {
+        if (!cancelled) setUsersError((e as Error).message)
       }
-      const r = await window.installer.ssh.exec({
-        sessionId,
-        cmd: `id ${safeName}`,
-      })
-      if (r.exitCode !== 0) {
-        throw new Error((r.stderr || `User '${safeName}' not found on the NAS`).trim())
-      }
-      // `id` output: "uid=1027(mediaserver) gid=100(users) groups=100(users),..."
-      const uidMatch = r.stdout.match(/uid=(\d+)/)
-      const gidMatch = r.stdout.match(/gid=(\d+)/)
-      if (!uidMatch || !gidMatch) {
-        throw new Error(`Couldn't parse id output: ${r.stdout.slice(0, 200)}`)
-      }
-      const puid = uidMatch[1], pgid = gidMatch[1]
-      setConfig({ PUID: puid, PGID: pgid })
-      setUserLookupResult({ ok: true, msg: `${safeName}: PUID=${puid}, PGID=${pgid}` })
-    } catch (e) {
-      setUserLookupResult({ ok: false, msg: (e as Error).message })
-    } finally {
-      setUserLookupBusy(false)
+    })()
+    return () => { cancelled = true }
+  }, [sessionId])
+
+  function selectContainerUser(uid: string) {
+    if (!uid) {
+      setConfig({ PUID: undefined as unknown as string, PGID: undefined as unknown as string })
+      return
     }
+    const u = users.find((x) => String(x.uid) === uid)
+    if (u) setConfig({ PUID: String(u.uid), PGID: String(u.gid) })
+    else setConfig({ PUID: uid })
+  }
+
+  function selectContainerGroup(gid: string) {
+    setConfig({ PGID: gid || (undefined as unknown as string) })
   }
 
   async function fetchVpnKey() {
@@ -124,44 +144,69 @@ export function ConfigureScreen() {
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Identity</h2>
 
-        {/* Container user lookup — separate from the SSH/install user.
-            PUID/PGID are who the containers run as, which determines who
-            owns the media files. Usually a less-privileged regular user
-            (e.g. mediaserver, plex) — NOT the admin you SSH in as. */}
-        <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-2">
+        {/* Container user / group — pulled from the NAS's /etc/passwd
+            and /etc/group on screen entry. Picking a user auto-fills
+            PUID + the user's primary GID; the group select can override
+            the GID independently (handy when you want files owned by a
+            shared "users" group rather than the user's private group). */}
+        <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-3">
           <label className="block text-sm font-medium">
-            Container user
+            Container user / group
             <span className="text-slate-500 text-xs ml-2">
-              (the account that should own media files — usually different from the SSH user)
+              (these own the media files — pick something other than the install user)
             </span>
           </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="e.g. mediaserver, plex"
-              className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-              value={containerUser}
-              onChange={(e) => setContainerUser(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupContainerUser() } }}
-            />
-            <button
-              type="button"
-              onClick={lookupContainerUser}
-              disabled={userLookupBusy || !containerUser.trim() || !sessionId}
-              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
-            >
-              {userLookupBusy ? 'Looking up...' : 'Look up UID/GID'}
-            </button>
-          </div>
-          {userLookupResult && (
-            <div className={`text-xs ${userLookupResult.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {userLookupResult.ok ? '✓ ' : '✘ '}{userLookupResult.msg}
+
+          {usersError && (
+            <div className="text-xs text-rose-300">
+              Couldn&apos;t read users from the NAS: {usersError}
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">User</label>
+              <select
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                value={config.PUID ?? ''}
+                onChange={(e) => selectContainerUser(e.target.value)}
+              >
+                <option value="">— Pick a user —</option>
+                {users.map((u) => (
+                  <option key={u.uid} value={u.uid}>
+                    {u.name} (uid {u.uid}{u.comment ? ` — ${u.comment.slice(0, 40)}` : ''})
+                    {u.uid === 0 ? ' [root, not recommended]' : ''}
+                  </option>
+                ))}
+                {users.length === 0 && !usersError && (
+                  <option disabled>Loading users from NAS...</option>
+                )}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Group</label>
+              <select
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                value={config.PGID ?? ''}
+                onChange={(e) => selectContainerGroup(e.target.value)}
+              >
+                <option value="">— Pick a group —</option>
+                {groups.map((g) => (
+                  <option key={g.gid} value={g.gid}>
+                    {g.name} (gid {g.gid}){g.gid === 0 ? ' [root]' : ''}
+                  </option>
+                ))}
+                {groups.length === 0 && !usersError && (
+                  <option disabled>Loading groups from NAS...</option>
+                )}
+              </select>
+            </div>
+          </div>
+
           <p className="text-xs text-slate-500">
-            If you don&apos;t have a dedicated user yet, create one in DSM &rarr;
-            Control Panel &rarr; User &amp; Group, give it permission to your
-            media share, then come back.
+            Don&apos;t see your media user? Create one in DSM &rarr; Control
+            Panel &rarr; User &amp; Group with read/write on your media share,
+            then come back to this screen.
           </p>
         </div>
 
