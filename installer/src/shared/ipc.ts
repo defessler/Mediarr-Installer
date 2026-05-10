@@ -154,6 +154,8 @@ export interface AppInfo {
   version: string
   /** Git SHA of the bundled nas/ payload, recorded by copy-nas-payload.mjs */
   payloadSha: string | null
+  /** Absolute path to electron-log's current log file on this machine. */
+  logPath: string
 }
 
 // ── Connection profiles ───────────────────────────────────────────────────────
@@ -224,6 +226,8 @@ export const IPC = {
   dialogSaveText:  'dialog:save-text',
   // App
   appGetInfo:      'app:get-info',
+  appOpenLog:      'app:open-log',
+  appShowLogInFolder: 'app:show-log-in-folder',
   // Events
   evtStreamData:   'ssh:stream:data',
   evtStreamClose:  'ssh:stream:close',

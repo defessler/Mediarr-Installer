@@ -123,11 +123,43 @@ export function App() {
 
       {/* Footer with build info — handy for support */}
       {info && (
-        <footer className="text-xs text-slate-600 px-4 py-1.5 border-t border-slate-900 flex justify-between">
+        <footer className="text-xs text-slate-600 px-4 py-1.5 border-t border-slate-900 flex justify-between items-center gap-3">
           <span>v{info.version}</span>
-          <span className="font-mono">
-            payload: {info.payloadSha?.slice(0, 8) ?? 'dev'}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                window.installer.app.openLog().then((r) => {
+                  if (r.error) {
+                    useErrors.getState().pushError(
+                      'Could not open log file',
+                      `${r.error}\n\nPath: ${r.path}`,
+                    )
+                  } else {
+                    useErrors.getState().pushInfo('Log opened', r.path)
+                  }
+                }).catch((e) => reportError('Open log', e))
+              }
+              className="hover:text-slate-300 underline"
+              title={info.logPath}
+            >
+              Open log
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                window.installer.app.showLogInFolder()
+                  .catch((e) => reportError('Reveal log', e))
+              }
+              className="hover:text-slate-300 underline"
+              title="Show the log file in your file manager"
+            >
+              Reveal in folder
+            </button>
+            <span className="font-mono">
+              payload: {info.payloadSha?.slice(0, 8) ?? 'dev'}
+            </span>
+          </div>
         </footer>
       )}
 

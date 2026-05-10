@@ -90,6 +90,10 @@ const installer = {
   },
   app: {
     getInfo: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.appGetInfo),
+    openLog: (): Promise<{ path: string; error: string | null }> =>
+      ipcRenderer.invoke(IPC.appOpenLog),
+    showLogInFolder: (): Promise<{ path: string }> =>
+      ipcRenderer.invoke(IPC.appShowLogInFolder),
   },
 }
 

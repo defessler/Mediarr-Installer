@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useErrors, type Toast } from '../store/errors.js'
+import { useErrors, reportError, type Toast } from '../store/errors.js'
 
 const SEVERITY_STYLE: Record<Toast['severity'], string> = {
   error: 'border-rose-700/60 bg-rose-950/80 text-rose-100',
@@ -43,15 +43,28 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         </span>
         <div className="flex-1 min-w-0">
           <div className="font-medium break-words">{toast.title}</div>
-          {toast.detail && (
+          <div className="mt-1 flex items-center gap-3 text-xs opacity-75">
+            {toast.detail && (
+              <button
+                type="button"
+                onClick={() => setShowDetail((s) => !s)}
+                className="hover:opacity-100 underline"
+              >
+                {showDetail ? 'Hide details' : 'Show details'}
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setShowDetail((s) => !s)}
-              className="mt-1 text-xs opacity-75 hover:opacity-100 underline"
+              onClick={() =>
+                window.installer.app.openLog().catch((e) =>
+                  reportError('Open log', e),
+                )
+              }
+              className="hover:opacity-100 underline"
             >
-              {showDetail ? 'Hide details' : 'Show details'}
+              Open log file
             </button>
-          )}
+          </div>
           {showDetail && toast.detail && (
             <pre className="mt-2 text-[11px] whitespace-pre-wrap font-mono opacity-90 max-h-48 overflow-auto">
               {toast.detail}

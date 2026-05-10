@@ -3,7 +3,8 @@
 // mock-services that emit pre-recorded streamed output. The IPC
 // channel names are identical so the renderer is unchanged.
 
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, shell } from 'electron'
+import log from 'electron-log/main.js'
 import { IPC, type ConnectionConfig, type SaveProfileInput } from '../shared/ipc.js'
 import * as sshReal from './ssh-service.js'
 import * as sftpReal from './sftp-service.js'
@@ -68,5 +69,21 @@ export function registerIpcHandlers() {
     mock: useMock,
     version: app.getVersion(),
     payloadSha: payloadSha(),
+    logPath: log.transports.file.getFile().path,
   }))
+  // Opens the active log file in the user's default text editor.
+  // Returns the path so the renderer can show it in a toast.
+  ipcMain.handle(IPC.appOpenLog, async () => {
+    const path = log.transports.file.getFile().path
+    const err = await shell.openPath(path)
+    return { path, error: err || null }
+  })
+  // Reveals the log file in the OS file manager (Explorer / Finder /
+  // whichever Linux DE) — useful for grabbing it to attach to a bug
+  // report or rotating older log files.
+  ipcMain.handle(IPC.appShowLogInFolder, () => {
+    const path = log.transports.file.getFile().path
+    shell.showItemInFolder(path)
+    return { path }
+  })
 }
