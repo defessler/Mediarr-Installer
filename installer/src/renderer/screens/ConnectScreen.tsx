@@ -359,7 +359,7 @@ export function ConnectScreen() {
       )}
 
       {result && (
-        <div className={`rounded-md px-3 py-2 text-sm ${result.ok ? 'bg-emerald-900/40 text-emerald-200' : 'bg-rose-900/40 text-rose-200'}`}>
+        <div className={`rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono ${result.ok ? 'bg-emerald-900/40 text-emerald-200' : 'bg-rose-900/40 text-rose-200'}`}>
           {result.ok
             ? 'Connection successful'
             : `${result.error?.kind}: ${result.error?.message}`}

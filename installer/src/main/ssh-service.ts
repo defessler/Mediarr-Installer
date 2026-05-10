@@ -142,18 +142,56 @@ export async function testConnect(cfg: ConnectionConfig): Promise<ConnectResult>
   try {
     const result = await connectClient(cfg)
     client = result.client
-    // Sanity check: run a trivial command. Wrap in a 10s timeout so a
-    // wedged SSH channel doesn't hang the whole UI.
-    const echoPromise = execOnce(client, 'echo ok')
-    const exit = await Promise.race([
-      echoPromise,
-      new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error('Server connected but did not respond to a basic echo within 10s')), 10_000),
-      ),
-    ])
-    if (exit.exitCode !== 0 || !exit.stdout.includes('ok')) {
-      return { ok: false, error: { kind: 'unknown', message: 'connected but echo failed' } }
+
+    // Probe the shell with a few cheap commands. We accept ANY of them
+    // succeeding as proof that the SSH user has a working session.
+    // Different DSM configurations / chroots / restricted shells make
+    // a single canonical probe unreliable, so we fan out:
+    //   - `echo ok`           — works on bash/sh/busybox
+    //   - `/bin/echo ok`      — works even if `echo` is shadowed
+    //   - `printf ok`         — POSIX builtin
+    //   - `:`                 — null command, always exits 0
+    const probes = ['echo ok', '/bin/echo ok', 'printf ok', ':']
+    let lastResult: ExecResult | null = null
+    let success = false
+    for (const cmd of probes) {
+      const p = execOnce(client, cmd)
+      const r = await Promise.race([
+        p,
+        new Promise<ExecResult>((_, rej) =>
+          setTimeout(() => rej(new Error(`probe "${cmd}" timed out after 5s`)), 5_000),
+        ),
+      ]).catch((e) => ({ exitCode: -1, signal: null, stdout: '', stderr: String((e as Error).message) }))
+      lastResult = r
+      // exitCode === 0 OR stdout containing 'ok' both count.
+      if (r.exitCode === 0 || r.stdout.toLowerCase().includes('ok')) {
+        success = true
+        break
+      }
     }
+
+    if (!success) {
+      const r = lastResult ?? { exitCode: null, signal: null, stdout: '', stderr: '' }
+      const stdoutPrev = r.stdout.slice(0, 200).replace(/\s+/g, ' ').trim() || '<empty>'
+      const stderrPrev = r.stderr.slice(0, 200).replace(/\s+/g, ' ').trim() || '<empty>'
+      return {
+        ok: false,
+        error: {
+          kind: 'unknown',
+          message:
+            `Connected but the SSH user can't run shell commands.\n\n` +
+            `Last probe exitCode=${r.exitCode} signal=${r.signal}\n` +
+            `stdout: ${stdoutPrev}\n` +
+            `stderr: ${stderrPrev}\n\n` +
+            `Common causes:\n` +
+            `  • The user's shell is /sbin/nologin or /usr/bin/false (DSM ` +
+            `default for "admin" — log in as root or change the shell).\n` +
+            `  • The user's home directory perms block login (chmod 700 ~).\n` +
+            `  • The session is restricted by an AllowUsers/Match rule in sshd_config.`,
+        },
+      }
+    }
+
     return { ok: true, banner: result.banner }
   } catch (err) {
     return { ok: false, error: classifyError(err as Error) }
