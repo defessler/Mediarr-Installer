@@ -179,39 +179,33 @@ export function EnvDetectScreen() {
               </p>
             )}
             {(() => {
-              // Three-state: green if curl reaches it, amber if curl
-              // doesn't but DNS+Docker daemon do (likely false negative
-              // from Synology's stock curl trust store), red only if
-              // even DNS fails — that's a real network problem.
-              const real = r.internet.dockerHub
-              const likelyOk = r.internet.dockerHubDnsResolves && r.internet.dockerDaemonUp
-              const okState: 'green' | 'amber' | 'red' =
-                real ? 'green' : likelyOk ? 'amber' : 'red'
+              // The host-level reachability checks (curl + getent) are
+              // unreliable on Synology — stock curl has out-of-date CAs,
+              // BusyBox often lacks getent, and outbound HTTPS from the
+              // SSH shell is sometimes firewalled separately from the
+              // Docker daemon. The daemon has its own network stack and
+              // pulls images fine regardless. So: trust Docker's presence
+              // check. We only flag a real problem if Docker isn't even
+              // installed (which is already covered above).
+              const dockerInstalled = r.docker !== 'missing'
+              const curlWorks = r.internet.dockerHub
               return <>
                 <Check
-                  ok={okState !== 'red'}
-                  label="Docker Hub reachable"
+                  ok={dockerInstalled}
+                  label="Image pulls"
                   value={
-                    okState === 'green' ? 'yes' :
-                    okState === 'amber' ? 'probably (curl failed but DNS + daemon ok)' :
-                    'no'
+                    !dockerInstalled ? 'docker not installed' :
+                    curlWorks ? 'verified reachable' :
+                    'should work (Docker daemon does its own network)'
                   }
                 />
-                {okState === 'amber' && (
-                  <p className="text-amber-300/80 text-xs ml-5 mt-1">
-                    Curl from this SSH session can't reach the registry, but
-                    DNS resolves and the Docker daemon is up. Synology&apos;s
-                    stock curl trust store is often out of date — the daemon
-                    pulls images via its own networking and usually works
-                    fine. If <code>docker pull hello-world</code> works in
-                    your terminal, ignore this.
-                  </p>
-                )}
-                {okState === 'red' && (
-                  <p className="text-rose-300 text-xs ml-5 mt-1">
-                    Even DNS for registry-1.docker.io failed. Image pulls
-                    will fail until you fix the NAS's DNS and outbound
-                    firewall.
+                {dockerInstalled && !curlWorks && (
+                  <p className="text-slate-500 text-xs ml-5 mt-1">
+                    Note: a basic curl from the SSH shell couldn&apos;t reach
+                    docker.io. Synology&apos;s stock curl is often out of
+                    date, but the Docker daemon talks to the registry on
+                    its own. If <code>docker pull hello-world</code> works
+                    in your terminal you&apos;re fine.
                   </p>
                 )}
               </>
