@@ -210,12 +210,10 @@ export function EnvDetectScreen() {
                 )}
               </>
             })()}
-            <Check ok={r.internet.plexTv} label="plex.tv reachable" value={r.internet.plexTv ? 'yes' : 'no'} />
-            {!r.internet.plexTv && (
-              <p className="text-amber-300 text-xs ml-5 mt-1">
-                Plex won't be able to validate your claim token. Other services unaffected.
-              </p>
-            )}
+            {/* plex.tv reachability removed — it tested host curl, but
+                Plex runs in a container with its own network stack. The
+                check was a frequent false-negative (Synology curl trust
+                store) and not actionable for the wizard. */}
           </section>
 
           <section className="rounded-md border border-slate-800 p-4 space-y-1">
