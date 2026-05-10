@@ -41,6 +41,10 @@ export function RunScreen() {
   )
   const [rerunningStep, setRerunningStep] = useState<number | null>(null)
   const [, setTick] = useState(0) // force re-render on log append
+  /** Tracks whether the current run has emitted an SFTP progress event
+   *  yet. The first emit gets a fresh line; subsequent emits use \r to
+   *  overwrite that line in place (one ticker, not 15 lines). */
+  const sftpFirstRef = useRef(true)
 
   function resetSteps() {
     setSteps(SETUP_STEPS.map((s) => ({ ...s })))
@@ -83,29 +87,44 @@ export function RunScreen() {
   }
 
   function appendChunk(text: string) {
-    // PTY chunks may straddle line boundaries. Concatenate the leading
-    // piece onto the previous line, then push any complete new lines.
-    const parts = text.split(/\r?\n/)
+    // Stream chunks may straddle line boundaries AND contain bare
+    // carriage returns. Many CLIs (docker compose progress, curl, wget,
+    // pip, npm) emit '\r' to redraw the same line in place — without
+    // CR-handling, each frame becomes its own line and the panel fills
+    // with hundreds of near-identical entries.
+    //
+    // Rule: split only on '\n'. Within any segment, a '\r' resets the
+    // current line back to empty and the text AFTER the last '\r'
+    // becomes the new content. The first segment extends the line
+    // already in the buffer; subsequent segments start fresh lines.
+    //
+    // For step-marker parsing we only consider segments that came AFTER
+    // a real '\n' AND don't contain a '\r' — i.e. complete normal lines.
+    const segments = text.split('\n')
     const newlyCompleted: string[] = []
 
-    if (linesRef.current.length === 0) {
-      // First chunk: every part except the trailing partial is "complete".
-      linesRef.current.push(...parts)
-      for (let i = 0; i < parts.length - 1; i++) newlyCompleted.push(parts[i])
-    } else {
-      // The first part extends the prior trailing line.
-      linesRef.current[linesRef.current.length - 1] += parts[0]
-      // Any additional parts are new lines; the prior trailing line
-      // is now finalised and the new lines after it are complete except
-      // for the very last (which may itself be a trailing partial).
-      if (parts.length > 1) {
-        // The previously-trailing line just got terminated.
-        newlyCompleted.push(linesRef.current[linesRef.current.length - 1])
-        for (let i = 1; i < parts.length - 1; i++) {
-          linesRef.current.push(parts[i])
-          newlyCompleted.push(parts[i])
+    if (linesRef.current.length === 0) linesRef.current.push('')
+
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]
+      const lastCR = seg.lastIndexOf('\r')
+      const overwrite = lastCR >= 0
+      const newContent = overwrite ? seg.slice(lastCR + 1) : seg
+
+      if (i === 0) {
+        // Continuation of the current (last) line.
+        if (overwrite) {
+          linesRef.current[linesRef.current.length - 1] = newContent
+        } else {
+          linesRef.current[linesRef.current.length - 1] += newContent
         }
-        linesRef.current.push(parts[parts.length - 1])
+      } else {
+        // We just crossed a '\n'. The previous line is now finalised —
+        // if it doesn't look like a progress-frame artefact, it's a
+        // complete line eligible for marker parsing.
+        const finalised = linesRef.current[linesRef.current.length - 1]
+        if (finalised && !overwrite) newlyCompleted.push(finalised)
+        linesRef.current.push(newContent)
       }
     }
 
@@ -161,8 +180,12 @@ export function RunScreen() {
     const offProg = window.installer.sftp.onProgress((p) => {
       setProgress({ pct: p.pctOverall, file: p.file })
       // Surface each file in the log too — so a wedged transfer is
-      // visibly stuck on a specific file.
-      appendChunk(`\x1b[36m[sftp]\x1b[0m ${p.pctOverall}% — ${p.file}\n`)
+      // visibly stuck on a specific file. After the first emit we
+      // prefix '\r' (no '\n') so the line overwrites in place rather
+      // than stacking 15 progress lines.
+      const prefix = sftpFirstRef.current ? '\n' : '\r'
+      sftpFirstRef.current = false
+      appendChunk(`${prefix}\x1b[36m[sftp]\x1b[0m ${p.pctOverall}% — ${p.file}`)
     })
     return () => {
       offData()
@@ -213,6 +236,7 @@ export function RunScreen() {
     setErrorMsg(null)
     linesRef.current = []
     resetSteps()
+    sftpFirstRef.current = true   // next sftp progress event starts a fresh line
     setTick((t) => t + 1)
 
     // Helper: log a wizard-internal action into the same panel that

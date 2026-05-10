@@ -9,6 +9,14 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Force docker compose to emit plain progress output. Default ("auto")
+# detects a TTY and emits an animated multi-line spinner that's
+# unreadable when streamed to a non-terminal log panel (every frame
+# becomes its own line). Plain mode emits one event per phase change.
+# Set this BEFORE any docker compose invocation in this script.
+export COMPOSE_PROGRESS=plain
+export DOCKER_CLI_HINTS=false
+
 PASS=0
 FAIL=0
 
