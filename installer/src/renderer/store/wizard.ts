@@ -14,10 +14,16 @@ export type WizardStep =
 
 export type WizardMode = 'install' | 'update'
 
-/** Steps that need an active SSH session. App.tsx redirects to 'connect'
- *  if any of these is reached without a session. */
+/** Steps that absolutely need a live SSH session — they execute remote
+ *  commands as soon as you land on them. App.tsx redirects to 'connect'
+ *  if any of these is reached without a session.
+ *
+ *  Configure / detect intentionally NOT in this list: the user can edit
+ *  profile settings without being connected. detect skips probing when
+ *  there's no session, and Configure's SSH-dependent features (e.g. the
+ *  user/group dropdown) fall back to manual input. */
 export const STEPS_NEEDING_SESSION: WizardStep[] = [
-  'detect', 'configure', 'run', 'run-update', 'done',
+  'run', 'run-update', 'done',
 ]
 
 interface WizardState {

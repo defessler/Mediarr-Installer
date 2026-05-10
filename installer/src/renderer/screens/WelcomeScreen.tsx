@@ -9,6 +9,9 @@ export function WelcomeScreen() {
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newLabel, setNewLabel] = useState('')
+  /** id of the profile currently being label-edited inline */
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null)
+  const [editingLabelText, setEditingLabelText] = useState('')
 
   async function refresh() {
     try {
@@ -21,7 +24,7 @@ export function WelcomeScreen() {
   }
   useEffect(() => { refresh() }, [])
 
-  async function pickProfile(id: string, mode: 'install' | 'update') {
+  async function pickProfile(id: string, target: 'install' | 'update' | 'edit') {
     setBusy(id)
     try {
       const p = await window.installer.profiles.load(id)
@@ -33,14 +36,47 @@ export function WelcomeScreen() {
         config: p.config as Record<string, string>,
         targetDir: p.targetDir,
       })
-      setMode(mode)
-      setStep('connect')
-      // Best-effort touch (ignore failures)
+      if (target === 'edit') {
+        // "Edit settings" — drop the user straight into Configure.
+        // No SSH session is needed; the screen renders all fields with
+        // the existing profile values and auto-saves on edit. Mode
+        // stays 'install' so the stepper rail looks normal.
+        setMode('install')
+        setStep('configure')
+      } else {
+        setMode(target)
+        setStep('connect')
+      }
       window.installer.profiles.touch(id).catch(() => {})
     } catch (e) {
       reportError('Load profile', e)
     } finally {
       setBusy(null)
+    }
+  }
+
+  async function commitLabel(id: string) {
+    const label = editingLabelText.trim()
+    if (!label) {
+      setEditingLabelId(null)
+      return
+    }
+    try {
+      // Load the full profile, save back with the new label only.
+      const p = await window.installer.profiles.load(id)
+      if (!p) throw new Error('Profile not found')
+      await window.installer.profiles.save({
+        id,
+        label,
+        connection: p.connection,
+        targetDir: p.targetDir,
+        config: p.config as Record<string, string>,
+      })
+      setEditingLabelId(null)
+      setEditingLabelText('')
+      await refresh()
+    } catch (e) {
+      reportError('Rename profile', e)
     }
   }
 
@@ -118,13 +154,48 @@ export function WelcomeScreen() {
                 className="rounded-md border border-slate-700 bg-slate-800/40 hover:bg-slate-800/70 p-3 flex items-center gap-3"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{p.label}</div>
+                  {editingLabelId === p.id ? (
+                    <input
+                      autoFocus
+                      type="text"
+                      className="w-full px-2 py-1 text-sm bg-slate-900 border border-slate-600 rounded font-medium"
+                      value={editingLabelText}
+                      onChange={(e) => setEditingLabelText(e.target.value)}
+                      onBlur={() => commitLabel(p.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitLabel(p.id)
+                        if (e.key === 'Escape') {
+                          setEditingLabelId(null); setEditingLabelText('')
+                        }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingLabelId(p.id)
+                        setEditingLabelText(p.label)
+                      }}
+                      className="font-medium truncate text-left hover:text-emerald-300"
+                      title="Click to rename"
+                    >
+                      {p.label}
+                    </button>
+                  )}
                   <div className="text-xs text-slate-400 truncate">
                     {p.connection.user}@{p.connection.host || '<no host>'}:{p.connection.port}
                     {p.hasConfig && <span className="text-emerald-500/80 ml-2">· config saved</span>}
                     {p.hasSecret && <span className="text-emerald-500/80 ml-2">· secrets saved</span>}
                   </div>
                 </div>
+                <button
+                  onClick={() => pickProfile(p.id, 'edit')}
+                  disabled={busy !== null}
+                  className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+                  title="Edit all settings without connecting"
+                >
+                  Edit
+                </button>
                 <button
                   onClick={() => pickProfile(p.id, 'install')}
                   disabled={busy !== null}

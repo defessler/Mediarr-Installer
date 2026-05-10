@@ -218,8 +218,11 @@ export function ConfigureScreen() {
                     {u.uid === 0 ? ' [root, not recommended]' : ''}
                   </option>
                 ))}
-                {users.length === 0 && !usersError && (
+                {users.length === 0 && !usersError && sessionId && (
                   <option disabled>Loading users from NAS...</option>
+                )}
+                {!sessionId && users.length === 0 && (
+                  <option disabled>(connect to populate from NAS)</option>
                 )}
               </select>
             </div>
@@ -236,8 +239,11 @@ export function ConfigureScreen() {
                     {g.name} (gid {g.gid}){g.gid === 0 ? ' [root]' : ''}
                   </option>
                 ))}
-                {groups.length === 0 && !usersError && (
+                {groups.length === 0 && !usersError && sessionId && (
                   <option disabled>Loading groups from NAS...</option>
+                )}
+                {!sessionId && groups.length === 0 && (
+                  <option disabled>(connect to populate from NAS)</option>
                 )}
               </select>
             </div>
