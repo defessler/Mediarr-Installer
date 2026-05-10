@@ -2,8 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'" />
     <title>NAS Arr Installer</title>
+    <!-- Note: CSP intentionally not set as a meta tag. Strict 'self' breaks
+         packaged file:// loads in Electron 33+. The renderer is sandboxed
+         and contextIsolation is on; we trust our own bundled assets. -->
   </head>
   <body class="bg-slate-950 text-slate-100">
     <div id="root"></div>

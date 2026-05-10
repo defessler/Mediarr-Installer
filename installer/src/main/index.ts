@@ -56,7 +56,22 @@ function createWindow() {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    mainWindow.loadFile(join(__dirname_main, '..', 'renderer', 'index.html'))
+    const indexHtml = join(__dirname_main, '..', 'renderer', 'index.html')
+    log.info(`Loading renderer from ${indexHtml}`)
+    mainWindow.loadFile(indexHtml).catch((err) => {
+      log.error('Failed to load renderer index.html:', err)
+    })
+    // Surface any renderer load failures to the log file (electron-log
+    // writes to %APPDATA%\nas-arr-installer\logs\main.log on Windows).
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      log.error(`did-fail-load: code=${code} desc=${desc} url=${url}`)
+    })
+    mainWindow.webContents.on('render-process-gone', (_e, details) => {
+      log.error('render-process-gone:', details)
+    })
+    // Open DevTools in production until v0.1 is verified — comment out
+    // once the packaged build is confirmed working in the wild.
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 }
 
