@@ -14,8 +14,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # unreadable when streamed to a non-terminal log panel (every frame
 # becomes its own line). Plain mode emits one event per phase change.
 # Set this BEFORE any docker compose invocation in this script.
+#
+# Note: older docker compose versions (v2.x pre-2.20) ignore
+# COMPOSE_PROGRESS in tty mode but DO honor the --progress flag, so
+# we pass that explicitly on every compose call below. Belt-and-
+# suspenders so the installer log stays readable across DSM versions.
 export COMPOSE_PROGRESS=plain
+export COMPOSE_ANSI=never
 export DOCKER_CLI_HINTS=false
+COMPOSE_QUIET_FLAGS="--progress plain --ansi never"
 
 PASS=0
 FAIL=0
@@ -161,7 +168,7 @@ abort_if_failed
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
 run_step 6 "Start the stack" \
-    bash -c "cd '$SCRIPT_DIR' && $COMPOSE $COMPOSE_FILES up -d"
+    bash -c "cd '$SCRIPT_DIR' && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d"
 
 abort_if_failed
 

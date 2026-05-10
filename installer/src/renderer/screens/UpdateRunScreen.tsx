@@ -65,7 +65,17 @@ export function UpdateRunScreen() {
     try {
       await window.installer.ssh.execStream({
         sessionId,
-        cmd: PATH_PREFIX + `cd ${shellQuote(targetDir)} && docker compose pull && docker compose up -d`,
+        // --progress plain + --ansi never keep the docker compose output
+        // line-per-event instead of the fancy spinner display, which
+        // floods the log panel with 16-line redraw frames every 100ms.
+        // COMPOSE_PROGRESS / COMPOSE_ANSI are belt-and-suspenders for
+        // older compose versions that ignore the CLI flags.
+        cmd:
+          PATH_PREFIX +
+          `cd ${shellQuote(targetDir)} && ` +
+          `export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false && ` +
+          `docker compose --progress plain --ansi never pull && ` +
+          `docker compose --progress plain --ansi never up -d`,
         sudo: true,
         channelId: CHANNEL_ID,
       })

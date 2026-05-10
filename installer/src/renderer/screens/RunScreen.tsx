@@ -111,31 +111,44 @@ export function RunScreen() {
     // in \r\n pairs FIRST, then any remaining bare \r really is a
     // redraw marker.
     text = text.replace(/\r\n/g, '\n')
-    const segments = text.split('\n')
-    const newlyCompleted: string[] = []
 
+    // Process the chunk in pieces split by cursor-up escapes. Docker
+    // compose's fancy multi-line progress display emits "\x1b[<N>A\r"
+    // to move the cursor up N rows before redrawing the block. Without
+    // honoring this, each redraw frame stacks 16+ NEW lines onto the
+    // buffer — within a minute the panel has 5000+ lines, scroll
+    // can't keep up, and the user sees the spinner output flooding.
+    // We split the chunk on those escapes, run the normal append
+    // logic on each piece, and pop N buffer lines at each separator.
+    // eslint-disable-next-line no-control-regex
+    const CURSOR_UP_RE = /\x1b\[(\d*)A\r?/g
+    const pieces: { text: string; popAfter: number }[] = []
+    let lastIdx = 0
+    let m: RegExpExecArray | null
+    while ((m = CURSOR_UP_RE.exec(text)) !== null) {
+      pieces.push({
+        text: text.slice(lastIdx, m.index),
+        popAfter: m[1] === '' ? 1 : Number(m[1]),
+      })
+      lastIdx = m.index + m[0].length
+    }
+    pieces.push({ text: text.slice(lastIdx), popAfter: 0 })
+
+    const newlyCompleted: string[] = []
     if (linesRef.current.length === 0) linesRef.current.push('')
 
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i]
-      const lastCR = seg.lastIndexOf('\r')
-      const overwrite = lastCR >= 0
-      const newContent = overwrite ? seg.slice(lastCR + 1) : seg
-
-      if (i === 0) {
-        // Continuation of the current (last) line.
-        if (overwrite) {
-          linesRef.current[linesRef.current.length - 1] = newContent
-        } else {
-          linesRef.current[linesRef.current.length - 1] += newContent
+    for (const piece of pieces) {
+      processSegments(piece.text, newlyCompleted)
+      if (piece.popAfter > 0) {
+        // Cursor moved up N — drop the last N lines we wrote and
+        // reset the new last line to empty so the next bytes (which
+        // come after the \r that's part of the same escape) write at
+        // col 0, replacing whatever was there.
+        const popCount = Math.min(piece.popAfter, linesRef.current.length - 1)
+        if (popCount > 0) linesRef.current.splice(-popCount)
+        if (linesRef.current.length > 0) {
+          linesRef.current[linesRef.current.length - 1] = ''
         }
-      } else {
-        // We just crossed a '\n'. The previous line is now finalised —
-        // if it doesn't look like a progress-frame artefact, it's a
-        // complete line eligible for marker parsing.
-        const finalised = linesRef.current[linesRef.current.length - 1]
-        if (finalised && !overwrite) newlyCompleted.push(finalised)
-        linesRef.current.push(newContent)
       }
     }
 
@@ -146,6 +159,31 @@ export function RunScreen() {
 
     if (newlyCompleted.length > 0) applyStepMarkers(newlyCompleted)
     setTick((t) => t + 1)
+  }
+
+  /** Append the normal-text portion of a chunk to the buffer. Splits on
+   *  '\n' and handles in-line '\r' for single-line redraws. */
+  function processSegments(text: string, newlyCompleted: string[]) {
+    if (text === '') return
+    const segments = text.split('\n')
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]
+      const lastCR = seg.lastIndexOf('\r')
+      const overwrite = lastCR >= 0
+      const newContent = overwrite ? seg.slice(lastCR + 1) : seg
+
+      if (i === 0) {
+        if (overwrite) {
+          linesRef.current[linesRef.current.length - 1] = newContent
+        } else {
+          linesRef.current[linesRef.current.length - 1] += newContent
+        }
+      } else {
+        const finalised = linesRef.current[linesRef.current.length - 1]
+        if (finalised && !overwrite) newlyCompleted.push(finalised)
+        linesRef.current.push(newContent)
+      }
+    }
   }
 
   useEffect(() => {
@@ -430,6 +468,13 @@ export function RunScreen() {
           sessionId,
           cmd:
             PATH_PREFIX +
+            // Force docker compose to use plain output even when its
+            // stdout is a tty (which it will be under script(1)). Without
+            // these, docker draws a multi-line spinner that floods the
+            // log with redraw frames. setup.sh also exports these, but
+            // setting them here makes us robust to older setup.sh
+            // payloads or shell variants that drop the export.
+            `export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false; ` +
             `echo "[wizard-debug] before setup.sh: $(date)"; ` +
             `if command -v script >/dev/null 2>&1; then ` +
             `  echo "[wizard-debug] using: script -qfc (forced pty)"; ` +
