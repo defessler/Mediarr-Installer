@@ -20,6 +20,11 @@ win:
     - target: nsis
       arch:
         - x64
+  # Skip rcedit + signtool entirely. They live in the winCodeSign cache
+  # whose extraction fails on Windows without Developer Mode (the archive
+  # contains macOS dylib symlinks that need elevated privileges to write).
+  # We don't sign and we don't need to rewrite the exe metadata for v0.1.
+  signAndEditExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
