@@ -377,32 +377,43 @@ export function RunScreen() {
         }
       }, 3_000)
       try {
-        // Wrap bash in `script -qfc` to force a pty even if the SSH
-        // server refused our pty:true request. `script` allocates its
-        // own forked-pty, runs the command inside, and writes output
-        // through that pty — which means programs see a real terminal
-        // and use line-buffered I/O instead of block-buffering until
-        // process exit.
+        // Defeat block-buffering: when stdout isn't a tty, glibc-linked
+        // programs (docker, curl, etc.) buffer ~4–8 KiB before flushing,
+        // so we see nothing on the wire until they exit. Three fallbacks
+        // in order of preference:
         //
-        // Falls back to stdbuf -oL -eL (GNU coreutils, present on
-        // most Synology DSM7), then to plain bash if neither tool is
-        // available.
+        //   1. script -qfc … /dev/null  — util-linux, allocates a fresh
+        //      pty and runs the command inside it; programs see a real
+        //      tty and line-buffer.
+        //   2. stdbuf -oL -eL bash …    — coreutils; injects an LD_PRELOAD
+        //      that switches stdout/stderr to line-buffered.
+        //   3. bash … 2>&1 | awk        — busybox awk is everywhere on
+        //      Synology, and `fflush()` after each print forces the line
+        //      through the pipe immediately. We capture the bash exit
+        //      code via ${PIPESTATUS[0]} since the pipe's exit is awk's.
         //
-        // Sentinel markers bracket the invocation so we can confirm
-        // sudo + bash + setup.sh actually reached.
+        // Each branch echoes a "using: …" line so the log tells us which
+        // path actually ran when we're debugging silent installs.
+        const targetSh = shellQuote(`${targetDir}/setup.sh`)
         await window.installer.ssh.execStream({
           sessionId,
           cmd:
             PATH_PREFIX +
             `echo "[wizard-debug] before setup.sh: $(date)"; ` +
             `if command -v script >/dev/null 2>&1; then ` +
-            `  script -qfc "bash ${shellQuote(`${targetDir}/setup.sh`)}" /dev/null 2>&1; ` +
+            `  echo "[wizard-debug] using: script -qfc (forced pty)"; ` +
+            `  script -qfc "bash ${targetSh}" /dev/null 2>&1; rc=$?; ` +
             `elif command -v stdbuf >/dev/null 2>&1; then ` +
-            `  stdbuf -oL -eL bash ${shellQuote(`${targetDir}/setup.sh`)} 2>&1; ` +
+            `  echo "[wizard-debug] using: stdbuf -oL -eL"; ` +
+            `  stdbuf -oL -eL bash ${targetSh} 2>&1; rc=$?; ` +
+            `elif command -v awk >/dev/null 2>&1; then ` +
+            `  echo "[wizard-debug] using: bash | awk fflush"; ` +
+            `  bash ${targetSh} 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
             `else ` +
-            `  bash ${shellQuote(`${targetDir}/setup.sh`)} 2>&1; ` +
+            `  echo "[wizard-debug] using: plain bash (output may be block-buffered)"; ` +
+            `  bash ${targetSh} 2>&1; rc=$?; ` +
             `fi; ` +
-            `rc=$?; echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
+            `echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
           sudo: true,
           channelId: CHANNEL_ID,
         })
