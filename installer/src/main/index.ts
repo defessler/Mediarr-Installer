@@ -125,6 +125,10 @@ function createWindow() {
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     log.info('Dev mode — loadURL', process.env.ELECTRON_RENDERER_URL)
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    // Dev: auto-open DevTools so we don't have to click a button every
+    // reload. Packaged builds get a manual "DevTools" button next to
+    // "Open log" — power users can still get in, but normal users
+    // aren't greeted by a console panel they didn't ask for.
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     log.info('Packaged mode — loadFile', indexHtml)
@@ -132,10 +136,12 @@ function createWindow() {
       log.error('loadFile failed:', err)
       dialog.showErrorBox('Renderer load failed', String(err))
     })
-    // Open DevTools in production until v0.1 is verified — comment out
-    // once the packaged build is confirmed working in the wild.
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
+}
+
+/** Expose the active window so ipc-handlers can open its DevTools. */
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow
 }
 
 app.whenReady().then(() => {

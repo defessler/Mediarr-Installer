@@ -97,6 +97,8 @@ const installer = {
       ipcRenderer.invoke(IPC.appOpenLog),
     showLogInFolder: (): Promise<{ path: string }> =>
       ipcRenderer.invoke(IPC.appShowLogInFolder),
+    openDevTools: (): Promise<{ opened: boolean }> =>
+      ipcRenderer.invoke(IPC.appOpenDevTools),
   },
   installLog: {
     start: (kind?: 'install' | 'update' | 'validate'): Promise<{ path: string }> =>

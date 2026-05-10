@@ -257,6 +257,7 @@ export const IPC = {
   appGetInfo:      'app:get-info',
   appOpenLog:      'app:open-log',
   appShowLogInFolder: 'app:show-log-in-folder',
+  appOpenDevTools: 'app:open-devtools',
   // Install log (per-run mirror of streamed output to a local file)
   installLogStart:  'install-log:start',
   installLogAppend: 'install-log:append',

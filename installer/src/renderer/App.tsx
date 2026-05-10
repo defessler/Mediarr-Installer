@@ -289,6 +289,17 @@ export function App() {
             >
               Reveal in folder
             </button>
+            <button
+              type="button"
+              onClick={() =>
+                window.installer.app.openDevTools()
+                  .catch((e) => reportError('Open DevTools', e))
+              }
+              className="hover:text-slate-300 underline"
+              title="Toggle Chromium DevTools — only needed for debugging"
+            >
+              DevTools
+            </button>
             <span className="font-mono">
               payload: {info.payloadSha?.slice(0, 8) ?? 'dev'}
             </span>

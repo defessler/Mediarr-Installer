@@ -15,6 +15,7 @@ import * as profiles from './profile-store.js'
 import { saveTextToFile } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
 import * as installLog from './install-log.js'
+import { getMainWindow } from './index.js'
 
 export const isMockMode = (): boolean =>
   process.env.INSTALLER_MOCK === '1' || process.env.INSTALLER_MOCK === 'true'
@@ -87,6 +88,20 @@ export function registerIpcHandlers() {
     const path = log.transports.file.getFile().path
     shell.showItemInFolder(path)
     return { path }
+  })
+
+  // Toggle Chromium DevTools. The packaged build doesn't auto-open
+  // them anymore, but this lets a user pop them open from the footer
+  // when something looks wrong.
+  ipcMain.handle(IPC.appOpenDevTools, () => {
+    const win = getMainWindow()
+    if (!win) return { opened: false }
+    if (win.webContents.isDevToolsOpened()) {
+      win.webContents.closeDevTools()
+      return { opened: false }
+    }
+    win.webContents.openDevTools({ mode: 'detach' })
+    return { opened: true }
   })
 
   // ── Install log (per-run, separate from electron-log main.log) ────────────
