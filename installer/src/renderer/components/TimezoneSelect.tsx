@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 interface Props {
   value: string
   onChange: (tz: string) => void
-  /** Optional zone the env-detect picked up — surfaced as a "use detected" hint. */
+  /** Optional zone the env-detect picked up — surfaced as a quick-set hint. */
   detectedTz?: string | null
 }
 
@@ -31,57 +31,104 @@ function loadZones(): string[] {
   ]
 }
 
+interface ZoneGroup {
+  region: string
+  zones: { value: string; label: string }[]
+}
+
+function groupZones(zones: string[]): ZoneGroup[] {
+  const map = new Map<string, ZoneGroup>()
+  for (const z of zones) {
+    const slash = z.indexOf('/')
+    const region = slash === -1 ? 'Other' : z.slice(0, slash)
+    const label = slash === -1 ? z : z.slice(slash + 1).replace(/_/g, ' ')
+    if (!map.has(region)) map.set(region, { region, zones: [] })
+    map.get(region)!.zones.push({ value: z, label })
+  }
+  return [...map.values()].sort((a, b) => a.region.localeCompare(b.region))
+}
+
 export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
   const zones = useMemo(loadZones, [])
-  const [filter, setFilter] = useState('')
+  const groups = useMemo(() => groupZones(zones), [zones])
+  const isKnown = !value || zones.includes(value)
 
-  // Pre-filter by area when there are 600 entries — the typeahead drives a
-  // datalist for keyboard users. We render the matching subset as <option>s.
-  const matching = useMemo(() => {
-    const f = filter.trim().toLowerCase()
-    if (!f) return zones
-    return zones.filter((z) => z.toLowerCase().includes(f))
-  }, [zones, filter])
+  // Current local timezone from the browser/OS — handy as a "use my PC's tz" hint.
+  const browserTz = useMemo(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return null }
+  }, [])
 
-  const isValid = !value || zones.includes(value)
-  const detectedDifferent = detectedTz && detectedTz !== value && zones.includes(detectedTz)
+  // Pretty preview of "what time is it in this zone right now"
+  const preview = useMemo(() => {
+    if (!value || !isKnown) return null
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        timeZone: value, hour: 'numeric', minute: '2-digit', weekday: 'short',
+      }).format(new Date())
+    } catch { return null }
+  }, [value, isKnown])
 
   return (
-    <div>
-      <label className="block text-sm font-medium mb-1">
-        Timezone (Area/City)
-        {!isValid && (
-          <span className="ml-2 text-xs text-rose-300">unknown zone</span>
-        )}
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium">
+        Timezone
+        <span className="text-slate-500 text-xs ml-2">
+          (the NAS&apos;s local time — used by Plex schedules, log timestamps, etc.)
+        </span>
       </label>
-      <input
-        list="tz-zones"
-        type="text"
-        placeholder="America/New_York"
+
+      <select
         className={
           'w-full px-3 py-2 bg-slate-800 border rounded-md ' +
-          (isValid ? 'border-slate-700' : 'border-rose-600')
+          (isKnown ? 'border-slate-700' : 'border-rose-600')
         }
         value={value ?? ''}
-        onChange={(e) => {
-          setFilter(e.target.value)
-          onChange(e.target.value)
-        }}
-        autoComplete="off"
-      />
-      <datalist id="tz-zones">
-        {matching.slice(0, 250).map((z) => (
-          <option key={z} value={z} />
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">— Pick a timezone —</option>
+        {groups.map((g) => (
+          <optgroup key={g.region} label={g.region}>
+            {g.zones.map((z) => (
+              <option key={z.value} value={z.value}>
+                {z.label}
+              </option>
+            ))}
+          </optgroup>
         ))}
-      </datalist>
-      {detectedDifferent && (
-        <button
-          type="button"
-          onClick={() => onChange(detectedTz!)}
-          className="mt-1 text-xs text-emerald-400 hover:underline"
-        >
-          Use detected: {detectedTz}
-        </button>
+      </select>
+
+      {/* Quick-set chips for the most likely values */}
+      <div className="flex flex-wrap gap-1.5 text-xs">
+        {detectedTz && detectedTz !== value && zones.includes(detectedTz) && (
+          <button
+            type="button"
+            onClick={() => onChange(detectedTz)}
+            className="px-2 py-0.5 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-200 rounded font-mono"
+          >
+            Use NAS&apos;s timezone: {detectedTz}
+          </button>
+        )}
+        {browserTz && browserTz !== value && browserTz !== detectedTz && zones.includes(browserTz) && (
+          <button
+            type="button"
+            onClick={() => onChange(browserTz)}
+            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-mono"
+          >
+            Use this PC&apos;s timezone: {browserTz}
+          </button>
+        )}
+      </div>
+
+      {/* Live preview so the user can sanity-check */}
+      {preview && (
+        <div className="text-xs text-slate-400">
+          Right now in <span className="font-mono text-slate-300">{value}</span>: {preview}
+        </div>
+      )}
+      {!isKnown && (
+        <div className="text-xs text-rose-300">
+          &quot;{value}&quot; isn&apos;t a recognised IANA timezone.
+        </div>
       )}
     </div>
   )
