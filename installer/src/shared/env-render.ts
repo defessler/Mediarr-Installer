@@ -31,11 +31,14 @@ export interface EnvFormValues {
   USENET_NAME?: string
 
   // ── VPN
+  /** When 'false', setup.sh applies docker-compose.no-vpn.yml and gluetun
+   *  is skipped. qBittorrent then runs on the regular bridge network. */
+  VPN_ENABLED?: string          // 'true' | 'false' — default 'true'
   VPN_PROVIDER: string          // 'nordvpn'
   VPN_TYPE: string              // 'wireguard'
   VPN_COUNTRIES: string         // 'United States,Canada'
   NORDVPN_ACCESS_TOKEN?: string // not strictly needed once private key is set
-  NORDVPN_PRIVATE_KEY: string
+  NORDVPN_PRIVATE_KEY?: string  // optional when VPN_ENABLED=false
 
   // ── Usenet indexers (paste API key to enable)
   ANIMETOSHO_API_KEY?: string
@@ -121,7 +124,8 @@ export function renderEnv(v: EnvFormValues): string {
     line('USENET_SSL', v.USENET_SSL || '1'),
     line('USENET_NAME', v.USENET_NAME || 'primary'),
     '',
-    '# VPN (NordVPN + WireGuard)',
+    '# VPN (NordVPN + WireGuard) — set VPN_ENABLED=false to skip gluetun',
+    line('VPN_ENABLED', v.VPN_ENABLED || 'true'),
     line('VPN_PROVIDER', v.VPN_PROVIDER),
     line('VPN_TYPE', v.VPN_TYPE),
     line('NORDVPN_ACCESS_TOKEN', v.NORDVPN_ACCESS_TOKEN),

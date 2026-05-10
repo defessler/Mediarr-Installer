@@ -25,6 +25,18 @@ else
     exit 1
 fi
 
+# ── Choose compose files based on VPN_ENABLED in .env ────────────────────────
+# When VPN_ENABLED=false, the no-vpn override removes gluetun and re-binds
+# qBittorrent's ports directly to LAN_IP. Default is true (gluetun-routed).
+
+VPN_ENABLED="$(grep -m1 '^VPN_ENABLED=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
+COMPOSE_FILES="-f docker-compose.yml"
+if [ "$VPN_ENABLED" = "false" ] || [ "$VPN_ENABLED" = "0" ] || [ "$VPN_ENABLED" = "no" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.no-vpn.yml"
+    echo "  Note: VPN_ENABLED=false — running without gluetun. Torrent traffic"
+    echo "  will use your real public IP."
+fi
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 run_step() {
@@ -137,7 +149,7 @@ abort_if_failed
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
 run_step 6 "Start the stack" \
-    bash -c "cd '$SCRIPT_DIR' && $COMPOSE up -d"
+    bash -c "cd '$SCRIPT_DIR' && $COMPOSE $COMPOSE_FILES up -d"
 
 abort_if_failed
 
@@ -224,4 +236,4 @@ echo "     (customise /volume1/docker/media/recyclarr/config/recyclarr.yml first
 echo ""
 echo "  ── Updates ────────────────────────────────────"
 echo "  cd $SCRIPT_DIR"
-echo "  $COMPOSE pull && $COMPOSE up -d"
+echo "  $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"

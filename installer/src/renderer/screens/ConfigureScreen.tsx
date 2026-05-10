@@ -77,6 +77,18 @@ export function ConfigureScreen() {
     setConfig({ PGID: gid || (undefined as unknown as string) })
   }
 
+  // When "use same auth" is on, qBittorrent inherits ARR_USERNAME /
+  // ARR_PASSWORD on every render so the user only edits one place.
+  const [qbitSameAsArr, setQbitSameAsArr] = useState(true)
+  useEffect(() => {
+    if (!qbitSameAsArr) return
+    const u = config.ARR_USERNAME ?? ''
+    const p = config.ARR_PASSWORD ?? ''
+    if (config.QBITTORRENT_USER !== u || config.QBITTORRENT_PASS !== p) {
+      setConfig({ QBITTORRENT_USER: u, QBITTORRENT_PASS: p })
+    }
+  }, [qbitSameAsArr, config.ARR_USERNAME, config.ARR_PASSWORD, config.QBITTORRENT_USER, config.QBITTORRENT_PASS, setConfig])
+
   async function fetchVpnKey() {
     setVpnBusy(true); setVpnError(null)
     try {
@@ -223,6 +235,28 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">VPN (NordVPN WireGuard)</h2>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={(config.VPN_ENABLED ?? 'true').toLowerCase() !== 'false'}
+            onChange={(e) =>
+              update('VPN_ENABLED', e.target.checked ? 'true' : 'false')
+            }
+          />
+          Route torrent traffic through a VPN (recommended)
+        </label>
+
+        {(config.VPN_ENABLED ?? 'true').toLowerCase() === 'false' ? (
+          <div className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 text-sm text-amber-200">
+            VPN disabled. <code>setup.sh</code> will use{' '}
+            <code className="bg-slate-800 px-1 rounded">docker-compose.no-vpn.yml</code>;
+            qBittorrent will run without gluetun and your real public IP
+            will be visible to torrent peers. Don&apos;t enable this on a
+            commercial ISP that cares about torrent traffic.
+          </div>
+        ) : (
+          <>
         <p className="text-sm text-slate-400">
           Paste your NordVPN access token (Account &rarr; Set up NordVPN
           manually). We&apos;ll fetch the WireGuard private key directly from
@@ -277,6 +311,8 @@ export function ConfigureScreen() {
             onChange={(e) => update('NORDVPN_PRIVATE_KEY', e.target.value || undefined)}
           />
         </div>
+          </>
+        )}
       </section>
 
       <section className="space-y-4">
@@ -293,10 +329,30 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">qBittorrent WebUI</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Username" k="QBITTORRENT_USER" />
-          <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
-        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={qbitSameAsArr}
+            onChange={(e) => setQbitSameAsArr(e.target.checked)}
+          />
+          Use same credentials as ARR Web UI
+        </label>
+        {!qbitSameAsArr && (
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Username" k="QBITTORRENT_USER" />
+            <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
+          </div>
+        )}
+        {qbitSameAsArr && (
+          <p className="text-xs text-slate-500">
+            qBittorrent will use{' '}
+            <span className="font-mono text-slate-300">
+              {config.ARR_USERNAME || '<empty>'}
+            </span>{' '}
+            from the ARR auth section above. Note: qBittorrent requires the
+            password to be at least 8 characters.
+          </p>
+        )}
       </section>
 
       <section className="space-y-4">

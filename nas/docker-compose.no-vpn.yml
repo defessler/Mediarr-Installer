@@ -1,0 +1,27 @@
+# Override applied when VPN_ENABLED=false in .env. setup.sh detects the
+# flag and adds `-f docker-compose.no-vpn.yml` to its compose invocation.
+#
+# Effect: gluetun is excluded (assigned to a profile that's never started),
+# and qBittorrent runs on the regular bridge network with its ports bound
+# directly to LAN_IP. WARNING: torrent traffic in this mode is NOT
+# protected by a VPN — your real public IP is visible to peers.
+#
+# Re-enabling VPN later: set VPN_ENABLED=true in .env, fill in
+# NORDVPN_PRIVATE_KEY, then `docker compose down && bash setup.sh`.
+
+services:
+  gluetun:
+    profiles: ["disabled"]    # presence of any profile excludes from default `up`
+
+  qbittorrent:
+    network_mode: bridge
+    networks:
+      - media
+    ports:
+      - ${LAN_IP}:49156:49156
+      - 6881:6881
+      - 6881:6881/udp
+    # Drop the gluetun health-dependency from the base file. !reset is
+    # compose v2.20+; if the user is on something older, edit setup.sh
+    # to use a fully separate compose file instead of this override.
+    depends_on: !reset null

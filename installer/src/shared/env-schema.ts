@@ -46,15 +46,13 @@ export const envSchema = z.object({
   USENET_SSL: optStr,
   USENET_NAME: optStr,
 
-  // VPN
-  VPN_PROVIDER: z.string().min(1),
-  VPN_TYPE: z.literal('wireguard'),
-  VPN_COUNTRIES: z.string().min(1, 'pick at least one country'),
+  // VPN — required only when VPN_ENABLED !== 'false' (cross-validated below).
+  VPN_ENABLED: optStr,
+  VPN_PROVIDER: optStr,
+  VPN_TYPE: z.union([z.literal('wireguard'), z.literal('').optional()]).optional(),
+  VPN_COUNTRIES: optStr,
   NORDVPN_ACCESS_TOKEN: optStr,
-  NORDVPN_PRIVATE_KEY: z
-    .string()
-    .min(1, 'WireGuard private key is required')
-    .refine((v) => v.length === 43 || v.length === 44, 'WireGuard key should be 43 or 44 chars'),
+  NORDVPN_PRIVATE_KEY: optStr,
 
   // Indexers (all optional — leave blank to skip)
   ANIMETOSHO_API_KEY: optStr,
@@ -84,9 +82,7 @@ export const envSchema = z.object({
   ADDIC7ED_USER: optStr,
   ADDIC7ED_PASS: optStr,
 }).superRefine((v, ctx) => {
-  // If a usenet host is provided, require credentials too — otherwise
-  // setup-arr-config.py would silently skip the server and the user
-  // wouldn't know why downloads aren't working.
+  // Usenet creds only meaningful when host is set.
   if (v.USENET_HOST) {
     if (!v.USENET_USER) {
       ctx.addIssue({ code: 'custom', path: ['USENET_USER'],
@@ -95,6 +91,26 @@ export const envSchema = z.object({
     if (!v.USENET_PASS) {
       ctx.addIssue({ code: 'custom', path: ['USENET_PASS'],
         message: 'password required when USENET_HOST is set' })
+    }
+  }
+
+  // VPN config only validated when VPN_ENABLED is on (default = on).
+  const vpnOn = (v.VPN_ENABLED ?? 'true').toLowerCase() !== 'false'
+  if (vpnOn) {
+    if (!v.NORDVPN_PRIVATE_KEY) {
+      ctx.addIssue({ code: 'custom', path: ['NORDVPN_PRIVATE_KEY'],
+        message: 'WireGuard private key is required when VPN is enabled (or turn off VPN)' })
+    } else if (v.NORDVPN_PRIVATE_KEY.length !== 43 && v.NORDVPN_PRIVATE_KEY.length !== 44) {
+      ctx.addIssue({ code: 'custom', path: ['NORDVPN_PRIVATE_KEY'],
+        message: 'WireGuard key should be 43 or 44 chars' })
+    }
+    if (!v.VPN_PROVIDER) {
+      ctx.addIssue({ code: 'custom', path: ['VPN_PROVIDER'],
+        message: 'VPN provider required when VPN is enabled' })
+    }
+    if (!v.VPN_COUNTRIES) {
+      ctx.addIssue({ code: 'custom', path: ['VPN_COUNTRIES'],
+        message: 'pick at least one country when VPN is enabled' })
     }
   }
 })
