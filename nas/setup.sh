@@ -26,15 +26,19 @@ else
 fi
 
 # ── Choose compose files based on VPN_ENABLED in .env ────────────────────────
-# When VPN_ENABLED=false, the no-vpn override removes gluetun and re-binds
-# qBittorrent's ports directly to LAN_IP. Default is true (gluetun-routed).
+# VPN is OFF by default. When VPN_ENABLED is anything other than 'true' / '1'
+# / 'yes', the no-vpn override is applied — gluetun is excluded and
+# qBittorrent runs on the regular bridge network, ports bound to LAN_IP.
+# Set VPN_ENABLED=true and fill in NORDVPN_PRIVATE_KEY to opt into gluetun.
 
 VPN_ENABLED="$(grep -m1 '^VPN_ENABLED=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
 COMPOSE_FILES="-f docker-compose.yml"
-if [ "$VPN_ENABLED" = "false" ] || [ "$VPN_ENABLED" = "0" ] || [ "$VPN_ENABLED" = "no" ]; then
+if [ "$VPN_ENABLED" = "true" ] || [ "$VPN_ENABLED" = "1" ] || [ "$VPN_ENABLED" = "yes" ]; then
+    echo "  Note: VPN_ENABLED=true — routing qBittorrent through gluetun (NordVPN)."
+else
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.no-vpn.yml"
-    echo "  Note: VPN_ENABLED=false — running without gluetun. Torrent traffic"
-    echo "  will use your real public IP."
+    echo "  Note: VPN off (default). qBittorrent traffic will use your real public IP."
+    echo "  Set VPN_ENABLED=true in .env and re-run to enable gluetun routing."
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

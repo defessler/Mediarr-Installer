@@ -44,6 +44,9 @@ const defaultConfig: Partial<EnvFormValues> = {
   PUID: '1026',
   PGID: '100',
   TZ: 'America/New_York',
+  // VPN is opt-in. setup.sh applies docker-compose.no-vpn.yml unless the
+  // user flips this on, in which case it asks for the WireGuard key etc.
+  VPN_ENABLED: 'false',
   VPN_PROVIDER: 'nordvpn',
   VPN_TYPE: 'wireguard',
   VPN_COUNTRIES: 'United States',

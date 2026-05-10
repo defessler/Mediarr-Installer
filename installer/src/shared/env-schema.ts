@@ -94,8 +94,9 @@ export const envSchema = z.object({
     }
   }
 
-  // VPN config only validated when VPN_ENABLED is on (default = on).
-  const vpnOn = (v.VPN_ENABLED ?? 'true').toLowerCase() !== 'false'
+  // VPN config only validated when VPN_ENABLED is explicitly on
+  // (default = off; user opts in via the checkbox).
+  const vpnOn = (v.VPN_ENABLED ?? 'false').toLowerCase() === 'true'
   if (vpnOn) {
     if (!v.NORDVPN_PRIVATE_KEY) {
       ctx.addIssue({ code: 'custom', path: ['NORDVPN_PRIVATE_KEY'],

@@ -239,21 +239,19 @@ export function ConfigureScreen() {
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={(config.VPN_ENABLED ?? 'true').toLowerCase() !== 'false'}
+            checked={(config.VPN_ENABLED ?? 'false').toLowerCase() === 'true'}
             onChange={(e) =>
               update('VPN_ENABLED', e.target.checked ? 'true' : 'false')
             }
           />
-          Route torrent traffic through a VPN (recommended)
+          Route torrent traffic through a VPN (off by default; check to enable)
         </label>
 
-        {(config.VPN_ENABLED ?? 'true').toLowerCase() === 'false' ? (
-          <div className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 text-sm text-amber-200">
-            VPN disabled. <code>setup.sh</code> will use{' '}
-            <code className="bg-slate-800 px-1 rounded">docker-compose.no-vpn.yml</code>;
-            qBittorrent will run without gluetun and your real public IP
-            will be visible to torrent peers. Don&apos;t enable this on a
-            commercial ISP that cares about torrent traffic.
+        {(config.VPN_ENABLED ?? 'false').toLowerCase() !== 'true' ? (
+          <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-sm text-slate-300">
+            VPN off (default). qBittorrent will run on the regular network
+            and your real public IP will be visible to torrent peers.
+            Check the box above to add gluetun and route through NordVPN.
           </div>
         ) : (
           <>
