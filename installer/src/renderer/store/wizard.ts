@@ -120,7 +120,13 @@ export const useWizard = create<WizardState>()(
         activeProfileId: p.id,
         activeProfileLabel: p.label,
         connection: { ...defaultConnection, ...p.connection },
-        config: { ...defaultConfig, ...p.config },
+        // Plex claim tokens expire 4 minutes after generation. Persisting
+        // them in the profile means a stale token from a previous session
+        // is restored on app launch — and the countdown widget would
+        // optimistically show "4:00 fresh" because mount-time is taken as
+        // the entry time. Strip it on load so the field is empty and the
+        // user pastes a fresh one.
+        config: { ...defaultConfig, ...p.config, PLEX_CLAIM: undefined },
         targetDir: p.targetDir || DEFAULT_TARGET,
         sessionId: null,    // any prior session is dead now
       }),

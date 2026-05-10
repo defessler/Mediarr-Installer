@@ -137,6 +137,11 @@ export function RunScreen() {
           setSteps((prev) =>
             prev.map((s) => (s.status === 'running' ? { ...s, status: 'ok' } : s)),
           )
+          // Clear the Plex claim — it's been consumed by the just-finished
+          // install (or was empty). Either way, next time the user comes
+          // here they should paste a fresh one rather than re-using the
+          // dead token.
+          setConfig({ PLEX_CLAIM: undefined })
         }
         return
       }

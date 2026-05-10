@@ -47,10 +47,13 @@ export function useProfileAutosave() {
           targetDir,
           // EnvFormValues is a typed union of optional strings; the
           // profile store accepts a Record<string, string>. Strip
-          // undefined entries so they don't write back as the literal
-          // string "undefined".
+          // undefined entries (so they don't write back as the literal
+          // string "undefined") and PLEX_CLAIM specifically (4-min
+          // expiry — saving it would restore a stale token next launch).
           config: Object.fromEntries(
-            Object.entries(config).filter(([, v]) => v !== undefined && v !== null),
+            Object.entries(config).filter(
+              ([k, v]) => v !== undefined && v !== null && k !== 'PLEX_CLAIM',
+            ),
           ) as Record<string, string>,
         })
       } catch (e) {
