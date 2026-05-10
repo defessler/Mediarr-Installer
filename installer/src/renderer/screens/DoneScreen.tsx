@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
+import { PATH_PREFIX } from '../../shared/synology-path.js'
 
 const SERVICES: { name: string; port: string; note?: string }[] = [
   { name: 'Homepage',    port: '3000',  note: 'Start here' },
@@ -90,7 +91,7 @@ export function DoneScreen() {
     try {
       await window.installer.ssh.execStream({
         sessionId,
-        cmd: `bash '${targetDir}/post-deploy-validate.sh'`,
+        cmd: PATH_PREFIX + `bash '${targetDir}/post-deploy-validate.sh'`,
         sudo: true,
         channelId: VALIDATE_CHANNEL,
       })

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
+import { PATH_PREFIX } from '../../shared/synology-path.js'
 
 const CHANNEL_ID = 'compose-update'
 
@@ -60,7 +61,7 @@ export function UpdateRunScreen() {
     try {
       await window.installer.ssh.execStream({
         sessionId,
-        cmd: `cd ${shellQuote(targetDir)} && docker compose pull && docker compose up -d`,
+        cmd: PATH_PREFIX + `cd ${shellQuote(targetDir)} && docker compose pull && docker compose up -d`,
         sudo: true,
         channelId: CHANNEL_ID,
       })

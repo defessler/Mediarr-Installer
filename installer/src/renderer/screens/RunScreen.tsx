@@ -3,6 +3,7 @@ import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
 import { PlexClaimRefresh } from '../components/PlexClaimRefresh.js'
+import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { renderEnv, type EnvFormValues } from '../../shared/env-render.js'
 import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
 
@@ -178,7 +179,9 @@ export function RunScreen() {
     try {
       await window.installer.ssh.execStream({
         sessionId,
-        cmd: `cd ${shellQuote(targetDir)} && ${step.rerun}`,
+        cmd:
+          PATH_PREFIX +
+          `cd ${shellQuote(targetDir)} && ${step.rerun}`,
         sudo: true,
         channelId: `${RERUN_CHANNEL_PREFIX}${stepNumber}`,
       })
@@ -240,12 +243,17 @@ export function RunScreen() {
         mode: 0o600,
       })
 
-      // 3. Stream-run setup.sh. The exit code arrives via the stream-close
-      // event handled in useEffect, which advances the phase.
+      // 3. Stream-run setup.sh. PATH has to be augmented because SSH non-
+      // interactive shells on Synology don't include the Docker package
+      // paths by default, so setup.sh would otherwise see "docker: command
+      // not found" even though docker is installed. The exit code arrives
+      // via the stream-close event handled in useEffect.
       setPhase('running-setup')
       await window.installer.ssh.execStream({
         sessionId,
-        cmd: `bash ${shellQuote(`${targetDir}/setup.sh`)}`,
+        cmd:
+          PATH_PREFIX +
+          `bash ${shellQuote(`${targetDir}/setup.sh`)}`,
         sudo: true,
         channelId: CHANNEL_ID,
       })

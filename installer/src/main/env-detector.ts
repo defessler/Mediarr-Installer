@@ -69,6 +69,12 @@ export async function detectEnv(
   // single bash invocation that prints labelled sections, parsed below.
   const tq = shellQuote(targetDir)
   const batch = [
+    // SSH non-interactive shells on Synology typically have PATH=
+    // /usr/bin:/bin:/usr/sbin:/sbin, which doesn't include where Docker
+    // and Container Manager actually install their binaries. Augment up
+    // front so `docker`, `docker compose`, and `docker-compose` are
+    // findable here AND when setup.sh runs later.
+    'export PATH="/usr/local/bin:/usr/local/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:$PATH"',
     'set +e',
     'echo "===docker_v2==="; docker compose version 2>&1; echo "RC=$?"',
     'echo "===docker_v1==="; command -v docker-compose 2>&1; echo "RC=$?"',
