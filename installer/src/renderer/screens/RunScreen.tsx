@@ -361,32 +361,47 @@ export function RunScreen() {
       // not found" even though docker is installed. The exit code arrives
       // via the stream-close event handled in useEffect.
       //
-      // Heartbeat: if no output arrives for 30s+, log how long we've been
-      // waiting. Otherwise the user sees a frozen panel and assumes the
-      // worst.  Disabled once the first real chunk arrives (handled in
-      // the onStreamData effect via firstRealChunkSeen()).
+      // Heartbeat: log progress every 3s if there's been no output for
+      // more than 5s. Aggressive on purpose — long silences are the
+      // worst UX, and on Synology there are real causes (slow image
+      // pull, denied PTY → buffered output) where we WILL stay quiet.
       setPhase('running-setup')
       const setupStartTs = Date.now()
       lastChunkAtRef.current = setupStartTs
       const heartbeat = setInterval(() => {
+        const elapsed = Date.now() - setupStartTs
         const sinceLast = Date.now() - lastChunkAtRef.current
-        if (sinceLast > 25_000) {
-          wlog(`(still waiting — ${Math.floor((Date.now() - setupStartTs) / 1000)}s elapsed, ${Math.floor(sinceLast / 1000)}s since last output)`)
+        if (sinceLast > 5_000) {
+          wlog(`(still working — ${Math.floor(elapsed / 1000)}s elapsed, ${Math.floor(sinceLast / 1000)}s since last output)`)
           lastChunkAtRef.current = Date.now()
         }
-      }, 10_000)
+      }, 3_000)
       try {
+        // Wrap bash in `script -qfc` to force a pty even if the SSH
+        // server refused our pty:true request. `script` allocates its
+        // own forked-pty, runs the command inside, and writes output
+        // through that pty — which means programs see a real terminal
+        // and use line-buffered I/O instead of block-buffering until
+        // process exit.
+        //
+        // Falls back to stdbuf -oL -eL (GNU coreutils, present on
+        // most Synology DSM7), then to plain bash if neither tool is
+        // available.
+        //
+        // Sentinel markers bracket the invocation so we can confirm
+        // sudo + bash + setup.sh actually reached.
         await window.installer.ssh.execStream({
           sessionId,
-          // Sentinel markers around bash invocation. If we see
-          // "before setup.sh" but never "after", we know setup.sh
-          // started and got stuck. If we never see "before", the
-          // exec/sudo didn't even reach bash. 2>&1 merges stderr
-          // so anything sudo or bash prints goes through our log.
           cmd:
             PATH_PREFIX +
             `echo "[wizard-debug] before setup.sh: $(date)"; ` +
-            `bash ${shellQuote(`${targetDir}/setup.sh`)} 2>&1; ` +
+            `if command -v script >/dev/null 2>&1; then ` +
+            `  script -qfc "bash ${shellQuote(`${targetDir}/setup.sh`)}" /dev/null 2>&1; ` +
+            `elif command -v stdbuf >/dev/null 2>&1; then ` +
+            `  stdbuf -oL -eL bash ${shellQuote(`${targetDir}/setup.sh`)} 2>&1; ` +
+            `else ` +
+            `  bash ${shellQuote(`${targetDir}/setup.sh`)} 2>&1; ` +
+            `fi; ` +
             `rc=$?; echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
           sudo: true,
           channelId: CHANNEL_ID,
