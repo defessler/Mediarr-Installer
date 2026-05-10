@@ -242,18 +242,58 @@ function wrapSudo(sessionId: string, cmd: string, sudo: boolean): string {
 }
 
 /** One-shot exec; buffers stdout/stderr. For UI streaming use execStream. */
-function execOnce(client: Client, cmd: string): Promise<ExecResult> {
+function execOnce(
+  client: Client,
+  cmd: string,
+  opts?: { stdinPassword?: string; timeoutMs?: number },
+): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
+    let settled = false
+    const timeoutMs = opts?.timeoutMs ?? 60_000
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      reject(new Error(
+        `Remote command timed out after ${timeoutMs / 1000}s.\n` +
+        `Command: ${cmd.length > 200 ? cmd.slice(0, 200) + '…' : cmd}\n` +
+        `If this used sudo, the most likely cause is a wrong sudo password ` +
+        `(or no password supplied for a non-root SSH user).`,
+      ))
+    }, timeoutMs)
+    const finish = (val: ExecResult | Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (val instanceof Error) reject(val)
+      else resolve(val)
+    }
+
+    // No PTY: `sudo -S` is happy reading from a plain stdin pipe.
+    // (pty:true would echo the password into stdout, which we'd then
+    // have to filter out. Without a pty we just write the password,
+    // sudo consumes it from fd 0, and stdout stays clean.)
     client.exec(cmd, (err, stream) => {
-      if (err) return reject(err)
+      if (err) return finish(err)
       let stdout = ''
       let stderr = ''
       stream.on('data', (d: Buffer) => { stdout += d.toString('utf8') })
       stream.stderr.on('data', (d: Buffer) => { stderr += d.toString('utf8') })
-      stream.on('error', (e: Error) => reject(e))
+      stream.on('error', (e: Error) => finish(e))
       stream.on('close', (code: number, signal: string) =>
-        resolve({ exitCode: code, signal: signal ?? null, stdout, stderr }),
+        finish({ exitCode: code, signal: signal ?? null, stdout, stderr }),
       )
+
+      // Pipe sudo password if the caller supplied one. Without this,
+      // `sudo -S` hangs waiting for stdin we never write — that's the
+      // bug that made `mkdir -p /volume1/docker/media` silently fail
+      // and leave the directory missing for the SFTP step.
+      // The ssh2 ClientChannel IS the stdin pipe (Duplex), so writing
+      // to it sends to the remote process's stdin. End the writable
+      // side after so sudo doesn't keep waiting for more input.
+      if (opts?.stdinPassword !== undefined) {
+        stream.write(opts.stdinPassword + '\n')
+        stream.end()
+      }
     })
   })
 }
@@ -261,7 +301,24 @@ function execOnce(client: Client, cmd: string): Promise<ExecResult> {
 export async function exec(args: { sessionId: string; cmd: string; sudo?: boolean }): Promise<ExecResult> {
   const sess = sessions.get(args.sessionId)
   if (!sess) throw new Error(`unknown sessionId ${args.sessionId}`)
-  return execOnce(sess.client, wrapSudo(args.sessionId, args.cmd, !!args.sudo))
+  const wrapped = wrapSudo(args.sessionId, args.cmd, !!args.sudo)
+  // If we're wrapping with sudo and the user is non-root, we MUST pipe
+  // a password — sudo -S reads stdin. If it's empty and the user has
+  // NOPASSWD configured for this command, sudo accepts the empty line
+  // and proceeds; if not, sudo rejects and execOnce sees a non-zero
+  // exit. Either way we don't hang.
+  const needsSudoPassword =
+    !!args.sudo && sess.config.user !== 'root'
+  if (needsSudoPassword && !sess.config.sudoPassword) {
+    throw new Error(
+      `This command needs sudo (user=${sess.config.user}), but no sudo ` +
+      `password was provided on the Connect screen. Either log in as ` +
+      `root or fill in the "Sudo password" field.`,
+    )
+  }
+  return execOnce(sess.client, wrapped, {
+    stdinPassword: needsSudoPassword ? (sess.config.sudoPassword ?? '') : undefined,
+  })
 }
 
 export async function execStream(args: {
