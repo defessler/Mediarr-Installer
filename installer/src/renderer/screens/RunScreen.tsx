@@ -206,22 +206,48 @@ export function RunScreen() {
     setTick((t) => t + 1)
 
     try {
-      // 1. Make sure the target dir exists, then upload the payload.
+      // 1. Make sure the target dir exists AND is writable by the SSH user.
+      // mkdir -p runs as root via sudo, which leaves the dir owned by root.
+      // SFTP, however, runs as the regular SSH user — it has no way to
+      // write into a root-owned dir, so it'd hang trying to create subdirs.
+      // Fix: chown the dir to the SSH user's uid:gid after mkdir, using
+      // `id -u`/`id -g` (which return the SSH user's IDs without sudo).
+      // Then SFTP can write to its heart's content.
       setPhase('uploading')
-      await window.installer.ssh.exec({
+      const tq = shellQuote(targetDir)
+      const prep = await window.installer.ssh.exec({
         sessionId,
-        cmd: `mkdir -p ${shellQuote(targetDir)}`,
+        cmd: `mkdir -p ${tq} && chown -R "$(id -u):$(id -g)" ${tq}`,
         sudo: true,
       })
+      if (prep.exitCode !== 0) {
+        throw new Error(
+          `Couldn't prepare ${targetDir}: ${(prep.stderr || prep.stdout || '').slice(0, 300)}`,
+        )
+      }
 
       // The renderer can't read disk. We pass the sentinel "@payload" and
       // the main process's sftp-service resolves it via payload-resolver.
       // Renderer never learns absolute filesystem paths.
-      await window.installer.sftp.uploadDir({
-        sessionId,
-        localDir: '@payload',
-        remoteDir: targetDir,
-      })
+      // Wrap in a timeout so a wedged SFTP doesn't park the UI forever.
+      const SFTP_TIMEOUT_MS = 5 * 60 * 1000
+      await Promise.race([
+        window.installer.sftp.uploadDir({
+          sessionId,
+          localDir: '@payload',
+          remoteDir: targetDir,
+        }),
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () => rej(new Error(
+              `SFTP upload didn't complete within ${SFTP_TIMEOUT_MS / 60_000} min. ` +
+              `Likely a permission problem — try logging in as root, ` +
+              `or check that ${targetDir} is writable by your SSH user.`,
+            )),
+            SFTP_TIMEOUT_MS,
+          ),
+        ),
+      ])
 
       // 2. Write the .env file with secrets.
       // Back up any existing .env first so the user can recover if our

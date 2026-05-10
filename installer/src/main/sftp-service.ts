@@ -104,19 +104,49 @@ function sftpWriteString(sftp: SFTPWrapper, remote: string, content: string, mod
 
 // ── public API ────────────────────────────────────────────────────────────────
 
+// Per-file SFTP timeout. Each script in nas-payload is small (a few KB
+// to ~50KB), so 30s is plenty even on a slow link; if we exceed that
+// the connection is wedged and we should bail loudly rather than block
+// the UI.
+const PER_FILE_TIMEOUT_MS = 30_000
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error(`${label} timed out after ${ms / 1000}s`)), ms),
+    ),
+  ])
+}
+
 export async function uploadDir(args: {
   sessionId: string
   localDir: string
   remoteDir: string
 }): Promise<SftpUploadResult> {
   const sftp = await getSftp(args.sessionId)
-  await sftpMkdirP(sftp, args.remoteDir)
 
   const localDir = resolveLocalDir(args.localDir)
   const files = await listFilesRecursive(localDir)
   const totalBytes = files.reduce((acc, f) => acc + f.size, 0)
   let bytesDone = 0
   let uploaded = 0
+
+  // Emit an immediate 0% event so the UI shows movement before any file
+  // actually completes — the previous behavior was "stuck at 0%" if the
+  // first mkdir or fastPut took a few seconds.
+  send<SftpProgress>(IPC.evtSftpProgress, {
+    file: '(preparing remote directories)',
+    bytesDone: 0,
+    bytesTotal: totalBytes,
+    pctOverall: 0,
+  })
+
+  await withTimeout(
+    sftpMkdirP(sftp, args.remoteDir),
+    PER_FILE_TIMEOUT_MS,
+    `mkdir ${args.remoteDir}`,
+  )
 
   // Pre-create all sub-directories first so fastPut never fails on a missing parent.
   const dirs = new Set<string>()
@@ -125,7 +155,11 @@ export async function uploadDir(args: {
     if (parent !== '.' && parent !== '') dirs.add(parent)
   }
   for (const d of dirs) {
-    await sftpMkdirP(sftp, posix.join(args.remoteDir, d))
+    await withTimeout(
+      sftpMkdirP(sftp, posix.join(args.remoteDir, d)),
+      PER_FILE_TIMEOUT_MS,
+      `mkdir ${args.remoteDir}/${d}`,
+    )
   }
 
   for (const f of files) {
@@ -135,7 +169,20 @@ export async function uploadDir(args: {
     let mode = 0o644
     if (f.rel.endsWith('.sh') || f.rel.endsWith('.py')) mode = 0o755
 
-    await sftpUploadFile(sftp, local, remote, mode)
+    // Surface the file we're about to upload BEFORE we start, so the
+    // user sees what we're working on if any individual fastPut hangs.
+    send<SftpProgress>(IPC.evtSftpProgress, {
+      file: f.rel,
+      bytesDone,
+      bytesTotal: totalBytes,
+      pctOverall: totalBytes === 0 ? 0 : Math.round((bytesDone / totalBytes) * 100),
+    })
+
+    await withTimeout(
+      sftpUploadFile(sftp, local, remote, mode),
+      PER_FILE_TIMEOUT_MS,
+      `upload ${f.rel}`,
+    )
     uploaded += 1
     bytesDone += f.size
 
