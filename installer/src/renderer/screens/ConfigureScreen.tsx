@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
 import {
@@ -10,6 +10,42 @@ import {
 import type { Country } from '../../shared/ipc.js'
 import { IndexerCard } from '../components/IndexerCard.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
+
+// React component identity matters: a component defined inside a parent
+// function render gets a new reference every render, which React treats
+// as a different *type* — so the DOM tree is unmounted and remounted on
+// every keystroke. That's why the username field used to lose focus.
+//
+// Hoisting Field to module level fixes that. We pass `config` and the
+// `update` setter through a Context so existing call sites can stay as
+// `<Field label="..." k="..." />` without prop-drilling.
+type ConfigCtxValue = {
+  config: Partial<EnvFormValues>
+  update: <K extends keyof EnvFormValues>(key: K, value: EnvFormValues[K] | undefined) => void
+}
+const ConfigCtx = createContext<ConfigCtxValue | null>(null)
+
+function Field({ label, k, type = 'text', placeholder }: {
+  label: string
+  k: keyof EnvFormValues
+  type?: string
+  placeholder?: string
+}) {
+  const ctx = useContext(ConfigCtx)
+  if (!ctx) return null
+  const { config, update } = ctx
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <input
+        type={type} placeholder={placeholder}
+        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+        value={(config[k] as string | undefined) ?? ''}
+        onChange={(e) => update(k, e.target.value || undefined)}
+      />
+    </div>
+  )
+}
 
 // Phase 1: a single tall scrollable form. Phase 2 splits this into
 // per-step screens with auto-detection and country pickers.
@@ -116,21 +152,8 @@ export function ConfigureScreen() {
     setStep('run')
   }
 
-  const Field = ({ label, k, type = 'text', placeholder }: {
-    label: string; k: keyof EnvFormValues; type?: string; placeholder?: string
-  }) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <input
-        type={type} placeholder={placeholder}
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-        value={(config[k] as string | undefined) ?? ''}
-        onChange={(e) => update(k, e.target.value || undefined)}
-      />
-    </div>
-  )
-
   return (
+    <ConfigCtx.Provider value={{ config, update }}>
     <div className="h-full overflow-y-auto">
     <div className="max-w-3xl mx-auto p-8 space-y-8">
       <header>
@@ -455,5 +478,6 @@ export function ConfigureScreen() {
       </div>
     </div>
     </div>
+    </ConfigCtx.Provider>
   )
 }
