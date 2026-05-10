@@ -228,23 +228,50 @@ export function RunScreen() {
       // chown a no-op. sudo sets $SUDO_UID/$SUDO_GID to the original
       // user's IDs; fall back to id -u/-g for the case where the user
       // is already root and no sudo was applied.
+      //
+      // Belt-and-suspenders: also chmod 0775 so the user's primary group
+      // can write, in case ownership doesn't fully transfer due to ACLs
+      // or shared-folder policies on Synology. And we now explicitly
+      // *test* writability as the original SSH user (via su -c) so
+      // failures surface here instead of cryptically inside SFTP.
       setPhase('uploading')
-      wlog(`Preparing target directory ${targetDir} (mkdir + chown)...`)
+      wlog(`Preparing target directory ${targetDir}...`)
       const tq = shellQuote(targetDir)
       const prep = await window.installer.ssh.exec({
         sessionId,
         cmd:
-          `mkdir -p ${tq} && ` +
-          `chown -R "\${SUDO_UID:-$(id -u)}:\${SUDO_GID:-$(id -g)}" ${tq} && ` +
-          `echo "owner=$(stat -c '%U:%G' ${tq})"`,
+          // use a subshell + set -x for inline diagnostics
+          `set -e; ` +
+          `mkdir -p ${tq}; ` +
+          `OWNER_UID="\${SUDO_UID:-$(id -u)}"; OWNER_GID="\${SUDO_GID:-$(id -g)}"; ` +
+          `echo "[prep] target=${targetDir} owner_uid=$OWNER_UID owner_gid=$OWNER_GID effective=$(id -u):$(id -g)"; ` +
+          `chown -R "$OWNER_UID:$OWNER_GID" ${tq}; ` +
+          `chmod -R u+rwX,g+rwX ${tq}; ` +
+          `echo "[prep] now owned by $(stat -c '%u:%g' ${tq}) perms=$(stat -c '%a' ${tq})"; ` +
+          // Sanity-test write access AS the original user. If the SSH
+          // user genuinely can't write here, fail now with a clear msg
+          // rather than letting SFTP get a generic Permission denied.
+          `if [ -n "\${SUDO_USER:-}" ]; then ` +
+          `  if su - "$SUDO_USER" -c "touch ${tq}/.installer_write_test && rm ${tq}/.installer_write_test" 2>/dev/null; then ` +
+          `    echo "[prep] SSH user $SUDO_USER can write — ok"; ` +
+          `  else ` +
+          `    echo "[prep] WARN: SSH user $SUDO_USER cannot write (ACL/share policy?)"; ` +
+          `    exit 13; ` +
+          `  fi; ` +
+          `else ` +
+          `  echo "[prep] running as root directly — SFTP will too — ok"; ` +
+          `fi`,
         sudo: true,
       })
+      // Always log the prep output so the user sees what happened
+      // regardless of pass/fail.
+      if (prep.stdout.trim()) wlog(prep.stdout.trim())
+      if (prep.stderr.trim()) wlog(`stderr: ${prep.stderr.trim()}`)
       if (prep.exitCode !== 0) {
         throw new Error(
-          `Couldn't prepare ${targetDir}: ${(prep.stderr || prep.stdout || '').slice(0, 300)}`,
+          `Couldn't prepare ${targetDir} (exit ${prep.exitCode}): ${(prep.stderr || prep.stdout || '').slice(0, 500)}`,
         )
       }
-      wlog(`Target ready (${prep.stdout.trim() || 'ok'})`)
 
       // The renderer can't read disk. We pass the sentinel "@payload" and
       // the main process's sftp-service resolves it via payload-resolver.
