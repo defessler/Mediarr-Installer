@@ -66,10 +66,22 @@ check_var "PUID"
 check_var "PGID"
 check_var "TZ"
 check_var "LAN_IP"
-check_var "VPN_PROVIDER"
-check_var "VPN_TYPE"
-check_var "VPN_COUNTRIES"
-check_var "NORDVPN_PRIVATE_KEY"
+
+# VPN env vars only required when VPN_ENABLED=true. With VPN off,
+# setup.sh applies docker-compose.no-vpn.yml and gluetun never starts.
+VPN_ENABLED_LC=$(env_val "VPN_ENABLED" | tr '[:upper:]' '[:lower:]')
+case "$VPN_ENABLED_LC" in
+    true|1|yes|on)
+        check_var "VPN_PROVIDER"
+        check_var "VPN_TYPE"
+        check_var "VPN_COUNTRIES"
+        check_var "NORDVPN_PRIVATE_KEY"
+        ;;
+    *)
+        ok "VPN disabled (VPN_ENABLED=$VPN_ENABLED_LC) — skipping VPN var checks"
+        ;;
+esac
+
 check_var "QBITTORRENT_USER"
 check_var "QBITTORRENT_PASS"
 

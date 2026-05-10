@@ -16,22 +16,45 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-# Read access token from .env
-ACCESS_TOKEN=$(grep -m1 '^NORDVPN_ACCESS_TOKEN=' "$ENV_FILE" | cut -d'=' -f2- | sed 's/#.*//' | xargs)
+# Helper for reading values out of .env (strips inline comments + whitespace).
+env_val() {
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+}
 
-if [ -z "$ACCESS_TOKEN" ]; then
-    echo ""
-    echo "  NORDVPN_ACCESS_TOKEN not set in .env — enter it manually."
-    echo "  To get your access token:"
-    echo "  1. Go to https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/"
-    echo "  2. Click Access Tokens → Generate new token"
-    echo "  3. Paste it below (or add it to .env to skip this prompt next time)"
-    echo ""
-    read -rp "  NordVPN access token: " ACCESS_TOKEN
+# Skip entirely when the user has opted out of VPN. setup.sh applies
+# docker-compose.no-vpn.yml in that case; gluetun never starts and the
+# WireGuard key isn't needed.
+VPN_ENABLED=$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')
+case "$VPN_ENABLED" in
+    true|1|yes|on)
+        ;; # fall through to fetch
+    *)
+        echo "  ⏭ VPN_ENABLED=$VPN_ENABLED — skipping NordVPN key fetch (no VPN)."
+        exit 0
+        ;;
+esac
+
+# If a key is already populated (the wizard fetches it on the host
+# machine and writes it before running setup.sh), nothing to do.
+EXISTING_KEY=$(env_val NORDVPN_PRIVATE_KEY)
+if [ -n "$EXISTING_KEY" ] && [ ${#EXISTING_KEY} -ge 43 ]; then
+    echo "  ⏭ NORDVPN_PRIVATE_KEY already set (${#EXISTING_KEY} chars) — skipping fetch."
+    exit 0
 fi
 
+ACCESS_TOKEN=$(env_val NORDVPN_ACCESS_TOKEN)
+
+# This script is invoked over a non-interactive SSH channel by the
+# wizard; `read` would block forever. Bail out with a clear message
+# instead. The fallback path: user fills NORDVPN_ACCESS_TOKEN in the
+# wizard, or pastes the WireGuard key directly.
 if [ -z "$ACCESS_TOKEN" ]; then
-    echo "  ✘ No token provided."
+    echo "  ✘ No NORDVPN_ACCESS_TOKEN in .env, and no TTY for interactive input."
+    echo "    Either:"
+    echo "      - Set NORDVPN_ACCESS_TOKEN in .env and re-run, OR"
+    echo "      - Paste your WireGuard private key directly as NORDVPN_PRIVATE_KEY, OR"
+    echo "      - Set VPN_ENABLED=false to skip VPN entirely."
+    echo "    Token URL: https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/"
     exit 1
 fi
 
