@@ -4,7 +4,7 @@
 // pre-existing install detection and port-conflict scan.
 
 import { exec } from './ssh-service.js'
-import type { DiskSpace, EnvDetectResult, InternetCheck, PortConflict } from '../shared/ipc.js'
+import type { EnvDetectResult, PortConflict } from '../shared/ipc.js'
 
 // Ports the stack binds. Mirrors docker-compose.yml + setup-firewall.sh.
 // If a port here is already in use by something else on the NAS, the
@@ -44,160 +44,143 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
-async function probePortConflicts(sessionId: string): Promise<PortConflict[]> {
-  // BusyBox netstat on Synology supports -lnt (listening, numeric, TCP).
-  // The 4th column is "local-address:port" — strip everything up to the
-  // last colon. -p adds program/PID where the user has permission to see
-  // it; we deliberately don't use sudo here because env-detect runs early.
-  const r = await run(
-    sessionId,
-    "netstat -lnt 2>/dev/null | awk 'NR>2 {n=split($4,a,\":\"); print a[n]}' | sort -un",
-  )
-  if (!r.ok || !r.out) return []
-  const bound = new Set<number>()
-  for (const line of r.out.split('\n')) {
-    const n = Number(line.trim())
-    if (Number.isInteger(n) && n > 0 && n <= 65535) bound.add(n)
-  }
-  return STACK_PORTS
-    .filter((p) => bound.has(p.port))
-    .map((p) => ({ port: p.port, service: p.service, process: '' }))
-}
+// (Earlier versions ran probePortConflicts/probeDisk/probeInternet/
+// probeExistingInstall as separate parallel SSH execs. Synology DSM7's
+// MaxSessions=10 caused the back half to fail with "Channel open
+// failure". Everything below is now batched into one bash invocation
+// in detectEnv() — see the `===KEY===` section markers.)
 
-async function probeDisk(sessionId: string): Promise<DiskSpace | null> {
-  // df -k gives sizes in 1024-byte blocks. BusyBox df on Synology
-  // truncates the device column on long filesystem names — using -P
-  // forces POSIX output where the columns are always: Filesystem,
-  // 1024-blocks, Used, Available, Capacity, Mounted-on.
-  const r = await run(
-    sessionId,
-    "df -kP /volume1 2>/dev/null | tail -n +2 | awk '{print $2, $4}'",
-  )
-  if (!r.ok || !r.out) return null
-  const [totalKBraw, freeKBraw] = r.out.split(/\s+/)
-  const totalKB = Number(totalKBraw)
-  const freeKB = Number(freeKBraw)
-  if (!Number.isFinite(totalKB) || !Number.isFinite(freeKB)) return null
-  const totalBytes = totalKB * 1024
-  const freeBytes = freeKB * 1024
-  return {
-    totalBytes,
-    freeBytes,
-    freeGiB: Math.floor(freeBytes / (1024 ** 3)),
-  }
-}
-
-async function probeInternet(sessionId: string): Promise<InternetCheck> {
-  // curl -sf returns 0 only on a successful 2xx. -m 5 caps the wait.
-  // Both endpoints are HEAD-friendly so this is cheap.
-  const [dh, plex] = await Promise.all([
-    run(sessionId, 'curl -sfm 5 -o /dev/null https://registry-1.docker.io/v2/ ; echo $?'),
-    run(sessionId, 'curl -sfm 5 -o /dev/null https://plex.tv ; echo $?'),
-  ])
-  // The endpoints return 401 (docker.io) or redirects (plex.tv) for an
-  // unauthenticated HEAD — we accept the connection succeeding regardless.
-  // Re-do without -f so 4xx/3xx don't fail.
-  const [dh2, plex2] = await Promise.all([
-    run(sessionId, 'curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/'),
-    run(sessionId, 'curl -sm 5 -o /dev/null -w "%{http_code}" https://plex.tv'),
-  ])
-  // Either the original -f succeeded, or we got *any* HTTP status code.
-  const ok = (a: { ok: boolean; out: string }, b: { ok: boolean; out: string }) =>
-    (a.out.trim().endsWith('0')) ||
-    (b.ok && /^\d{3}$/.test(b.out.trim()) && b.out.trim() !== '000')
-  return {
-    dockerHub: ok(dh, dh2),
-    plexTv: ok(plex, plex2),
-  }
-}
-
-async function probeExistingInstall(sessionId: string, targetDir: string) {
-  const tq = shellQuote(targetDir)
-  const [compose, envFile, dockerPs] = await Promise.all([
-    run(sessionId, `[ -f ${tq}/docker-compose.yml ] && echo y || true`),
-    run(sessionId, `[ -f ${tq}/.env ] && echo y || true`),
-    // List running container names; sudo NOT used — the user (root or
-    // nopasswd-ssh user) is in the docker group on Synology by default.
-    run(sessionId, "docker ps --format '{{.Names}}' 2>/dev/null || true"),
-  ])
-
-  const runningSet = new Set(
-    (dockerPs.ok ? dockerPs.out.split('\n') : []).map((l) => l.trim()).filter(Boolean),
-  )
-  const runningContainers = [...STACK_CONTAINERS].filter((c) => runningSet.has(c))
-
-  return {
-    hasCompose: compose.out === 'y',
-    hasEnv: envFile.out === 'y',
-    runningContainers,
-  }
+/** Pull a labelled section out of the batched probe stdout. Each section
+ *  is bracketed by `===KEY===` markers so we can split a single multi-
+ *  command bash output cleanly. */
+function section(out: string, key: string): string {
+  const re = new RegExp(`===${key}===\\n([\\s\\S]*?)(?=\\n===|$)`)
+  const m = out.match(re)
+  return m ? m[1].trim() : ''
 }
 
 export async function detectEnv(
   sessionId: string,
   targetDir: string = '/volume1/docker/media',
 ): Promise<EnvDetectResult> {
-  const [
-    dockerV2, dockerV1, volume1, puid, pgid, uname, gname, tzFile, tzLink,
-    lanRaw, py3, ipt, sudoNopw, whoami,
-  ] = await Promise.all([
-    run(sessionId, 'docker compose version'),
-    run(sessionId, 'command -v docker-compose'),
-    run(sessionId, '[ -d /volume1 ] && echo ok'),
-    run(sessionId, 'id -u'),
-    run(sessionId, 'id -g'),
-    run(sessionId, 'id -un'),
-    run(sessionId, 'id -gn'),
-    run(sessionId, 'cat /etc/timezone 2>/dev/null'),
-    run(sessionId, 'readlink /etc/localtime 2>/dev/null'),
-    run(sessionId, "ip -4 addr show 2>/dev/null | awk '/inet /{print $2}' | grep -v '^127' || true"),
-    run(sessionId, 'python3 --version 2>&1'),
-    run(sessionId, 'iptables --version 2>&1'),
-    run(sessionId, 'sudo -n true 2>&1; echo $?'),
-    run(sessionId, 'whoami'),
-  ])
+  // Synology DSM7's sshd has MaxSessions=10 by default, so firing 14+
+  // parallel exec channels here gets the back half rejected with
+  // "Channel open failure: open failed". We batch every probe into a
+  // single bash invocation that prints labelled sections, parsed below.
+  const tq = shellQuote(targetDir)
+  const batch = [
+    'set +e',
+    'echo "===docker_v2==="; docker compose version 2>&1; echo "RC=$?"',
+    'echo "===docker_v1==="; command -v docker-compose 2>&1; echo "RC=$?"',
+    'echo "===volume1==="; [ -d /volume1 ] && echo ok; echo "RC=$?"',
+    'echo "===puid==="; id -u',
+    'echo "===pgid==="; id -g',
+    'echo "===uname==="; id -un',
+    'echo "===gname==="; id -gn',
+    'echo "===tz_file==="; cat /etc/timezone 2>/dev/null',
+    'echo "===tz_link==="; readlink /etc/localtime 2>/dev/null',
+    'echo "===lan==="; ip -4 addr show 2>/dev/null | awk \'/inet /{print $2}\' | grep -v \'^127\' || true',
+    'echo "===py3==="; python3 --version 2>&1; echo "RC=$?"',
+    'echo "===ipt==="; iptables --version 2>&1; echo "RC=$?"',
+    'echo "===sudo_nopw==="; sudo -n true 2>/dev/null; echo $?',
+    'echo "===whoami==="; whoami',
+    'echo "===has_compose==="; [ -f ' + tq + '/docker-compose.yml ] && echo y || true',
+    'echo "===has_env==="; [ -f ' + tq + '/.env ] && echo y || true',
+    'echo "===running==="; docker ps --format "{{.Names}}" 2>/dev/null || true',
+    'echo "===df==="; df -kP /volume1 2>/dev/null | tail -n +2',
+    'echo "===netstat==="; netstat -lnt 2>/dev/null | awk \'NR>2 {n=split($4,a,":"); print a[n]}\' | sort -un',
+    'echo "===dockerhub==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo 000',
+    'echo "===plextv==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://plex.tv 2>/dev/null || echo 000',
+  ].join('\n')
+
+  const r = await run(sessionId, `bash -c ${shellQuote(batch)}`)
+  const o = r.out
+
+  const dockerV2OK = /RC=0$/m.test(section(o, 'docker_v2'))
+  const dockerV1OK = /RC=0$/m.test(section(o, 'docker_v1'))
+  const volume1Out = section(o, 'volume1')
+  const py3Section = section(o, 'py3')
+  const iptSection = section(o, 'ipt')
 
   // Timezone: prefer /etc/timezone, fall back to symlink target.
-  let tz: string | null = tzFile.ok && tzFile.out ? tzFile.out : null
-  if (!tz && tzLink.ok) {
-    const m = tzLink.out.match(/zoneinfo\/(.+)$/)
+  const tzFile = section(o, 'tz_file')
+  const tzLink = section(o, 'tz_link')
+  let tz: string | null = tzFile || null
+  if (!tz && tzLink) {
+    const m = tzLink.match(/zoneinfo\/(.+)$/)
     if (m) tz = m[1]
   }
 
   // LAN IPs come back as "192.168.1.42/24" — strip the CIDR suffix.
-  const lanIps = lanRaw.out
+  const lanIps = section(o, 'lan')
     .split('\n')
     .map((l) => l.trim().split('/')[0])
     .filter(Boolean)
 
-  const isRoot = whoami.out === 'root'
+  const whoami = section(o, 'whoami')
+  const isRoot = whoami === 'root'
+  const sudoNopw = section(o, 'sudo_nopw')
   let sudoMode: EnvDetectResult['sudoMode'] = 'password'
   if (isRoot) sudoMode = 'root'
-  else if (sudoNopw.out.trim().endsWith('0')) sudoMode = 'nopasswd'
+  else if (sudoNopw.trim().endsWith('0')) sudoMode = 'nopasswd'
 
-  // Existing install + port conflict probes only run if Docker is present;
-  // they're useless otherwise. Disk + internet probes always run.
-  const dockerPresent = dockerV2.ok || dockerV1.ok
-  const [existingInstall, portConflicts, disk, internet] = await Promise.all([
-    dockerPresent
-      ? probeExistingInstall(sessionId, targetDir)
-      : Promise.resolve({ hasCompose: false, hasEnv: false, runningContainers: [] }),
-    dockerPresent ? probePortConflicts(sessionId) : Promise.resolve([] as PortConflict[]),
-    probeDisk(sessionId),
-    probeInternet(sessionId),
-  ])
+  // Existing install + port conflict from the batched output.
+  const dockerPresent = dockerV2OK || dockerV1OK
+  const runningSet = new Set(section(o, 'running').split('\n').map((l) => l.trim()).filter(Boolean))
+  const runningContainers = dockerPresent
+    ? [...STACK_CONTAINERS].filter((c) => runningSet.has(c))
+    : []
+  const existingInstall = {
+    hasCompose: dockerPresent && section(o, 'has_compose') === 'y',
+    hasEnv: dockerPresent && section(o, 'has_env') === 'y',
+    runningContainers,
+  }
+
+  const boundPorts = new Set<number>()
+  for (const line of section(o, 'netstat').split('\n')) {
+    const n = Number(line.trim())
+    if (Number.isInteger(n) && n > 0 && n <= 65535) boundPorts.add(n)
+  }
+  const portConflicts: PortConflict[] = dockerPresent
+    ? STACK_PORTS.filter((p) => boundPorts.has(p.port))
+        .map((p) => ({ port: p.port, service: p.service, process: '' }))
+    : []
+
+  // df -kP output: "Filesystem 1024-blocks Used Available Capacity Mounted-on"
+  const dfLine = section(o, 'df').split('\n')[0]?.trim() ?? ''
+  const dfFields = dfLine.split(/\s+/)
+  const totalKB = Number(dfFields[1])
+  const freeKB = Number(dfFields[3])
+  const disk = (Number.isFinite(totalKB) && Number.isFinite(freeKB)) ? {
+    totalBytes: totalKB * 1024,
+    freeBytes: freeKB * 1024,
+    freeGiB: Math.floor((freeKB * 1024) / (1024 ** 3)),
+  } : null
+
+  const httpOK = (s: string) => /^[0-9]{3}$/.test(s.trim()) && s.trim() !== '000'
+  const internet = {
+    dockerHub: httpOK(section(o, 'dockerhub')),
+    plexTv: httpOK(section(o, 'plextv')),
+  }
+
+  const puidStr = section(o, 'puid')
+  const pgidStr = section(o, 'pgid')
+  const uname = section(o, 'uname')
+  const gname = section(o, 'gname')
+  const py3OK = /RC=0$/m.test(py3Section)
+  const iptOK = /RC=0$/m.test(iptSection)
 
   return {
-    docker: dockerV2.ok ? 'v2' : dockerV1.ok ? 'v1-legacy' : 'missing',
-    volume1: volume1.ok && volume1.out === 'ok',
-    puid: puid.ok ? Number(puid.out) : null,
-    pgid: pgid.ok ? Number(pgid.out) : null,
-    username: uname.ok ? uname.out : null,
-    groupname: gname.ok ? gname.out : null,
+    docker: dockerV2OK ? 'v2' : dockerV1OK ? 'v1-legacy' : 'missing',
+    volume1: volume1Out.startsWith('ok'),
+    puid: /^\d+$/.test(puidStr) ? Number(puidStr) : null,
+    pgid: /^\d+$/.test(pgidStr) ? Number(pgidStr) : null,
+    username: uname || null,
+    groupname: gname || null,
     tz,
     lanIps,
-    python3: py3.ok ? py3.out : null,
-    iptables: ipt.ok ? ipt.out.split('\n')[0] : null,
+    python3: py3OK ? py3Section.replace(/\nRC=0$/, '') : null,
+    iptables: iptOK ? iptSection.replace(/\nRC=0$/, '').split('\n')[0] : null,
     sudoMode,
     existingInstall,
     portConflicts,
