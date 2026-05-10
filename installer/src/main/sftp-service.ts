@@ -7,7 +7,7 @@ import { join, posix, relative, sep } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { SFTPWrapper } from 'ssh2'
 import { IPC, type SftpProgress, type SftpUploadResult } from '../shared/ipc.js'
-import { getSftp } from './ssh-service.js'
+import { exec, getSftp } from './ssh-service.js'
 import { payloadDir } from './payload-resolver.js'
 
 // The renderer can pass "@payload" instead of a real local path to mean
@@ -119,12 +119,97 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ])
 }
 
+/** Synology and some hardened sshd configs have the SFTP subsystem
+ *  disabled. ssh2 reports this as "Unable to start subsystem: sftp".
+ *  We can still write our text-only payload using a plain `exec` with
+ *  `base64 -d > file` — slower per file but works on any sshd. */
+async function uploadDirViaExec(args: {
+  sessionId: string
+  localDir: string
+  remoteDir: string
+}): Promise<SftpUploadResult> {
+  const localDir = resolveLocalDir(args.localDir)
+  const files = await listFilesRecursive(localDir)
+  const totalBytes = files.reduce((acc, f) => acc + f.size, 0)
+  let bytesDone = 0
+  let uploaded = 0
+
+  send<SftpProgress>(IPC.evtSftpProgress, {
+    file: '(SFTP unavailable, falling back to base64-over-exec)',
+    bytesDone: 0, bytesTotal: totalBytes, pctOverall: 0,
+  })
+
+  // Pre-create directories.
+  const dirs = new Set<string>()
+  for (const f of files) {
+    const parent = posix.dirname(f.rel)
+    if (parent !== '.' && parent !== '') dirs.add(parent)
+  }
+  if (dirs.size > 0) {
+    const mkdirs = [...dirs].map((d) => `'${posix.join(args.remoteDir, d).replace(/'/g, `'\\''`)}'`).join(' ')
+    await exec({
+      sessionId: args.sessionId,
+      cmd: `mkdir -p ${mkdirs}`,
+      sudo: false,
+    })
+  }
+
+  for (const f of files) {
+    const local = join(localDir, f.rel.split(posix.sep).join(sep))
+    const remote = posix.join(args.remoteDir, f.rel)
+    let mode = 0o644
+    if (f.rel.endsWith('.sh') || f.rel.endsWith('.py')) mode = 0o755
+
+    send<SftpProgress>(IPC.evtSftpProgress, {
+      file: f.rel, bytesDone, bytesTotal: totalBytes,
+      pctOverall: totalBytes === 0 ? 0 : Math.round((bytesDone / totalBytes) * 100),
+    })
+
+    const buf = await fs.readFile(local)
+    const b64 = buf.toString('base64')
+    const remoteEsc = remote.replace(/'/g, `'\\''`)
+    // base64 -d works on Synology busybox AND coreutils. -o is GNU-only,
+    // so we use redirection. chmod immediately after.
+    const r = await exec({
+      sessionId: args.sessionId,
+      cmd: `printf %s ${quote(b64)} | base64 -d > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
+      sudo: false,
+    })
+    if (r.exitCode !== 0) {
+      throw new Error(`Upload of ${f.rel} failed: ${(r.stderr || r.stdout).slice(0, 200)}`)
+    }
+    uploaded++
+    bytesDone += f.size
+  }
+
+  return { uploaded, bytesTotal: totalBytes }
+}
+
+function quote(s: string): string {
+  // Single-quote for safe inline insertion. base64 has no single quotes
+  // so this is a degenerate case — but be defensive anyway.
+  return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
 export async function uploadDir(args: {
   sessionId: string
   localDir: string
   remoteDir: string
 }): Promise<SftpUploadResult> {
-  const sftp = await getSftp(args.sessionId)
+  let sftp: SFTPWrapper
+  try {
+    sftp = await getSftp(args.sessionId)
+  } catch (e) {
+    const msg = (e as Error).message || ''
+    if (/subsystem.*sftp/i.test(msg) || /Unable to start subsystem/i.test(msg)) {
+      send<SftpProgress>(IPC.evtSftpProgress, {
+        file: '(SFTP not enabled on the NAS — using exec fallback)',
+        bytesDone: 0, bytesTotal: 0, pctOverall: 0,
+      })
+      return uploadDirViaExec(args)
+    }
+    throw e
+  }
 
   const localDir = resolveLocalDir(args.localDir)
   const files = await listFilesRecursive(localDir)
@@ -203,10 +288,30 @@ export async function writeFile(args: {
   content: string
   mode?: number
 }): Promise<void> {
-  const sftp = await getSftp(args.sessionId)
-  const parent = posix.dirname(args.remotePath)
-  if (parent && parent !== '/' && parent !== '.') {
-    await sftpMkdirP(sftp, parent)
+  const mode = args.mode ?? 0o600
+  try {
+    const sftp = await getSftp(args.sessionId)
+    const parent = posix.dirname(args.remotePath)
+    if (parent && parent !== '/' && parent !== '.') {
+      await sftpMkdirP(sftp, parent)
+    }
+    await sftpWriteString(sftp, args.remotePath, args.content, mode)
+  } catch (e) {
+    const msg = (e as Error).message || ''
+    if (/subsystem.*sftp/i.test(msg) || /Unable to start subsystem/i.test(msg)) {
+      // Fallback: write via exec + base64.
+      const b64 = Buffer.from(args.content, 'utf8').toString('base64')
+      const remoteEsc = args.remotePath.replace(/'/g, `'\\''`)
+      const r = await exec({
+        sessionId: args.sessionId,
+        cmd: `printf %s ${quote(b64)} | base64 -d > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
+        sudo: false,
+      })
+      if (r.exitCode !== 0) {
+        throw new Error(`writeFile fallback failed: ${(r.stderr || r.stdout).slice(0, 200)}`)
+      }
+      return
+    }
+    throw e
   }
-  await sftpWriteString(sftp, args.remotePath, args.content, args.mode ?? 0o600)
 }
