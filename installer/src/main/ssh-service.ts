@@ -62,7 +62,20 @@ function buildConnectConfig(cfg: ConnectionConfig): ConnectConfig {
 function classifyError(err: Error): ConnectResult['error'] {
   const m = err.message?.toLowerCase() ?? ''
   if (m.includes('authentication') || m.includes('all configured authentication methods failed')) {
-    return { kind: 'auth-failed', message: err.message }
+    return {
+      kind: 'auth-failed',
+      message:
+        `${err.message}\n\n` +
+        `Common causes on Synology DSM7:\n` +
+        `  • Logging in as 'root'? DSM7 disables root SSH by default.\n` +
+        `    Fix: DSM → Control Panel → User & Group → User → root → Edit\n` +
+        `         → set a password AND check "User cannot change password" if greyed out.\n` +
+        `    OR: use your admin-group user instead of root, and the wizard\n` +
+        `        will collect a sudo password on the next field.\n` +
+        `  • Password is case-sensitive — verify caps lock and exact spelling.\n` +
+        `  • If you set up SSH with key-only auth (PasswordAuthentication no),\n` +
+        `    switch to "Private key" auth above and point at your key file.`,
+    }
   }
   if (m.includes('etimedout') || m.includes('timeout')) {
     return { kind: 'timeout', message: err.message }

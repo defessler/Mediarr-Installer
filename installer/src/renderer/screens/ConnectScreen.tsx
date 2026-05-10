@@ -171,8 +171,10 @@ export function ConnectScreen() {
             )}
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
-            For the cleanest install, log in as <code className="bg-slate-800 px-1 rounded">root</code>.
-            On Synology: Control Panel &rarr; Terminal &rarr; enable SSH; then set a root password.
+            On Synology: Control Panel &rarr; Terminal &rarr; enable SSH first.
+            Logging in as your admin user (with a sudo password below) is the
+            easiest path — DSM7 disables root SSH by default and you&apos;d
+            need to re-enable it manually.
           </p>
         </div>
         <button
