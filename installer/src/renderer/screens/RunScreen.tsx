@@ -263,6 +263,54 @@ export function RunScreen() {
     }
   }
 
+  // Pre-install screen: just the Plex claim widget and a big Start CTA.
+  // Showing the empty stepper + empty log here was confusing — users
+  // thought the install was running and stuck.
+  if (phase === 'idle') {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-2xl mx-auto p-8 space-y-6">
+          <header>
+            <h1 className="text-2xl font-semibold">Ready to install</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              The wizard will upload <code className="bg-slate-800 px-1 rounded">{targetDir}</code>{' '}
+              to your NAS, write the <code className="bg-slate-800 px-1 rounded">.env</code>,
+              and run <code className="bg-slate-800 px-1 rounded">setup.sh</code>{' '}
+              with live output.
+            </p>
+          </header>
+
+          <PlexClaimRefresh
+            value={config.PLEX_CLAIM}
+            onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}
+          />
+
+          {errorMsg && (
+            <div className="bg-rose-900/40 text-rose-200 rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono">
+              {errorMsg}
+            </div>
+          )}
+
+          <div className="flex justify-between pt-4 border-t border-slate-800">
+            <button
+              onClick={() => setStep('configure')}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md"
+            >
+              Back
+            </button>
+            <button
+              onClick={go}
+              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-md text-base font-medium shadow-lg shadow-emerald-900/30"
+            >
+              Start install →
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Active install / completed view: stepper + streaming log.
   return (
     <div className="h-full flex flex-col p-6 gap-4">
       <header className="flex items-center justify-between gap-4">
@@ -276,7 +324,6 @@ export function RunScreen() {
             />
           )}
           <div className="text-sm text-slate-400">
-            {phase === 'idle' && 'Ready'}
             {phase === 'uploading' && `Uploading files... ${progress?.pct ?? 0}%`}
             {phase === 'writing-env' && 'Writing .env'}
             {phase === 'running-setup' && 'Running setup.sh'}
@@ -287,8 +334,13 @@ export function RunScreen() {
       </header>
 
       {phase === 'uploading' && progress && (
-        <div className="w-full bg-slate-800 rounded h-2 overflow-hidden">
-          <div className="h-2 bg-emerald-500 transition-all" style={{ width: `${progress.pct}%` }} />
+        <div className="space-y-1">
+          <div className="w-full bg-slate-800 rounded h-2 overflow-hidden">
+            <div className="h-2 bg-emerald-500 transition-all" style={{ width: `${progress.pct}%` }} />
+          </div>
+          <div className="text-xs text-slate-500 font-mono truncate">
+            {progress.file}
+          </div>
         </div>
       )}
 
@@ -314,9 +366,7 @@ export function RunScreen() {
         </div>
       </div>
 
-      {/* Last-minute Plex claim refresh — visible only before/after a run.
-          During the run it'd be confusing to show it. */}
-      {(phase === 'idle' || phase === 'failed') && (
+      {phase === 'failed' && (
         <PlexClaimRefresh
           value={config.PLEX_CLAIM}
           onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}
@@ -331,12 +381,12 @@ export function RunScreen() {
         >
           Back
         </button>
-        {phase === 'idle' || phase === 'failed' ? (
+        {phase === 'failed' ? (
           <button
             onClick={go}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
           >
-            {phase === 'failed' ? 'Retry' : 'Start'}
+            Retry
           </button>
         ) : phase === 'done' ? (
           <button
