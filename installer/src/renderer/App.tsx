@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useWizard, type WizardStep } from './store/wizard.js'
+import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
+import { useProfileAutosave } from './hooks/useProfileAutosave.js'
 import { WelcomeScreen } from './screens/WelcomeScreen.js'
 import { ConnectScreen } from './screens/ConnectScreen.js'
 import { EnvDetectScreen } from './screens/EnvDetectScreen.js'
@@ -32,7 +33,33 @@ const UPDATE_STEPS: { id: WizardStep; label: string }[] = [
 export function App() {
   const step = useWizard((s) => s.step)
   const mode = useWizard((s) => s.mode)
+  const sessionId = useWizard((s) => s.sessionId)
+  const activeProfileId = useWizard((s) => s.activeProfileId)
+  const setStep = useWizard((s) => s.setStep)
   const [info, setInfo] = useState<AppInfo | null>(null)
+
+  // Autosave per-profile changes whenever connection/config/targetDir
+  // mutate. (No-op when activeProfileId is null.)
+  useProfileAutosave()
+
+  // Bounce back to a safe step when state is missing. Two cases:
+  //   - any step past welcome but no profile selected → welcome
+  //   - any step needing an SSH session but sessionId is null → connect
+  // Without these, a persisted "step: 'run'" + cold start would leave
+  // the user staring at "No SSH session" with no obvious recovery.
+  useEffect(() => {
+    if (step !== 'welcome' && !activeProfileId) {
+      setStep('welcome')
+      return
+    }
+    if (STEPS_NEEDING_SESSION.includes(step) && !sessionId) {
+      useErrors.getState().pushInfo(
+        'Reconnect required',
+        'Your SSH session expired (probably because the app was restarted). Bouncing back to Connect.',
+      )
+      setStep('connect')
+    }
+  }, [step, activeProfileId, sessionId, setStep])
 
   useEffect(() => {
     window.installer.app.getInfo().then(setInfo).catch((e) =>
@@ -84,27 +111,50 @@ export function App() {
         </div>
       )}
 
-      {/* Top stepper rail */}
+      {/* Top stepper rail — every step is clickable for free-form
+          navigation. Clicking a step that requires a session without
+          one redirects to Connect via the App-level effect above. */}
       <nav className="flex items-center justify-center gap-2 border-b border-slate-800 px-4 py-3 bg-slate-900/50">
         {stepList.map((s, i) => {
           const idx = stepList.findIndex((x) => x.id === step)
-          const myIdx = i
           const state =
-            myIdx < idx ? 'done' : myIdx === idx ? 'current' : 'pending'
+            i < idx ? 'done' : i === idx ? 'current' : 'pending'
+          // Disable steps that aren't reachable yet:
+          //  - any step past welcome needs a profile
+          //  - session-required steps need an active SSH session
+          const disabled =
+            (s.id !== 'welcome' && !activeProfileId) ||
+            (STEPS_NEEDING_SESSION.includes(s.id) && !sessionId)
+          // Tailwind can't generate class names from interpolated
+          // strings, so the two accent palettes are hand-spelled.
+          const cls =
+            state === 'current'
+              ? (mode === 'update'
+                  ? 'bg-sky-600 text-white font-medium'
+                  : 'bg-emerald-600 text-white font-medium')
+              : state === 'done'
+              ? (mode === 'update'
+                  ? 'bg-slate-700 text-sky-300 hover:bg-slate-600'
+                  : 'bg-slate-700 text-emerald-300 hover:bg-slate-600')
+              : disabled
+              ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
           return (
             <div key={s.id} className="flex items-center gap-2">
-              <div
-                className={
-                  state === 'current'
-                    ? `flex items-center gap-2 px-3 py-1 rounded-full text-white text-sm font-medium ${mode === 'update' ? 'bg-sky-600' : 'bg-emerald-600'}`
-                    : state === 'done'
-                    ? `flex items-center gap-2 px-3 py-1 rounded-full bg-slate-700 text-sm ${mode === 'update' ? 'text-sky-300' : 'text-emerald-300'}`
-                    : 'flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 text-slate-500 text-sm'
-                }
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setStep(s.id)}
+                className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm transition-colors ${cls}`}
+                title={disabled
+                  ? (s.id !== 'welcome' && !activeProfileId
+                    ? 'Select a profile first'
+                    : 'Connect to your NAS first')
+                  : `Go to ${s.label}`}
               >
                 <span className="font-mono text-xs">{i + 1}</span>
                 <span>{s.label}</span>
-              </div>
+              </button>
               {i < stepList.length - 1 && <span className="text-slate-700">›</span>}
             </div>
           )

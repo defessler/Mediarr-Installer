@@ -54,6 +54,7 @@ export function registerIpcHandlers() {
 
   // ── Profiles ──────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.profileList, () => profiles.listProfiles())
+  ipcMain.handle(IPC.profileLoad, (_e, args: { id: string }) => profiles.loadProfile(args.id))
   ipcMain.handle(IPC.profileSave, (_e, args: SaveProfileInput) => profiles.saveProfile(args))
   ipcMain.handle(IPC.profileDelete, (_e, args: { id: string }) => profiles.deleteProfile(args.id))
   ipcMain.handle(IPC.profileGetSecret, (_e, args: { id: string }) => profiles.getSecret(args.id))

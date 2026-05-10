@@ -159,30 +159,58 @@ export interface AppInfo {
 }
 
 // ── Connection profiles ───────────────────────────────────────────────────────
+//
+// Profiles are the source of truth for every per-NAS setting. The user
+// picks one at the start of the wizard; all form fields populate from
+// it and write back to it as they edit. Stored encrypted via Electron
+// safeStorage (DPAPI on Windows, Keychain on macOS, libsecret on Linux).
 
-export interface SavedProfile {
-  id: string
-  label: string
+export interface ProfileConnection {
   host: string
   port: number
   user: string
   authMethod: AuthMethod
   privateKeyPath?: string
+  /** Plaintext; only present when the renderer has loaded the full
+   *  decrypted profile via profile:load. */
+  password?: string
+  passphrase?: string
+  sudoPassword?: string
+}
+
+/** Public shape returned by profile:list. Hides the secret payload —
+ *  the renderer only learns the secrets via profile:load. */
+export interface SavedProfile {
+  id: string
+  label: string
+  connection: Pick<ProfileConnection, 'host' | 'port' | 'user' | 'authMethod' | 'privateKeyPath'>
+  /** True if any secret fields (password, sudoPassword, etc.) are stored. */
   hasSecret: boolean
+  /** Whether config values have been saved against this profile. */
+  hasConfig: boolean
+  lastUsedAt: number
+}
+
+/** The fully-decrypted profile sent to the renderer when the user
+ *  selects one. Includes secrets and the saved form state. */
+export interface LoadedProfile {
+  id: string
+  label: string
+  connection: ProfileConnection
+  targetDir: string
+  /** Full EnvFormValues-shaped config. Stored as a record so the IPC
+   *  type doesn't depend on the renderer's form types. */
+  config: Record<string, string>
   lastUsedAt: number
 }
 
 export interface SaveProfileInput {
-  label: string
-  host: string
-  port: number
-  user: string
-  authMethod: AuthMethod
-  privateKeyPath?: string
-  /** Plaintext; undefined to skip saving the secret */
-  secret?: string
   /** Provide to overwrite an existing profile */
   id?: string
+  label: string
+  connection: ProfileConnection
+  targetDir: string
+  config: Record<string, string>
 }
 
 // ── Streaming events (main → renderer) ───────────────────────────────────────
@@ -218,9 +246,10 @@ export const IPC = {
   fsCheckTarget:   'fs:check-target',
   // Profiles
   profileList:     'profile:list',
+  profileLoad:     'profile:load',
   profileSave:     'profile:save',
   profileDelete:   'profile:delete',
-  profileGetSecret:'profile:get-secret',
+  profileGetSecret:'profile:get-secret',     // legacy, kept for compatibility
   profileTouch:    'profile:touch',
   // Native dialogs
   dialogSaveText:  'dialog:save-text',

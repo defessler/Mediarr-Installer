@@ -11,6 +11,7 @@ import {
   type ConnectResult,
   type EnvDetectResult,
   type ExecResult,
+  type LoadedProfile,
   type SavedProfile,
   type SaveProfileInput,
   type SftpProgress,
@@ -77,6 +78,8 @@ const installer = {
   },
   profiles: {
     list:      (): Promise<SavedProfile[]> => ipcRenderer.invoke(IPC.profileList),
+    load:      (id: string): Promise<LoadedProfile | null> =>
+      ipcRenderer.invoke(IPC.profileLoad, { id }),
     save:      (input: SaveProfileInput): Promise<SavedProfile> =>
       ipcRenderer.invoke(IPC.profileSave, input),
     delete:    (id: string): Promise<void> => ipcRenderer.invoke(IPC.profileDelete, { id }),

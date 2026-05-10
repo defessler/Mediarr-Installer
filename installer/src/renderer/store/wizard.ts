@@ -14,6 +14,12 @@ export type WizardStep =
 
 export type WizardMode = 'install' | 'update'
 
+/** Steps that need an active SSH session. App.tsx redirects to 'connect'
+ *  if any of these is reached without a session. */
+export const STEPS_NEEDING_SESSION: WizardStep[] = [
+  'detect', 'configure', 'run', 'run-update', 'done',
+]
+
 interface WizardState {
   step: WizardStep
   setStep: (s: WizardStep) => void
@@ -22,7 +28,12 @@ interface WizardState {
   mode: WizardMode
   setMode: (m: WizardMode) => void
 
-  /** Connection: persisted minus the password */
+  /** id of the currently-loaded profile. Required to enter the wizard
+   *  past the Welcome screen. */
+  activeProfileId: string | null
+  setActiveProfileId: (id: string | null) => void
+
+  /** Connection: persisted via the active profile (not in localStorage). */
   connection: Partial<ConnectionConfig>
   setConnection: (c: Partial<ConnectionConfig>) => void
 
@@ -36,6 +47,15 @@ interface WizardState {
   /** Where on the NAS we install */
   targetDir: string
   setTargetDir: (d: string) => void
+
+  /** Replace the whole wizard state from a freshly-loaded profile. */
+  loadFromProfile: (p: {
+    id: string
+    label: string
+    connection: Partial<ConnectionConfig>
+    config: Partial<EnvFormValues>
+    targetDir: string
+  }) => void
 
   reset: () => void
 }
@@ -53,6 +73,12 @@ const defaultConfig: Partial<EnvFormValues> = {
   QBITTORRENT_USER: 'admin',
 }
 
+const defaultConnection: Partial<ConnectionConfig> = {
+  port: 22, user: 'root', authMethod: 'password',
+}
+
+const DEFAULT_TARGET = '/volume1/docker/media'
+
 export const useWizard = create<WizardState>()(
   persist(
     (set) => ({
@@ -62,7 +88,10 @@ export const useWizard = create<WizardState>()(
       mode: 'install',
       setMode: (mode) => set({ mode }),
 
-      connection: { port: 22, user: 'root', authMethod: 'password' },
+      activeProfileId: null,
+      setActiveProfileId: (activeProfileId) => set({ activeProfileId }),
+
+      connection: { ...defaultConnection },
       setConnection: (c) => set((s) => ({ connection: { ...s.connection, ...c } })),
 
       sessionId: null,
@@ -71,44 +100,38 @@ export const useWizard = create<WizardState>()(
       config: defaultConfig,
       setConfig: (c) => set((s) => ({ config: { ...s.config, ...c } })),
 
-      targetDir: '/volume1/docker/media',
+      targetDir: DEFAULT_TARGET,
       setTargetDir: (targetDir) => set({ targetDir }),
+
+      loadFromProfile: (p) => set({
+        activeProfileId: p.id,
+        connection: { ...defaultConnection, ...p.connection },
+        config: { ...defaultConfig, ...p.config },
+        targetDir: p.targetDir || DEFAULT_TARGET,
+        sessionId: null,    // any prior session is dead now
+      }),
 
       reset: () =>
         set({
           step: 'welcome',
           mode: 'install',
+          activeProfileId: null,
           sessionId: null,
-          connection: { port: 22, user: 'root', authMethod: 'password' },
+          connection: { ...defaultConnection },
           config: defaultConfig,
-          targetDir: '/volume1/docker/media',
+          targetDir: DEFAULT_TARGET,
         }),
     }),
     {
       name: 'nas-installer-wizard',
-      // Persist EVERYTHING the user typed — including passwords, API
-      // keys, and the SSH password. Per user request: "save all the
-      // information I type in, including passwords."
-      //
-      // SECURITY TRADEOFF: Zustand persist writes to localStorage,
-      // which is plaintext on disk inside the app's userData folder
-      // (%APPDATA%/nas-arr-installer/Local Storage/...). Anyone with
-      // read access to the user's profile directory can read these
-      // values. Since this is a personal-use installer running on the
-      // user's own machine, that's acceptable — but DON'T copy the
-      // userData folder around or share it.
-      //
-      // For SSH credentials, the connection-profile feature in
-      // ConnectScreen offers a separately encrypted store (via
-      // Electron safeStorage). That's the right home for long-term
-      // creds. This in-store persistence is only the "remember what I
-      // typed last time" convenience.
+      // Profiles are now the source of truth for connection + config.
+      // We only persist the lightweight bits: which step the user was on,
+      // which mode, and which profile was active. Connection / config
+      // come back via profile:load when the wizard re-launches.
       partialize: (s) => ({
         step: s.step,
         mode: s.mode,
-        connection: s.connection,   // includes password, passphrase, sudoPassword
-        config: s.config,           // includes all secrets
-        targetDir: s.targetDir,
+        activeProfileId: s.activeProfileId,
       }),
     },
   ),

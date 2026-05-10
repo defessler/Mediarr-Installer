@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useWizard } from '../store/wizard.js'
-import type { ConnectResult, SavedProfile } from '../../shared/ipc.js'
-import { reportError } from '../store/errors.js'
+import type { ConnectResult } from '../../shared/ipc.js'
 
 export function ConnectScreen() {
-  const { connection, setConnection, setStep, setSessionId, mode } = useWizard()
-  // Passwords live in the wizard store (and therefore localStorage) so
-  // they're remembered between app launches — per user request. See
-  // the security note in store/wizard.ts.
+  const {
+    connection, setConnection, setStep, setSessionId, mode, activeProfileId,
+  } = useWizard()
+  // Passwords live in the wizard store and (via auto-save) in the
+  // active profile. Reading/writing them through setConnection means
+  // any change automatically syncs to disk. See useProfileAutosave.
   const password = connection.password ?? ''
   const setPassword = (v: string) => setConnection({ password: v })
   const passphrase = connection.passphrase ?? ''
@@ -19,51 +20,6 @@ export function ConnectScreen() {
   const [testOk, setTestOk] = useState(false)
 
   const isNonRoot = (connection.user ?? 'root') !== 'root'
-
-  // ── Profiles ───────────────────────────────────────────────────────────────
-  const [profiles, setProfiles] = useState<SavedProfile[]>([])
-  const [selectedId, setSelectedId] = useState<string>('')
-  const [savingProfile, setSavingProfile] = useState(false)
-  const [profileLabel, setProfileLabel] = useState('')
-  const [saveSecret, setSaveSecret] = useState(true)
-
-  async function refreshProfiles() {
-    try {
-      const list = await window.installer.profiles.list()
-      setProfiles(list)
-    } catch (e) {
-      console.warn('Profile list failed:', e)
-    }
-  }
-
-  useEffect(() => { refreshProfiles() }, [])
-
-  async function loadProfile(id: string) {
-    setSelectedId(id)
-    if (!id) return
-    const p = profiles.find((x) => x.id === id)
-    if (!p) return
-    setConnection({
-      host: p.host,
-      port: p.port,
-      user: p.user,
-      authMethod: p.authMethod,
-      privateKeyPath: p.privateKeyPath,
-    })
-    // Reset typed-in secrets so we don't mix old + new.
-    setPassword('')
-    setPassphrase('')
-    setResult(null)
-    setTestOk(false)
-
-    if (p.hasSecret) {
-      const secret = await window.installer.profiles.getSecret(id)
-      if (secret !== null) {
-        if (p.authMethod === 'password') setPassword(secret)
-        else setPassphrase(secret)
-      }
-    }
-  }
 
   function commonConfig() {
     const user = connection.user ?? 'root'
@@ -102,9 +58,8 @@ export function ConnectScreen() {
     try {
       const r = await window.installer.ssh.connect(commonConfig())
       setSessionId(r.sessionId)
-      if (selectedId) {
-        // Best effort — non-fatal if it fails (e.g. file locked)
-        window.installer.profiles.touch(selectedId).catch(() => {})
+      if (activeProfileId) {
+        window.installer.profiles.touch(activeProfileId).catch(() => {})
       }
       // Install flow probes the environment first; update flow jumps
       // straight to running docker compose pull.
@@ -114,40 +69,6 @@ export function ConnectScreen() {
     } finally {
       setBusy(false)
     }
-  }
-
-  async function saveProfile() {
-    const label = profileLabel.trim() || `${connection.user ?? 'root'}@${connection.host ?? ''}`
-    const secret =
-      saveSecret
-        ? (connection.authMethod === 'password' ? password : passphrase) || undefined
-        : undefined
-    try {
-      await window.installer.profiles.save({
-        id: selectedId || undefined,
-        label,
-        host: connection.host ?? '',
-        port: connection.port ?? 22,
-        user: connection.user ?? 'root',
-        authMethod: connection.authMethod ?? 'password',
-        privateKeyPath: connection.authMethod === 'privateKey' ? connection.privateKeyPath : undefined,
-        secret,
-      })
-      setSavingProfile(false)
-      setProfileLabel('')
-      await refreshProfiles()
-    } catch (e) {
-      setResult({ ok: false, error: { kind: 'unknown', message: 'Profile save failed: ' + (e as Error).message } })
-      reportError('Save profile', e)
-    }
-  }
-
-  async function deleteSelected() {
-    if (!selectedId) return
-    if (!window.confirm('Delete this saved profile?')) return
-    await window.installer.profiles.delete(selectedId)
-    setSelectedId('')
-    await refreshProfiles()
   }
 
   // Smart-parse the host field: strip http(s)://, trailing path, and
@@ -193,34 +114,20 @@ export function ConnectScreen() {
         </button>
       </div>
 
-      {/* ── Saved profile picker ──────────────────────────────────────────── */}
-      {profiles.length > 0 && (
-        <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3 space-y-2">
-          <label className="block text-xs uppercase tracking-wide text-slate-400">
-            Saved profile
-          </label>
-          <div className="flex gap-2">
-            <select
-              className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-              value={selectedId}
-              onChange={(e) => loadProfile(e.target.value)}
-            >
-              <option value="">— Use new connection —</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label} ({p.user}@{p.host})
-                </option>
-              ))}
-            </select>
-            {selectedId && (
-              <button
-                onClick={deleteSelected}
-                className="px-3 py-2 text-sm bg-rose-900/40 hover:bg-rose-900/60 text-rose-200 rounded-md"
-              >
-                Delete
-              </button>
-            )}
-          </div>
+      {/* Active profile reminder — picker now lives on Welcome */}
+      {activeProfileId && (
+        <div className="rounded-md border border-slate-800 bg-slate-900/30 p-2 text-xs text-slate-400 flex items-center justify-between">
+          <span>
+            Editing profile{' '}
+            <span className="text-slate-200 font-mono">{activeProfileId.slice(0, 8)}</span>
+            {' '}— all changes auto-save.
+          </span>
+          <button
+            onClick={() => setStep('welcome')}
+            className="text-emerald-400 hover:underline"
+          >
+            Switch profile
+          </button>
         </div>
       )}
 
@@ -327,46 +234,9 @@ export function ConnectScreen() {
         </div>
       )}
 
-      {/* ── Save profile UI ───────────────────────────────────────────────── */}
-      {savingProfile ? (
-        <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3 space-y-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">Profile name</label>
-            <input
-              type="text" placeholder={`${connection.user ?? 'root'}@${connection.host ?? 'host'}`}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-              value={profileLabel} onChange={(e) => setProfileLabel(e.target.value)}
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox" checked={saveSecret}
-              onChange={(e) => setSaveSecret(e.target.checked)}
-            />
-            Also save the {connection.authMethod === 'password' ? 'password' : 'key passphrase'} (encrypted via OS keystore)
-          </label>
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => { setSavingProfile(false); setProfileLabel('') }}
-              className="px-3 py-2 text-sm bg-slate-700 hover:bg-slate-600 rounded-md"
-            >Cancel</button>
-            <button
-              onClick={saveProfile}
-              className="px-3 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md"
-            >Save</button>
-          </div>
-        </div>
-      ) : (
-        <div className="text-right">
-          <button
-            onClick={() => setSavingProfile(true)}
-            disabled={!connection.host}
-            className="text-sm text-emerald-400 hover:underline disabled:opacity-40"
-          >
-            {selectedId ? 'Update saved profile' : 'Save as profile'}
-          </button>
-        </div>
-      )}
+      {/* (Save UI removed — auto-save handles writing changes back to
+          the active profile. Switch profiles via the link above or
+          the Welcome step.) */}
 
       {result && (
         <div className={`rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono ${result.ok ? 'bg-emerald-900/40 text-emerald-200' : 'bg-rose-900/40 text-rose-200'}`}>
