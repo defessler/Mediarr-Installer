@@ -218,18 +218,20 @@ export function RunScreen() {
 
     try {
       // 1. Make sure the target dir exists AND is writable by the SSH user.
-      // mkdir -p runs as root via sudo, which leaves the dir owned by root.
-      // SFTP, however, runs as the regular SSH user — it has no way to
-      // write into a root-owned dir, so it'd hang trying to create subdirs.
-      // Fix: chown the dir to the SSH user's uid:gid after mkdir, using
-      // `id -u`/`id -g` (which return the SSH user's IDs without sudo).
-      // Then SFTP can write to its heart's content.
+      // The whole command runs inside `sudo bash -c '…'` for non-root
+      // users, so naive `$(id -u)` would return 0 (root's uid) — making
+      // chown a no-op. sudo sets $SUDO_UID/$SUDO_GID to the original
+      // user's IDs; fall back to id -u/-g for the case where the user
+      // is already root and no sudo was applied.
       setPhase('uploading')
       wlog(`Preparing target directory ${targetDir} (mkdir + chown)...`)
       const tq = shellQuote(targetDir)
       const prep = await window.installer.ssh.exec({
         sessionId,
-        cmd: `mkdir -p ${tq} && chown -R "$(id -u):$(id -g)" ${tq} && echo "owner=$(stat -c '%U:%G' ${tq})"`,
+        cmd:
+          `mkdir -p ${tq} && ` +
+          `chown -R "\${SUDO_UID:-$(id -u)}:\${SUDO_GID:-$(id -g)}" ${tq} && ` +
+          `echo "owner=$(stat -c '%U:%G' ${tq})"`,
         sudo: true,
       })
       if (prep.exitCode !== 0) {
