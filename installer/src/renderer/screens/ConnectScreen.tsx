@@ -89,7 +89,8 @@ export function ConnectScreen() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto">
     <div className="max-w-2xl mx-auto p-8 space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -240,24 +241,47 @@ export function ConnectScreen() {
           the active profile. Switch profiles via the link above or
           the Welcome step.) */}
 
-      {result && (
-        <div className={`rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono ${result.ok ? 'bg-emerald-900/40 text-emerald-200' : 'bg-rose-900/40 text-rose-200'}`}>
-          {result.ok
-            ? 'Connection successful'
-            : `${result.error?.kind}: ${result.error?.message}`}
+      {/* Full multi-line error stays in the scroll body — long messages
+          (sudo hints, DSM7 advice) need room. The footer below shows a
+          compact one-line summary so the buttons can stay pinned. */}
+      {result && !result.ok && (
+        <div className="rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono bg-rose-900/40 text-rose-200">
+          {result.error?.kind}: {result.error?.message}
         </div>
       )}
+    </div>
+    </div>
 
-      <div className="flex gap-3 pt-2">
+    {/* Sticky footer: Back / inline status / Test / Continue are always
+        visible regardless of how far the form has been scrolled. */}
+    <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
+      <div className="max-w-2xl mx-auto flex items-center gap-3">
+        <button
+          onClick={() => setStep('welcome')}
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
+        >
+          Back
+        </button>
+        <div className="flex-1 text-sm text-center">
+          {busy ? (
+            <span className="text-slate-400">Working...</span>
+          ) : result?.ok ? (
+            <span className="text-emerald-300">✓ Connection successful</span>
+          ) : result && !result.ok ? (
+            <span className="text-rose-300">
+              ✘ {result.error?.kind} — see details above
+            </span>
+          ) : null}
+        </div>
         <button
           onClick={test} disabled={busy || !connection.host}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
         >
           {busy ? 'Testing...' : 'Test connection'}
         </button>
         <button
           onClick={connectAndContinue} disabled={busy || !testOk}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 ml-auto"
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue
         </button>

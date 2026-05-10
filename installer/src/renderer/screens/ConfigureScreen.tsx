@@ -159,7 +159,8 @@ export function ConfigureScreen() {
 
   return (
     <ConfigCtx.Provider value={{ config, update }}>
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto">
     <div className="max-w-3xl mx-auto p-8 space-y-8">
       <header>
         <h1 className="text-2xl font-semibold">Configure the stack</h1>
@@ -469,6 +470,9 @@ export function ConfigureScreen() {
         </div>
       </section>
 
+      {/* Full error list stays in the scrollable body so the user can
+          read all of them. The footer below shows a compact "N issues"
+          summary so the buttons can stay pinned. */}
       {errors.length > 0 && (
         <div className="bg-rose-900/40 text-rose-200 rounded-md p-3 text-sm">
           <div className="font-medium mb-1">Fix these before continuing:</div>
@@ -477,17 +481,32 @@ export function ConfigureScreen() {
           </ul>
         </div>
       )}
+    </div>
+    </div>
 
-      <div className="flex justify-between pt-4 border-t border-slate-800">
+    {/* Sticky footer: Back / status / Begin install. Pinned to the
+        bottom so the action buttons are always reachable from a long
+        form. */}
+    <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
+      <div className="max-w-3xl mx-auto flex items-center gap-3">
         <button
           onClick={() => useWizard.getState().setStep('detect')}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Back
         </button>
+        <div className="flex-1 text-sm text-center">
+          {errors.length > 0 ? (
+            <span className="text-rose-300">
+              ✘ {errors.length} {errors.length === 1 ? 'issue' : 'issues'} above to fix
+            </span>
+          ) : (
+            <span className="text-emerald-300">✓ Ready to install</span>
+          )}
+        </div>
         <button
           onClick={go}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm"
         >
           Begin install →
         </button>

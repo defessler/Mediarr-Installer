@@ -129,7 +129,8 @@ export function EnvDetectScreen() {
     !!r.iptables
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto">
     <div className="max-w-2xl mx-auto p-8 space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">Probing your NAS</h1>
@@ -138,10 +139,6 @@ export function EnvDetectScreen() {
           interfaces so we can pre-fill the next screen.
         </p>
       </header>
-
-      {status === 'detecting' && (
-        <div className="text-slate-400 text-sm">Running checks over SSH...</div>
-      )}
 
       {status === 'failed' && (
         <div className="bg-rose-900/40 text-rose-200 rounded-md p-3 text-sm">
@@ -394,17 +391,39 @@ export function EnvDetectScreen() {
         </>
       )}
 
-      <div className="flex justify-between pt-4 border-t border-slate-800">
+    </div>
+    </div>
+
+    {/* Sticky footer: Back / status / Continue. Pinned so the user can
+        always advance regardless of how far they've scrolled. */}
+    <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
+      <div className="max-w-2xl mx-auto flex items-center gap-3">
         <button
           onClick={() => setStep('connect')}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Back
         </button>
+        <div className="flex-1 text-sm text-center">
+          {status === 'detecting' && (
+            <span className="text-slate-400">Running checks over SSH...</span>
+          )}
+          {status === 'failed' && (
+            <span className="text-rose-300">✘ Detection failed — see details above</span>
+          )}
+          {status === 'ok' && allBlocking && (
+            <span className="text-emerald-300">✓ All required checks passed</span>
+          )}
+          {status === 'ok' && !allBlocking && (
+            <span className="text-amber-300">
+              Required checks failed — fix the red items above to continue
+            </span>
+          )}
+        </div>
         <button
           onClick={() => setStep('configure')}
           disabled={!allBlocking}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40"
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue
         </button>

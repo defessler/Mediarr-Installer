@@ -117,8 +117,14 @@ export function DoneScreen() {
     window.open(url, '_blank')
   }
 
+  // Aggregate health for the footer status line.
+  const healthEntries = Object.entries(health)
+  const okCount = healthEntries.filter(([, h]) => h === 'ok').length
+  const failCount = healthEntries.filter(([, h]) => h === 'fail').length
+
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col">
+    <div className="flex-1 min-h-0 overflow-y-auto">
     <div className="max-w-3xl mx-auto p-8 space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div>
@@ -235,10 +241,33 @@ export function DoneScreen() {
         </ul>
       </section>
 
-      <div className="flex justify-end pt-4 border-t border-slate-800">
+    </div>
+    </div>
+
+    {/* Sticky footer: health summary + Start over. Pinned so the user
+        always knows how many services responded and can reset the
+        wizard from anywhere on the page. */}
+    <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
+      <div className="max-w-3xl mx-auto flex items-center gap-3">
+        <div className="text-sm text-slate-400">
+          {running ? 'Running validation...' : `exit ${exit ?? '?'}`}
+        </div>
+        <div className="flex-1 text-sm text-center">
+          {healthEntries.length === 0 ? (
+            <span className="text-slate-500">Validation pending</span>
+          ) : failCount === 0 ? (
+            <span className="text-emerald-300">
+              ✓ All {okCount} services reachable
+            </span>
+          ) : (
+            <span className="text-amber-300">
+              ✓ {okCount} reachable, ✘ {failCount} not — see grid above
+            </span>
+          )}
+        </div>
         <button
           onClick={reset}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md"
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Start over
         </button>
