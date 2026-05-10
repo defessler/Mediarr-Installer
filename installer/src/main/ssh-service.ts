@@ -90,10 +90,34 @@ function connectClient(cfg: ConnectionConfig): Promise<{ client: Client; banner?
   return new Promise((resolve, reject) => {
     const client = new Client()
     let banner: string | undefined
+    let settled = false
+
+    // Hard wall-clock timeout. ssh2's readyTimeout only fires after the
+    // underlying TCP connect completes; if the OS itself hangs the
+    // connect (NAT black hole, router silently dropping packets,
+    // wrong host) we'd wait indefinitely otherwise.
+    const HARD_TIMEOUT_MS = 20_000
+    const hardTimer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { client.end() } catch { /* ignore */ }
+      reject(new Error(
+        `Connection timed out after ${HARD_TIMEOUT_MS / 1000}s. ` +
+        `Verify the host is reachable and SSH is enabled (DSM ` +
+        `Control Panel → Terminal & SNMP → Enable SSH service).`,
+      ))
+    }, HARD_TIMEOUT_MS)
+
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(hardTimer)
+      fn()
+    }
 
     client.on('banner', (msg) => { banner = msg })
-    client.on('ready', () => resolve({ client, banner }))
-    client.on('error', (err) => reject(err))
+    client.on('ready', () => settle(() => resolve({ client, banner })))
+    client.on('error', (err) => settle(() => reject(err)))
 
     // Some Synology configurations require keyboard-interactive even
     // when a password is supplied — answer all prompts with the password.
@@ -106,7 +130,7 @@ function connectClient(cfg: ConnectionConfig): Promise<{ client: Client; banner?
     try {
       client.connect(buildConnectConfig(cfg))
     } catch (err) {
-      reject(err)
+      settle(() => reject(err))
     }
   })
 }
@@ -118,8 +142,15 @@ export async function testConnect(cfg: ConnectionConfig): Promise<ConnectResult>
   try {
     const result = await connectClient(cfg)
     client = result.client
-    // Sanity check: run a trivial command.
-    const exit = await execOnce(client, 'echo ok')
+    // Sanity check: run a trivial command. Wrap in a 10s timeout so a
+    // wedged SSH channel doesn't hang the whole UI.
+    const echoPromise = execOnce(client, 'echo ok')
+    const exit = await Promise.race([
+      echoPromise,
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error('Server connected but did not respond to a basic echo within 10s')), 10_000),
+      ),
+    ])
     if (exit.exitCode !== 0 || !exit.stdout.includes('ok')) {
       return { ok: false, error: { kind: 'unknown', message: 'connected but echo failed' } }
     }
@@ -127,7 +158,7 @@ export async function testConnect(cfg: ConnectionConfig): Promise<ConnectResult>
   } catch (err) {
     return { ok: false, error: classifyError(err as Error) }
   } finally {
-    if (client) client.end()
+    if (client) try { client.end() } catch { /* ignore */ }
   }
 }
 
