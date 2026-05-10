@@ -86,6 +86,18 @@ export async function detectEnv(
     'echo "===tz_file==="; cat /etc/timezone 2>/dev/null',
     'echo "===tz_link==="; readlink /etc/localtime 2>/dev/null',
     'echo "===lan==="; ip -4 addr show 2>/dev/null | awk \'/inet /{print $2}\' | grep -v \'^127\' || true',
+    // The IP of the interface that owns the default route. This is the
+    // "real" LAN IP we want for binding services — even if the user
+    // SSH'd in via a Tailscale/VPN/hostname/alternate route.
+    'echo "===default_iface==="; ip route show default 2>/dev/null | awk \'/default/{print $5; exit}\'',
+    'echo "===default_ip==="; iface=$(ip route show default 2>/dev/null | awk \'/default/{print $5; exit}\'); [ -n "$iface" ] && ip -4 addr show "$iface" 2>/dev/null | awk \'/inet /{print $2}\' | head -1 | cut -d/ -f1',
+    // SSH_CLIENT is "<src-ip> <src-port> <dst-port>" — surface the src IP
+    // so the renderer can hint when the user's connect address differs
+    // from the NAS's actual LAN IP.
+    'echo "===ssh_client==="; echo "$SSH_CLIENT" | awk \'{print $1}\'',
+    // The NAS's reply-path IP to the user's PC. Differs from default_ip
+    // when the user connected via a non-default-route network (Tailscale).
+    'echo "===reply_ip==="; src=$(echo "$SSH_CLIENT" | awk \'{print $1}\'); [ -n "$src" ] && ip route get "$src" 2>/dev/null | awk \'/src/{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}\' | head -1',
     'echo "===py3==="; python3 --version 2>&1; echo "RC=$?"',
     'echo "===ipt==="; iptables --version 2>&1; echo "RC=$?"',
     'echo "===sudo_nopw==="; sudo -n true 2>/dev/null; echo $?',
@@ -176,6 +188,11 @@ export async function detectEnv(
   const py3OK = /RC=0$/m.test(py3Section)
   const iptOK = /RC=0$/m.test(iptSection)
 
+  const defaultIface = section(o, 'default_iface') || null
+  const defaultIp = section(o, 'default_ip') || null
+  const sshClientIp = section(o, 'ssh_client') || null
+  const replyIp = section(o, 'reply_ip') || null
+
   return {
     docker: dockerV2OK ? 'v2' : dockerV1OK ? 'v1-legacy' : 'missing',
     volume1: volume1Out.startsWith('ok'),
@@ -192,5 +209,9 @@ export async function detectEnv(
     portConflicts,
     disk,
     internet,
+    defaultIface,
+    defaultIp,
+    sshClientIp,
+    replyIp,
   }
 }

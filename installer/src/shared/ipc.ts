@@ -98,6 +98,15 @@ export interface EnvDetectResult {
   disk: DiskSpace | null
   /** Outbound reachability — image pulls + Plex claim need these */
   internet: InternetCheck
+  /** Name of the NAS's default-route interface (e.g. eth0, ovs_eth0). */
+  defaultIface: string | null
+  /** IPv4 of that interface — the NAS's "real" LAN IP for service binding. */
+  defaultIp: string | null
+  /** Source IP of the current SSH session (the address the user connected from). */
+  sshClientIp: string | null
+  /** IP the NAS would use to reply to the SSH client. If different from
+   *  defaultIp, the SSH session is on a non-LAN network (e.g. Tailscale). */
+  replyIp: string | null
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────

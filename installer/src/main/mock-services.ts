@@ -397,6 +397,10 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
       freeGiB: 2764,
     },
     internet: { dockerHub: true, plexTv: true },
+    defaultIface: 'eth0',
+    defaultIp: '192.168.1.10',
+    sshClientIp: '192.168.1.42',
+    replyIp: '192.168.1.10',
   }
 }
 

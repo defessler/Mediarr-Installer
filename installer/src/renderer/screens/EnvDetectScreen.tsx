@@ -23,23 +23,35 @@ function isPrivateIPv4(ip: string): 'rfc1918' | 'cgnat' | 'no' {
 
 /** Pick the most likely LAN IP for binding the stack's ports.
  *
+ *  We trust the NAS's own view of its network over whatever the user
+ *  typed in Connect. The user might have used a hostname (resolved by
+ *  mDNS), a Tailscale IP, or any address that *happened* to route in —
+ *  none of which are necessarily the LAN address services should bind.
+ *
  *  Priority:
- *    1. The exact IP the user typed in Connect (if it's an IPv4) —
- *       it's by definition the address that worked, so it's the most
- *       reliable choice.
+ *    1. The IP of the NAS's default-route interface — almost always
+ *       its primary LAN address.
  *    2. The first detected RFC1918 IP from `ip addr show`.
  *    3. The first detected CGNAT IP (Tailscale-style).
- *    4. The first detected IP, whatever it is.
+ *    4. The exact IP the user typed in Connect (if it's an IPv4).
+ *    5. The first detected IP, whatever it is.
  */
-function pickLanIp(connectionHost: string | undefined, detected: string[]): string | null {
-  if (connectionHost && /^\d+\.\d+\.\d+\.\d+$/.test(connectionHost)) {
-    return connectionHost
+function pickLanIp(args: {
+  defaultIp: string | null
+  detected: string[]
+  connectionHost?: string
+}): string | null {
+  if (args.defaultIp && /^\d+\.\d+\.\d+\.\d+$/.test(args.defaultIp)) {
+    return args.defaultIp
   }
-  const rfc = detected.find((ip) => isPrivateIPv4(ip) === 'rfc1918')
+  const rfc = args.detected.find((ip) => isPrivateIPv4(ip) === 'rfc1918')
   if (rfc) return rfc
-  const cg = detected.find((ip) => isPrivateIPv4(ip) === 'cgnat')
+  const cg = args.detected.find((ip) => isPrivateIPv4(ip) === 'cgnat')
   if (cg) return cg
-  return detected[0] ?? null
+  if (args.connectionHost && /^\d+\.\d+\.\d+\.\d+$/.test(args.connectionHost)) {
+    return args.connectionHost
+  }
+  return args.detected[0] ?? null
 }
 
 export function EnvDetectScreen() {
@@ -66,8 +78,15 @@ export function EnvDetectScreen() {
         if (r.puid !== null && !config.PUID) patch.PUID = String(r.puid)
         if (r.pgid !== null && !config.PGID) patch.PGID = String(r.pgid)
         if (r.tz && !config.TZ) patch.TZ = r.tz
-        const lanIp = pickLanIp(connection.host, r.lanIps)
-        if (lanIp && !config.LAN_IP) patch.LAN_IP = lanIp
+        const lanIp = pickLanIp({
+          defaultIp: r.defaultIp,
+          detected: r.lanIps,
+          connectionHost: connection.host,
+        })
+        // Always overwrite — the user-typed IP from Connect may have
+        // been good enough to reach the NAS but isn't necessarily what
+        // services should bind. Trust the NAS's own self-report.
+        if (lanIp) patch.LAN_IP = lanIp
         if (Object.keys(patch).length > 0) setConfig(patch)
 
         setStatus('ok')
@@ -185,6 +204,20 @@ export function EnvDetectScreen() {
               label="LAN IP"
               value={config.LAN_IP || null}
             />
+            {r.defaultIface && r.defaultIp && (
+              <p className="ml-5 mt-0.5 text-xs text-slate-500">
+                Default-route interface{' '}
+                <span className="font-mono text-slate-300">{r.defaultIface}</span>{' '}
+                ({r.defaultIp})
+                {connection.host && r.defaultIp !== connection.host && (
+                  <>
+                    {' '}— differs from the address you connected via{' '}
+                    <span className="font-mono text-amber-300">{connection.host}</span>;
+                    we picked the NAS&apos;s real LAN IP for service binding.
+                  </>
+                )}
+              </p>
+            )}
             {r.lanIps.length > 0 && (
               <div className="ml-5 mt-1 text-xs">
                 <div className="text-slate-500 mb-1">
