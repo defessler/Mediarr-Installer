@@ -191,24 +191,53 @@ function quote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
+/** SFTP can fail in subtle ways on Synology — common ones we've hit:
+ *  - "Unable to start subsystem: sftp"  (SFTP service toggle off in DSM)
+ *  - "Permission denied"                 (user has no home dir → DSM
+ *                                         User Home Service disabled,
+ *                                         SFTP chroots to non-existent path)
+ *  - SFTP starts but every operation returns EACCES
+ *
+ *  Rather than play whack-a-mole with each error pattern, we probe with
+ *  a cheap stat() right after opening the SFTP channel. If the probe
+ *  fails for any reason, the exec-based fallback takes over. */
+async function tryProbeSftp(sftp: SFTPWrapper, remoteDir: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    // .stat on a path we control — if SFTP can't even stat the target
+    // dir we just chowned, it's broken for us.
+    sftp.stat(remoteDir, (err) => (err ? reject(err) : resolve()))
+  })
+}
+
 export async function uploadDir(args: {
   sessionId: string
   localDir: string
   remoteDir: string
 }): Promise<SftpUploadResult> {
-  let sftp: SFTPWrapper
+  let sftp: SFTPWrapper | null = null
+  let probeError: Error | null = null
   try {
     sftp = await getSftp(args.sessionId)
+    await tryProbeSftp(sftp, args.remoteDir)
   } catch (e) {
-    const msg = (e as Error).message || ''
-    if (/subsystem.*sftp/i.test(msg) || /Unable to start subsystem/i.test(msg)) {
-      send<SftpProgress>(IPC.evtSftpProgress, {
-        file: '(SFTP not enabled on the NAS — using exec fallback)',
-        bytesDone: 0, bytesTotal: 0, pctOverall: 0,
-      })
-      return uploadDirViaExec(args)
+    probeError = e as Error
+  }
+
+  if (!sftp || probeError) {
+    const msg = probeError?.message || 'unknown'
+    let reason = 'SFTP unavailable'
+    if (/subsystem.*sftp|Unable to start subsystem/i.test(msg)) {
+      reason = 'SFTP subsystem disabled (DSM Control Panel → File Services)'
+    } else if (/permission denied|EACCES/i.test(msg)) {
+      reason = 'SFTP returned Permission denied (likely missing User Home — DSM Control Panel → User → Advanced → enable User Home Service)'
+    } else if (/no such file/i.test(msg)) {
+      reason = `SFTP can't see ${args.remoteDir} (home-dir issue?)`
     }
-    throw e
+    send<SftpProgress>(IPC.evtSftpProgress, {
+      file: `(falling back to base64-over-exec — ${reason})`,
+      bytesDone: 0, bytesTotal: 0, pctOverall: 0,
+    })
+    return uploadDirViaExec(args)
   }
 
   const localDir = resolveLocalDir(args.localDir)
@@ -289,6 +318,9 @@ export async function writeFile(args: {
   mode?: number
 }): Promise<void> {
   const mode = args.mode ?? 0o600
+
+  // Try SFTP, fall back to exec on ANY error (subsystem disabled,
+  // missing home, EACCES, etc.).
   try {
     const sftp = await getSftp(args.sessionId)
     const parent = posix.dirname(args.remotePath)
@@ -296,22 +328,17 @@ export async function writeFile(args: {
       await sftpMkdirP(sftp, parent)
     }
     await sftpWriteString(sftp, args.remotePath, args.content, mode)
-  } catch (e) {
-    const msg = (e as Error).message || ''
-    if (/subsystem.*sftp/i.test(msg) || /Unable to start subsystem/i.test(msg)) {
-      // Fallback: write via exec + base64.
-      const b64 = Buffer.from(args.content, 'utf8').toString('base64')
-      const remoteEsc = args.remotePath.replace(/'/g, `'\\''`)
-      const r = await exec({
-        sessionId: args.sessionId,
-        cmd: `printf %s ${quote(b64)} | base64 -d > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
-        sudo: false,
-      })
-      if (r.exitCode !== 0) {
-        throw new Error(`writeFile fallback failed: ${(r.stderr || r.stdout).slice(0, 200)}`)
-      }
-      return
-    }
-    throw e
+    return
+  } catch { /* fall through to exec */ }
+
+  const b64 = Buffer.from(args.content, 'utf8').toString('base64')
+  const remoteEsc = args.remotePath.replace(/'/g, `'\\''`)
+  const r = await exec({
+    sessionId: args.sessionId,
+    cmd: `printf %s ${quote(b64)} | base64 -d > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
+    sudo: false,
+  })
+  if (r.exitCode !== 0) {
+    throw new Error(`writeFile failed (both SFTP and exec): ${(r.stderr || r.stdout).slice(0, 200)}`)
   }
 }

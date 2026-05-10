@@ -251,8 +251,12 @@ export function RunScreen() {
           // Sanity-test write access AS the original user. If the SSH
           // user genuinely can't write here, fail now with a clear msg
           // rather than letting SFTP get a generic Permission denied.
+          // -m preserves the current environment instead of trying to
+          // chdir to the user's home (which doesn't exist on Synology
+          // when User Home Service is disabled). Avoids the noisy
+          // "Could not chdir to home directory" stderr line.
           `if [ -n "\${SUDO_USER:-}" ]; then ` +
-          `  if su - "$SUDO_USER" -c "touch ${tq}/.installer_write_test && rm ${tq}/.installer_write_test" 2>/dev/null; then ` +
+          `  if su -m "$SUDO_USER" -c "touch ${tq}/.installer_write_test && rm ${tq}/.installer_write_test" 2>/dev/null; then ` +
           `    echo "[prep] SSH user $SUDO_USER can write — ok"; ` +
           `  else ` +
           `    echo "[prep] WARN: SSH user $SUDO_USER cannot write (ACL/share policy?)"; ` +
