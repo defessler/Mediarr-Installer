@@ -4,7 +4,7 @@ import type { ConnectResult } from '../../shared/ipc.js'
 
 export function ConnectScreen() {
   const {
-    connection, setConnection, setStep, setSessionId, mode, activeProfileId,
+    connection, setConnection, setStep, setSessionId, mode, activeProfileId, activeProfileLabel,
   } = useWizard()
   // Passwords live in the wizard store and (via auto-save) in the
   // active profile. Reading/writing them through setConnection means
@@ -114,12 +114,14 @@ export function ConnectScreen() {
         </button>
       </div>
 
-      {/* Active profile reminder — picker now lives on Welcome */}
-      {activeProfileId && (
+      {/* Active profile reminder — picker now lives on Welcome.
+          (Note: the App-level header pill also shows this — kept here
+          so it's adjacent to the auth fields the user is editing.) */}
+      {activeProfileId && activeProfileLabel && (
         <div className="rounded-md border border-slate-800 bg-slate-900/30 p-2 text-xs text-slate-400 flex items-center justify-between">
           <span>
             Editing profile{' '}
-            <span className="text-slate-200 font-mono">{activeProfileId.slice(0, 8)}</span>
+            <span className="text-slate-200 font-medium">{activeProfileLabel}</span>
             {' '}— all changes auto-save.
           </span>
           <button

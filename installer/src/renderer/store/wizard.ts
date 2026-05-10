@@ -39,6 +39,10 @@ interface WizardState {
   activeProfileId: string | null
   setActiveProfileId: (id: string | null) => void
 
+  /** Label of the active profile, displayed in the header. */
+  activeProfileLabel: string | null
+  setActiveProfileLabel: (label: string | null) => void
+
   /** Connection: persisted via the active profile (not in localStorage). */
   connection: Partial<ConnectionConfig>
   setConnection: (c: Partial<ConnectionConfig>) => void
@@ -97,6 +101,9 @@ export const useWizard = create<WizardState>()(
       activeProfileId: null,
       setActiveProfileId: (activeProfileId) => set({ activeProfileId }),
 
+      activeProfileLabel: null,
+      setActiveProfileLabel: (activeProfileLabel) => set({ activeProfileLabel }),
+
       connection: { ...defaultConnection },
       setConnection: (c) => set((s) => ({ connection: { ...s.connection, ...c } })),
 
@@ -111,6 +118,7 @@ export const useWizard = create<WizardState>()(
 
       loadFromProfile: (p) => set({
         activeProfileId: p.id,
+        activeProfileLabel: p.label,
         connection: { ...defaultConnection, ...p.connection },
         config: { ...defaultConfig, ...p.config },
         targetDir: p.targetDir || DEFAULT_TARGET,
@@ -122,6 +130,7 @@ export const useWizard = create<WizardState>()(
           step: 'welcome',
           mode: 'install',
           activeProfileId: null,
+          activeProfileLabel: null,
           sessionId: null,
           connection: { ...defaultConnection },
           config: defaultConfig,
@@ -138,6 +147,7 @@ export const useWizard = create<WizardState>()(
         step: s.step,
         mode: s.mode,
         activeProfileId: s.activeProfileId,
+        activeProfileLabel: s.activeProfileLabel,
       }),
     },
   ),

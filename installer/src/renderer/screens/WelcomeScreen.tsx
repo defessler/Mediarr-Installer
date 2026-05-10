@@ -4,7 +4,7 @@ import { reportError } from '../store/errors.js'
 import type { SavedProfile } from '../../shared/ipc.js'
 
 export function WelcomeScreen() {
-  const { setMode, setStep, loadFromProfile } = useWizard()
+  const { setMode, setStep, loadFromProfile, activeProfileId, setActiveProfileLabel } = useWizard()
   const [profiles, setProfiles] = useState<SavedProfile[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -72,6 +72,8 @@ export function WelcomeScreen() {
         targetDir: p.targetDir,
         config: p.config as Record<string, string>,
       })
+      // Keep the header label in sync if we renamed the active profile.
+      if (id === activeProfileId) setActiveProfileLabel(label)
       setEditingLabelId(null)
       setEditingLabelText('')
       await refresh()

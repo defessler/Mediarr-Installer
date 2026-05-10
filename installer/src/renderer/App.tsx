@@ -35,6 +35,7 @@ export function App() {
   const mode = useWizard((s) => s.mode)
   const sessionId = useWizard((s) => s.sessionId)
   const activeProfileId = useWizard((s) => s.activeProfileId)
+  const activeProfileLabel = useWizard((s) => s.activeProfileLabel)
   const setStep = useWizard((s) => s.setStep)
   const [info, setInfo] = useState<AppInfo | null>(null)
 
@@ -108,6 +109,23 @@ export function App() {
         <div className="bg-amber-500/15 text-amber-200 border-b border-amber-500/30 text-xs px-4 py-1.5 text-center font-medium">
           MOCK MODE — SSH, SFTP, env detection, and NordVPN API are stubbed.
           No real NAS is contacted.
+        </div>
+      )}
+
+      {/* Active profile pill — visible from every screen so the user
+          always knows which NAS they're configuring. Click to bounce
+          back to Welcome and switch. */}
+      {activeProfileLabel && step !== 'welcome' && (
+        <div className="flex items-center justify-center gap-2 border-b border-slate-900 px-4 py-1.5 bg-slate-950 text-xs">
+          <span className="text-slate-500">Profile:</span>
+          <span className="font-medium text-slate-200">{activeProfileLabel}</span>
+          <button
+            type="button"
+            onClick={() => setStep('welcome')}
+            className="ml-2 text-emerald-400 hover:underline"
+          >
+            switch
+          </button>
         </div>
       )}
 

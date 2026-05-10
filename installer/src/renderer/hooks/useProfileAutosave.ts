@@ -9,6 +9,7 @@ import { reportError } from '../store/errors.js'
  */
 export function useProfileAutosave() {
   const activeProfileId = useWizard((s) => s.activeProfileId)
+  const activeProfileLabel = useWizard((s) => s.activeProfileLabel)
   const connection = useWizard((s) => s.connection)
   const config = useWizard((s) => s.config)
   const targetDir = useWizard((s) => s.targetDir)
@@ -26,7 +27,10 @@ export function useProfileAutosave() {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       try {
-        const label = `${connection.user ?? 'root'}@${connection.host ?? '<host>'}`
+        // Preserve the user-set label. Only fall back to user@host if
+        // the profile somehow lost its label.
+        const label = activeProfileLabel ||
+          `${connection.user ?? 'root'}@${connection.host ?? '<host>'}`
         await window.installer.profiles.save({
           id: activeProfileId,
           label,
@@ -56,7 +60,7 @@ export function useProfileAutosave() {
     return () => {
       if (timer.current) clearTimeout(timer.current)
     }
-  }, [activeProfileId, connection, config, targetDir])
+  }, [activeProfileId, activeProfileLabel, connection, config, targetDir])
 
   // When the active profile changes (user picks a different one), reset
   // the first-run guard so the autosave skips the load.
