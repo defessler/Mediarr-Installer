@@ -105,6 +105,11 @@ export async function detectEnv(
     'echo "===has_compose==="; [ -f ' + tq + '/docker-compose.yml ] && echo y || true',
     'echo "===has_env==="; [ -f ' + tq + '/.env ] && echo y || true',
     'echo "===running==="; docker ps --format "{{.Names}}" 2>/dev/null || true',
+    // Map of currently-bound ports to the docker container that owns
+    // each. We use this to suppress "port conflict" warnings for ports
+    // bound by our own stack — the previous install's containers don't
+    // count as a conflict; we'll restart them as part of the install.
+    'echo "===docker_ports==="; docker ps --format "{{.Names}}|{{.Ports}}" 2>/dev/null || true',
     'echo "===df==="; df -kP /volume1 2>/dev/null | tail -n +2',
     'echo "===netstat==="; netstat -lnt 2>/dev/null | awk \'NR>2 {n=split($4,a,":"); print a[n]}\' | sort -un',
     'echo "===dockerhub==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo 000',
@@ -165,8 +170,32 @@ export async function detectEnv(
     const n = Number(line.trim())
     if (Number.isInteger(n) && n > 0 && n <= 65535) boundPorts.add(n)
   }
+
+  // Build a set of ports already published by one of OUR stack
+  // containers. `docker ps --format "{{.Names}}|{{.Ports}}"` emits one
+  // line per container like:
+  //   plex|192.168.1.10:32400->32400/tcp, 192.168.1.10:1900->1900/udp
+  //   sonarr|192.168.1.10:49152->8989/tcp
+  // We parse out the host-side port of every published mapping and, if
+  // the owning container is in STACK_CONTAINERS, mark that port as
+  // "ours, not a conflict". Re-running the install gracefully handles
+  // restarting those containers.
+  const ownedByStack = new Set<number>()
+  for (const line of section(o, 'docker_ports').split('\n')) {
+    const sep = line.indexOf('|')
+    if (sep < 0) continue
+    const name = line.slice(0, sep).trim()
+    if (!STACK_CONTAINERS.has(name)) continue
+    const portsField = line.slice(sep + 1)
+    for (const m of portsField.matchAll(/:(\d+)->\d+\/(?:tcp|udp)/g)) {
+      const port = Number(m[1])
+      if (Number.isInteger(port)) ownedByStack.add(port)
+    }
+  }
+
   const portConflicts: PortConflict[] = dockerPresent
-    ? STACK_PORTS.filter((p) => boundPorts.has(p.port))
+    ? STACK_PORTS
+        .filter((p) => boundPorts.has(p.port) && !ownedByStack.has(p.port))
         .map((p) => ({ port: p.port, service: p.service, process: '' }))
     : []
 
