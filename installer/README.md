@@ -37,17 +37,23 @@ A few useful test flows:
 - on the VPN screen, enter a token shorter than 16 chars to exercise the
   validation error path
 
-## Build platform installers
+## Build a runnable folder
 
 ```bash
-npm run build:win      # NSIS installer  → installer/dist/*Setup*.exe
-npm run build:mac      # arm64 + x64 dmg → installer/dist/*.dmg
-npm run build:linux    # AppImage        → installer/dist/*.AppImage
+npm run build:win      # → installer/dist/win-unpacked/
+npm run build:mac      # → installer/dist/mac-arm64/  (or mac/)
+npm run build:linux    # → installer/dist/linux-unpacked/
 ```
 
+The Windows build produces an unpacked folder with `NAS Arr Installer.exe`
+and all its support files. Double-click the .exe inside the folder to run.
+Nothing gets installed to the system; per-user state (logs, saved SSH
+profiles) lives at `%APPDATA%\nas-arr-installer\`. To uninstall, just
+delete the folder.
+
 Native deps (ssh2 → cpu-features) compile per host, so each platform must
-be built on its own runner. The artifacts are unsigned; Windows SmartScreen
-and macOS Gatekeeper will warn until we add signing.
+be built on its own runner. Unsigned — Windows SmartScreen and macOS
+Gatekeeper will warn until we add signing.
 
 ## CI / Releases
 
