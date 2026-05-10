@@ -275,12 +275,26 @@ export function ConnectScreen() {
         </div>
         <button
           onClick={test} disabled={busy || !connection.host}
+          title={
+            busy
+              ? 'Already testing — wait for the result'
+              : !connection.host
+                ? 'Enter a host (e.g. 192.168.1.10) first'
+                : 'Try the SSH credentials without persisting a session'
+          }
           className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
         >
           {busy ? 'Testing...' : 'Test connection'}
         </button>
         <button
           onClick={connectAndContinue} disabled={busy || !testOk}
+          title={
+            busy
+              ? 'Working — please wait'
+              : !testOk
+                ? 'Run "Test connection" first and confirm it succeeds'
+                : 'Open the SSH session and advance to the next step'
+          }
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue

@@ -119,29 +119,58 @@ export function UpdateRunScreen() {
         <LogPanel lines={linesRef.current} />
       </div>
 
-      <div className="flex justify-between">
+      {/* All three buttons always rendered, disabled with a tooltip
+          explaining the gate when they're not applicable to the
+          current phase. */}
+      <div className="flex justify-between items-center gap-3">
         <button
           onClick={() => setStep('welcome')}
           disabled={phase === 'running'}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+          title={
+            phase === 'running'
+              ? 'Wait for the update to finish before going back'
+              : 'Return to the welcome screen'
+          }
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
         >
           Back to start
         </button>
-        {phase === 'idle' || phase === 'failed' ? (
-          <button
-            onClick={go}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md"
-          >
-            {phase === 'failed' ? 'Retry' : 'Pull and recreate'}
-          </button>
-        ) : phase === 'done' ? (
-          <button
-            onClick={() => setStep('done')}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
-          >
-            Continue
-          </button>
-        ) : null}
+        <div className="flex-1 text-sm text-center text-slate-400">
+          {phase === 'idle' && 'Ready to pull newer images'}
+          {phase === 'running' && 'Pulling images and recreating containers...'}
+          {phase === 'done' && '✓ Update complete — click Continue'}
+          {phase === 'failed' && '✘ Update failed — see log, then Retry'}
+        </div>
+        <button
+          onClick={go}
+          disabled={phase === 'running' || phase === 'done'}
+          title={
+            phase === 'running'
+              ? 'Already pulling images — wait for it to finish'
+              : phase === 'done'
+                ? 'Update succeeded — nothing to re-run'
+                : phase === 'failed'
+                  ? 'Try the pull and recreate again'
+                  : 'Pull newer images and recreate the containers'
+          }
+          className="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md disabled:opacity-40 text-sm"
+        >
+          {phase === 'failed' ? 'Retry' : 'Pull and recreate'}
+        </button>
+        <button
+          onClick={() => setStep('done')}
+          disabled={phase !== 'done'}
+          title={
+            phase === 'done'
+              ? 'Continue to the post-update dashboard'
+              : phase === 'failed'
+                ? 'Update failed — Retry first'
+                : 'Available once the update completes'
+          }
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
+        >
+          Continue
+        </button>
       </div>
     </div>
   )

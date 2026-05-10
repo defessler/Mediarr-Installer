@@ -639,29 +639,59 @@ export function RunScreen() {
         />
       )}
 
-      <div className="flex justify-between">
+      {/* Footer buttons stay visible at every phase — back, retry, and
+          continue are all always rendered. Each carries a `title`
+          tooltip explaining why it's disabled at the current phase, so
+          the user is never wondering "what does this app want from me
+          right now?" */}
+      <div className="flex justify-between items-center gap-3">
         <button
           onClick={() => setStep('configure')}
           disabled={phase === 'uploading' || phase === 'running-setup'}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+          title={
+            phase === 'uploading' || phase === 'running-setup'
+              ? 'Wait until the install finishes before going back'
+              : 'Return to the configure screen'
+          }
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
         >
           Back
         </button>
-        {phase === 'failed' ? (
-          <button
-            onClick={go}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
-          >
-            Retry
-          </button>
-        ) : phase === 'done' ? (
-          <button
-            onClick={() => setStep('done')}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
-          >
-            Continue
-          </button>
-        ) : null}
+        <div className="flex-1 text-sm text-center text-slate-400">
+          {phase === 'uploading'  && `Uploading files... ${progress?.pct ?? 0}%`}
+          {phase === 'writing-env' && 'Writing .env'}
+          {phase === 'running-setup' && 'Running setup.sh — see log'}
+          {phase === 'done'   && '✓ Install complete — click Continue'}
+          {phase === 'failed' && '✘ Install failed — see log, then Retry'}
+        </div>
+        <button
+          onClick={go}
+          disabled={phase !== 'failed'}
+          title={
+            phase === 'failed'
+              ? 'Re-run the install from scratch'
+              : phase === 'done'
+                ? 'Install already finished successfully'
+                : 'Available once the install has failed'
+          }
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
+        >
+          Retry
+        </button>
+        <button
+          onClick={() => setStep('done')}
+          disabled={phase !== 'done'}
+          title={
+            phase === 'done'
+              ? 'Continue to the post-install dashboard'
+              : phase === 'failed'
+                ? 'Install failed — Retry first'
+                : 'Available once the install completes'
+          }
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
+        >
+          Continue
+        </button>
       </div>
     </div>
   )

@@ -423,6 +423,15 @@ export function EnvDetectScreen() {
         <button
           onClick={() => setStep('configure')}
           disabled={!allBlocking}
+          title={
+            status === 'detecting'
+              ? 'Wait for environment checks to finish'
+              : status === 'failed'
+                ? 'Detection failed — see the error above and go back to retry'
+                : !allBlocking
+                  ? 'One or more required checks failed — install would not succeed'
+                  : 'Advance to the configure screen'
+          }
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue
