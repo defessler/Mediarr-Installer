@@ -178,12 +178,44 @@ export function EnvDetectScreen() {
                 {' '}{MIN_FREE_GIB} GiB free.
               </p>
             )}
-            <Check ok={r.internet.dockerHub} label="Docker Hub reachable" value={r.internet.dockerHub ? 'yes' : 'no'} />
-            {!r.internet.dockerHub && (
-              <p className="text-rose-300 text-xs ml-5 mt-1">
-                Image pulls will fail. Check the NAS's DNS and outbound firewall.
-              </p>
-            )}
+            {(() => {
+              // Three-state: green if curl reaches it, amber if curl
+              // doesn't but DNS+Docker daemon do (likely false negative
+              // from Synology's stock curl trust store), red only if
+              // even DNS fails — that's a real network problem.
+              const real = r.internet.dockerHub
+              const likelyOk = r.internet.dockerHubDnsResolves && r.internet.dockerDaemonUp
+              const okState: 'green' | 'amber' | 'red' =
+                real ? 'green' : likelyOk ? 'amber' : 'red'
+              return <>
+                <Check
+                  ok={okState !== 'red'}
+                  label="Docker Hub reachable"
+                  value={
+                    okState === 'green' ? 'yes' :
+                    okState === 'amber' ? 'probably (curl failed but DNS + daemon ok)' :
+                    'no'
+                  }
+                />
+                {okState === 'amber' && (
+                  <p className="text-amber-300/80 text-xs ml-5 mt-1">
+                    Curl from this SSH session can't reach the registry, but
+                    DNS resolves and the Docker daemon is up. Synology&apos;s
+                    stock curl trust store is often out of date — the daemon
+                    pulls images via its own networking and usually works
+                    fine. If <code>docker pull hello-world</code> works in
+                    your terminal, ignore this.
+                  </p>
+                )}
+                {okState === 'red' && (
+                  <p className="text-rose-300 text-xs ml-5 mt-1">
+                    Even DNS for registry-1.docker.io failed. Image pulls
+                    will fail until you fix the NAS's DNS and outbound
+                    firewall.
+                  </p>
+                )}
+              </>
+            })()}
             <Check ok={r.internet.plexTv} label="plex.tv reachable" value={r.internet.plexTv ? 'yes' : 'no'} />
             {!r.internet.plexTv && (
               <p className="text-amber-300 text-xs ml-5 mt-1">

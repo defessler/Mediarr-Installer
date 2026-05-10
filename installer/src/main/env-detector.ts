@@ -109,6 +109,12 @@ export async function detectEnv(
     'echo "===netstat==="; netstat -lnt 2>/dev/null | awk \'NR>2 {n=split($4,a,":"); print a[n]}\' | sort -un',
     'echo "===dockerhub==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo 000',
     'echo "===plextv==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://plex.tv 2>/dev/null || echo 000',
+    // DNS resolution fallback — Synology\'s stock curl sometimes fails
+    // outbound HTTPS even when the Docker daemon (which has its own
+    // network stack) can pull images fine. If DNS resolves and Docker
+    // is up, "no curl reachability" is usually a false negative.
+    'echo "===dockerhub_dns==="; getent hosts registry-1.docker.io 2>/dev/null | awk \'{print $1; exit}\' || true',
+    'echo "===docker_info==="; docker info --format \'{{.ServerVersion}}\' 2>/dev/null || true',
   ].join('\n')
 
   const r = await run(sessionId, `bash -c ${shellQuote(batch)}`)
@@ -179,6 +185,8 @@ export async function detectEnv(
   const internet = {
     dockerHub: httpOK(section(o, 'dockerhub')),
     plexTv: httpOK(section(o, 'plextv')),
+    dockerHubDnsResolves: /^\d+\.\d+\.\d+\.\d+/.test(section(o, 'dockerhub_dns').trim()),
+    dockerDaemonUp: section(o, 'docker_info').trim().length > 0,
   }
 
   const puidStr = section(o, 'puid')

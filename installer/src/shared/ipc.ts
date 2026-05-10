@@ -75,6 +75,16 @@ export interface InternetCheck {
   dockerHub: boolean
   /** plex.tv reachable — needed for claim token validation by Plex */
   plexTv: boolean
+  /** True if `getent hosts registry-1.docker.io` returned an address. DNS
+   *  resolution is a much weaker signal than HTTPS-to-200, but it's
+   *  useful when curl fails — Synology's stock curl trust store can be
+   *  out of date and reject perfectly valid TLS, while the Docker daemon
+   *  itself (with its own networking) pulls images just fine. */
+  dockerHubDnsResolves: boolean
+  /** True if `docker info` returned a server version — Docker daemon is
+   *  alive and can talk to its registry config (which by default is
+   *  docker.io). Strong signal that pulls will work. */
+  dockerDaemonUp: boolean
 }
 
 export interface EnvDetectResult {
