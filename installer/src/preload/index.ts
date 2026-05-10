@@ -98,6 +98,15 @@ const installer = {
     showLogInFolder: (): Promise<{ path: string }> =>
       ipcRenderer.invoke(IPC.appShowLogInFolder),
   },
+  installLog: {
+    start: (kind?: 'install' | 'update' | 'validate'): Promise<{ path: string }> =>
+      ipcRenderer.invoke(IPC.installLogStart, { kind }),
+    append: (chunk: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.installLogAppend, { chunk }),
+    close: (): Promise<void> => ipcRenderer.invoke(IPC.installLogClose),
+    reveal: (): Promise<{ path: string | null }> => ipcRenderer.invoke(IPC.installLogReveal),
+    path: (): Promise<{ path: string | null }> => ipcRenderer.invoke(IPC.installLogPath),
+  },
 }
 
 export type InstallerApi = typeof installer

@@ -10,6 +10,7 @@ import { registerIpcHandlers, isMockMode } from './ipc-handlers.js'
 import * as ssh from './ssh-service.js'
 import * as sftp from './sftp-service.js'
 import * as mock from './mock-services.js'
+import * as installLog from './install-log.js'
 
 const __dirname_main = dirname(fileURLToPath(import.meta.url))
 
@@ -54,6 +55,28 @@ function createWindow() {
     return
   }
 
+  // Theme the title bar to match the dark-slate renderer instead of the
+  // default white/grey OS chrome.
+  //   - Windows: `titleBarStyle: 'hidden'` strips the native bar, and
+  //     `titleBarOverlay` paints the minimize/maximize/close buttons in
+  //     our colors over a 36px drag region the renderer reserves.
+  //   - macOS: `hiddenInset` keeps the traffic-light buttons but hides
+  //     the bar background. The renderer's top drag region fills it in.
+  //   - Linux: no equivalent — keep the default frame.
+  const titleBarOpts =
+    process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: {
+            color: '#020617',        // slate-950
+            symbolColor: '#cbd5e1',  // slate-300
+            height: 36,
+          },
+        }
+      : process.platform === 'darwin'
+        ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 11 } }
+        : {}
+
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 780,
@@ -62,6 +85,7 @@ function createWindow() {
     show: true, // show immediately so we don't hide failures behind ready-to-show
     autoHideMenuBar: true,
     backgroundColor: '#020617', // slate-950 — matches the renderer chrome
+    ...titleBarOpts,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -127,13 +151,23 @@ app.whenReady().then(() => {
   dialog.showErrorBox('Startup failed', String(err.stack || err))
 })
 
+// Defensive cleanup: run on every plausible "we're going away" event.
+// ssh.shutdown() and installLog.closeInstallLog() are idempotent so
+// multiple firings are fine.
+function tearDown() {
+  try { ssh.shutdown() } catch (e) { log.error('ssh.shutdown failed:', e) }
+  try { installLog.closeInstallLog() } catch (e) { log.error('installLog.closeInstallLog failed:', e) }
+  if (isMockMode()) try { mock.shutdown() } catch (e) { log.error('mock.shutdown failed:', e) }
+}
+
 app.on('window-all-closed', () => {
-  ssh.shutdown()
-  if (isMockMode()) mock.shutdown()
+  tearDown()
   if (process.platform !== 'darwin') app.quit()
 })
-
-app.on('before-quit', () => {
-  ssh.shutdown()
-  if (isMockMode()) mock.shutdown()
-})
+app.on('before-quit', tearDown)
+app.on('will-quit', tearDown)
+// SIGINT/SIGTERM (Ctrl+C in dev, OS shutdown) — Electron normally
+// handles these but signal a shutdown explicitly so the SSH client
+// can send DISCONNECT before the socket dies hard.
+process.on('SIGINT', () => { tearDown(); app.quit() })
+process.on('SIGTERM', () => { tearDown(); app.quit() })

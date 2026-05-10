@@ -18,6 +18,7 @@ import {
   type SshStreamData,
   type SshStreamClose,
 } from '../shared/ipc.js'
+import { appendInstallLog } from './install-log.js'
 
 interface Session {
   client: Client
@@ -344,21 +345,21 @@ export async function execStream(args: {
       }
 
       stream.on('data', (d: Buffer) => {
-        send<SshStreamData>(IPC.evtStreamData, {
-          channelId,
-          type: 'stdout',
-          chunk: d.toString('utf8'),
-        })
+        const chunk = d.toString('utf8')
+        send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stdout', chunk })
+        // Mirror to the on-disk install log so the user has a permanent
+        // record. install-log no-ops if no log file is open.
+        appendInstallLog(chunk)
       })
       stream.stderr.on('data', (d: Buffer) => {
-        send<SshStreamData>(IPC.evtStreamData, {
-          channelId,
-          type: 'stderr',
-          chunk: d.toString('utf8'),
-        })
+        const chunk = d.toString('utf8')
+        send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stderr', chunk })
+        appendInstallLog(chunk)
       })
       stream.on('close', (code: number, signal: string) => {
         activeChannels.delete(channelId)
+        const closeNote = `\n[ssh] channel ${channelId} closed (exit=${code ?? 'null'} signal=${signal ?? 'none'})\n`
+        appendInstallLog(closeNote)
         send<SshStreamClose>(IPC.evtStreamClose, {
           channelId,
           exitCode: code ?? null,
@@ -404,5 +405,17 @@ export function getSftp(sessionId: string): Promise<SFTPWrapper> {
 }
 
 export function shutdown() {
+  // First: send TERM to every active exec channel so the remote
+  // processes (setup.sh, docker compose pull, etc.) get a chance to
+  // die cleanly instead of being orphaned by the disconnect. Some
+  // SSH servers reject the "signal" message; fall back to close().
+  for (const [id, ch] of activeChannels.entries()) {
+    try { ch.signal('TERM') } catch { /* server may not support signals */ }
+    try { ch.close() } catch { /* already closed */ }
+    activeChannels.delete(id)
+  }
+  // Then drop each Client. ssh2's .end() sends SSH_MSG_DISCONNECT and
+  // closes the underlying socket; the server tears down whatever was
+  // still attached to the connection.
   for (const id of [...sessions.keys()]) disconnect(id)
 }

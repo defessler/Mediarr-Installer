@@ -22,7 +22,10 @@ export function UpdateRunScreen() {
   const [, setTick] = useState(0)
 
   function appendChunk(text: string) {
-    const parts = text.split(/\r?\n/)
+    // pty:true gives us "\r\n" line endings (ONLCR mode); normalize so
+    // we don't accidentally treat the '\r' as a docker-style redraw.
+    text = text.replace(/\r\n/g, '\n')
+    const parts = text.split('\n')
     if (linesRef.current.length === 0) {
       linesRef.current.push(...parts)
     } else {

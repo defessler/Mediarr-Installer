@@ -145,6 +145,31 @@ export function App() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Drag region for the frameless title bar. The native window
+          controls (minimize/maximize/close on Windows, traffic lights
+          on macOS) are painted by the OS on top of this strip via
+          titleBarOverlay / hiddenInset; everything below this bar is
+          regular renderer content. On Linux we keep the native frame
+          and this bar still works as a thin top accent. */}
+      <div
+        className="flex items-center select-none text-xs text-slate-400"
+        style={{
+          // @ts-expect-error — non-standard CSS property exposed by Electron
+          WebkitAppRegion: 'drag',
+          height: 36,
+          background: '#020617',
+          // macOS positions traffic lights at the top-left; reserve ~78px
+          // so our app name doesn't disappear under them. Harmless extra
+          // space on Windows/Linux.
+          paddingLeft: /Mac/i.test(navigator.userAgent) ? 78 : 14,
+          // Windows controls sit on the top-right (~138px wide on
+          // standard DPI). Don't put anything clickable inside that band.
+          paddingRight: 150,
+        }}
+      >
+        <span className="font-medium tracking-wide text-slate-300">Mediarr Installer</span>
+      </div>
+
       {info?.mock && (
         <div className="bg-amber-500/15 text-amber-200 border-b border-amber-500/30 text-xs px-4 py-1.5 text-center font-medium">
           MOCK MODE — SSH, SFTP, env detection, and NordVPN API are stubbed.

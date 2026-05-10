@@ -41,6 +41,9 @@ export function RunScreen() {
   )
   const [rerunningStep, setRerunningStep] = useState<number | null>(null)
   const [, setTick] = useState(0) // force re-render on log append
+  /** Path of the on-disk install log for the current run. Set when go()
+   *  starts a new run; surfaces in the header so the user can open it. */
+  const [installLogPath, setInstallLogPath] = useState<string | null>(null)
   /** Tracks whether the current run has emitted an SFTP progress event
    *  yet. The first emit gets a fresh line; subsequent emits use \r to
    *  overwrite that line in place (one ticker, not 15 lines). */
@@ -96,13 +99,18 @@ export function RunScreen() {
     // CR-handling, each frame becomes its own line and the panel fills
     // with hundreds of near-identical entries.
     //
-    // Rule: split only on '\n'. Within any segment, a '\r' resets the
-    // current line back to empty and the text AFTER the last '\r'
-    // becomes the new content. The first segment extends the line
-    // already in the buffer; subsequent segments start fresh lines.
-    //
-    // For step-marker parsing we only consider segments that came AFTER
-    // a real '\n' AND don't contain a '\r' — i.e. complete normal lines.
+    // CRITICAL: normalize CRLF → LF first. We open the remote channel
+    // with pty:true, which puts the slave fd in ONLCR mode — every '\n'
+    // that setup.sh writes becomes '\r\n' on the wire. Without this
+    // normalize step, every normal line of output arrived as "text\r\n",
+    // split on '\n' gave ["text\r", ""], and the trailing '\r' kicked
+    // in the redraw logic below — wiping every single line of setup.sh
+    // output as it came through. The panel looked frozen even though
+    // the install was running fine. Only chunks WITHOUT \r\n (e.g.
+    // renderer-internal wlog() calls) survived. Fix: strip the \r
+    // in \r\n pairs FIRST, then any remaining bare \r really is a
+    // redraw marker.
+    text = text.replace(/\r\n/g, '\n')
     const segments = text.split('\n')
     const newlyCompleted: string[] = []
 
@@ -153,6 +161,9 @@ export function RunScreen() {
       if (d.channelId === CHANNEL_ID) {
         setExitCode(d.exitCode)
         setPhase(d.exitCode === 0 ? 'done' : 'failed')
+        // The remote setup.sh finished — flush + close the on-disk
+        // log so it's complete on disk even if the app gets killed.
+        window.installer.installLog.close().catch(() => { /* non-fatal */ })
         // Any remaining "running" steps after a clean exit are implicitly ok.
         // After a failed exit, the failed step already got marked fail by
         // the marker parser; leave others alone.
@@ -243,11 +254,31 @@ export function RunScreen() {
     sftpFirstRef.current = true   // next sftp progress event starts a fresh line
     setTick((t) => t + 1)
 
+    // Open a fresh on-disk install log. The main process mirrors
+    // anything that flows through SSH exec channels to this file
+    // automatically; wlog() also funnels through it so the user gets
+    // a single complete transcript per run.
+    try {
+      const r = await window.installer.installLog.start('install')
+      // Store the path so we can offer "open log file" later.
+      setInstallLogPath(r.path)
+    } catch (e) {
+      // Non-fatal — the install still works, we just lose the local file.
+      console.error('installLog.start failed', e)
+    }
+
     // Helper: log a wizard-internal action into the same panel that
     // shows the streaming setup.sh output, so the user sees what's
     // happening before/between/after the script run. Prefix [wizard]
-    // distinguishes our actions from setup.sh's output.
-    const wlog = (msg: string) => appendChunk(`\x1b[36m[wizard]\x1b[0m ${msg}\n`)
+    // distinguishes our actions from setup.sh's output. ALSO mirror
+    // to the on-disk install log via the dedicated append IPC, since
+    // wlog() lines don't go through SSH and wouldn't otherwise land
+    // in the file.
+    const wlog = (msg: string) => {
+      const line = `[wizard] ${msg}\n`
+      appendChunk(`\x1b[36m[wizard]\x1b[0m ${msg}\n`)
+      window.installer.installLog.append(line).catch(() => { /* non-fatal */ })
+    }
 
     try {
       // 1. Make sure the target dir exists AND is writable by the SSH user.
@@ -480,6 +511,15 @@ export function RunScreen() {
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Installing the stack</h1>
         <div className="flex items-center gap-3">
+          {installLogPath && (
+            <button
+              onClick={() => window.installer.installLog.reveal()}
+              className="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded border border-slate-700"
+              title={installLogPath}
+            >
+              Open log file
+            </button>
+          )}
           {linesRef.current.length > 0 && (
             <LogActions
               lines={linesRef.current}

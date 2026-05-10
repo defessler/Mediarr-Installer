@@ -257,6 +257,12 @@ export const IPC = {
   appGetInfo:      'app:get-info',
   appOpenLog:      'app:open-log',
   appShowLogInFolder: 'app:show-log-in-folder',
+  // Install log (per-run mirror of streamed output to a local file)
+  installLogStart:  'install-log:start',
+  installLogAppend: 'install-log:append',
+  installLogClose:  'install-log:close',
+  installLogReveal: 'install-log:reveal',
+  installLogPath:   'install-log:path',
   // Events
   evtStreamData:   'ssh:stream:data',
   evtStreamClose:  'ssh:stream:close',

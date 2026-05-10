@@ -34,7 +34,11 @@ export function DoneScreen() {
   const [health, setHealth] = useState<Record<string, ServiceHealth>>({})
 
   function appendChunk(text: string) {
-    const parts = text.split(/\r?\n/)
+    // pty:true → ONLCR converts '\n' to '\r\n' on the wire. Normalize
+    // before splitting so a trailing '\r' isn't mistaken for a docker
+    // progress redraw.
+    text = text.replace(/\r\n/g, '\n')
+    const parts = text.split('\n')
     if (linesRef.current.length === 0) {
       linesRef.current.push(...parts)
     } else {

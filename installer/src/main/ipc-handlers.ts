@@ -14,6 +14,7 @@ import * as mock from './mock-services.js'
 import * as profiles from './profile-store.js'
 import { saveTextToFile } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
+import * as installLog from './install-log.js'
 
 export const isMockMode = (): boolean =>
   process.env.INSTALLER_MOCK === '1' || process.env.INSTALLER_MOCK === 'true'
@@ -87,4 +88,18 @@ export function registerIpcHandlers() {
     shell.showItemInFolder(path)
     return { path }
   })
+
+  // ── Install log (per-run, separate from electron-log main.log) ────────────
+  ipcMain.handle(IPC.installLogStart, (_e, args: { kind?: 'install' | 'update' | 'validate' }) =>
+    ({ path: installLog.startInstallLog(args?.kind ?? 'install') }))
+  ipcMain.handle(IPC.installLogAppend, (_e, args: { chunk: string }) => {
+    installLog.appendInstallLog(args.chunk)
+    return undefined
+  })
+  ipcMain.handle(IPC.installLogClose, () => {
+    installLog.closeInstallLog()
+    return undefined
+  })
+  ipcMain.handle(IPC.installLogReveal, () => installLog.revealCurrentInstallLog())
+  ipcMain.handle(IPC.installLogPath, () => ({ path: installLog.getCurrentInstallLogPath() }))
 }
