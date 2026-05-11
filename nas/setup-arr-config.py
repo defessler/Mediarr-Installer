@@ -329,17 +329,21 @@ def acl_diagnostic(path):
     Centralised here so root-folder, remote-path-mapping and any other
     write-bound API call surface the same guidance."""
     host_path = path.replace('/data/', '/volume1/Data/', 1)
-    # Look up the username for PUID once so the DSM-UI instruction can
-    # name the actual account the user needs to grant write access to,
+    # Look up the username for PUID so the DSM-UI instruction can name
+    # the actual account the user needs to grant write access to,
     # rather than asking them to guess "the user matching PUID=1026."
-    import subprocess
+    #
+    # Python's pwd module reads /etc/passwd directly — no dependency on
+    # `getent` being on PATH (Synology busybox sometimes lacks it,
+    # which made the previous diagnostic say "Find user 'PUID=1026'"
+    # instead of the actual username).
     user_name = f"PUID={CONTAINER_UID}"
     try:
-        r = subprocess.run(["getent", "passwd", str(CONTAINER_UID)],
-                           capture_output=True, text=True, timeout=5)
-        if r.returncode == 0 and r.stdout:
-            user_name = r.stdout.split(":")[0]
-    except Exception:
+        import pwd
+        user_name = pwd.getpwuid(CONTAINER_UID).pw_name
+    except (KeyError, ImportError):
+        # KeyError: no entry for that UID. ImportError: pwd is a unix-
+        # only module — but we're always on Linux when this runs.
         pass
     print(f"      Container probe says: NOT writable from inside the arr")
     print(f"      (running as uid={CONTAINER_UID} gid={CONTAINER_GID}).")

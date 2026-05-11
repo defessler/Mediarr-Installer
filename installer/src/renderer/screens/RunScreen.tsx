@@ -374,6 +374,94 @@ export function RunScreen() {
         )
       }
 
+      // 1.5. Grant the container's PUID a write ACL on /volume1/Data.
+      //
+      // Synology shared folders layer their own ACL on top of POSIX.
+      // chown + chmod 775 in setup-folders.sh isn't enough — Sonarr /
+      // Radarr / Lidarr probes "is this writable" from inside their
+      // container (as PUID), the shared-folder ACL says no, and the arr
+      // reports "Path does not exist" (it conflates EACCES + ENOENT in
+      // the root-folder validator). The cure is to add an explicit
+      // write ACE to /volume1/Data with file+directory inheritance.
+      //
+      // We do this from the wizard (rather than only in setup-folders.sh)
+      // for two reasons:
+      //   1. The wizard has the rich shell environment it needs to find
+      //      synoacltool reliably — DSM puts it at /usr/syno/bin which
+      //      isn't on PATH for non-interactive sudo'd shells, and the
+      //      file is a symlink so `find -type f` skips it without `-L`.
+      //   2. We can re-test the result by attempting a touch as the PUID
+      //      and surface a clear failure if the ACL still isn't enough
+      //      (e.g. DSM Control Panel hasn't granted the user share-level
+      //      access at all).
+      const puid = (config.PUID ?? '').trim() || '1026'
+      const dataRoot = '/volume1/Data'
+      wlog(`Applying shared-folder ACL on ${dataRoot} (so containers can write)...`)
+      try {
+        const acl = await window.installer.ssh.exec({
+          sessionId,
+          cmd:
+            `PUID="${puid}"; DATA="${dataRoot}"; ` +
+            // Resolve the username from the PUID. Synology busybox does
+            // ship getent for the passwd database; fall back to awk on
+            // /etc/passwd if it's not there.
+            `USERNAME=$(getent passwd "$PUID" 2>/dev/null | cut -d: -f1); ` +
+            `[ -z "$USERNAME" ] && USERNAME=$(awk -F: -v u="$PUID" '$3==u{print $1; exit}' /etc/passwd 2>/dev/null); ` +
+            // Locate synoacltool. PATH first; then known DSM locations
+            // (binaries are often symlinks, so we use -e not -x to
+            // accept symlinks-with-targets); then `find -L` which
+            // follows symlinks during the recursive scan.
+            `SYNOACL=""; ` +
+            `if command -v synoacltool >/dev/null 2>&1; then SYNOACL=$(command -v synoacltool); fi; ` +
+            `if [ -z "$SYNOACL" ]; then ` +
+            `  for c in /usr/syno/bin/synoacltool /usr/syno/sbin/synoacltool /usr/local/bin/synoacltool /usr/bin/synoacltool /bin/synoacltool; do ` +
+            `    if [ -e "$c" ]; then SYNOACL="$c"; break; fi; ` +
+            `  done; ` +
+            `fi; ` +
+            `if [ -z "$SYNOACL" ]; then ` +
+            `  SYNOACL=$(find -L /usr /bin -maxdepth 6 -name synoacltool 2>/dev/null | head -1); ` +
+            `fi; ` +
+            `echo "[acl] USERNAME=$USERNAME PUID=$PUID SYNOACL=\${SYNOACL:-<not found>}"; ` +
+            `if [ -z "$USERNAME" ]; then echo "[acl] no user matching PUID — skip"; exit 0; fi; ` +
+            `if [ -z "$SYNOACL" ]; then ` +
+            `  echo "[acl] synoacltool not found — install will likely fail with ACL errors in step 7."; ` +
+            `  echo "[acl] DSM fix: Control Panel → Shared Folder → Data → Edit → Permissions → grant $USERNAME Read/Write"; ` +
+            `  exit 0; ` +
+            `fi; ` +
+            // Apply the ACE. If a matching ACE already exists, -add
+            // returns non-zero with an "already exists" message — we
+            // treat that as success.
+            `if "$SYNOACL" -add "$DATA" "user:$USERNAME:allow:rwxpdDaARWcCo:fd--" 2>&1; then ` +
+            `  echo "[acl] ACE added/updated for $USERNAME on $DATA"; ` +
+            `else rc=$?; echo "[acl] -add returned $rc (often means ACE already exists — ok)"; fi; ` +
+            // Propagate inheritance to existing children so the dirs
+            // the arrs need are writable on first run, not just new ones.
+            `if "$SYNOACL" -enforce-inherit "$DATA" 2>&1; then ` +
+            `  echo "[acl] inheritance propagated to existing children"; ` +
+            `else echo "[acl] enforce-inherit failed (older child files may still need manual fix)"; fi; ` +
+            // Re-test from inside a temp container as PUID. This is the
+            // exact same test the arrs do; if it passes, step 7 should
+            // pass; if it fails, surface the DSM Control Panel hint NOW.
+            `TESTDIR="$DATA/Media"; ` +
+            `mkdir -p "$TESTDIR" 2>/dev/null; ` +
+            `if su -m -s /bin/sh "$USERNAME" -c "touch '$TESTDIR/.acl_probe' && rm '$TESTDIR/.acl_probe'" 2>/dev/null; then ` +
+            `  echo "[acl] verified: $USERNAME can write $TESTDIR — Sonarr/Radarr/Lidarr will accept the root folders"; ` +
+            `else ` +
+            `  echo "[acl] WARN: $USERNAME STILL cannot write $TESTDIR after ACL grant."; ` +
+            `  echo "[acl] DSM fix: Control Panel → Shared Folder → Data → Edit → Permissions → grant $USERNAME Read/Write"; ` +
+            `fi`,
+          sudo: true,
+        })
+        if (acl.stdout.trim()) wlog(acl.stdout.trim())
+        if (acl.stderr.trim()) wlog(`acl stderr: ${acl.stderr.trim()}`)
+        // Don't throw on ACL failure — the install can still partially
+        // succeed (downloads + non-/data steps), and the user might
+        // already have the share permissions set in DSM such that the
+        // arrs work even without our ACE. Log and continue.
+      } catch (e) {
+        wlog(`ACL grant errored (non-fatal): ${(e as Error).message}`)
+      }
+
       // The renderer can't read disk. We pass the sentinel "@payload" and
       // the main process's sftp-service resolves it via payload-resolver.
       // Renderer never learns absolute filesystem paths.

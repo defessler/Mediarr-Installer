@@ -127,14 +127,24 @@ find_tool() {
         command -v "$name"
         return 0
     fi
+    # Accept anything that exists at the candidate path. `-e` follows
+    # symlinks, so symlinked binaries (common on DSM) match. `-x` was
+    # too strict — synoacltool is a symlink whose target executable
+    # bit doesn't always survive the resolution in the bash test, even
+    # though the binary itself runs fine.
     for cand in "$@"; do
-        if [ -x "$cand" ]; then echo "$cand"; return 0; fi
+        if [ -e "$cand" ]; then echo "$cand"; return 0; fi
     done
     # Last resort: locate by name under /usr (and /bin as a sanity check).
     # `find -print -quit` returns the first match without scanning the
     # whole tree, which keeps this snappy on a NAS with many volumes.
+    #
+    # CRITICAL: -L tells find to follow symlinks. On DSM many system
+    # binaries (synoacltool included) are symlinks; without -L the
+    # `-type f` filter skips them and we falsely report "not found"
+    # for tools that are actually present.
     local hit
-    hit=$(find /usr /bin -maxdepth 5 -type f -name "$name" -print -quit 2>/dev/null)
+    hit=$(find -L /usr /bin -maxdepth 6 -name "$name" -print -quit 2>/dev/null)
     [ -n "$hit" ] && { echo "$hit"; return 0; }
     return 1
 }
