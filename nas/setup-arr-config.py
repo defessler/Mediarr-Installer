@@ -289,18 +289,39 @@ def add_root_folder(base, key, api, path, extra_fields=None):
     payload = {"path": path, "name": name}
     if extra_fields:
         payload.update(extra_fields)
+
+    # First attempt.
     result = POST(base, key, f"/{api}/rootfolder", payload)
     if result:
         ok(f"Root folder: {path}")
         return
-    # Failed. The arr returned "Path does not exist" or similar. The most
-    # common cause on Synology is that the container can't see the host
-    # bind mount — either because the host directory was created after
-    # container start, or because Synology's shared-folder ACL blocks the
-    # PUID we passed. Surface a diagnostic instead of leaving the user
-    # guessing.
+
+    # Failed. On Synology this is almost always a race: the container is
+    # up and its API responds, but the bind-mounted /data isn't fully
+    # readable yet (DSM's shared-folder permission layer can take a few
+    # seconds to settle after a fresh `docker compose up -d`). Step 10
+    # post-deploy-validate.sh reliably sees the same paths a few minutes
+    # later. Retry a few times with a short wait before giving up and
+    # surfacing the ACL diagnostic.
+    print(f"  …root folder add failed once, retrying (path may not be visible yet)…")
+    for attempt in range(1, 5):  # up to 4 more tries = ~60s extra
+        time.sleep(15)
+        # Check if it landed on a previous retry (idempotent re-check).
+        existing = GET(base, key, f"/{api}/rootfolder")
+        if existing and any(f['path'] == path for f in existing):
+            ok(f"Root folder: {path} (added on retry {attempt})")
+            return
+        result = POST(base, key, f"/{api}/rootfolder", payload)
+        if result:
+            ok(f"Root folder: {path} (added on retry {attempt})")
+            return
+
+    # Still failing — emit the full diagnostic. By the time we reach
+    # here we've waited ~60s past container start; if the path still
+    # isn't visible it's an ACL problem, not a timing one.
     host_path = path.replace('/data/', '/volume1/Data/', 1)
     fail(f"Root folder: {path}")
+    print(f"      Tried 5 times over ~60s — still rejected by the API.")
     print(f"      Most likely a shared-folder permission issue on Synology.")
     print(f"      Host equivalent: {host_path}")
     print(f"      Try, in order:")
@@ -356,14 +377,31 @@ def add_remote_path_mapping(base, key, api, host, remote, local):
         fail("Remote path mapping: can't reach API"); return
     if any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
         skip(f"Remote path: {remote} → {local}"); return
-    result, status = POST_status(base, key, f"/{api}/remotePathMapping",
-                                 {"host": host, "remotePath": remote, "localPath": local})
+    payload = {"host": host, "remotePath": remote, "localPath": local}
+    # First attempt.
+    result, status = POST_status(base, key, f"/{api}/remotePathMapping", payload)
     if result is not None:
         ok(f"Remote path: {host} {remote} → {local}")
-    elif status == 500:
+        return
+    if status == 500:
         skip(f"Remote path: {remote} → {local} (already configured)")
-    else:
-        fail(f"Remote path: {host} {remote} → {local}")
+        return
+    # Retry on path-validation failures (same Synology bind-mount race
+    # we hit on root folders). After ~60s the path is usually visible.
+    for attempt in range(1, 5):
+        time.sleep(15)
+        existing = GET(base, key, f"/{api}/remotePathMapping")
+        if existing and any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
+            ok(f"Remote path: {host} {remote} → {local} (added on retry {attempt})")
+            return
+        result, status = POST_status(base, key, f"/{api}/remotePathMapping", payload)
+        if result is not None:
+            ok(f"Remote path: {host} {remote} → {local} (added on retry {attempt})")
+            return
+        if status == 500:
+            skip(f"Remote path: {remote} → {local} (already configured)")
+            return
+    fail(f"Remote path: {host} {remote} → {local}")
 
 def configure_auth(base, key, api, username, password):
     """Set Forms authentication, bypassed for local addresses."""

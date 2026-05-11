@@ -54,6 +54,14 @@ interface WizardState {
   config: Partial<EnvFormValues>
   setConfig: (c: Partial<EnvFormValues>) => void
 
+  /** Wall-clock timestamp (Date.now()) at which the current PLEX_CLAIM
+   *  was pasted. The token expires 4 minutes after Plex GENERATED it
+   *  (which we can't observe), so this is a best-effort approximation —
+   *  but it's far better than restarting from "now" every time the
+   *  PlexClaimRefresh widget remounts. Kept here so it survives nav
+   *  between Configure → Run idle → Run failed. */
+  plexClaimSetAt: number | null
+
   /** Where on the NAS we install */
   targetDir: string
   setTargetDir: (d: string) => void
@@ -111,7 +119,22 @@ export const useWizard = create<WizardState>()(
       setSessionId: (sessionId) => set({ sessionId }),
 
       config: defaultConfig,
-      setConfig: (c) => set((s) => ({ config: { ...s.config, ...c } })),
+      setConfig: (c) => set((s) => {
+        // Whenever PLEX_CLAIM changes (typed/pasted/cleared), reset
+        // its first-seen timestamp so the countdown widget tracks
+        // age from THAT moment instead of from component mount.
+        const claimChanged =
+          Object.prototype.hasOwnProperty.call(c, 'PLEX_CLAIM') &&
+          (c as Partial<EnvFormValues>).PLEX_CLAIM !== s.config.PLEX_CLAIM
+        const newConfig = { ...s.config, ...c }
+        return claimChanged
+          ? {
+              config: newConfig,
+              plexClaimSetAt: (c as Partial<EnvFormValues>).PLEX_CLAIM ? Date.now() : null,
+            }
+          : { config: newConfig }
+      }),
+      plexClaimSetAt: null,
 
       targetDir: DEFAULT_TARGET,
       setTargetDir: (targetDir) => set({ targetDir }),
@@ -127,6 +150,7 @@ export const useWizard = create<WizardState>()(
         // the entry time. Strip it on load so the field is empty and the
         // user pastes a fresh one.
         config: { ...defaultConfig, ...p.config, PLEX_CLAIM: undefined },
+        plexClaimSetAt: null,
         targetDir: p.targetDir || DEFAULT_TARGET,
         sessionId: null,    // any prior session is dead now
       }),
@@ -140,6 +164,7 @@ export const useWizard = create<WizardState>()(
           sessionId: null,
           connection: { ...defaultConnection },
           config: defaultConfig,
+          plexClaimSetAt: null,
           targetDir: DEFAULT_TARGET,
         }),
     }),

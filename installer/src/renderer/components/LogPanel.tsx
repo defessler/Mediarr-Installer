@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { parseAnsi, COLOR_CLASS } from './ansi.js'
 
 interface Props {
@@ -18,55 +18,114 @@ export function LogPanel({ lines, follow = true }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   /** True when the user has scrolled up to read history. While stuck,
    *  we stop auto-scrolling so we don't yank them away from what
-   *  they're reading. The moment they scroll back to the bottom we
-   *  resume following. */
+   *  they're reading. The moment they scroll back to the bottom (or
+   *  click "Jump to bottom") we resume following. Stored in a ref so
+   *  fast log-stream updates don't trigger a re-render every chunk. */
   const stuckRef = useRef(false)
+  /** Mirror of stuckRef as state — purely so the JumpToBottom button
+   *  knows when to appear. Polled every 250ms from stuckRef rather
+   *  than tied to log updates so the button doesn't flicker. */
+  const [stuck, setStuck] = useState(false)
 
-  // Re-run on every render. lines is usually the same array reference
-  // (linesRef.current is mutated in place by RunScreen for efficiency),
-  // so a lines-based dependency wouldn't fire when content changes —
-  // scrolling silently broke as soon as the buffer got mutated in place.
-  // Running unconditionally is cheap (one DOM property assignment) and
-  // covers both "new line appended" and "last line overwritten" cases.
+  // Scroll on every render. linesRef in RunScreen is mutated in place
+  // for efficiency, so React's `lines` reference rarely changes and a
+  // dep array of [lines] silently misses updates. Setting scrollTop is
+  // one DOM property write — cheap.
+  //
+  // Use direct scrollTop= (not scrollTo with behavior:'smooth') —
+  // smooth scrolling lags dangerously during high-frequency renders
+  // (100+ lines/sec from docker compose pull) and never catches up to
+  // the growing scrollHeight. Instant scroll always lands at the bottom.
   useEffect(() => {
     if (!follow || !ref.current) return
     if (stuckRef.current) return
     ref.current.scrollTop = ref.current.scrollHeight
   })
 
-  function onScroll() {
+  // User-intent detection: only mark "stuck" on user-initiated scroll
+  // (wheel, touch, keyboard). Pure scroll events also fire when WE
+  // programmatically scrollTop=scrollHeight, and during fast content
+  // appends the layout shifts can momentarily measure as "not at
+  // bottom" — which previously kicked us into stuck mode incorrectly.
+  // Listening to wheel/touch directly bypasses that race entirely.
+  useEffect(() => {
     const el = ref.current
     if (!el) return
-    // 40px slack: anywhere within ~2 lines of the bottom counts as
-    // "at the bottom" and resumes follow mode. Otherwise the user is
-    // reading history; stop forcing them down.
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-    stuckRef.current = !atBottom
+    const markStuck = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+      stuckRef.current = !atBottom
+    }
+    const checkUnstuck = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+      // Only un-stick from scroll events — never auto-stick. The user
+      // has to wheel/touch/keyboard to enter stuck mode.
+      if (atBottom) stuckRef.current = false
+    }
+    el.addEventListener('wheel', markStuck, { passive: true })
+    el.addEventListener('touchmove', markStuck, { passive: true })
+    el.addEventListener('keydown', markStuck)
+    el.addEventListener('scroll', checkUnstuck, { passive: true })
+    return () => {
+      el.removeEventListener('wheel', markStuck)
+      el.removeEventListener('touchmove', markStuck)
+      el.removeEventListener('keydown', markStuck)
+      el.removeEventListener('scroll', checkUnstuck)
+    }
+  }, [])
+
+  // Mirror stuckRef → stuck state every 250ms. Decoupled from log
+  // updates so the button doesn't flicker on every chunk; coupled
+  // tightly enough to feel responsive when the user wheels up/down.
+  useEffect(() => {
+    const i = setInterval(() => {
+      if (stuckRef.current !== stuck) setStuck(stuckRef.current)
+    }, 250)
+    return () => clearInterval(i)
+  }, [stuck])
+
+  function jumpToBottom() {
+    const el = ref.current
+    if (!el) return
+    stuckRef.current = false
+    el.scrollTop = el.scrollHeight
+    setStuck(false)
   }
 
   return (
-    <div
-      ref={ref}
-      onScroll={onScroll}
-      className="log-panel h-full overflow-y-auto bg-black/60 border border-slate-800 rounded-md p-3 text-slate-300"
-    >
-      {lines.length === 0 ? (
-        <span className="text-slate-500 italic">Waiting for output...</span>
-      ) : (
-        lines.map((l, i) => {
-          const segs = parseAnsi(l)
-          return (
-            <div key={i}>
-              {segs.length === 0 ? ' ' : segs.map((s, j) => {
-                const cls = [
-                  s.fg ? COLOR_CLASS[s.fg] : '',
-                  s.bold ? 'font-semibold' : '',
-                ].filter(Boolean).join(' ')
-                return cls ? <span key={j} className={cls}>{s.text}</span> : <span key={j}>{s.text}</span>
-              })}
-            </div>
-          )
-        })
+    <div className="relative h-full">
+      <div
+        ref={ref}
+        tabIndex={0}
+        className="log-panel h-full overflow-y-auto bg-black/60 border border-slate-800 rounded-md p-3 text-slate-300 focus:outline-none"
+      >
+        {lines.length === 0 ? (
+          <span className="text-slate-500 italic">Waiting for output...</span>
+        ) : (
+          lines.map((l, i) => {
+            const segs = parseAnsi(l)
+            return (
+              <div key={i}>
+                {segs.length === 0 ? ' ' : segs.map((s, j) => {
+                  const cls = [
+                    s.fg ? COLOR_CLASS[s.fg] : '',
+                    s.bold ? 'font-semibold' : '',
+                  ].filter(Boolean).join(' ')
+                  return cls ? <span key={j} className={cls}>{s.text}</span> : <span key={j}>{s.text}</span>
+                })}
+              </div>
+            )
+          })
+        )}
+      </div>
+      {stuck && (
+        <button
+          type="button"
+          onClick={jumpToBottom}
+          className="absolute bottom-3 right-3 px-3 py-1.5 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 flex items-center gap-1.5"
+          title="Resume following the log (Esc / End also works)"
+        >
+          Jump to bottom <span>↓</span>
+        </button>
       )}
     </div>
   )

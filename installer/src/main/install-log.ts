@@ -103,9 +103,11 @@ export function revealCurrentInstallLog(): { path: string | null } {
   return { path: currentPath }
 }
 
-/** Keep at most 20 most-recent log files. Avoids unbounded growth in
- *  userData if someone uses the wizard a lot. */
-function pruneOldLogs(dir: string, keep = 20): void {
+/** Keep at most 10 most-recent log files. Avoids unbounded growth in
+ *  userData if someone uses the wizard a lot — 10 is enough to walk
+ *  back through a session of "tried, tweaked, retried" attempts
+ *  without filling the disk. */
+function pruneOldLogs(dir: string, keep = 10): void {
   try {
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.log'))

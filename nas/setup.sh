@@ -120,8 +120,15 @@ wait_for_services() {
 
         if $all_up; then
             echo ""
-            echo "  ✔ All containers running — waiting 20s for services to initialise..."
-            sleep 20
+            # 45s post-up settle: containers may report "running" before
+            # their bind-mounted volumes are visible from inside, before
+            # the arr web servers bind their ports, and before DSM's
+            # shared-folder ACL layer is reachable through the mount.
+            # The Python config script also retries each API call so a
+            # tight wait here isn't catastrophic, but a longer wait
+            # avoids most of the spurious "Path does not exist" errors.
+            echo "  ✔ All containers running — waiting 45s for services to initialise..."
+            sleep 45
             return 0
         fi
 

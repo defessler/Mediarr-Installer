@@ -568,6 +568,24 @@ export function RunScreen() {
   }
 
   // Active install / completed view: stepper + streaming log.
+  //
+  // Progress bar driven by the step markers we parsed out of setup.sh's
+  // output. We treat anything that's `ok` as done, `running` as half a
+  // step worth (so the bar moves when a step is in flight), and
+  // pending/fail contribute zero. Total = number of steps (10).
+  const completedSteps = steps.filter((s) => s.status === 'ok').length
+  const inflightSteps = steps.filter((s) => s.status === 'running').length
+  const progressPct =
+    phase === 'uploading'
+      ? Math.min(100, (progress?.pct ?? 0) * 0.1)   // SFTP is ~10% of the total bar
+      : phase === 'writing-env'
+        ? 10
+        : phase === 'done'
+          ? 100
+          : Math.round(10 + ((completedSteps + inflightSteps * 0.5) / steps.length) * 90)
+  const currentStep = steps.find((s) => s.status === 'running')
+  const lastDoneStep = [...steps].reverse().find((s) => s.status === 'ok')
+
   return (
     <div className="h-full flex flex-col p-6 gap-4">
       <header className="flex items-center justify-between gap-4">
@@ -599,16 +617,39 @@ export function RunScreen() {
         </div>
       </header>
 
-      {phase === 'uploading' && progress && (
-        <div className="space-y-1">
-          <div className="w-full bg-slate-800 rounded h-2 overflow-hidden">
-            <div className="h-2 bg-emerald-500 transition-all" style={{ width: `${progress.pct}%` }} />
-          </div>
-          <div className="text-xs text-slate-500 font-mono truncate">
-            {progress.file}
-          </div>
+      {/* Single unified progress bar covering the whole install run:
+          upload pct contributes the first ~10%, the 10 setup.sh steps
+          carry the remaining 90%. The label below the bar describes
+          what's happening right now. */}
+      <div className="space-y-1">
+        <div className="w-full bg-slate-800 rounded h-2 overflow-hidden">
+          <div
+            className={
+              'h-2 transition-all duration-300 ' +
+              (phase === 'failed' ? 'bg-rose-500' : 'bg-emerald-500')
+            }
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
-      )}
+        <div className="text-xs text-slate-400 font-mono truncate flex items-center justify-between gap-3">
+          <span className="truncate">
+            {phase === 'uploading' && `Uploading ${progress?.file ?? 'payload'} (${progress?.pct ?? 0}%)`}
+            {phase === 'writing-env' && 'Writing .env'}
+            {phase === 'running-setup' && currentStep
+              ? `Step ${currentStep.number}/${steps.length} — ${currentStep.label}`
+              : phase === 'running-setup' && lastDoneStep
+                ? `Step ${lastDoneStep.number}/${steps.length} done — waiting for next…`
+                : null}
+            {phase === 'done' && '✓ All steps complete'}
+            {phase === 'failed' && (currentStep
+              ? `Failed at step ${currentStep.number}: ${currentStep.label}`
+              : 'Install failed — see log')}
+          </span>
+          <span className="shrink-0 tabular-nums text-slate-500">
+            {progressPct}%
+          </span>
+        </div>
+      </div>
 
       {/* Two-pane: stepper rail on the left, streaming log on the right */}
       <div className="flex-1 min-h-0 grid grid-cols-[260px_1fr] gap-4">
