@@ -91,8 +91,67 @@ for dir in "${DATA_DIRS[@]}"; do
         echo "  Exists:  $dir"
     fi
     chown -R $PUID:$PGID "$dir"
-    chmod -R 755 "$dir"
+    # 775 instead of 755 on the data tree — Sonarr/Radarr/etc all run
+    # as the same PUID:PGID, and group write means peer containers can
+    # cross-write into shared dirs (eg sonarr → /data/Media/TV Shows
+    # while bazarr drops .srt files alongside).
+    chmod -R 775 "$dir"
 done
+
+# ── Synology shared-folder ACL ────────────────────────────────────────────────
+#
+# /volume1/Data is a Synology Shared Folder. Shared folders have their
+# own ACL layer LAYERED ON TOP of POSIX permissions — even if we chown
+# the directory tree to PUID:PGID and chmod 775, the share's ACL can
+# still deny write access to that user. The arr containers then report
+# "Path /data/Media/TV Shows does not exist" because their writability
+# probe fails (Sonarr uses ENOENT as a catch-all for "can't use this
+# path", even when it's a permission issue, not a missing-file one).
+#
+# Detect available tooling and apply an explicit grant. We try both
+# Synology's synoacltool and POSIX setfacl — synoacltool wins on DSM
+# because it talks the same ACL language the share itself uses, but
+# setfacl is a useful fallback if the directory tree is on a btrfs
+# volume that supports POSIX ACLs directly.
+DATA_ROOT="/volume1/Data"
+if [ -d "$DATA_ROOT" ]; then
+    USERNAME=$(getent passwd "$PUID" 2>/dev/null | cut -d: -f1)
+    GROUPNAME=$(getent group "$PGID" 2>/dev/null | cut -d: -f1)
+
+    if command -v synoacltool >/dev/null 2>&1 && [ -n "$USERNAME" ]; then
+        echo ""
+        echo "Granting Synology shared-folder ACL: $USERNAME (rwx, inherited) on $DATA_ROOT..."
+        # Permission mask: rwx + create file (p) + delete file (d) +
+        # delete subfolder (D) + read/write attrs (a/A) + read/write
+        # xattrs (R/W) + read/change perms (c/C) + take ownership (o).
+        # Inheritance: file + directory (fd--).
+        if synoacltool -add "$DATA_ROOT" "user:${USERNAME}:allow:rwxpdDaARWcCo:fd--" 2>/dev/null; then
+            echo "  ✔ ACL granted to user $USERNAME"
+        else
+            echo "  ⚠ synoacltool failed — you may need to grant write access manually"
+            echo "    in DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
+        fi
+        # Also re-apply ACLs from parent to all existing children so
+        # paths the arrs need are usable on first run, not just new ones.
+        if synoacltool -enforce-inherit "$DATA_ROOT" 2>/dev/null; then
+            echo "  ✔ Inheritance propagated to existing children"
+        fi
+    elif command -v setfacl >/dev/null 2>&1; then
+        echo ""
+        echo "Granting POSIX ACL: uid=$PUID (rwx, inherited) on $DATA_ROOT..."
+        # -m sets access ACL; -d sets the default ACL (applied to new
+        # entries created inside). -R is recursive on existing entries.
+        setfacl -R -m  "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
+        setfacl -R -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
+            echo "  ✔ POSIX ACL applied" || \
+            echo "  ⚠ setfacl failed — filesystem may not support ACLs"
+    else
+        echo ""
+        echo "  ⚠ No ACL tool found (synoacltool / setfacl). If containers"
+        echo "    can't write to /data/Media or /data/Downloads, grant access"
+        echo "    via DSM → Control Panel → Shared Folder → Data → Permissions."
+    fi
+fi
 
 # ── qBittorrent credential + config init script ────────────────────────────────
 #

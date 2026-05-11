@@ -279,12 +279,75 @@ def wait_ready(name, base, key, check_path, retries=60, interval=5):
 
 # ── *arr helpers ──────────────────────────────────────────────────────────────
 
-def add_root_folder(base, key, api, path, extra_fields=None):
+def container_can_write(container, path):
+    """Probe whether `container` can write to `path` (sentinel file
+    create + delete via docker exec). Returns True/False/None where
+    None means the probe itself errored (docker not available, etc.).
+    This is what catches the Synology shared-folder ACL issue: read
+    succeeds (the path exists from the container's point of view) but
+    write fails — the arrs report this as "Path does not exist" because
+    Sonarr/Radarr conflate ENOENT and EACCES in their root-folder
+    validator."""
+    import subprocess
+    test_file = f"{path.rstrip('/')}/.mediarr-write-test"
+    try:
+        r = subprocess.run(
+            ["docker", "exec", container, "sh", "-c",
+             f"touch '{test_file}' && rm '{test_file}'"],
+            capture_output=True, timeout=10, text=True,
+        )
+        return r.returncode == 0
+    except FileNotFoundError:
+        # docker not on PATH — we're probably not on the host where
+        # the stack runs. Can't probe; assume yes and let the API tell us.
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:
+        return None
+
+
+def acl_diagnostic(path):
+    """Print the standard 'Synology shared-folder ACL' diagnostic block.
+    Centralised here so root-folder, remote-path-mapping and any other
+    write-bound API call surface the same guidance."""
+    host_path = path.replace('/data/', '/volume1/Data/', 1)
+    print(f"      Container probe says: not writable from inside the arr.")
+    print(f"      Read works (post-deploy-validate sees the contents), but")
+    print(f"      Sonarr/Radarr need write access to the root folder and")
+    print(f"      the Synology shared-folder ACL on {host_path}'s parent")
+    print(f"      ({host_path.rsplit('/', 1)[0]}) is denying it.")
+    print(f"      Host equivalent: {host_path}")
+    print(f"      Fix order:")
+    print(f"        1. ls -ld '{host_path}'  — confirm the host path exists")
+    print(f"        2. synoacltool -get /volume1/Data  — show current ACLs")
+    print(f"        3. setup-folders.sh now applies a write ACL automatically;")
+    print(f"           re-run it to (re-)apply: sudo bash setup-folders.sh")
+    print(f"        4. If still failing: DSM → Control Panel → Shared Folder")
+    print(f"           → Data → Edit → Permissions, grant read/write to the")
+    print(f"           container's user (PUID in .env) explicitly.")
+    print(f"        5. After fixing: docker compose restart, then re-run")
+    print(f"           python3 setup-arr-config.py. Each step is idempotent.")
+
+
+def add_root_folder(base, key, api, path, extra_fields=None, container=None):
     existing = GET(base, key, f"/{api}/rootfolder")
     if existing is None:
         fail(f"Root folder: can't reach API"); return
     if any(f['path'] == path for f in existing):
         skip(f"Root folder: {path}"); return
+
+    # Pre-flight write check: if the container can't write to the path,
+    # no amount of retrying the API will help — Sonarr/Radarr fail with
+    # "Path does not exist" because their writability test fails. Skip
+    # straight to the ACL diagnostic in that case.
+    if container:
+        writable = container_can_write(container, path)
+        if writable is False:
+            fail(f"Root folder: {path}")
+            acl_diagnostic(path)
+            return
+
     name = os.path.basename(path.rstrip('/')) or path
     payload = {"path": path, "name": name}
     if extra_fields:
@@ -296,17 +359,13 @@ def add_root_folder(base, key, api, path, extra_fields=None):
         ok(f"Root folder: {path}")
         return
 
-    # Failed. On Synology this is almost always a race: the container is
-    # up and its API responds, but the bind-mounted /data isn't fully
-    # readable yet (DSM's shared-folder permission layer can take a few
-    # seconds to settle after a fresh `docker compose up -d`). Step 10
-    # post-deploy-validate.sh reliably sees the same paths a few minutes
-    # later. Retry a few times with a short wait before giving up and
-    # surfacing the ACL diagnostic.
-    print(f"  …root folder add failed once, retrying (path may not be visible yet)…")
-    for attempt in range(1, 5):  # up to 4 more tries = ~60s extra
-        time.sleep(15)
-        # Check if it landed on a previous retry (idempotent re-check).
+    # Failed despite pre-flight write probe passing (or being skipped).
+    # One short retry for genuine timing races — the container reports
+    # writable but the arr's internal state may still be catching up.
+    # Don't retry more than twice; if writes work, two attempts are
+    # plenty.
+    for attempt in range(1, 3):
+        time.sleep(5)
         existing = GET(base, key, f"/{api}/rootfolder")
         if existing and any(f['path'] == path for f in existing):
             ok(f"Root folder: {path} (added on retry {attempt})")
@@ -316,23 +375,15 @@ def add_root_folder(base, key, api, path, extra_fields=None):
             ok(f"Root folder: {path} (added on retry {attempt})")
             return
 
-    # Still failing — emit the full diagnostic. By the time we reach
-    # here we've waited ~60s past container start; if the path still
-    # isn't visible it's an ACL problem, not a timing one.
-    host_path = path.replace('/data/', '/volume1/Data/', 1)
+    # Still failing. If we had no container to probe, this is the first
+    # time we've seen the failure clearly — show the full diagnostic.
     fail(f"Root folder: {path}")
-    print(f"      Tried 5 times over ~60s — still rejected by the API.")
-    print(f"      Most likely a shared-folder permission issue on Synology.")
-    print(f"      Host equivalent: {host_path}")
-    print(f"      Try, in order:")
-    print(f"        1. ls -ld '{host_path}'  — confirm the host path exists")
-    print(f"        2. ls -la /volume1/Data  — confirm the parent is browsable")
-    print(f"        3. In DSM → Control Panel → Shared Folder → Data → Edit →")
-    print(f"           Permissions, grant the container's user (PUID in .env)")
-    print(f"           read/write access. Synology's share ACLs override POSIX")
-    print(f"           perms set by chown — chmod alone isn't enough.")
-    print(f"        4. After fixing perms: `docker compose restart` and re-run")
-    print(f"           `python3 setup-arr-config.py`. Each step is idempotent.")
+    if container:
+        # We DID probe and it said writable; something else is wrong.
+        print(f"      The arr says no, but a docker-exec write probe succeeded.")
+        print(f"      Re-run setup-arr-config.py after a `docker compose restart`.")
+    else:
+        acl_diagnostic(path)
 
 def add_download_client(base, key, api, name, implementation, field_overrides):
     existing = GET(base, key, f"/{api}/downloadclient")
@@ -371,14 +422,24 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
     result = POST(base, key, f"/{api}/downloadclient", schema)
     ok(f"Download client: {name}") if result else fail(f"Download client: {name}")
 
-def add_remote_path_mapping(base, key, api, host, remote, local):
+def add_remote_path_mapping(base, key, api, host, remote, local, container=None):
     existing = GET(base, key, f"/{api}/remotePathMapping")
     if existing is None:
         fail("Remote path mapping: can't reach API"); return
     if any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
         skip(f"Remote path: {remote} → {local}"); return
+
+    # Pre-flight write check: same Synology shared-folder ACL trap as
+    # root folders. The arr validates that `local` is writable from
+    # inside its own container; if not, returns "Path does not exist".
+    if container:
+        writable = container_can_write(container, local)
+        if writable is False:
+            fail(f"Remote path: {host} {remote} → {local}")
+            acl_diagnostic(local)
+            return
+
     payload = {"host": host, "remotePath": remote, "localPath": local}
-    # First attempt.
     result, status = POST_status(base, key, f"/{api}/remotePathMapping", payload)
     if result is not None:
         ok(f"Remote path: {host} {remote} → {local}")
@@ -386,10 +447,10 @@ def add_remote_path_mapping(base, key, api, host, remote, local):
     if status == 500:
         skip(f"Remote path: {remote} → {local} (already configured)")
         return
-    # Retry on path-validation failures (same Synology bind-mount race
-    # we hit on root folders). After ~60s the path is usually visible.
-    for attempt in range(1, 5):
-        time.sleep(15)
+
+    # One short retry for genuine timing race.
+    for attempt in range(1, 3):
+        time.sleep(5)
         existing = GET(base, key, f"/{api}/remotePathMapping")
         if existing and any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
             ok(f"Remote path: {host} {remote} → {local} (added on retry {attempt})")
@@ -402,6 +463,8 @@ def add_remote_path_mapping(base, key, api, host, remote, local):
             skip(f"Remote path: {remote} → {local} (already configured)")
             return
     fail(f"Remote path: {host} {remote} → {local}")
+    if not container:
+        acl_diagnostic(local)
 
 def configure_auth(base, key, api, username, password):
     """Set Forms authentication, bypassed for local addresses."""
@@ -1242,8 +1305,8 @@ def main():
     if not SONARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Sonarr", SONARR, SONARR_KEY, "/api/v3/system/status"):
-        add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/TV Shows")
-        add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/Anime/TV Shows")
+        add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/TV Shows", container="sonarr")
+        add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/Anime/TV Shows", container="sonarr")
         add_download_client(SONARR, SONARR_KEY, "api/v3", "qBittorrent", "QBittorrent", {
             "host": QB_HOST, "port": QB_PORT, "useSsl": False,
             "username": QB_USER, "password": QB_PASS, "category": "tv-sonarr",
@@ -1256,9 +1319,11 @@ def main():
         else:
             warn("SABnzbd key not found — skipping")
         add_remote_path_mapping(SONARR, SONARR_KEY, "api/v3",
-                                QB_HOST, "/downloads", "/data/Downloads/Torrents")
+                                QB_HOST, "/downloads", "/data/Downloads/Torrents",
+                                container="sonarr")
         add_remote_path_mapping(SONARR, SONARR_KEY, "api/v3",
-                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete")
+                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
+                                container="sonarr")
         enable_hardlinks(SONARR, SONARR_KEY, "api/v3")
         if ARR_USER and ARR_PASS:
             configure_auth(SONARR, SONARR_KEY, "api/v3", ARR_USER, ARR_PASS)
@@ -1269,8 +1334,8 @@ def main():
     if not RADARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Radarr", RADARR, RADARR_KEY, "/api/v3/system/status"):
-        add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Movies")
-        add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Anime/Movies")
+        add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Movies", container="radarr")
+        add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Anime/Movies", container="radarr")
         add_download_client(RADARR, RADARR_KEY, "api/v3", "qBittorrent", "QBittorrent", {
             "host": QB_HOST, "port": QB_PORT, "useSsl": False,
             "username": QB_USER, "password": QB_PASS, "category": "radarr",
@@ -1283,9 +1348,11 @@ def main():
         else:
             warn("SABnzbd key not found — skipping")
         add_remote_path_mapping(RADARR, RADARR_KEY, "api/v3",
-                                QB_HOST, "/downloads", "/data/Downloads/Torrents")
+                                QB_HOST, "/downloads", "/data/Downloads/Torrents",
+                                container="radarr")
         add_remote_path_mapping(RADARR, RADARR_KEY, "api/v3",
-                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete")
+                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
+                                container="radarr")
         enable_hardlinks(RADARR, RADARR_KEY, "api/v3")
         if ARR_USER and ARR_PASS:
             configure_auth(RADARR, RADARR_KEY, "api/v3", ARR_USER, ARR_PASS)
@@ -1302,7 +1369,7 @@ def main():
         add_root_folder(LIDARR, LIDARR_KEY, "api/v1", "/data/Media/Music", {
             "defaultQualityProfileId":  lidarr_quality_id or 1,
             "defaultMetadataProfileId": lidarr_meta_id,
-        })
+        }, container="lidarr")
         add_download_client(LIDARR, LIDARR_KEY, "api/v1", "qBittorrent", "QBittorrent", {
             "host": QB_HOST, "port": QB_PORT, "useSsl": False,
             "username": QB_USER, "password": QB_PASS, "category": "lidarr",
@@ -1315,9 +1382,11 @@ def main():
         else:
             warn("SABnzbd key not found — skipping")
         add_remote_path_mapping(LIDARR, LIDARR_KEY, "api/v1",
-                                QB_HOST, "/downloads", "/data/Downloads/Torrents")
+                                QB_HOST, "/downloads", "/data/Downloads/Torrents",
+                                container="lidarr")
         add_remote_path_mapping(LIDARR, LIDARR_KEY, "api/v1",
-                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete")
+                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
+                                container="lidarr")
         enable_hardlinks(LIDARR, LIDARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)
