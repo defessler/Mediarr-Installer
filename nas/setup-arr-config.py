@@ -48,6 +48,13 @@ RESET  = "\033[0m"
 
 errors = 0
 
+# Container UID/GID for the docker-exec write probe. Set by main() from
+# .env's PUID/PGID. Default to LinuxServer's well-known 911:911 only as
+# a safety net for callers that import this module without going through
+# main(); in practice main() overrides these immediately.
+CONTAINER_UID = 911
+CONTAINER_GID = 911
+
 def ok(msg):   print(f"  {GREEN}✔{RESET}  {msg}")
 def skip(msg): print(f"  –  {msg} (already set)")
 def warn(msg): print(f"  {YELLOW}!{RESET}  {msg}")
@@ -279,23 +286,33 @@ def wait_ready(name, base, key, check_path, retries=60, interval=5):
 
 # ── *arr helpers ──────────────────────────────────────────────────────────────
 
-def container_can_write(container, path):
-    """Probe whether `container` can write to `path` (sentinel file
-    create + delete via docker exec). Returns True/False/None where
-    None means the probe itself errored (docker not available, etc.).
-    This is what catches the Synology shared-folder ACL issue: read
-    succeeds (the path exists from the container's point of view) but
-    write fails — the arrs report this as "Path does not exist" because
-    Sonarr/Radarr conflate ENOENT and EACCES in their root-folder
-    validator."""
+def container_can_write(container, path, as_uid=None, as_gid=None):
+    """Probe whether `container` can write to `path` as the specified
+    UID/GID. CRITICAL: `docker exec` defaults to root inside the
+    container, which can always write — useless for testing whether
+    the arr daemon (which runs as PUID:PGID) can write. Always pass
+    as_uid/as_gid when you want the answer to match what the daemon
+    will see.
+
+    Returns True/False/None where None means the probe itself errored
+    (docker not available, container not running, etc.).
+
+    Catches the Synology shared-folder ACL trap: read succeeds (path
+    exists from the container's POV) but write fails — Sonarr/Radarr
+    conflate ENOENT and EACCES in their root-folder validator, so the
+    HTTP 400 reads as "Path does not exist" when it's really a
+    permission denial."""
     import subprocess
     test_file = f"{path.rstrip('/')}/.mediarr-write-test"
+    cmd = ["docker", "exec"]
+    if as_uid is not None:
+        user = f"{as_uid}"
+        if as_gid is not None:
+            user = f"{as_uid}:{as_gid}"
+        cmd += ["-u", user]
+    cmd += [container, "sh", "-c", f"touch '{test_file}' && rm '{test_file}'"]
     try:
-        r = subprocess.run(
-            ["docker", "exec", container, "sh", "-c",
-             f"touch '{test_file}' && rm '{test_file}'"],
-            capture_output=True, timeout=10, text=True,
-        )
+        r = subprocess.run(cmd, capture_output=True, timeout=10, text=True)
         return r.returncode == 0
     except FileNotFoundError:
         # docker not on PATH — we're probably not on the host where
@@ -337,12 +354,14 @@ def add_root_folder(base, key, api, path, extra_fields=None, container=None):
     if any(f['path'] == path for f in existing):
         skip(f"Root folder: {path}"); return
 
-    # Pre-flight write check: if the container can't write to the path,
-    # no amount of retrying the API will help — Sonarr/Radarr fail with
-    # "Path does not exist" because their writability test fails. Skip
-    # straight to the ACL diagnostic in that case.
+    # Pre-flight write check: if the container can't write to the path
+    # AS THE DAEMON'S UID (not root, which always wins), no amount of
+    # retrying the API will help — Sonarr/Radarr fail with "Path does
+    # not exist" when their writability test fails. Skip straight to
+    # the ACL diagnostic in that case.
     if container:
-        writable = container_can_write(container, path)
+        writable = container_can_write(container, path,
+                                       as_uid=CONTAINER_UID, as_gid=CONTAINER_GID)
         if writable is False:
             fail(f"Root folder: {path}")
             acl_diagnostic(path)
@@ -432,8 +451,10 @@ def add_remote_path_mapping(base, key, api, host, remote, local, container=None)
     # Pre-flight write check: same Synology shared-folder ACL trap as
     # root folders. The arr validates that `local` is writable from
     # inside its own container; if not, returns "Path does not exist".
+    # Probe as the daemon's UID — root would always succeed.
     if container:
-        writable = container_can_write(container, local)
+        writable = container_can_write(container, local,
+                                       as_uid=CONTAINER_UID, as_gid=CONTAINER_GID)
         if writable is False:
             fail(f"Remote path: {host} {remote} → {local}")
             acl_diagnostic(local)
@@ -1197,6 +1218,16 @@ def main():
     QB_PASS  = env.get('QBITTORRENT_PASS', '')
     ARR_USER = env.get('ARR_USERNAME', '')
     ARR_PASS = env.get('ARR_PASSWORD', '')
+    # PUID/PGID drive the container write-probe — without them we'd be
+    # checking as root inside the container (which can always write,
+    # and would silently mask the Synology ACL trap that the daemon
+    # actually trips on). Stash in module globals so helpers see them
+    # without per-call plumbing.
+    global CONTAINER_UID, CONTAINER_GID
+    try:    CONTAINER_UID = int(env.get('PUID') or 1026)
+    except: CONTAINER_UID = 1026
+    try:    CONTAINER_GID = int(env.get('PGID') or 100)
+    except: CONTAINER_GID = 100
 
     if not LAN_IP:  print("Error: LAN_IP not set in .env");           sys.exit(1)
     if not QB_PASS: print("Error: QBITTORRENT_PASS not set in .env"); sys.exit(1)

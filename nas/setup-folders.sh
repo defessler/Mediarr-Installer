@@ -114,42 +114,74 @@ done
 # setfacl is a useful fallback if the directory tree is on a btrfs
 # volume that supports POSIX ACLs directly.
 DATA_ROOT="/volume1/Data"
+
+# Resolve synoacltool / setfacl by checking PATH first and then their
+# known DSM locations. SSH-non-interactive shells on Synology don't
+# include /usr/syno/bin, /usr/syno/sbin, or /usr/local/bin by default,
+# so `command -v synoacltool` returns nothing — but the tool is there.
+find_tool() {
+    local name="$1"; shift
+    if command -v "$name" >/dev/null 2>&1; then
+        command -v "$name"
+        return 0
+    fi
+    for cand in "$@"; do
+        if [ -x "$cand" ]; then echo "$cand"; return 0; fi
+    done
+    return 1
+}
+
+SYNOACL=$(find_tool synoacltool \
+    /usr/syno/bin/synoacltool \
+    /usr/local/bin/synoacltool \
+    /usr/syno/sbin/synoacltool) || SYNOACL=""
+
+SETFACL=$(find_tool setfacl \
+    /usr/local/bin/setfacl \
+    /usr/bin/setfacl \
+    /bin/setfacl) || SETFACL=""
+
 if [ -d "$DATA_ROOT" ]; then
     USERNAME=$(getent passwd "$PUID" 2>/dev/null | cut -d: -f1)
-    GROUPNAME=$(getent group "$PGID" 2>/dev/null | cut -d: -f1)
 
-    if command -v synoacltool >/dev/null 2>&1 && [ -n "$USERNAME" ]; then
+    if [ -n "$SYNOACL" ] && [ -n "$USERNAME" ]; then
         echo ""
         echo "Granting Synology shared-folder ACL: $USERNAME (rwx, inherited) on $DATA_ROOT..."
+        echo "  (using $SYNOACL)"
         # Permission mask: rwx + create file (p) + delete file (d) +
         # delete subfolder (D) + read/write attrs (a/A) + read/write
         # xattrs (R/W) + read/change perms (c/C) + take ownership (o).
         # Inheritance: file + directory (fd--).
-        if synoacltool -add "$DATA_ROOT" "user:${USERNAME}:allow:rwxpdDaARWcCo:fd--" 2>/dev/null; then
+        if "$SYNOACL" -add "$DATA_ROOT" "user:${USERNAME}:allow:rwxpdDaARWcCo:fd--"; then
             echo "  ✔ ACL granted to user $USERNAME"
         else
-            echo "  ⚠ synoacltool failed — you may need to grant write access manually"
-            echo "    in DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
+            echo "  ⚠ synoacltool -add failed — grant write access manually in"
+            echo "    DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
         fi
-        # Also re-apply ACLs from parent to all existing children so
-        # paths the arrs need are usable on first run, not just new ones.
-        if synoacltool -enforce-inherit "$DATA_ROOT" 2>/dev/null; then
+        # Re-apply ACLs from parent to all existing children so paths
+        # the arrs need are usable on first run, not just new ones.
+        if "$SYNOACL" -enforce-inherit "$DATA_ROOT" 2>/dev/null; then
             echo "  ✔ Inheritance propagated to existing children"
+        else
+            echo "  ⚠ enforce-inherit failed — older child files may still"
+            echo "    use the original ACL. New files will inherit correctly."
         fi
-    elif command -v setfacl >/dev/null 2>&1; then
+    elif [ -n "$SETFACL" ]; then
         echo ""
         echo "Granting POSIX ACL: uid=$PUID (rwx, inherited) on $DATA_ROOT..."
+        echo "  (using $SETFACL)"
         # -m sets access ACL; -d sets the default ACL (applied to new
         # entries created inside). -R is recursive on existing entries.
-        setfacl -R -m  "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
-        setfacl -R -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
+        "$SETFACL" -R -m  "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
+        "$SETFACL" -R -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
             echo "  ✔ POSIX ACL applied" || \
             echo "  ⚠ setfacl failed — filesystem may not support ACLs"
     else
         echo ""
-        echo "  ⚠ No ACL tool found (synoacltool / setfacl). If containers"
-        echo "    can't write to /data/Media or /data/Downloads, grant access"
-        echo "    via DSM → Control Panel → Shared Folder → Data → Permissions."
+        echo "  ⚠ No ACL tool found (looked for synoacltool and setfacl in PATH"
+        echo "    and standard DSM locations). If containers can't write to"
+        echo "    /data/Media or /data/Downloads, grant access via DSM →"
+        echo "    Control Panel → Shared Folder → Data → Permissions."
     fi
 fi
 
