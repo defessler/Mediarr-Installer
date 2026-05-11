@@ -115,10 +115,12 @@ done
 # volume that supports POSIX ACLs directly.
 DATA_ROOT="/volume1/Data"
 
-# Resolve synoacltool / setfacl by checking PATH first and then their
-# known DSM locations. SSH-non-interactive shells on Synology don't
-# include /usr/syno/bin, /usr/syno/sbin, or /usr/local/bin by default,
-# so `command -v synoacltool` returns nothing — but the tool is there.
+# Resolve synoacltool / setfacl by checking PATH first, then known DSM
+# locations, then a recursive find under /usr — SSH-non-interactive
+# shells on Synology don't include /usr/syno/bin, /usr/syno/sbin,
+# or /usr/local/bin by default and the binary's exact location varies
+# by DSM version + which packages are installed (DSM6 vs DSM7,
+# Container Manager replacing Docker, etc).
 find_tool() {
     local name="$1"; shift
     if command -v "$name" >/dev/null 2>&1; then
@@ -128,13 +130,21 @@ find_tool() {
     for cand in "$@"; do
         if [ -x "$cand" ]; then echo "$cand"; return 0; fi
     done
+    # Last resort: locate by name under /usr (and /bin as a sanity check).
+    # `find -print -quit` returns the first match without scanning the
+    # whole tree, which keeps this snappy on a NAS with many volumes.
+    local hit
+    hit=$(find /usr /bin -maxdepth 5 -type f -name "$name" -print -quit 2>/dev/null)
+    [ -n "$hit" ] && { echo "$hit"; return 0; }
     return 1
 }
 
 SYNOACL=$(find_tool synoacltool \
     /usr/syno/bin/synoacltool \
     /usr/local/bin/synoacltool \
-    /usr/syno/sbin/synoacltool) || SYNOACL=""
+    /usr/syno/sbin/synoacltool \
+    /usr/bin/synoacltool \
+    /bin/synoacltool) || SYNOACL=""
 
 SETFACL=$(find_tool setfacl \
     /usr/local/bin/setfacl \
@@ -178,10 +188,19 @@ if [ -d "$DATA_ROOT" ]; then
             echo "  ⚠ setfacl failed — filesystem may not support ACLs"
     else
         echo ""
-        echo "  ⚠ No ACL tool found (looked for synoacltool and setfacl in PATH"
-        echo "    and standard DSM locations). If containers can't write to"
-        echo "    /data/Media or /data/Downloads, grant access via DSM →"
-        echo "    Control Panel → Shared Folder → Data → Permissions."
+        echo "  ⚠ No ACL tool found anywhere — synoacltool and setfacl both"
+        echo "    missing from PATH, /usr, and /bin. This is unusual on DSM."
+        echo "    You will need to grant write access manually:"
+        echo ""
+        if [ -n "$USERNAME" ]; then
+            echo "    DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
+            echo "    Find user '${USERNAME}', check Read/Write, click Save."
+        else
+            echo "    DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
+            echo "    Find the user matching PUID=${PUID}, check Read/Write, click Save."
+        fi
+        echo ""
+        echo "    Then re-run: sudo bash /volume1/docker/media/setup.sh"
     fi
 fi
 

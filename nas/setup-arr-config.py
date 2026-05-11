@@ -329,22 +329,38 @@ def acl_diagnostic(path):
     Centralised here so root-folder, remote-path-mapping and any other
     write-bound API call surface the same guidance."""
     host_path = path.replace('/data/', '/volume1/Data/', 1)
-    print(f"      Container probe says: not writable from inside the arr.")
-    print(f"      Read works (post-deploy-validate sees the contents), but")
-    print(f"      Sonarr/Radarr need write access to the root folder and")
-    print(f"      the Synology shared-folder ACL on {host_path}'s parent")
-    print(f"      ({host_path.rsplit('/', 1)[0]}) is denying it.")
+    # Look up the username for PUID once so the DSM-UI instruction can
+    # name the actual account the user needs to grant write access to,
+    # rather than asking them to guess "the user matching PUID=1026."
+    import subprocess
+    user_name = f"PUID={CONTAINER_UID}"
+    try:
+        r = subprocess.run(["getent", "passwd", str(CONTAINER_UID)],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout:
+            user_name = r.stdout.split(":")[0]
+    except Exception:
+        pass
+    print(f"      Container probe says: NOT writable from inside the arr")
+    print(f"      (running as uid={CONTAINER_UID} gid={CONTAINER_GID}).")
+    print(f"      Read works ({path} is visible — post-deploy-validate")
+    print(f"      sees its contents) but Sonarr/Radarr/Lidarr need write")
+    print(f"      access to drop a .test file there, and Synology's")
+    print(f"      shared-folder ACL on /volume1/Data is denying it.")
     print(f"      Host equivalent: {host_path}")
-    print(f"      Fix order:")
-    print(f"        1. ls -ld '{host_path}'  — confirm the host path exists")
-    print(f"        2. synoacltool -get /volume1/Data  — show current ACLs")
-    print(f"        3. setup-folders.sh now applies a write ACL automatically;")
-    print(f"           re-run it to (re-)apply: sudo bash setup-folders.sh")
-    print(f"        4. If still failing: DSM → Control Panel → Shared Folder")
-    print(f"           → Data → Edit → Permissions, grant read/write to the")
-    print(f"           container's user (PUID in .env) explicitly.")
-    print(f"        5. After fixing: docker compose restart, then re-run")
-    print(f"           python3 setup-arr-config.py. Each step is idempotent.")
+    print(f"")
+    print(f"      Fix it in DSM (easiest, no CLI required):")
+    print(f"        1. Control Panel → Shared Folder → click 'Data' → Edit")
+    print(f"        2. Permissions tab")
+    print(f"        3. Find user '{user_name}' in the list")
+    print(f"        4. Check the 'Read/Write' box, click Save")
+    print(f"        5. Back here:  docker compose restart")
+    print(f"        6. Re-run:  sudo bash {os.path.dirname(os.path.realpath(__file__))}/setup.sh")
+    print(f"")
+    print(f"      Or from CLI (if synoacltool is on the box):")
+    print(f"        sudo synoacltool -add /volume1/Data \\")
+    print(f'          "user:{user_name}:allow:rwxpdDaARWcCo:fd--"')
+    print(f"        sudo synoacltool -enforce-inherit /volume1/Data")
 
 
 def add_root_folder(base, key, api, path, extra_fields=None, container=None):
