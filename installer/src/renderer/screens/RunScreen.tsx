@@ -5,7 +5,7 @@ import { LogActions } from '../components/LogActions.js'
 import { PlexClaimRefresh } from '../components/PlexClaimRefresh.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
-import { renderEnv, type EnvFormValues } from '../../shared/env-render.js'
+import { renderEnv, isEnabled, type EnvFormValues } from '../../shared/env-render.js'
 import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
 
 type Phase =
@@ -714,10 +714,18 @@ export function RunScreen() {
               </p>
             </header>
 
-            <PlexClaimRefresh
-              value={config.PLEX_CLAIM}
-              onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}
-            />
+            {/* Plex claim collection — only relevant when the user actually
+                installs Plex. Hidden when ENABLE_PLEX=false so the user
+                isn't prompted to fetch a token they'll never use, and
+                so the footer doesn't lie about "no Plex claim — Plex
+                needs manual setup" when Plex isn't going to be in the
+                stack at all. */}
+            {isEnabled(config.ENABLE_PLEX as string | undefined) && (
+              <PlexClaimRefresh
+                value={config.PLEX_CLAIM}
+                onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}
+              />
+            )}
 
             {errorMsg && (
               <div className="bg-rose-900/40 text-rose-200 rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono">
@@ -740,6 +748,8 @@ export function RunScreen() {
             <div className="flex-1 text-sm text-center">
               {errorMsg ? (
                 <span className="text-rose-300">✘ {errorMsg.split('\n')[0]}</span>
+              ) : !isEnabled(config.ENABLE_PLEX as string | undefined) ? (
+                <span className="text-slate-400">Ready to install (Plex not in stack)</span>
               ) : (
                 <span className="text-slate-400">
                   {config.PLEX_CLAIM
@@ -950,7 +960,7 @@ export function RunScreen() {
         </div>
       </div>
 
-      {phase === 'failed' && (
+      {phase === 'failed' && isEnabled(config.ENABLE_PLEX as string | undefined) && (
         <PlexClaimRefresh
           value={config.PLEX_CLAIM}
           onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}

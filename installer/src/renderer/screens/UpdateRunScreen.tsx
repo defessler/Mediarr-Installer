@@ -63,19 +63,69 @@ export function UpdateRunScreen() {
     setTick((t) => t + 1)
     setPhase('running')
     try {
+      // The remote command does the same .env-aware compose-files +
+      // COMPOSE_PROFILES dance that setup.sh does, inlined as bash so
+      // we don't have to source the wizard's script. Without this:
+      //   - profile-gated services (everything but prowlarr + flare-
+      //     solverr after the flexibility-pass change) wouldn't be in
+      //     the start set, so `up -d` would no-op on them and they'd
+      //     stay running on stale images even after the `pull`;
+      //   - users with VPN_ENABLED=false would see qBittorrent get
+      //     reconfigured to use service:gluetun (the base file's
+      //     network_mode) because the no-vpn override wasn't applied,
+      //     and qBittorrent would die trying to share the namespace of
+      //     a gluetun container that isn't profile-active.
+      //
+      // The is_enabled() bash helper matches env-render's isEnabled()
+      // and setup.sh's identically-named helper: default-on, only
+      // explicit false/0/no/off opts out.
+      //
+      // --progress plain + --ansi never keep docker compose's output
+      // line-per-event instead of the fancy spinner display, which
+      // floods the log panel with 16-line redraw frames every 100ms.
+      // COMPOSE_PROGRESS / COMPOSE_ANSI are belt-and-suspenders for
+      // older compose versions that ignore the CLI flags.
+      const composeUpdate = `\
+env_val() { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\\r' | xargs; }
+is_enabled() {
+  local v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in false|0|no|off) return 1 ;; *) return 0 ;; esac
+}
+
+# Compose file list: base + no-vpn override when VPN is off (default).
+VPN="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')"
+FILES="-f docker-compose.yml"
+case "$VPN" in true|1|yes|on) ;; *) FILES="$FILES -f docker-compose.no-vpn.yml" ;; esac
+
+# COMPOSE_PROFILES from the same ENABLE_* flags setup.sh uses.
+P=()
+is_enabled ENABLE_PLEX        && P+=("plex")
+is_enabled ENABLE_SONARR      && P+=("sonarr")
+is_enabled ENABLE_RADARR      && P+=("radarr")
+is_enabled ENABLE_LIDARR      && P+=("lidarr")
+is_enabled ENABLE_BAZARR      && P+=("bazarr")
+is_enabled ENABLE_SABNZBD     && P+=("usenet")
+is_enabled ENABLE_HOMEPAGE    && P+=("homepage")
+is_enabled ENABLE_RECYCLARR   && P+=("recyclarr")
+is_enabled ENABLE_UNPACKERR   && P+=("unpackerr")
+if is_enabled ENABLE_QBITTORRENT; then
+  P+=("torrenting")
+  case "$VPN" in true|1|yes|on) P+=("vpn") ;; esac
+fi
+[ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
+
+echo "[wizard-update] compose files: $FILES"
+echo "[wizard-update] profiles: \${COMPOSE_PROFILES:-(none — only Prowlarr + Flaresolverr)}"
+
+export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
+docker compose $FILES --progress plain --ansi never pull && \\
+docker compose $FILES --progress plain --ansi never up -d`
       await window.installer.ssh.execStream({
         sessionId,
-        // --progress plain + --ansi never keep the docker compose output
-        // line-per-event instead of the fancy spinner display, which
-        // floods the log panel with 16-line redraw frames every 100ms.
-        // COMPOSE_PROGRESS / COMPOSE_ANSI are belt-and-suspenders for
-        // older compose versions that ignore the CLI flags.
         cmd:
           PATH_PREFIX +
           `cd ${shellQuote(targetDir)} && ` +
-          `export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false && ` +
-          `docker compose --progress plain --ansi never pull && ` +
-          `docker compose --progress plain --ansi never up -d`,
+          `bash -c ${shellQuote(composeUpdate)}`,
         sudo: true,
         channelId: CHANNEL_ID,
       })

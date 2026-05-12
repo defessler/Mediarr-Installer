@@ -707,16 +707,20 @@ export function ConfigureScreen() {
           4 minutes after generation, so capturing it earlier risks the
           token going stale while the user fills out other fields. The
           RunScreen has a PlexClaimRefresh widget right above the Start
-          button with a live countdown and a "Get fresh token" link. */}
-      <section className="rounded-md border border-slate-800 bg-slate-900/30 p-3 text-sm text-slate-400 flex items-start gap-2">
-        <span className="text-emerald-400 shrink-0">i</span>
-        <span>
-          <strong className="text-slate-300">Plex claim token</strong> is
-          collected on the <em>next</em> screen, right before install starts —
-          tokens expire 4 minutes after you generate them, so we keep it for
-          last.
-        </span>
-      </section>
+          button with a live countdown and a "Get fresh token" link.
+          Hide the banner when Plex is opted out of the stack — there's
+          no Plex container to claim. */}
+      {isEnabled(config.ENABLE_PLEX as string | undefined) && (
+        <section className="rounded-md border border-slate-800 bg-slate-900/30 p-3 text-sm text-slate-400 flex items-start gap-2">
+          <span className="text-emerald-400 shrink-0">i</span>
+          <span>
+            <strong className="text-slate-300">Plex claim token</strong> is
+            collected on the <em>next</em> screen, right before install starts —
+            tokens expire 4 minutes after you generate them, so we keep it for
+            last.
+          </span>
+        </section>
+      )}
 
       {/* Advanced expander: provider-specific account credentials (Usenet
           provider, indexer API keys, private-tracker logins, Bazarr

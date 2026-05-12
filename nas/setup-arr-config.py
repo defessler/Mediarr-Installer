@@ -1489,11 +1489,30 @@ def main():
     print("║     Arr Stack Auto-Configuration         ║")
     print(f"╚══════════════════════════════════════════╝{RESET}")
     print("\nAPI keys found:")
-    for name, key in [('Sonarr', SONARR_KEY), ('Radarr', RADARR_KEY),
-                      ('Lidarr', LIDARR_KEY), ('Prowlarr', PROWLARR_KEY),
-                      ('SABnzbd', SABNZBD_KEY), ('Bazarr', BAZARR_KEY),
-                      ('Seerr', SEERR_KEY)]:
-        s = f"{GREEN}✔{RESET} {key[:8]}..." if key else f"{RED}✘{RESET} not found"
+    # Map each service to its ENABLE_* gate. When a service is opted
+    # out, the "✘ not found" line is misleading — the user knows they
+    # turned it off; we shouldn't flag missing keys for a container
+    # that was never going to start. Show "⏭ disabled" for those
+    # instead so the status block tracks reality.
+    #
+    # Prowlarr is always-on (not profile-gated), so no flag check.
+    # Tautulli + Seerr ride on ENABLE_PLEX (Plex stack moves together).
+    name_key_flag = [
+        ('Sonarr',   SONARR_KEY,   'ENABLE_SONARR'),
+        ('Radarr',   RADARR_KEY,   'ENABLE_RADARR'),
+        ('Lidarr',   LIDARR_KEY,   'ENABLE_LIDARR'),
+        ('Prowlarr', PROWLARR_KEY, None),
+        ('SABnzbd',  SABNZBD_KEY,  'ENABLE_SABNZBD'),
+        ('Bazarr',   BAZARR_KEY,   'ENABLE_BAZARR'),
+        ('Seerr',    SEERR_KEY,    'ENABLE_PLEX'),
+    ]
+    for name, key, flag in name_key_flag:
+        if flag is not None and not is_enabled(env, flag):
+            s = f"{DIM}⏭{RESET} disabled"
+        elif key:
+            s = f"{GREEN}✔{RESET} {key[:8]}..."
+        else:
+            s = f"{RED}✘{RESET} not found"
         print(f"  {name:<12} {s}")
 
     # ── SABnzbd (configure first so Sonarr/Radarr/Lidarr can connect to it) ──

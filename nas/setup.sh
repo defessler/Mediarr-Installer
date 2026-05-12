@@ -460,4 +460,14 @@ if is_enabled ENABLE_RECYCLARR; then
 fi
 echo "  ── Updates ────────────────────────────────────"
 echo "  cd $SCRIPT_DIR"
+# Surface the active profile set so a copy-pasted update command will
+# actually update the user's selected services. Without COMPOSE_PROFILES
+# the only services compose touches are the no-profile ones (Prowlarr +
+# Flaresolverr) — every other service stays on its old image.
+if [ -n "${COMPOSE_PROFILES:-}" ]; then
+    echo "  export COMPOSE_PROFILES=$COMPOSE_PROFILES"
+fi
 echo "  $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"
+echo ""
+echo "  (Or use the Mediarr Installer's Update button — it reads .env"
+echo "   and builds the right profile + compose-file flags automatically.)"
