@@ -44,6 +44,7 @@ GREEN  = "\033[32m"
 RED    = "\033[31m"
 YELLOW = "\033[33m"
 BOLD   = "\033[1m"
+DIM    = "\033[2m"
 RESET  = "\033[0m"
 
 errors = 0
@@ -1358,6 +1359,17 @@ def overwrite_config_file(label, path, content):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def is_enabled(env, key):
+    """Default-on opt-out semantics. Missing or empty → enabled; only
+    explicit 'false'/'0'/'no'/'off' (any case) counts as disabled.
+    Mirrors env-render.ts's isEnabled() and setup.sh's is_enabled() so
+    the renderer, the bash launcher, and this configurator all agree
+    on what's enabled for any given .env. Profiles created before
+    service selection existed have no ENABLE_* keys, so every service
+    is treated as enabled (back-compat)."""
+    return (env.get(key, 'true') or 'true').strip().lower() not in ('false', '0', 'no', 'off')
+
+
 def main():
     script_dir = os.path.dirname(os.path.realpath(__file__))
     env        = read_env_merged(script_dir)
@@ -1467,34 +1479,48 @@ def main():
 
     # ── SABnzbd (configure first so Sonarr/Radarr/Lidarr can connect to it) ──
 
-    configure_sabnzbd(SABNZBD, SABNZBD_KEY, f"{B}/sabnzbd/config/sabnzbd.ini")
+    if is_enabled(env, 'ENABLE_SABNZBD'):
+        configure_sabnzbd(SABNZBD, SABNZBD_KEY, f"{B}/sabnzbd/config/sabnzbd.ini")
 
-    # Optional usenet provider — if USENET_HOST is set in .env we add it
-    # to SABnzbd's news servers via the API. Otherwise the user wires it
-    # up manually at http://<NAS>:49155 → Config → Servers.
-    USENET_HOST = env.get('USENET_HOST', '')
-    USENET_PORT = int(env.get('USENET_PORT') or 563)
-    USENET_USER = env.get('USENET_USER', '')
-    USENET_PASS = env.get('USENET_PASS', '')
-    USENET_CONNECTIONS = int(env.get('USENET_CONNECTIONS') or 8)
-    USENET_SSL = (env.get('USENET_SSL', '1').strip() not in ('0', 'false', 'False', ''))
-    USENET_NAME = env.get('USENET_NAME', 'primary')
+        # Optional usenet provider — if USENET_HOST is set in .env we add it
+        # to SABnzbd's news servers via the API. Otherwise the user wires it
+        # up manually at http://<NAS>:49155 → Config → Servers.
+        USENET_HOST = env.get('USENET_HOST', '')
+        USENET_PORT = int(env.get('USENET_PORT') or 563)
+        USENET_USER = env.get('USENET_USER', '')
+        USENET_PASS = env.get('USENET_PASS', '')
+        USENET_CONNECTIONS = int(env.get('USENET_CONNECTIONS') or 8)
+        USENET_SSL = (env.get('USENET_SSL', '1').strip() not in ('0', 'false', 'False', ''))
+        USENET_NAME = env.get('USENET_NAME', 'primary')
 
-    configure_sabnzbd_server(SABNZBD, SABNZBD_KEY,
-                              USENET_HOST, USENET_PORT, USENET_USER, USENET_PASS,
-                              name=USENET_NAME, connections=USENET_CONNECTIONS,
-                              use_ssl=USENET_SSL)
+        configure_sabnzbd_server(SABNZBD, SABNZBD_KEY,
+                                  USENET_HOST, USENET_PORT, USENET_USER, USENET_PASS,
+                                  name=USENET_NAME, connections=USENET_CONNECTIONS,
+                                  use_ssl=USENET_SSL)
+    else:
+        section("SABnzbd")
+        print(f"  {DIM}⏭  ENABLE_SABNZBD=false — skipping.{RESET}")
+        # Force-blank the key so downstream arrs don't try to register
+        # a SAB download client against a container that doesn't exist.
+        SABNZBD_KEY = None
 
     # ── Tautulli (auto-wires to Plex via PlexOnlineToken from Preferences.xml) ─
 
-    PLEX_PREFS = f"{B}/plex/config/Library/Application Support/Plex Media Server/Preferences.xml"
-    TAUTULLI_INI = f"{B}/tautulli/config/config.ini"
-    configure_tautulli(B, PLEX_PREFS, TAUTULLI_INI)
+    if is_enabled(env, 'ENABLE_PLEX'):
+        PLEX_PREFS = f"{B}/plex/config/Library/Application Support/Plex Media Server/Preferences.xml"
+        TAUTULLI_INI = f"{B}/tautulli/config/config.ini"
+        configure_tautulli(B, PLEX_PREFS, TAUTULLI_INI)
+    else:
+        section("Tautulli")
+        print(f"  {DIM}⏭  ENABLE_PLEX=false — Tautulli not deployed.{RESET}")
 
     # ── Sonarr ────────────────────────────────────────────────────────────────
 
     section("Sonarr")
-    if not SONARR_KEY:
+    if not is_enabled(env, 'ENABLE_SONARR'):
+        print(f"  {DIM}⏭  ENABLE_SONARR=false — skipping.{RESET}")
+        SONARR_KEY = None  # so Prowlarr / Bazarr below know not to wire it
+    elif not SONARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Sonarr", SONARR, SONARR_KEY, "/api/v3/system/status"):
         add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/TV Shows", container="sonarr")
@@ -1523,7 +1549,10 @@ def main():
     # ── Radarr ────────────────────────────────────────────────────────────────
 
     section("Radarr")
-    if not RADARR_KEY:
+    if not is_enabled(env, 'ENABLE_RADARR'):
+        print(f"  {DIM}⏭  ENABLE_RADARR=false — skipping.{RESET}")
+        RADARR_KEY = None  # so Prowlarr / Bazarr below know not to wire it
+    elif not RADARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Radarr", RADARR, RADARR_KEY, "/api/v3/system/status"):
         add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Movies", container="radarr")
@@ -1552,7 +1581,10 @@ def main():
     # ── Lidarr ────────────────────────────────────────────────────────────────
 
     section("Lidarr")
-    if not LIDARR_KEY:
+    if not is_enabled(env, 'ENABLE_LIDARR'):
+        print(f"  {DIM}⏭  ENABLE_LIDARR=false — skipping.{RESET}")
+        LIDARR_KEY = None  # so Prowlarr below knows not to wire it
+    elif not LIDARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Lidarr", LIDARR, LIDARR_KEY, "/api/v1/system/status"):
         # Lidarr's API answers /system/status well before its DB has
@@ -1642,63 +1674,87 @@ def main():
 
     # ── qBittorrent ───────────────────────────────────────────────────────────
 
-    configure_qbittorrent(QBIT, QB_USER, QB_PASS)
+    if is_enabled(env, 'ENABLE_QBITTORRENT'):
+        configure_qbittorrent(QBIT, QB_USER, QB_PASS)
+    else:
+        section("qBittorrent")
+        print(f"  {DIM}⏭  ENABLE_QBITTORRENT=false — skipping.{RESET}")
 
     # ── Bazarr ────────────────────────────────────────────────────────────────
 
-    configure_bazarr(BAZARR, BAZARR_KEY, SONARR_KEY, RADARR_KEY,
-                     f"{B}/bazarr/config",
-                     username=ARR_USER or None, password=ARR_PASS or None)
+    if is_enabled(env, 'ENABLE_BAZARR'):
+        configure_bazarr(BAZARR, BAZARR_KEY, SONARR_KEY, RADARR_KEY,
+                         f"{B}/bazarr/config",
+                         username=ARR_USER or None, password=ARR_PASS or None)
+    else:
+        section("Bazarr")
+        print(f"  {DIM}⏭  ENABLE_BAZARR=false — skipping.{RESET}")
 
     # ── Seerr ─────────────────────────────────────────────────────────────────
 
-    configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY)
+    if is_enabled(env, 'ENABLE_PLEX'):
+        # Seerr ships as part of the Plex stack — pointless without Plex
+        # (it's a Plex request system). Gated on ENABLE_PLEX rather than
+        # a separate flag.
+        configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY)
+    else:
+        section("Seerr")
+        print(f"  {DIM}⏭  ENABLE_PLEX=false — Seerr not deployed.{RESET}")
 
     # ── Config files ──────────────────────────────────────────────────────────
 
     section("Unpackerr")
-    write_config_file("Unpackerr",
-        f"{B}/unpackerr/config/unpackerr.conf",
-        UNPACKERR_CONF.format(
-            sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
-            radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
-            lidarr_key=LIDARR_KEY or 'REPLACE_WITH_LIDARR_KEY',
-        ))
-    if SONARR_KEY or RADARR_KEY:
-        warn("Restart unpackerr:  docker compose restart unpackerr")
+    if is_enabled(env, 'ENABLE_UNPACKERR'):
+        write_config_file("Unpackerr",
+            f"{B}/unpackerr/config/unpackerr.conf",
+            UNPACKERR_CONF.format(
+                sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
+                radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
+                lidarr_key=LIDARR_KEY or 'REPLACE_WITH_LIDARR_KEY',
+            ))
+        if SONARR_KEY or RADARR_KEY:
+            warn("Restart unpackerr:  docker compose restart unpackerr")
+    else:
+        print(f"  {DIM}⏭  ENABLE_UNPACKERR=false — skipping.{RESET}")
 
     section("Recyclarr")
-    write_config_file("Recyclarr",
-        f"{B}/recyclarr/config/recyclarr.yml",
-        RECYCLARR_CONF.format(
-            sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
-            radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
-        ))
-    if SONARR_KEY or RADARR_KEY:
-        warn("Customise recyclarr.yml then run:  docker exec recyclarr recyclarr sync")
+    if is_enabled(env, 'ENABLE_RECYCLARR'):
+        write_config_file("Recyclarr",
+            f"{B}/recyclarr/config/recyclarr.yml",
+            RECYCLARR_CONF.format(
+                sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
+                radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
+            ))
+        if SONARR_KEY or RADARR_KEY:
+            warn("Customise recyclarr.yml then run:  docker exec recyclarr recyclarr sync")
+    else:
+        print(f"  {DIM}⏭  ENABLE_RECYCLARR=false — skipping.{RESET}")
 
     section("Homepage Dashboard")
-    homepage_cfg = f"{B}/homepage/config"
-    write_config_file("Homepage services",
-        f"{homepage_cfg}/services.yaml",
-        HOMEPAGE_SERVICES.format(ip=LAN_IP))
-    write_config_file("Homepage settings",
-        f"{homepage_cfg}/settings.yaml",
-        HOMEPAGE_SETTINGS)
-    write_config_file("Homepage widgets",
-        f"{homepage_cfg}/widgets.yaml",
-        HOMEPAGE_WIDGETS)
-    # bookmarks.yaml — create empty so Homepage doesn't complain
-    bookmarks_path = f"{homepage_cfg}/bookmarks.yaml"
-    if not os.path.exists(bookmarks_path):
-        try:
-            os.makedirs(homepage_cfg, exist_ok=True)
-            open(bookmarks_path, 'w').close()
-            ok(f"Homepage bookmarks.yaml created")
-        except Exception as e:
-            fail(f"Homepage bookmarks.yaml: {e}")
+    if not is_enabled(env, 'ENABLE_HOMEPAGE'):
+        print(f"  {DIM}⏭  ENABLE_HOMEPAGE=false — skipping.{RESET}")
     else:
-        skip("Homepage bookmarks.yaml")
+        homepage_cfg = f"{B}/homepage/config"
+        write_config_file("Homepage services",
+            f"{homepage_cfg}/services.yaml",
+            HOMEPAGE_SERVICES.format(ip=LAN_IP))
+        write_config_file("Homepage settings",
+            f"{homepage_cfg}/settings.yaml",
+            HOMEPAGE_SETTINGS)
+        write_config_file("Homepage widgets",
+            f"{homepage_cfg}/widgets.yaml",
+            HOMEPAGE_WIDGETS)
+        # bookmarks.yaml — create empty so Homepage doesn't complain
+        bookmarks_path = f"{homepage_cfg}/bookmarks.yaml"
+        if not os.path.exists(bookmarks_path):
+            try:
+                os.makedirs(homepage_cfg, exist_ok=True)
+                open(bookmarks_path, 'w').close()
+                ok(f"Homepage bookmarks.yaml created")
+            except Exception as e:
+                fail(f"Homepage bookmarks.yaml: {e}")
+        else:
+            skip("Homepage bookmarks.yaml")
 
     # ── Summary ───────────────────────────────────────────────────────────────
 

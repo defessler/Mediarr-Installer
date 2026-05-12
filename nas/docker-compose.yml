@@ -5,6 +5,7 @@ services:
   plex:
     image: linuxserver/plex:latest
     container_name: plex
+    profiles: ["plex"]
     networks: [media]
     environment:
       - PUID=${PUID}
@@ -25,6 +26,7 @@ services:
   tautulli:
     image: linuxserver/tautulli:latest
     container_name: tautulli
+    profiles: ["plex"]
     networks: [media]
     depends_on: [plex]
     environment:
@@ -40,6 +42,7 @@ services:
   seerr:
     image: ghcr.io/seerr-team/seerr:latest
     container_name: seerr
+    profiles: ["plex"]
     init: true
     user: "${PUID}:${PGID}"
     networks: [media]
@@ -63,6 +66,7 @@ services:
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
+    profiles: ["homepage"]
     networks: [media]
     environment:
       - TZ=${TZ}
@@ -118,6 +122,7 @@ services:
   sonarr:
     image: linuxserver/sonarr:latest
     container_name: sonarr
+    profiles: ["sonarr"]
     networks: [media]
     depends_on: [prowlarr]
     environment:
@@ -140,6 +145,7 @@ services:
   radarr:
     image: linuxserver/radarr:latest
     container_name: radarr
+    profiles: ["radarr"]
     networks: [media]
     depends_on: [prowlarr]
     environment:
@@ -162,6 +168,7 @@ services:
   bazarr:
     image: linuxserver/bazarr:latest
     container_name: bazarr
+    profiles: ["bazarr"]
     networks: [media]
     depends_on: [sonarr, radarr]
     environment:
@@ -178,6 +185,7 @@ services:
   lidarr:
     image: linuxserver/lidarr:latest
     container_name: lidarr
+    profiles: ["lidarr"]
     networks: [media]
     depends_on: [prowlarr]
     environment:
@@ -202,6 +210,11 @@ services:
   gluetun:
     image: qmcgaw/gluetun:latest
     container_name: gluetun
+    # Distinct "vpn" profile (not "torrenting") so the no-vpn override
+    # can keep gluetun out of the start set even when qBittorrent's
+    # "torrenting" profile is active. setup.sh adds "vpn" to COMPOSE_
+    # PROFILES only when VPN_ENABLED=true AND ENABLE_QBITTORRENT=true.
+    profiles: ["vpn"]
     cap_add:
       - NET_ADMIN
     networks: [media]
@@ -237,6 +250,7 @@ services:
   qbittorrent:
     image: linuxserver/qbittorrent:latest
     container_name: qbittorrent
+    profiles: ["torrenting"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -257,6 +271,7 @@ services:
   sabnzbd:
     image: linuxserver/sabnzbd:latest
     container_name: sabnzbd
+    profiles: ["usenet"]
     networks: [media]
     environment:
       - PUID=${PUID}
@@ -274,6 +289,7 @@ services:
   recyclarr:
     image: ghcr.io/recyclarr/recyclarr:latest
     container_name: recyclarr
+    profiles: ["recyclarr"]
     user: "${PUID}:${PGID}"
     networks: [media]
     depends_on: [sonarr, radarr]
@@ -287,6 +303,7 @@ services:
   unpackerr:
     image: golift/unpackerr:latest
     container_name: unpackerr
+    profiles: ["unpackerr"]
     networks: [media]
     depends_on: [sonarr, radarr]
     environment:

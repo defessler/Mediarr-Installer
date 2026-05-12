@@ -76,20 +76,80 @@ else
     exit 1
 fi
 
+# ── Read .env helpers ────────────────────────────────────────────────────────
+
+# Small helper for reading a value out of .env, strips inline comments
+# and surrounding whitespace. Returns empty string if the key is absent.
+env_val() {
+    grep -m1 "^$1=" "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+}
+
+# Default-ON semantics: missing or empty key counts as enabled, only
+# the explicit "false" / "0" / "no" / "off" opts out. Matches the
+# isEnabled() logic in env-render.ts so the wizard and setup.sh agree
+# on which services are on for any given .env.
+is_enabled() {
+    local val
+    val="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$val" in
+        false|0|no|off) return 1 ;;
+        *)              return 0 ;;
+    esac
+}
+
 # ── Choose compose files based on VPN_ENABLED in .env ────────────────────────
 # VPN is OFF by default. When VPN_ENABLED is anything other than 'true' / '1'
 # / 'yes', the no-vpn override is applied — gluetun is excluded and
 # qBittorrent runs on the regular bridge network, ports bound to LAN_IP.
-# Set VPN_ENABLED=true and fill in NORDVPN_PRIVATE_KEY to opt into gluetun.
+# Set VPN_ENABLED=true and fill in WIREGUARD_PRIVATE_KEY to opt into gluetun.
 
-VPN_ENABLED="$(grep -m1 '^VPN_ENABLED=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
+VPN_ENABLED="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')"
+VPN_ON=0
 COMPOSE_FILES="-f docker-compose.yml"
 if [ "$VPN_ENABLED" = "true" ] || [ "$VPN_ENABLED" = "1" ] || [ "$VPN_ENABLED" = "yes" ]; then
-    echo "  Note: VPN_ENABLED=true — routing qBittorrent through gluetun (NordVPN)."
+    VPN_ON=1
+    echo "  Note: VPN_ENABLED=true — routing qBittorrent through gluetun."
 else
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.no-vpn.yml"
     echo "  Note: VPN off (default). qBittorrent traffic will use your real public IP."
     echo "  Set VPN_ENABLED=true in .env and re-run to enable gluetun routing."
+fi
+
+# ── Build COMPOSE_PROFILES from ENABLE_* flags in .env ───────────────────────
+# Each user-facing service in docker-compose.yml gets a `profiles:` key;
+# COMPOSE_PROFILES tells docker compose which to start. Default-on
+# semantics mean profiles created before service selection existed start
+# every service exactly like before.
+#
+# prowlarr + flaresolverr are intentionally NOT profile-gated (always
+# on) since Prowlarr is the indexer manager every arr depends on for
+# indexer config, and Flaresolverr is the CloudFlare bypass Prowlarr
+# uses. Both are <50 MB RAM; not worth a toggle.
+
+PROFILES=()
+is_enabled ENABLE_PLEX        && PROFILES+=("plex")
+is_enabled ENABLE_SONARR      && PROFILES+=("sonarr")
+is_enabled ENABLE_RADARR      && PROFILES+=("radarr")
+is_enabled ENABLE_LIDARR      && PROFILES+=("lidarr")
+is_enabled ENABLE_BAZARR      && PROFILES+=("bazarr")
+is_enabled ENABLE_SABNZBD     && PROFILES+=("usenet")
+is_enabled ENABLE_HOMEPAGE    && PROFILES+=("homepage")
+is_enabled ENABLE_RECYCLARR   && PROFILES+=("recyclarr")
+is_enabled ENABLE_UNPACKERR   && PROFILES+=("unpackerr")
+# qBittorrent's profile is "torrenting"; gluetun's is "vpn". Add the
+# VPN profile only when the user enabled BOTH qBittorrent AND the VPN
+# wrap — gluetun without qBittorrent serves no purpose, and qBittorrent
+# without VPN_ENABLED=true is covered by the no-vpn override.
+if is_enabled ENABLE_QBITTORRENT; then
+    PROFILES+=("torrenting")
+    [ $VPN_ON -eq 1 ] && PROFILES+=("vpn")
+fi
+
+if [ ${#PROFILES[@]} -gt 0 ]; then
+    export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
+    echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr + flaresolverr always on)"
+else
+    echo "  WARN: every service is disabled in .env. Only Prowlarr + Flaresolverr will start."
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -130,7 +190,17 @@ wait_for_services() {
     local max_wait=600
     local interval=10
     local elapsed=0
-    local services="sonarr radarr lidarr prowlarr sabnzbd bazarr flaresolverr"
+    # Wait only on services the user enabled in .env — checking a disabled
+    # container loops forever because `docker inspect` returns "missing"
+    # for the full max_wait timeout, killing the install with a false
+    # "containers didn't come up" error. Prowlarr + Flaresolverr are
+    # always-on (not profile-gated) so they're always in the list.
+    local services="prowlarr flaresolverr"
+    is_enabled ENABLE_SONARR  && services="$services sonarr"
+    is_enabled ENABLE_RADARR  && services="$services radarr"
+    is_enabled ENABLE_LIDARR  && services="$services lidarr"
+    is_enabled ENABLE_BAZARR  && services="$services bazarr"
+    is_enabled ENABLE_SABNZBD && services="$services sabnzbd"
 
     echo ""
     echo "  Waiting for containers to become healthy..."
@@ -296,37 +366,54 @@ fi
 echo ""
 echo "  ✔ Setup complete!"
 echo ""
-echo "  ── Dashboard ──────────────────────────────────"
-echo "  Homepage     http://${IP}:3000           ← start here"
-echo ""
+# Print only the URLs for services the user actually enabled in .env so
+# the post-install summary doesn't promise a Lidarr URL that's pointing
+# at a container which never started. Always include Prowlarr +
+# Flaresolverr since they're not profile-gated.
+is_enabled ENABLE_HOMEPAGE && {
+    echo "  ── Dashboard ──────────────────────────────────"
+    echo "  Homepage     http://${IP}:3000           ← start here"
+    echo ""
+}
 echo "  ── Services ───────────────────────────────────"
-echo "  Plex         http://${IP}:32400/web"
-echo "  Sonarr       http://${IP}:49152"
-echo "  Radarr       http://${IP}:49151"
-echo "  Lidarr       http://${IP}:49154"
+is_enabled ENABLE_PLEX        && echo "  Plex         http://${IP}:32400/web"
+is_enabled ENABLE_SONARR      && echo "  Sonarr       http://${IP}:49152"
+is_enabled ENABLE_RADARR      && echo "  Radarr       http://${IP}:49151"
+is_enabled ENABLE_LIDARR      && echo "  Lidarr       http://${IP}:49154"
 echo "  Prowlarr     http://${IP}:49150"
-echo "  SABnzbd      http://${IP}:49155"
-echo "  qBittorrent  http://${IP}:49156"
-echo "  Bazarr       http://${IP}:49153"
-echo "  Seerr        http://${IP}:5056"
-echo "  Tautulli     http://${IP}:8181"
+is_enabled ENABLE_SABNZBD     && echo "  SABnzbd      http://${IP}:49155"
+is_enabled ENABLE_QBITTORRENT && echo "  qBittorrent  http://${IP}:49156"
+is_enabled ENABLE_BAZARR      && echo "  Bazarr       http://${IP}:49153"
+is_enabled ENABLE_PLEX        && echo "  Seerr        http://${IP}:5056"
+is_enabled ENABLE_PLEX        && echo "  Tautulli     http://${IP}:8181"
 echo ""
 echo "  ── Remaining manual steps ─────────────────────"
-echo "  1. Seerr wizard: http://${IP}:5056"
-echo "     Connect Plex with: http://plex:32400"
-echo "     Then re-run: python3 $SCRIPT_DIR/setup-arr-config.py"
-echo ""
-echo "  2. Tautulli: http://${IP}:8181"
-echo "     Connect Plex with token from:"
-echo "     Plex → Settings → Troubleshooting → Get X-Plex-Token"
-echo ""
-echo "  3. SABnzbd usenet server: http://${IP}:49155"
-echo "     Add your usenet provider under Config → Servers"
-echo ""
-echo "  4. Recyclarr quality profiles:"
-echo "     docker exec recyclarr recyclarr sync"
-echo "     (customise $SCRIPT_DIR/recyclarr/config/recyclarr.yml first)"
-echo ""
+n=0
+if is_enabled ENABLE_PLEX; then
+    n=$((n + 1))
+    echo "  $n. Seerr wizard: http://${IP}:5056"
+    echo "     Connect Plex with: http://plex:32400"
+    echo "     Then re-run: python3 $SCRIPT_DIR/setup-arr-config.py"
+    echo ""
+    n=$((n + 1))
+    echo "  $n. Tautulli: http://${IP}:8181"
+    echo "     Connect Plex with token from:"
+    echo "     Plex → Settings → Troubleshooting → Get X-Plex-Token"
+    echo ""
+fi
+if is_enabled ENABLE_SABNZBD; then
+    n=$((n + 1))
+    echo "  $n. SABnzbd usenet server: http://${IP}:49155"
+    echo "     Add your usenet provider under Config → Servers"
+    echo ""
+fi
+if is_enabled ENABLE_RECYCLARR; then
+    n=$((n + 1))
+    echo "  $n. Recyclarr quality profiles:"
+    echo "     docker exec recyclarr recyclarr sync"
+    echo "     (customise $SCRIPT_DIR/recyclarr/config/recyclarr.yml first)"
+    echo ""
+fi
 echo "  ── Updates ────────────────────────────────────"
 echo "  cd $SCRIPT_DIR"
 echo "  $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"

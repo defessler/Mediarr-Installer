@@ -218,6 +218,17 @@ def main():
     # may have hand-edited, and finally to the Synology-historical path
     # so really-old installs don't regress.
     install_dir = env.get('INSTALL_DIR') or os.path.dirname(script_dir) or '/volume1/docker/media'
+
+    # Respect the user's service selection — if they opted Bazarr out, the
+    # container doesn't exist and there's no key to read. Exit cleanly
+    # with rc=0 so setup.sh doesn't flag step 9 as a failure. Default-on
+    # semantics match isEnabled() in env-render.ts and is_enabled() in
+    # setup.sh — only an explicit ENABLE_BAZARR=false/0/no/off opts out.
+    enable_bazarr = (env.get('ENABLE_BAZARR', 'true') or 'true').strip().lower()
+    if enable_bazarr in ('false', '0', 'no', 'off'):
+        print("ENABLE_BAZARR=false in .env — skipping Bazarr provider setup.")
+        sys.exit(0)
+
     BAZARR_KEY  = env.get('BAZARR_API_KEY') or read_bazarr_key(f'{install_dir}/bazarr/config')
 
     if not LAN_IP:

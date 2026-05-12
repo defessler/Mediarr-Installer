@@ -79,6 +79,21 @@ interface WizardState {
 }
 
 const defaultConfig: Partial<EnvFormValues> = {
+  // Service selection defaults — everything on. Users opt OUT individually
+  // on the Configure screen. See env-render.ts for the canonical list +
+  // what each gates. Profiles created before this field existed simply
+  // omit the keys; env-render's isEnabled() treats missing as enabled.
+  ENABLE_PLEX: 'true',
+  ENABLE_SONARR: 'true',
+  ENABLE_RADARR: 'true',
+  ENABLE_LIDARR: 'true',
+  ENABLE_BAZARR: 'true',
+  ENABLE_QBITTORRENT: 'true',
+  ENABLE_SABNZBD: 'true',
+  ENABLE_HOMEPAGE: 'true',
+  ENABLE_RECYCLARR: 'true',
+  ENABLE_UNPACKERR: 'true',
+
   PUID: '1026',
   PGID: '100',
   TZ: 'America/New_York',

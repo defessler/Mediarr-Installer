@@ -54,6 +54,123 @@ function Field({ label, k, type = 'text', placeholder }: {
   )
 }
 
+// ── Services section ────────────────────────────────────────────────────────
+//
+// User-facing service checklist. Each toggle writes ENABLE_<NAME> into
+// .env; setup.sh reads them to build COMPOSE_PROFILES so `docker compose
+// up -d` only starts what's selected. Default-on for back-compat with
+// pre-existing profiles. See env-render.ts for the canonical list.
+//
+// Grouping rules:
+//   - Plex stack (plex + tautulli + seerr) toggles together — Tautulli +
+//     Seerr have hard runtime deps on Plex, so independent toggles would
+//     just produce broken containers.
+//   - qBittorrent automatically pulls in gluetun when VPN_ENABLED=true
+//     (the existing VPN gate, unchanged).
+//   - Prowlarr + Flaresolverr stay always-on — they're cheap and every
+//     arr needs Prowlarr for indexers.
+//
+// Dependencies the UI calls out but doesn't enforce (the user knows
+// their setup; we don't auto-uncheck for them):
+//   - Bazarr needs Sonarr or Radarr to be useful (subtitles for what?)
+//   - Recyclarr / Unpackerr need Sonarr or Radarr
+//   - Seerr needs Plex + arrs to request anything
+
+interface ServiceToggle {
+  key: keyof EnvFormValues
+  label: string
+  hint?: string
+  /** "needs" hint — shown when the toggle is on but its dependencies are off. */
+  needs?: (keyof EnvFormValues)[]
+}
+
+const SERVICE_TOGGLES: ServiceToggle[] = [
+  { key: 'ENABLE_PLEX',        label: 'Plex stack',   hint: 'Plex + Tautulli + Seerr (request system)' },
+  { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation' },
+  { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation' },
+  { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation' },
+  { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)' },
+  { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader' },
+  { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above' },
+]
+
+function ServicesSection({
+  config, update,
+}: {
+  config: Partial<EnvFormValues>
+  update: <K extends keyof EnvFormValues>(k: K, v: EnvFormValues[K] | undefined) => void
+}) {
+  // Default-on for any missing key, matching env-render's isEnabled().
+  const isOn = (k: keyof EnvFormValues) =>
+    ((config[k] as string | undefined) ?? 'true').toLowerCase() !== 'false'
+  const enabledCount = SERVICE_TOGGLES.filter((t) => isOn(t.key)).length
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        Services
+        <span className="text-xs font-normal text-slate-500">
+          ({enabledCount} of {SERVICE_TOGGLES.length} enabled — Prowlarr + Flaresolverr always on)
+        </span>
+      </h2>
+      <p className="text-xs text-slate-400">
+        Uncheck what you don&apos;t want. setup.sh maps these to{' '}
+        <code className="font-mono">COMPOSE_PROFILES</code> so docker only
+        starts (and the install only configures) what&apos;s selected. Defaults
+        match the historical bundle; you can come back and re-run the wizard
+        to enable a service later.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        {SERVICE_TOGGLES.map((t) => {
+          const on = isOn(t.key)
+          // "needs" check: surface a yellow hint when the user has this
+          // on but none of its declared dependencies is on. We don't
+          // disable the toggle — maybe they want Bazarr against an
+          // externally-managed Sonarr; the hint is enough.
+          const unmetDep =
+            on && t.needs && !t.needs.some((dep) => isOn(dep))
+          return (
+            <label
+              key={t.key}
+              className={
+                'flex items-start gap-2 rounded-md border p-3 cursor-pointer transition-colors ' +
+                (on
+                  ? 'border-emerald-700/50 bg-emerald-900/10'
+                  : 'border-slate-700 bg-slate-900/40 opacity-70')
+              }
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0"
+                checked={on}
+                onChange={(e) => update(t.key, e.target.checked ? 'true' : 'false')}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{t.label}</div>
+                {t.hint && (
+                  <div className="text-xs text-slate-400 mt-0.5">{t.hint}</div>
+                )}
+                {unmetDep && (
+                  <div className="text-xs text-amber-300/90 mt-1">
+                    Heads up — typically used with{' '}
+                    {t.needs!
+                      .map((d) => SERVICE_TOGGLES.find((x) => x.key === d)?.label ?? d)
+                      .join(' or ')}
+                    , both of which are off right now.
+                  </div>
+                )}
+              </div>
+            </label>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 // ── VPN section ─────────────────────────────────────────────────────────────
 //
 // Provider-aware UI driven by the shared `VPN_PROVIDERS` registry. The
@@ -434,6 +551,8 @@ export function ConfigureScreen() {
           placeholder="/volume1/Data"
         />
       </section>
+
+      <ServicesSection config={config} update={update} />
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Identity</h2>
