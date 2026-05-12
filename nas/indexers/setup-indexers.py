@@ -347,7 +347,13 @@ def main():
     env        = read_env_merged(script_dir)
 
     LAN_IP       = env.get('LAN_IP', '')
-    PROWLARR_KEY = env.get('PROWLARR_API_KEY') or read_arr_key('/volume1/docker/media/prowlarr/config/config.xml')
+    # Resolve INSTALL_DIR portably: .env writes it on every install since
+    # the multi-NAS refactor, but fall back to script_dir's parent (this
+    # script lives at <INSTALL_DIR>/indexers/) for older .envs the user
+    # may have hand-edited, and finally to the Synology-historical path
+    # so really-old installs don't regress.
+    install_dir  = env.get('INSTALL_DIR') or os.path.dirname(script_dir) or '/volume1/docker/media'
+    PROWLARR_KEY = env.get('PROWLARR_API_KEY') or read_arr_key(f'{install_dir}/prowlarr/config/config.xml')
 
     if not LAN_IP:
         print("Error: LAN_IP not set in .env"); sys.exit(1)

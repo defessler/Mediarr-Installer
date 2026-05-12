@@ -388,29 +388,41 @@ export function EnvDetectScreen() {
             )}
           </section>
 
-          {/* /volume1/Data shared-folder ACL — the source of the
-              long-running "Sonarr says root folder doesn't exist" trap.
-              Synology layers its own ACL on top of POSIX, and if the
-              wizard's user / PUID isn't explicitly granted Read/Write
-              on the share, every arr's "is this writable?" probe fails
-              at step 7. Surface the state here so the user can fix it
-              in DSM Control Panel BEFORE clicking Install. The install-
-              time [acl] step in RunScreen still tries to auto-apply
-              when synoacltool is available; this section is the early
-              warning. */}
+          {/* Data-directory check — historically the "Sonarr says root
+              folder doesn't exist" trap on Synology (shared-folder ACL
+              denying write under PUID), but the same probe is useful on
+              every NAS family as an early warning that the data tree
+              doesn't exist yet, or POSIX perms deny the SSH user.
+              Section title + fix instructions adapt to the detected
+              family — DSM Control Panel on Synology, mkdir+chown on
+              everything else. The install-time [acl] step in RunScreen
+              still auto-applies when synoacltool is available; this
+              section is the early warning. */}
           <section className="rounded-md border border-slate-800 p-4 space-y-2">
             <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
-              Shared folder ACL
+              {r.nasFamily === 'synology' ? 'Shared folder ACL' : 'Data directory'}
             </h2>
             <Check
               ok={r.dataShareExists}
-              label="/volume1/Data exists"
+              label={`${r.dataSharePath ?? 'Data directory'} exists`}
               value={r.dataShareExists ? 'yes' : 'missing'}
             />
-            {!r.dataShareExists && (
+            {!r.dataShareExists && r.nasFamily === 'synology' && (
               <p className="text-amber-300 text-xs ml-5 mt-1">
                 Create it in DSM → Control Panel → Shared Folder → Create.
                 The wizard's data tree (Media + Downloads) lives there.
+              </p>
+            )}
+            {!r.dataShareExists && r.nasFamily !== 'synology' && r.dataSharePath && (
+              <p className="text-amber-300 text-xs ml-5 mt-1 font-mono">
+                sudo mkdir -p {r.dataSharePath} && sudo chown {r.username ?? '<user>'}:{r.groupname ?? '<group>'} {r.dataSharePath}
+              </p>
+            )}
+            {!r.dataShareExists && !r.dataSharePath && (
+              <p className="text-amber-300 text-xs ml-5 mt-1">
+                Couldn't pick a default data directory for this host's NAS family.
+                Set DATA_ROOT on the next screen and the wizard will create the tree
+                under it during install.
               </p>
             )}
             {r.dataShareExists && (
@@ -419,12 +431,13 @@ export function EnvDetectScreen() {
                 label={`Writable as ${r.username ?? 'SSH user'}`}
                 value={
                   r.dataShareWritable === true ? 'yes'
-                  : r.dataShareWritable === false ? 'denied by ACL'
-                  : 'unknown'
+                  : r.dataShareWritable === false
+                    ? (r.nasFamily === 'synology' ? 'denied by ACL' : 'denied by POSIX')
+                    : 'unknown'
                 }
               />
             )}
-            {r.dataShareExists && r.dataShareWritable === false && (
+            {r.dataShareExists && r.dataShareWritable === false && r.nasFamily === 'synology' && (
               <div className="ml-5 mt-2 text-xs text-amber-200/90 space-y-1">
                 <p>
                   Synology's shared-folder ACL is denying write access. The
@@ -439,6 +452,21 @@ export function EnvDetectScreen() {
                   Control Panel → Shared Folder → click <span className="font-mono">Data</span> → Edit → Permissions →
                   find <span className="font-mono">{r.username ?? 'your user'}</span> → check Read/Write → Save. Then
                   click Re-detect on this screen.
+                </p>
+              </div>
+            )}
+            {r.dataShareExists && r.dataShareWritable === false && r.nasFamily !== 'synology' && (
+              <div className="ml-5 mt-2 text-xs text-amber-200/90 space-y-1">
+                <p>
+                  POSIX permissions deny the SSH user write access to{' '}
+                  <span className="font-mono">{r.dataSharePath}</span>. The arrs
+                  will fail to register their root folders at step 7 unless this
+                  is fixed (the wizard's <code className="font-mono">prep</code>
+                  step tries to chown + chmod during install, but if the dir is
+                  owned by root with no write bit, even that fails).
+                </p>
+                <p className="font-mono">
+                  sudo chown -R {r.username ?? '<user>'}:{r.groupname ?? '<group>'} {r.dataSharePath} && sudo chmod -R 775 {r.dataSharePath}
                 </p>
               </div>
             )}

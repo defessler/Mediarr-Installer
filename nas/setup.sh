@@ -210,18 +210,22 @@ if [ -f /etc/synoinfo.conf ]; then
     run_step 3 "Apply firewall rules" \
         bash "$SCRIPT_DIR/setup-firewall.sh"
 else
-    run_step 3 "Apply firewall rules" bash -c '
-        echo "  ⏭ Synology-specific firewall integration skipped — not DSM."
-        echo "    The wizard's firewall step installs DSM-style rc.d rules"
-        echo "    that no other NAS family uses. On this host, open the"
-        echo "    stack ports in your NAS firewall UI (Unraid Settings →"
-        echo "    Network, QTS Control Panel → Security, ufw / firewalld /"
-        echo "    OPNsense — whatever applies). Required ports:"
-        echo "      32400 (Plex), 3000 (Homepage), 5056 (Seerr),"
-        echo "      8181 (Tautulli), 8191 (Flaresolverr),"
-        echo "      49150–49156 (arrs + qBittorrent + SAB)."
-        exit 0
-    '
+    # Use a here-doc instead of inline echo args so the message can
+    # contain any character (apostrophes, parens, em dashes) without
+    # tripping the surrounding shell quoting — an earlier version had
+    # echo "The wizard's firewall step" which terminated the single-
+    # quoted bash -c body early and made bash -n fail.
+    run_step 3 "Apply firewall rules" bash -c 'cat <<MSG
+  ⏭ Synology-specific firewall integration skipped — not DSM.
+    The wizard step installs DSM-style rc.d rules that no other NAS
+    family uses. On this host, open the stack ports in your NAS firewall
+    UI (Unraid Settings → Network, QTS Control Panel → Security, ufw /
+    firewalld / OPNsense — whatever applies). Required ports:
+      32400 (Plex), 3000 (Homepage), 5056 (Seerr),
+      8181 (Tautulli), 8191 (Flaresolverr),
+      49150–49156 (arrs + qBittorrent + SAB).
+MSG
+exit 0'
 fi
 
 echo "  Note: fetches your WireGuard private key from the NordVPN API"
@@ -321,7 +325,7 @@ echo "     Add your usenet provider under Config → Servers"
 echo ""
 echo "  4. Recyclarr quality profiles:"
 echo "     docker exec recyclarr recyclarr sync"
-echo "     (customise /volume1/docker/media/recyclarr/config/recyclarr.yml first)"
+echo "     (customise $SCRIPT_DIR/recyclarr/config/recyclarr.yml first)"
 echo ""
 echo "  ── Updates ────────────────────────────────────"
 echo "  cd $SCRIPT_DIR"

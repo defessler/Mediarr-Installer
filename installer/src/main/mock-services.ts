@@ -404,7 +404,10 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
     // /volume1/Data exists + the SSH user can write to it (happy path).
     // ACL has two ACEs so the renderer's "details" expander has something
     // to show. Toggle dataShareWritable to false locally to preview the
-    // red-banner UI without needing a real broken NAS.
+    // red-banner UI without needing a real broken NAS. dataSharePath is
+    // the actual probed dir — Synology in this mock, but it'd be /mnt/
+    // user/data on a mocked Unraid, etc.
+    dataSharePath: '/volume1/Data',
     dataShareExists: true,
     dataShareWritable: true,
     dataShareAcl: [

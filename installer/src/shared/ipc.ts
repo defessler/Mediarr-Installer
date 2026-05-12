@@ -117,15 +117,25 @@ export interface EnvDetectResult {
   /** IP the NAS would use to reply to the SSH client. If different from
    *  defaultIp, the SSH session is on a non-LAN network (e.g. Tailscale). */
   replyIp: string | null
-  /** Does /volume1/Data (the media shared folder) exist? */
+  /** Path the data-directory probes targeted on this host. Family-aware:
+   *  Synology → /volume1/Data, Unraid → /mnt/user/data, QNAP → /share/
+   *  Data, TrueNAS → /mnt/<pool>/data (first pool found). null when no
+   *  candidate directory exists (e.g. fresh OMV box with no shared
+   *  folders yet). The UI uses this to label messages with the path the
+   *  user will actually see, not a misleading hardcoded one. */
+  dataSharePath: string | null
+  /** Does the data directory at dataSharePath exist? */
   dataShareExists: boolean
-  /** Can the SSH user write to /volume1/Data right now? null = couldn't
-   *  test (share missing). False is the Synology shared-folder ACL trap
-   *  the install used to fail on at step 7. */
+  /** Can the SSH user write to dataSharePath right now? null = couldn't
+   *  test (dir missing). False on Synology is typically the shared-
+   *  folder ACL trap the install used to fail on at step 7. False
+   *  elsewhere usually means the dir exists but POSIX perms deny the
+   *  SSH user. */
   dataShareWritable: boolean | null
-  /** Parsed `synoacltool -get /volume1/Data` ACEs, used to show the user
-   *  which accounts currently have access. Empty if synoacltool wasn't
-   *  found or /volume1/Data has no Synology ACL layer. */
+  /** Parsed Synology-ACL ACEs for the data dir (used to show the user
+   *  which accounts currently have access). Empty on non-Synology hosts
+   *  — synoacltool only exists on DSM and the ACL concept doesn't
+   *  apply to plain POSIX filesystems. */
   dataShareAcl: {
     kind: 'user' | 'group'
     name: string

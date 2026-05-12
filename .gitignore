@@ -14,3 +14,7 @@ Thumbs.db
 
 # Editor scratch
 .claude/
+
+# Python bytecode (from local py_compile syntax checks)
+__pycache__/
+*.pyc

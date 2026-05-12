@@ -169,35 +169,78 @@ export async function detectEnv(
     // is up, "no curl reachability" is usually a false negative.
     'echo "===dockerhub_dns==="; getent hosts registry-1.docker.io 2>/dev/null | awk \'{print $1; exit}\' || true',
     'echo "===docker_info==="; docker info --format \'{{.ServerVersion}}\' 2>/dev/null || true',
-    // Synology shared-folder ACL on /volume1/Data — the source of the
-    // long-running "Sonarr says root folder doesn\'t exist" trap. We
-    // do TWO probes:
-    //   1. data_share_exists: is the /volume1/Data dir present at all?
-    //      (If not, the user hasn\'t made the shared folder yet —
-    //      different problem to surface than ACL.)
-    //   2. data_share_writable: can the SSH user (whose UID typically
-    //      matches PUID) write to that share? This is the same probe
-    //      the wizard\'s install-time [acl] step does — running it
-    //      during detect lets us warn EARLY instead of at install.
-    //      We deliberately do NOT require sudo here — the SSH user
-    //      must be able to write under their own identity, which is
-    //      what the arr containers will be doing with PUID set.
-    'echo "===data_share_exists==="; [ -d /volume1/Data ] && echo y || echo n',
+    // Data-directory probes — the source of the long-running "Sonarr
+    // says root folder doesn\'t exist" trap on Synology, but a generic
+    // "does the data tree exist + is it writable as my user" check on
+    // every NAS family. We do FOUR pieces of output:
+    //   1. data_share_path:    the path we ended up probing (so the UI
+    //                          can show "Data dir /mnt/user/data" not
+    //                          a misleading "/volume1/Data" on Unraid)
+    //   2. data_share_exists:  is that dir present at all?
+    //   3. data_share_writable: can the SSH user (whose UID typically
+    //      matches PUID) write to it? Same probe the wizard\'s install-
+    //      time [acl] step does — running it here gives an early
+    //      warning instead of failing at install. We deliberately do
+    //      NOT require sudo — the SSH user must be able to write under
+    //      their own identity, which is what the arr containers will
+    //      be doing with PUID set.
+    //   4. acl_dump:           Synology-only — synoacltool output for
+    //                          the data dir. Empty on every other family
+    //                          (the binary doesn\'t exist there).
+    //
+    // Family-aware path picker: matches the same OS markers we read for
+    // nasFamily above, so the probe targets the dir we\'ll actually
+    // suggest as DATA_ROOT in pickFamilyDefaults(). The UI maps these
+    // back to the family-appropriate fix instructions (DSM Control Panel
+    // vs `mkdir -p && chown` vs Unraid Settings → Shares).
+    'echo "===data_share_path==="; ' +
+      'if [ -f /etc/synoinfo.conf ] && [ -d /volume1 ]; then ' +
+      '  echo /volume1/Data; ' +
+      'elif [ -d /mnt/user ]; then ' +
+      '  echo /mnt/user/data; ' +
+      'elif [ -d /share/CACHEDEV1_DATA ]; then ' +
+      '  echo /share/Data; ' +
+      'elif [ -d /mnt ]; then ' +
+      '  for d in /mnt/*; do ' +
+      '    [ -d "$d" ] || continue; ' +
+      '    name=$(basename "$d"); ' +
+      '    case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; ' +
+      '    echo "$d/data"; break; ' +
+      '  done; ' +
+      'fi',
+    'echo "===data_share_exists==="; ' +
+      'p=$( ' +
+      '  if [ -f /etc/synoinfo.conf ] && [ -d /volume1 ]; then echo /volume1/Data; ' +
+      '  elif [ -d /mnt/user ]; then echo /mnt/user/data; ' +
+      '  elif [ -d /share/CACHEDEV1_DATA ]; then echo /share/Data; ' +
+      '  elif [ -d /mnt ]; then for d in /mnt/*; do [ -d "$d" ] || continue; name=$(basename "$d"); case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; echo "$d/data"; break; done; ' +
+      '  fi); ' +
+      '[ -n "$p" ] && [ -d "$p" ] && echo y || echo n',
     'echo "===data_share_writable==="; ' +
-      'if [ -d /volume1/Data ]; then ' +
-      '  if touch /volume1/Data/.mediarr-detect-probe 2>/dev/null && rm /volume1/Data/.mediarr-detect-probe 2>/dev/null; then ' +
+      'p=$( ' +
+      '  if [ -f /etc/synoinfo.conf ] && [ -d /volume1 ]; then echo /volume1/Data; ' +
+      '  elif [ -d /mnt/user ]; then echo /mnt/user/data; ' +
+      '  elif [ -d /share/CACHEDEV1_DATA ]; then echo /share/Data; ' +
+      '  elif [ -d /mnt ]; then for d in /mnt/*; do [ -d "$d" ] || continue; name=$(basename "$d"); case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; echo "$d/data"; break; done; ' +
+      '  fi); ' +
+      'if [ -n "$p" ] && [ -d "$p" ]; then ' +
+      '  if touch "$p/.mediarr-detect-probe" 2>/dev/null && rm "$p/.mediarr-detect-probe" 2>/dev/null; then ' +
       '    echo y; ' +
       '  else echo n; fi; ' +
       'else echo skip; fi',
-    // Snapshot of the current ACL on /volume1/Data so we can show the
-    // user "here\'s who has access right now" if the write probe fails.
-    // synoacltool lives at known-stable paths on DSM (we resolve them
-    // explicitly because the SSH non-interactive PATH doesn\'t include
-    // /usr/syno/bin by default).
+    // Snapshot of the current Synology ACL on the data dir so we can
+    // show the user "here\'s who has access right now" if the write
+    // probe fails. Synology-only — synoacltool only exists on DSM, and
+    // the ACL concept doesn\'t apply on Unraid/TrueNAS/QNAP where
+    // POSIX permissions are the whole story. The probe-binary path
+    // resolution stays the same since DSM puts synoacltool outside
+    // the SSH non-interactive PATH.
     'echo "===acl_dump==="; ' +
-      'for c in /usr/syno/bin/synoacltool /usr/syno/sbin/synoacltool /usr/local/bin/synoacltool /usr/bin/synoacltool; do ' +
-      '  if [ -e "$c" ]; then "$c" -get /volume1/Data 2>/dev/null && break; fi; ' +
-      'done',
+      'if [ -f /etc/synoinfo.conf ]; then ' +
+      '  for c in /usr/syno/bin/synoacltool /usr/syno/sbin/synoacltool /usr/local/bin/synoacltool /usr/bin/synoacltool; do ' +
+      '    if [ -e "$c" ]; then "$c" -get /volume1/Data 2>/dev/null && break; fi; ' +
+      '  done; ' +
+      'fi',
   ].join('\n')
 
   const r = await run(sessionId, `bash -c ${shellQuote(batch)}`)
@@ -342,10 +385,17 @@ export async function detectEnv(
   const familyDefaults = pickFamilyDefaults(nasFamily, dataCandidates, mntChildren)
   const osVersion = section(o, 'os_version').split('\n')[0]?.trim() || null
 
-  // /volume1/Data ACL state — surfaced as a check on the Detect screen
-  // so the user can fix DSM share permissions before the install
-  // bothers to upload anything. The wizard's install-time [acl] step
-  // still runs as a backup, but this gives an earlier signal.
+  // Data-directory check — surfaced on the Detect screen so the user
+  // can fix the data dir BEFORE clicking Install (Synology DSM share
+  // permissions, or missing dir on Unraid/TrueNAS/QNAP). The wizard's
+  // install-time [acl] step + setup-folders.sh still cover this as a
+  // backup, but this gives an earlier signal.
+  //
+  // dataSharePath is the path we actually probed (Synology → /volume1/
+  // Data, Unraid → /mnt/user/data, QNAP → /share/Data, TrueNAS →
+  // /mnt/<pool>/data) so the UI can name it accurately instead of the
+  // misleading hardcoded "/volume1/Data" on non-Synology hosts.
+  const dataSharePath = section(o, 'data_share_path').split('\n')[0]?.trim() || null
   const dataShareExists = section(o, 'data_share_exists') === 'y'
   const dataShareWritableRaw = section(o, 'data_share_writable')
   let dataShareWritable: boolean | null
@@ -391,6 +441,7 @@ export async function detectEnv(
     defaultIp,
     sshClientIp,
     replyIp,
+    dataSharePath,
     dataShareExists,
     dataShareWritable,
     dataShareAcl,
@@ -419,10 +470,12 @@ function pickFamilyDefaults(
     case 'synology':
       // DSM convention: /volume1 (or /volume2 if user picked that for
       // Docker). The "Docker" shared folder on Synology DSM is the
-      // canonical home for compose stacks.
+      // canonical home for compose stacks. /volume1 is overwhelmingly
+      // the default; the ~3% of users on /volume2 just edit the
+      // Configure-screen field to point at the right volume.
       return {
-        installDir: has('/volume1') ? '/volume1/docker/media' : '/volume1/docker/media',
-        dataRoot:   has('/volume1') ? '/volume1/Data' : '/volume1/Data',
+        installDir: '/volume1/docker/media',
+        dataRoot:   '/volume1/Data',
       }
     case 'qnap':
       // QNAP exposes Container Station's working dir under /share/Container.

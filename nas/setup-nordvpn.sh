@@ -9,7 +9,7 @@
 # ProtonVPN's dashboard).
 #
 # Usage:
-#   bash /volume1/docker/media/setup-nordvpn.sh
+#   bash <INSTALL_DIR>/setup-nordvpn.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
