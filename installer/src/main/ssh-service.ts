@@ -281,7 +281,18 @@ function execOnce(
       stream.stderr.on('data', (d: Buffer) => { stderr += d.toString('utf8') })
       stream.on('error', (e: Error) => finish(e))
       stream.on('close', (code: number, signal: string) =>
-        finish({ exitCode: code, signal: signal ?? null, stdout, stderr }),
+        // Strip benign sudo-chdir noise from stderr before returning —
+        // it appears on every command run as a non-root user when
+        // Synology's User Home Service is disabled, and the wizard
+        // doesn't actually need a home directory. The opts password
+        // never echoes here (no PTY) but pass it through the same
+        // redaction helper so we have one place to maintain.
+        finish({
+          exitCode: code,
+          signal: signal ?? null,
+          stdout: redactStreamChunk(stdout, opts?.stdinPassword ? [opts.stdinPassword] : []),
+          stderr: redactStreamChunk(stderr, opts?.stdinPassword ? [opts.stdinPassword] : []),
+        }),
       )
 
       // Pipe sudo password if the caller supplied one. Without this,
@@ -322,6 +333,33 @@ export async function exec(args: { sessionId: string; cmd: string; sudo?: boolea
   })
 }
 
+/** Redact sensitive content (the user's sudo password) from a stream
+ *  chunk before it's forwarded to the renderer's log panel or the
+ *  on-disk install log. We allocate a PTY for streaming commands so
+ *  child processes use line-buffered output; the cost is that the
+ *  PTY's line discipline ECHOES anything we write to stdin — including
+ *  the sudo password. Without this filter that echo lands verbatim in
+ *  both the UI log AND the per-run log file on the user's machine. */
+function redactStreamChunk(chunk: string, secrets: string[]): string {
+  let out = chunk
+  for (const s of secrets) {
+    if (!s) continue
+    // Replace verbatim. Sudo passwords don't contain regex metachars
+    // typically, but we use split/join so we don't care if they do.
+    out = out.split(s).join('•'.repeat(Math.max(3, Math.min(s.length, 8))))
+  }
+  // Drop benign noise lines that have no actionable content and just
+  // bloat the log. So far only one offender: sudo's stderr complaint
+  // when the target user's home directory doesn't exist (Synology
+  // with User Home Service disabled — common on DSM7). The wizard
+  // doesn't need a home directory for any operation it performs.
+  out = out.replace(
+    /Could not chdir to home directory [^\n]*: No such file or directory\r?\n?/g,
+    '',
+  )
+  return out
+}
+
 export async function execStream(args: {
   sessionId: string
   cmd: string
@@ -333,6 +371,11 @@ export async function execStream(args: {
 
   const fullCmd = wrapSudo(args.sessionId, args.cmd, !!args.sudo)
   const channelId = args.channelId
+  // Secrets to scrub from every outbound chunk. The sudo password is
+  // the one that PTY-echoes; we also redact the SSH password defensively
+  // in case a future code path writes it through a PTY too.
+  const secrets = [sess.config.sudoPassword, sess.config.password]
+    .filter((s): s is string => typeof s === 'string' && s.length > 0)
 
   return new Promise((resolve, reject) => {
     sess.client.exec(fullCmd, { pty: true }, (err, stream) => {
@@ -345,14 +388,16 @@ export async function execStream(args: {
       }
 
       stream.on('data', (d: Buffer) => {
-        const chunk = d.toString('utf8')
+        const chunk = redactStreamChunk(d.toString('utf8'), secrets)
+        if (!chunk) return
         send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stdout', chunk })
         // Mirror to the on-disk install log so the user has a permanent
         // record. install-log no-ops if no log file is open.
         appendInstallLog(chunk)
       })
       stream.stderr.on('data', (d: Buffer) => {
-        const chunk = d.toString('utf8')
+        const chunk = redactStreamChunk(d.toString('utf8'), secrets)
+        if (!chunk) return
         send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stderr', chunk })
         appendInstallLog(chunk)
       })
