@@ -706,72 +706,94 @@ export function ConfigureScreen() {
         </span>
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">SABnzbd usenet provider</h2>
-        <p className="text-sm text-slate-400">
-          Optional. Adds a news server to SABnzbd at first install. Leave the
-          host blank to skip — you can always add servers later in
-          <a className="text-emerald-400 underline mx-1" href="#" onClick={(e) => e.preventDefault()}>
-            SABnzbd → Config → Servers
-          </a>.
-          Common providers: <code className="text-slate-300">news.eweka.nl</code>,
-          {' '}<code className="text-slate-300">news.usenetserver.com</code>,
-          {' '}<code className="text-slate-300">news.giganews.com</code>.
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Host" k="USENET_HOST" placeholder="news.eweka.nl" />
-          <Field label="Port" k="USENET_PORT" placeholder="563" />
-          <Field label="Username" k="USENET_USER" />
-          <Field label="Password" k="USENET_PASS" type="password" />
-          <Field label="Connections" k="USENET_CONNECTIONS" placeholder="8" />
-          <div>
-            <label className="block text-sm font-medium mb-1">SSL</label>
-            <select
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-              value={config.USENET_SSL ?? '1'}
-              onChange={(e) => update('USENET_SSL', e.target.value)}
-            >
-              <option value="1">On (recommended)</option>
-              <option value="0">Off</option>
-            </select>
-          </div>
-        </div>
-      </section>
+      {/* Advanced expander: provider-specific account credentials (Usenet
+          provider, indexer API keys, private-tracker logins, Bazarr
+          subtitle accounts). All of these can be skipped at install time
+          and configured later via the service's web UI — the wizard's
+          default install gives the user a fully working stack with free
+          / public indexers / providers. Collapsed by default to reduce
+          the cognitive load on the Configure screen; the user clicks to
+          expand if they want to pre-fill credentials. Note we deliberately
+          keep VPN, ARR Web UI auth, and qBittorrent WebUI ABOVE this —
+          those affect the install flow itself, not just post-install
+          niceties. */}
+      <details className="space-y-2">
+        <summary className="cursor-pointer text-lg font-medium border-b border-slate-800 pb-2 hover:text-emerald-300 select-none">
+          Advanced
+          <span className="text-xs font-normal text-slate-500 ml-2">
+            (click to expand — account-based usenet provider, indexer API
+            keys, private-tracker logins, subtitle providers)
+          </span>
+        </summary>
+        <div className="space-y-8 pt-4">
+          <section className="space-y-4">
+            <h3 className="text-base font-medium">SABnzbd usenet provider</h3>
+            <p className="text-sm text-slate-400">
+              Optional. Adds a news server to SABnzbd at first install. Leave the
+              host blank to skip — you can always add servers later in
+              <a className="text-emerald-400 underline mx-1" href="#" onClick={(e) => e.preventDefault()}>
+                SABnzbd → Config → Servers
+              </a>.
+              Common providers: <code className="text-slate-300">news.eweka.nl</code>,
+              {' '}<code className="text-slate-300">news.usenetserver.com</code>,
+              {' '}<code className="text-slate-300">news.giganews.com</code>.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Host" k="USENET_HOST" placeholder="news.eweka.nl" />
+              <Field label="Port" k="USENET_PORT" placeholder="563" />
+              <Field label="Username" k="USENET_USER" />
+              <Field label="Password" k="USENET_PASS" type="password" />
+              <Field label="Connections" k="USENET_CONNECTIONS" placeholder="8" />
+              <div>
+                <label className="block text-sm font-medium mb-1">SSL</label>
+                <select
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                  value={config.USENET_SSL ?? '1'}
+                  onChange={(e) => update('USENET_SSL', e.target.value)}
+                >
+                  <option value="1">On (recommended)</option>
+                  <option value="0">Off</option>
+                </select>
+              </div>
+            </div>
+          </section>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Usenet indexers</h2>
-        <p className="text-sm text-slate-400">
-          AnimeTosho, ABNzb, and Althub are added automatically (no key needed).
-          Toggle others on if you have an account.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          {USENET_INDEXERS.map((d) => (
-            <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
-          ))}
-        </div>
-      </section>
+          <section className="space-y-3">
+            <h3 className="text-base font-medium">Usenet indexers</h3>
+            <p className="text-sm text-slate-400">
+              AnimeTosho, ABNzb, and Althub are added automatically (no key needed).
+              Toggle others on if you have an account.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {USENET_INDEXERS.map((d) => (
+                <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+              ))}
+            </div>
+          </section>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Private torrent trackers</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {PRIVATE_TRACKERS.map((d) => (
-            <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
-          ))}
-        </div>
-      </section>
+          <section className="space-y-3">
+            <h3 className="text-base font-medium">Private torrent trackers</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {PRIVATE_TRACKERS.map((d) => (
+                <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+              ))}
+            </div>
+          </section>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Bazarr subtitle providers</h2>
-        <p className="text-sm text-slate-400">
-          Free providers (YIFY, Podnapisi) are added automatically. Add account-based
-          providers below for better coverage.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          {BAZARR_PROVIDERS.map((d) => (
-            <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
-          ))}
+          <section className="space-y-3">
+            <h3 className="text-base font-medium">Bazarr subtitle providers</h3>
+            <p className="text-sm text-slate-400">
+              Free providers (YIFY, Podnapisi) are added automatically. Add account-based
+              providers below for better coverage.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {BAZARR_PROVIDERS.map((d) => (
+                <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+              ))}
+            </div>
+          </section>
         </div>
-      </section>
+      </details>
 
       {/* Full error list stays in the scrollable body so the user can
           read all of them. The footer below shows a compact "N issues"

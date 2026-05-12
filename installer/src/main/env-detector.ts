@@ -450,6 +450,38 @@ export async function detectEnv(
     dataCandidates,
     suggestedInstallDir: familyDefaults.installDir,
     suggestedDataRoot:   familyDefaults.dataRoot,
+    suggestedPuid:       pickFamilyIdDefaults(nasFamily).puid,
+    suggestedPgid:       pickFamilyIdDefaults(nasFamily).pgid,
+  }
+}
+
+/** Family-aware PUID/PGID fallback. The Configure screen prefers the
+ *  user dropdown (driven by reading /etc/passwd over SSH), but when that
+ *  hasn't loaded yet — or the user types in INSTALL_DIR before connecting
+ *  — these defaults seed the form with a value that's at least valid for
+ *  the detected NAS family.
+ *
+ *  The historical baseline was '1026'/'100' (Synology convention: PUID
+ *  starts at 1026 because DSM reserves 1000-1025 for system services).
+ *  That breaks on every other family:
+ *    - Unraid: nobody=99 / users=100 — the linuxserver/* images
+ *      explicitly look for these and chown -R on every boot.
+ *    - TrueNAS SCALE: apps=568 / apps=568 — k3s creates this user.
+ *    - QNAP / OMV / generic Linux: 1000/100 is the convention for the
+ *      first interactive user.
+ *
+ *  Used as a fallback only — the user dropdown overrides this once it
+ *  populates from the real /etc/passwd. */
+function pickFamilyIdDefaults(
+  family: EnvDetectResult['nasFamily'],
+): { puid: string; pgid: string } {
+  switch (family) {
+    case 'synology': return { puid: '1026', pgid: '100' }
+    case 'unraid':   return { puid: '99',   pgid: '100' }
+    case 'truenas':  return { puid: '568',  pgid: '568' }
+    case 'qnap':     return { puid: '1000', pgid: '100' }
+    case 'omv':      return { puid: '1000', pgid: '100' }
+    default:         return { puid: '1000', pgid: '1000' }
   }
 }
 

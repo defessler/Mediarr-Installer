@@ -164,6 +164,14 @@ export interface EnvDetectResult {
   /** Family-aware default for DATA_ROOT (where the user's media +
    *  downloads live — bind-mounted as /data inside the arr containers). */
   suggestedDataRoot: string
+  /** Family-aware fallback for PUID. Used to seed the Configure form
+   *  before the /etc/passwd-driven user dropdown finishes populating;
+   *  once that loads, the user picks a real account and PUID/PGID get
+   *  overwritten with the chosen UID/GID. Defaults vary by family:
+   *  Synology 1026, Unraid 99, TrueNAS 568, QNAP/OMV/Linux 1000. */
+  suggestedPuid: string
+  /** Family-aware fallback for PGID. See suggestedPuid. */
+  suggestedPgid: string
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────

@@ -113,6 +113,22 @@ export function EnvDetectScreen() {
           )) {
           patch.DATA_ROOT = r.suggestedDataRoot
         }
+        // Family-aware PUID/PGID fallback. Same logic: if the form still
+        // holds the Synology-historical "1026"/"100" defaults but we're
+        // on a different family, swap in that family's convention so the
+        // Configure screen doesn't seed the form with values the user
+        // would have to manually fix (and the linuxserver/* containers
+        // would chown-spam over on every boot). User-explicit edits +
+        // /etc/passwd-driven dropdown selections still take precedence —
+        // they don't match the historical defaults so this branch skips.
+        const SYNOLOGY_DEFAULT_PUID = '1026'
+        const SYNOLOGY_DEFAULT_PGID = '100'
+        if (r.suggestedPuid && wrongFamilyDefault && config.PUID === SYNOLOGY_DEFAULT_PUID) {
+          patch.PUID = r.suggestedPuid
+        }
+        if (r.suggestedPgid && wrongFamilyDefault && config.PGID === SYNOLOGY_DEFAULT_PGID) {
+          patch.PGID = r.suggestedPgid
+        }
         // INSTALL_DIR also drives the wizard's targetDir (where the
         // payload + setup.sh land on the NAS). Keep them in sync so
         // RunScreen doesn't try to SFTP to /volume1/docker/media on an
