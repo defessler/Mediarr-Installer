@@ -33,6 +33,7 @@ import {
   decryptExport,
   encryptExport,
   EXPORT_FORMAT_VERSION,
+  validateEnvelopeShape,
   type ProfileExportEnvelope,
 } from './profile-crypto.js'
 import type {
@@ -284,6 +285,9 @@ export async function touchProfile(id: string): Promise<void> {
 /** Build the export envelope for a profile. Caller is expected to
  *  prompt for the passphrase before invoking this. */
 export async function exportProfile(id: string, passphrase: string): Promise<ProfileExportEnvelope> {
+  if (typeof passphrase !== 'string' || passphrase.length === 0) {
+    throw new Error('Passphrase is required.')
+  }
   const p = await loadProfile(id)
   if (!p) throw new Error(`profile ${id} not found`)
   // Payload shape mirrors LoadedProfile minus the machine-local id and
@@ -303,18 +307,34 @@ export async function exportProfile(id: string, passphrase: string): Promise<Pro
  *  the new SavedProfile (with a fresh id) so the renderer can route
  *  the user straight into it. Throws "wrong-passphrase" on tag-mismatch. */
 export async function importProfile(args: {
-  envelope: ProfileExportEnvelope
+  envelope: unknown
   passphrase: string
 }): Promise<SavedProfile> {
-  if (args.envelope?.format !== EXPORT_FORMAT_VERSION) {
-    throw new Error(`Unsupported export format "${args.envelope?.format}".`)
+  if (typeof args.passphrase !== 'string' || args.passphrase.length === 0) {
+    throw new Error('Passphrase is required.')
   }
-  const plaintext = decryptExport({ envelope: args.envelope, passphrase: args.passphrase })
-  const parsed = JSON.parse(plaintext) as {
+  // Defensive shape-check at the IPC boundary — the renderer is
+  // trusted code but a corrupt or hand-edited .mediarr-profile.json
+  // could still reach here with garbage data.
+  const shapeError = validateEnvelopeShape(args.envelope)
+  if (shapeError) {
+    throw new Error(`Export file is malformed: ${shapeError}`)
+  }
+  const envelope = args.envelope as ProfileExportEnvelope
+  if (envelope.format !== EXPORT_FORMAT_VERSION) {
+    throw new Error(`Unsupported export format "${envelope.format}".`)
+  }
+  const plaintext = await decryptExport({ envelope, passphrase: args.passphrase })
+  let parsed: {
     label?: string
     connection?: ProfileConnection
     targetDir?: string
     config?: Record<string, string>
+  }
+  try {
+    parsed = JSON.parse(plaintext)
+  } catch {
+    throw new Error('Decrypted payload was not valid JSON — file may be corrupted.')
   }
   if (!parsed?.connection || !parsed?.label) {
     throw new Error('Export file is missing required fields (connection / label).')

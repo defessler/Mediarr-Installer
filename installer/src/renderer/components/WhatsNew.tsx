@@ -17,6 +17,26 @@ interface Props {
 //   *italic* / **bold**         emphasis
 // We render that and ESCAPE everything else (no <script>, no raw HTML).
 // zero deps — release notes are a few KB at most.
+//
+// Security note: the *only* place where we accept potentially-attacker-
+// controlled data and use it in something other than text content is
+// the link href. A malicious release body could include
+// `[click me](javascript:alert(1))` — React doesn't sanitise `href`,
+// it'll happily render that and the link IS clickable. So we whitelist
+// http:/https:/mailto: at the parser level. Anything else falls back
+// to plain text.
+function safeUrl(href: string): string | null {
+  const trimmed = href.trim()
+  if (!trimmed) return null
+  if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed
+  // Allow protocol-relative // and root-relative / urls too — they
+  // resolve under our app's origin, which is benign.
+  if (/^\/\//.test(trimmed)) return 'https:' + trimmed
+  if (/^\//.test(trimmed)) return trimmed
+  // Reject javascript:, data:, vbscript:, file:, etc.
+  return null
+}
+
 function renderNotes(md: string): React.ReactNode {
   if (!md.trim()) return <p className="text-slate-500 italic">No release notes provided.</p>
   const out: React.ReactNode[] = []
@@ -30,13 +50,20 @@ function renderNotes(md: string): React.ReactNode {
     let rest = text
     let idx = 0
     while (rest.length > 0) {
-      // [link](url)
+      // [link](url) — only http(s) / mailto / relative; reject
+      // javascript:, data:, etc. URLs and render as plain text.
       const link = rest.match(/^\[([^\]]+)\]\(([^)\s]+)\)/)
       if (link) {
-        tokens.push(
-          <a key={idx++} href={link[2]} target="_blank" rel="noreferrer"
-             className="text-emerald-400 hover:underline">{link[1]}</a>,
-        )
+        const safe = safeUrl(link[2])
+        if (safe) {
+          tokens.push(
+            <a key={idx++} href={safe} target="_blank" rel="noreferrer"
+               className="text-emerald-400 hover:underline">{link[1]}</a>,
+          )
+        } else {
+          // Unsafe scheme — drop the link wrapping but keep the text.
+          tokens.push(<span key={idx++}>{link[1]}</span>)
+        }
         rest = rest.slice(link[0].length); continue
       }
       // **bold**

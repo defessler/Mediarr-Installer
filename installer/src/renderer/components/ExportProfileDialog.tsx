@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { reportError } from '../store/errors.js'
 
 interface Props {
@@ -47,6 +47,19 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
   const tooWeak = score === 0
   const canExport = !busy && !!pass && confirmsMatch && !tooWeak
 
+  // ESC closes the dialog (unless we're mid-export — the user almost
+  // certainly didn't mean to abandon their PBKDF2 work).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
   async function doExport() {
     if (!canExport) return
     setBusy(true)
@@ -58,8 +71,12 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
         defaultName,
         content: json,
         title: `Export ${profileLabel}`,
+        // Electron filter extensions must be single segments; the
+        // double-dot ".mediarr-profile.json" we ship in defaultName
+        // stays in the filename but the file picker filters on just
+        // ".json" so users can still see it when browsing.
         filters: [
-          { name: 'Mediarr profile', extensions: ['mediarr-profile.json', 'json'] },
+          { name: 'Mediarr profile (.json)', extensions: ['json'] },
           { name: 'All files', extensions: ['*'] },
         ],
       })
@@ -72,10 +89,15 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="export-dialog-title"
+    >
       <div className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 shadow-xl shadow-black/40 p-5 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold">Export profile</h2>
+          <h2 id="export-dialog-title" className="text-lg font-semibold">Export profile</h2>
           <p className="text-sm text-slate-400 mt-1">
             Saves <span className="font-medium text-slate-200">{profileLabel}</span> to a
             passphrase-protected file you can carry to another machine. The file is
@@ -119,8 +141,9 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
             type="password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') doExport() }}
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm"
-            placeholder="Re-type"
+            placeholder="Re-type (Enter to export)"
           />
           {confirm && !confirmsMatch && (
             <p className="text-xs text-rose-300 mt-1">Doesn't match the passphrase above.</p>

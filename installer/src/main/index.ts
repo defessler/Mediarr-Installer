@@ -2,7 +2,7 @@
 // owns the app lifecycle.
 
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { createWriteStream, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, basename } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -96,16 +96,36 @@ export function skipCurrentUpdate(): void {
   writeSkippedVersion(updateInfo.latest)
 }
 
+/** In-flight guard so a button-mash on the WhatsNew "Download zip"
+ *  button doesn't kick off two pipelines writing to the same path
+ *  (which corrupts the file and masks errors from each other). */
+let downloadInFlight: Promise<{ path: string | null; bytes: number }> | null = null
+
 /** Download the cached update's win-unpacked zip into the user's
  *  Downloads folder and reveal it in the OS file manager. Streams
  *  with no buffer, so a 200 MB build won't blow up memory. Returns
- *  the saved path + bytes. Throws on network failure / missing url. */
-export async function downloadUpdateZip(): Promise<{ path: string | null; bytes: number }> {
+ *  the saved path + bytes. Throws on network failure / missing url.
+ *  Concurrent calls return the same promise. */
+export function downloadUpdateZip(): Promise<{ path: string | null; bytes: number }> {
+  if (downloadInFlight) return downloadInFlight
+  downloadInFlight = doDownloadUpdateZip()
+    .finally(() => { downloadInFlight = null })
+  return downloadInFlight
+}
+
+async function doDownloadUpdateZip(): Promise<{ path: string | null; bytes: number }> {
   if (!updateInfo?.zipUrl) {
     throw new Error('No download URL on the current release — open the release page manually.')
   }
   const url = updateInfo.zipUrl
-  const filename = basename(new URL(url).pathname) || `mediarr-installer-v${updateInfo.latest}.zip`
+  // URL() can throw on malformed input. Defensive parse so the user
+  // gets a clear "bad URL from GitHub" instead of an unhandled throw.
+  let filename: string
+  try {
+    filename = basename(new URL(url).pathname) || `mediarr-installer-v${updateInfo.latest}.zip`
+  } catch {
+    filename = `mediarr-installer-v${updateInfo.latest}.zip`
+  }
   const target = join(app.getPath('downloads'), filename)
 
   const res = await fetch(url, {
@@ -116,12 +136,19 @@ export async function downloadUpdateZip(): Promise<{ path: string | null; bytes:
     throw new Error(`Download failed: HTTP ${res.status} from GitHub.`)
   }
   // Stream node-fetch's web ReadableStream into a fs WriteStream so we
-  // never buffer the whole zip in memory.
+  // never buffer the whole zip in memory. On any pipeline failure we
+  // unlink the partial file so the user's Downloads folder isn't
+  // littered with corrupt zips.
   const out = createWriteStream(target)
   let bytes = 0
   const reader = Readable.fromWeb(res.body as unknown as import('stream/web').ReadableStream)
   reader.on('data', (chunk: Buffer) => { bytes += chunk.length })
-  await pipeline(reader, out)
+  try {
+    await pipeline(reader, out)
+  } catch (e) {
+    try { unlinkSync(target) } catch { /* file may not exist or be locked */ }
+    throw e
+  }
   log.info(`update zip saved: ${target} (${bytes} bytes)`)
   // Reveal in Explorer so the user can swap the unpacked folder.
   try { shell.showItemInFolder(target) } catch { /* non-fatal */ }

@@ -70,7 +70,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC.profileExport, (_e, args: { id: string; passphrase: string }) =>
     profiles.exportProfile(args.id, args.passphrase))
   ipcMain.handle(IPC.profileImport, (_e, args: { envelope: unknown; passphrase: string }) =>
-    profiles.importProfile({ envelope: args.envelope as never, passphrase: args.passphrase }))
+    profiles.importProfile({ envelope: args.envelope, passphrase: args.passphrase }))
 
   // ── Dialogs ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.dialogSaveText, (_e, args: {

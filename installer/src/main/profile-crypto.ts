@@ -27,10 +27,16 @@
 import {
   createCipheriv,
   createDecipheriv,
-  pbkdf2Sync,
+  pbkdf2,
   randomBytes,
-  timingSafeEqual,
 } from 'node:crypto'
+import { promisify } from 'node:util'
+
+// Async pbkdf2 so the 200k SHA-256 rounds (≈100–300ms) don't block the
+// main process. Each call is rare (once per export click / per import
+// attempt) so the work itself isn't the concern — but blocking the
+// Electron event loop freezes the UI for that span, which is jarring.
+const pbkdf2Async = promisify(pbkdf2)
 
 export const EXPORT_FORMAT_VERSION = 'mediarr-profile/v1'
 const KDF_NAME = 'PBKDF2-SHA256'
@@ -49,18 +55,43 @@ export interface ProfileExportEnvelope {
   cipher: { name: string; iv: string; tag: string; ct: string }  // all base64
 }
 
+/** Validate that an arbitrary value looks like a ProfileExportEnvelope.
+ *  Used at IPC boundaries so a malformed import file can't sneak past
+ *  the type system. Returns null when valid; a human-readable error
+ *  string otherwise. */
+export function validateEnvelopeShape(v: unknown): string | null {
+  if (!v || typeof v !== 'object') return 'Not an object.'
+  const e = v as Partial<ProfileExportEnvelope>
+  if (e.format !== EXPORT_FORMAT_VERSION) {
+    return `Wrong format tag (got "${String(e.format)}", expected "${EXPORT_FORMAT_VERSION}").`
+  }
+  if (typeof e.label !== 'string') return 'Missing label.'
+  if (typeof e.exportedAt !== 'number') return 'Missing exportedAt timestamp.'
+  if (!e.kdf || typeof e.kdf !== 'object') return 'Missing kdf block.'
+  if (typeof e.kdf.name !== 'string' || typeof e.kdf.salt !== 'string'
+      || typeof e.kdf.iters !== 'number') {
+    return 'Malformed kdf block.'
+  }
+  if (!e.cipher || typeof e.cipher !== 'object') return 'Missing cipher block.'
+  if (typeof e.cipher.name !== 'string' || typeof e.cipher.iv !== 'string'
+      || typeof e.cipher.tag !== 'string' || typeof e.cipher.ct !== 'string') {
+    return 'Malformed cipher block.'
+  }
+  return null
+}
+
 /** Wrap a plaintext payload (will be JSON.stringify'd if not already a
  *  string) in a passphrase-protected envelope. */
-export function encryptExport(args: {
+export async function encryptExport(args: {
   payload: string | object
   passphrase: string
   label: string
-}): ProfileExportEnvelope {
+}): Promise<ProfileExportEnvelope> {
   const plaintext = typeof args.payload === 'string'
     ? args.payload
     : JSON.stringify(args.payload)
   const salt = randomBytes(KDF_SALT_LEN)
-  const key  = pbkdf2Sync(args.passphrase, salt, KDF_ITERS, KDF_KEY_LEN, 'sha256')
+  const key  = await pbkdf2Async(args.passphrase, salt, KDF_ITERS, KDF_KEY_LEN, 'sha256')
   const iv   = randomBytes(CIPHER_IV_LEN)
   const cipher = createCipheriv('aes-256-gcm', key, iv)
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
@@ -79,10 +110,10 @@ export function encryptExport(args: {
  *  - malformed envelope (caller surfaces "this file isn't a profile export")
  *  - wrong passphrase / tampered ciphertext (AES-GCM tag mismatch — caller
  *    surfaces "the passphrase didn't match"). */
-export function decryptExport(args: {
+export async function decryptExport(args: {
   envelope: ProfileExportEnvelope
   passphrase: string
-}): string {
+}): Promise<string> {
   const e = args.envelope
   if (e.format !== EXPORT_FORMAT_VERSION) {
     throw new Error(`Unsupported export format "${e.format}" (expected ${EXPORT_FORMAT_VERSION}).`)
@@ -97,19 +128,31 @@ export function decryptExport(args: {
   const iv   = Buffer.from(e.cipher.iv,  'base64')
   const tag  = Buffer.from(e.cipher.tag, 'base64')
   const ct   = Buffer.from(e.cipher.ct,  'base64')
+  if (salt.length !== KDF_SALT_LEN) {
+    throw new Error(`Bad salt length (${salt.length}, expected ${KDF_SALT_LEN}).`)
+  }
+  if (iv.length !== CIPHER_IV_LEN) {
+    throw new Error(`Bad IV length (${iv.length}, expected ${CIPHER_IV_LEN}).`)
+  }
   if (tag.length !== CIPHER_TAG_LEN) {
     throw new Error(`Bad auth tag length (${tag.length}, expected ${CIPHER_TAG_LEN}).`)
+  }
+  if (ct.length === 0) {
+    throw new Error('Empty ciphertext.')
   }
   const iters = Number(e.kdf.iters)
   if (!Number.isInteger(iters) || iters < 50_000 || iters > 5_000_000) {
     throw new Error(`KDF iteration count out of safe range (${e.kdf.iters}).`)
   }
-  const key = pbkdf2Sync(args.passphrase, salt, iters, KDF_KEY_LEN, 'sha256')
+  const key = await pbkdf2Async(args.passphrase, salt, iters, KDF_KEY_LEN, 'sha256')
   const decipher = createDecipheriv('aes-256-gcm', key, iv)
   decipher.setAuthTag(tag)
-  // Throws "Unsupported state" / "auth tag mismatch" on wrong key.
-  // Wrap so callers get a stable error message they can pattern-match
-  // against without exposing the raw OpenSSL strings.
+  // Past this point, the only realistic failure is GCM auth tag
+  // verification — which fires when either the passphrase is wrong
+  // OR the ciphertext has been tampered with. Both surface to the
+  // user as "wrong passphrase" since they can't distinguish. We
+  // deliberately don't pattern-match on the OpenSSL error string;
+  // any failure during this final block IS the auth check.
   try {
     const out = Buffer.concat([decipher.update(ct), decipher.final()])
     return out.toString('utf8')
@@ -121,7 +164,11 @@ export function decryptExport(args: {
 /** Lightweight strength heuristic for the passphrase-strength meter.
  *  Returns 0..4 where 0 = "too weak", 4 = "strong". No external deps;
  *  intentionally rough (avoid lulling the user into thinking we're
- *  doing rigorous entropy analysis). */
+ *  doing rigorous entropy analysis).
+ *
+ *  NB: ExportProfileDialog.tsx duplicates this for live-meter feedback
+ *  on every keystroke (avoids an IPC round-trip per character). If you
+ *  change the rules here, mirror them there. */
 export function passphraseStrength(p: string): 0 | 1 | 2 | 3 | 4 {
   if (!p) return 0
   let classes = 0
@@ -137,11 +184,4 @@ export function passphraseStrength(p: string): 0 | 1 | 2 | 3 | 4 {
   if (longEnough  && classes >= 3) return 3
   if (veryLong    && classes >= 3) return 4
   return 2
-}
-
-/** Constant-time string equality — used when comparing the user's
- *  confirmation re-type without leaking timing info. */
-export function passphraseConfirmsMatch(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
 }

@@ -25,10 +25,17 @@ export async function saveTextToFile(args: {
   return { saved: true, path: result.filePath }
 }
 
+/** Cap how large a file we'll ever slurp into memory through this
+ *  helper. 10 MB is wildly more than any text config we read here
+ *  (profile exports are a few KB), so this only matters if the user
+ *  picked the wrong file by mistake — better to fail fast than OOM
+ *  the main process trying to load their 8 GB ISO. */
+const MAX_OPEN_TEXT_BYTES = 10 * 1024 * 1024
+
 export async function openTextFromFile(args: {
   title?: string
   filters?: { name: string; extensions: string[] }[]
-}): Promise<{ opened: boolean; path: string | null; content: string | null }> {
+}): Promise<{ opened: boolean; path: string | null; content: string | null; error?: string }> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   const result = await dialog.showOpenDialog(win, {
     title: args.title ?? 'Open file',
@@ -42,9 +49,18 @@ export async function openTextFromFile(args: {
   }
   const path = result.filePaths[0]
   try {
+    const stat = await fs.stat(path)
+    if (stat.size > MAX_OPEN_TEXT_BYTES) {
+      return {
+        opened: false,
+        path,
+        content: null,
+        error: `File is ${(stat.size / (1024 * 1024)).toFixed(1)} MB — too large (cap is ${MAX_OPEN_TEXT_BYTES / (1024 * 1024)} MB).`,
+      }
+    }
     const content = await fs.readFile(path, 'utf8')
     return { opened: true, path, content }
   } catch (e) {
-    return { opened: false, path, content: null }
+    return { opened: false, path, content: null, error: (e as Error).message }
   }
 }

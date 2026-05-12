@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { reportError } from '../store/errors.js'
 import type { ProfileExportEnvelope, SavedProfile } from '../../shared/ipc.js'
 
@@ -18,17 +18,41 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // ESC closes the dialog unless mid-import (PBKDF2 takes ~200ms; not
+  // worth letting the user accidentally cancel and have to retype the
+  // passphrase). Same pattern as ExportProfileDialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
   async function pickFile() {
     setBusy(true); setError(null)
     try {
       const r = await window.installer.dialog.openText({
         title: 'Pick a .mediarr-profile.json file',
+        // Electron filter extensions are single-segment; "json" matches
+        // the .mediarr-profile.json files we write since the OS just
+        // looks at the last "." in the filename.
         filters: [
-          { name: 'Mediarr profile', extensions: ['mediarr-profile.json', 'json'] },
+          { name: 'Mediarr profile (.json)', extensions: ['json'] },
           { name: 'All files', extensions: ['*'] },
         ],
       })
-      if (!r.opened || !r.content) return
+      if (!r.opened) {
+        if (r.error) setError(r.error)
+        return
+      }
+      if (!r.content) {
+        setError('Couldn\'t read the file.')
+        return
+      }
       let parsed: unknown
       try {
         parsed = JSON.parse(r.content)
@@ -70,10 +94,15 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-dialog-title"
+    >
       <div className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 shadow-xl shadow-black/40 p-5 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold">Import profile</h2>
+          <h2 id="import-dialog-title" className="text-lg font-semibold">Import profile</h2>
           <p className="text-sm text-slate-400 mt-1">
             Loads a profile exported from this app on another machine. You'll
             need the passphrase that was set at export time.

@@ -101,7 +101,7 @@ const installer = {
     openText: (args: {
       title?: string
       filters?: { name: string; extensions: string[] }[]
-    }): Promise<{ opened: boolean; path: string | null; content: string | null }> =>
+    }): Promise<{ opened: boolean; path: string | null; content: string | null; error?: string }> =>
       ipcRenderer.invoke(IPC.dialogOpenText, args),
   },
   app: {

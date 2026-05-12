@@ -111,8 +111,11 @@ function VpnSection({
 
   function switchProvider(newId: VpnProvider['id']) {
     if (newId === currentId) return
-    // Clear all VPN-secret fields when switching, so e.g. a stale
-    // Mullvad WireGuard key doesn't carry into a Surfshark profile.
+    // Clear PROVIDER-SPECIFIC secret fields when switching so e.g. a
+    // stale Mullvad WireGuard key doesn't carry into a Surfshark
+    // profile. VPN_COUNTRIES + VPN_ENABLED stay — they're provider-
+    // agnostic and the user shouldn't have to re-type the country
+    // list just because they switched from NordVPN to Mullvad.
     const blanks: Partial<EnvFormValues> = {
       VPN_PROVIDER: newId,
       VPN_TYPE: findVpnProvider(newId).vpnType,
@@ -130,6 +133,14 @@ function VpnSection({
       update(k as keyof EnvFormValues, v as EnvFormValues[keyof EnvFormValues] | undefined)
     }
   }
+
+  // When a provider exposes a fetchKey API (NordVPN today), its access
+  // token field is already rendered in the "Fetch key" widget at the
+  // top of the dynamic-fields block. We hide it from the regular field
+  // list so the user doesn't see two copies of "NordVPN access token".
+  const dedupedFields = provider.fields.filter(
+    (f) => provider.fetchKeyEnvVar === undefined || f.envKey !== provider.fetchKeyEnvVar,
+  )
 
   return (
     <section className="space-y-4">
@@ -222,8 +233,10 @@ function VpnSection({
             </div>
           )}
 
-          {/* Dynamic per-provider fields */}
-          {provider.fields.map((f) => {
+          {/* Dynamic per-provider fields — the access-token field is
+              skipped (rendered above by the Fetch widget) so there's
+              only ever one input per env-var. */}
+          {dedupedFields.map((f) => {
             const value = (config[f.envKey] as string | undefined) ?? ''
             return (
               <div key={f.envKey}>
