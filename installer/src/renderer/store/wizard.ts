@@ -66,6 +66,24 @@ interface WizardState {
   targetDir: string
   setTargetDir: (d: string) => void
 
+  /** Per-profile snapshot of the most recent install run. Persisted so
+   *  Welcome can surface "last install failed at step N" on the relevant
+   *  profile card after the user closes and re-opens the app — turning a
+   *  surprise "I'll just try again" into a deliberate "this failed last
+   *  time, here's where; do I retry or fix something first?". Cleared
+   *  per-profile when a fresh install succeeds. */
+  lastRuns: Record<string, {
+    phase: 'failed' | 'done'
+    finishedAt: number          // Date.now()
+    failedStep?: number         // 1-10 if phase=failed and we parsed a step marker
+    exitCode?: number | null    // setup.sh exit code; null if it never finished cleanly
+  }>
+  recordRunResult: (
+    profileId: string,
+    result: { phase: 'failed' | 'done'; failedStep?: number; exitCode?: number | null },
+  ) => void
+  clearRunResult: (profileId: string) => void
+
   /** Replace the whole wizard state from a freshly-loaded profile. */
   loadFromProfile: (p: {
     id: string
@@ -161,6 +179,21 @@ export const useWizard = create<WizardState>()(
       targetDir: DEFAULT_TARGET,
       setTargetDir: (targetDir) => set({ targetDir }),
 
+      lastRuns: {},
+      recordRunResult: (profileId, result) =>
+        set((s) => ({
+          lastRuns: {
+            ...s.lastRuns,
+            [profileId]: { ...result, finishedAt: Date.now() },
+          },
+        })),
+      clearRunResult: (profileId) =>
+        set((s) => {
+          const next = { ...s.lastRuns }
+          delete next[profileId]
+          return { lastRuns: next }
+        }),
+
       loadFromProfile: (p) => {
         // Backward-compat migration: profiles created before the
         // multi-provider VPN refactor only had NORDVPN_PRIVATE_KEY.
@@ -220,6 +253,12 @@ export const useWizard = create<WizardState>()(
         mode: s.mode,
         activeProfileId: s.activeProfileId,
         activeProfileLabel: s.activeProfileLabel,
+        // Persist the per-profile run result map so the WelcomeScreen
+        // can flag "last install failed at step N" on the affected
+        // profile card after an app restart. Small bounded shape: one
+        // tiny object per profile, cleared when a fresh install
+        // succeeds — no risk of unbounded growth.
+        lastRuns: s.lastRuns,
       }),
     },
   ),

@@ -6,8 +6,22 @@ import { ExportProfileDialog } from '../components/ExportProfileDialog.js'
 import { ImportProfileDialog } from '../components/ImportProfileDialog.js'
 import { WhatsNew } from '../components/WhatsNew.js'
 
+/** Friendly "5 min ago" / "2 hours ago" / "3 days ago". Cheap +
+ *  good-enough for last-run timestamps on the Welcome screen; no
+ *  Intl.RelativeTimeFormat dance, no date-fns dependency. */
+function timeAgo(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
+  if (s < 60)        return `${s}s ago`
+  const m = Math.round(s / 60)
+  if (m < 60)        return `${m} min ago`
+  const h = Math.round(m / 60)
+  if (h < 48)        return `${h}h ago`
+  const d = Math.round(h / 24)
+  return `${d}d ago`
+}
+
 export function WelcomeScreen() {
-  const { setMode, setStep, loadFromProfile, activeProfileId, setActiveProfileLabel } = useWizard()
+  const { setMode, setStep, loadFromProfile, activeProfileId, setActiveProfileLabel, lastRuns } = useWizard()
   const [profiles, setProfiles] = useState<SavedProfile[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -210,6 +224,19 @@ export function WelcomeScreen() {
                     {p.hasConfig && <span className="text-emerald-500/80 ml-2">· config saved</span>}
                     {p.hasSecret && <span className="text-emerald-500/80 ml-2">· secrets saved</span>}
                   </div>
+                  {/* "Last run failed" indicator — surfaced when the user
+                      closed the app after a failed install and is now
+                      coming back. Tiny amber pill so it stands out from
+                      the normal status line but doesn't crowd the card. */}
+                  {lastRuns[p.id]?.phase === 'failed' && (
+                    <div className="text-xs text-amber-300/90 truncate mt-0.5">
+                      ✘ Last install failed
+                      {lastRuns[p.id].failedStep != null && (
+                        <span> at step {lastRuns[p.id].failedStep}</span>
+                      )}
+                      <span className="text-slate-500 ml-1">· {timeAgo(lastRuns[p.id].finishedAt)}</span>
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => pickProfile(p.id, 'edit')}

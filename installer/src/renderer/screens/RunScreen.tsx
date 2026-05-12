@@ -30,7 +30,7 @@ const STEP_OK_RE    = /✔\s*Step\s+(\d+)\s+complete/
 const STEP_FAIL_RE  = /✘\s*Step\s+(\d+)\s+failed/
 
 export function RunScreen() {
-  const { sessionId, targetDir, config, setConfig, setStep } = useWizard()
+  const { sessionId, targetDir, config, setConfig, setStep, activeProfileId, recordRunResult, clearRunResult } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<{ pct: number; file: string } | null>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -253,6 +253,29 @@ export function RunScreen() {
         // The remote setup.sh finished — flush + close the on-disk
         // log so it's complete on disk even if the app gets killed.
         window.installer.installLog.close().catch(() => { /* non-fatal */ })
+        // Persist the run result against the active profile so Welcome
+        // can flag "last install failed at step N" if the user closes
+        // the app and comes back later. On success we clear the entry
+        // (fresh slate); on failure we record exitCode + the first
+        // step that's still in 'running' or 'fail' state, which the
+        // marker parser populated.
+        if (activeProfileId) {
+          if (d.exitCode === 0) {
+            clearRunResult(activeProfileId)
+          } else {
+            // Snapshot steps at the moment of close — useState's setter
+            // gives us the latest state without a stale-closure read.
+            setSteps((prev) => {
+              const failed = prev.find((s) => s.status === 'fail' || s.status === 'running')
+              recordRunResult(activeProfileId, {
+                phase: 'failed',
+                exitCode: d.exitCode,
+                failedStep: failed?.number,
+              })
+              return prev    // unchanged — we only needed the snapshot
+            })
+          }
+        }
         // Any remaining "running" steps after a clean exit are implicitly ok.
         // After a failed exit, the failed step already got marked fail by
         // the marker parser; leave others alone.
@@ -945,7 +968,12 @@ export function RunScreen() {
           {phase === 'writing-env' && 'Writing .env'}
           {phase === 'running-setup' && 'Running setup.sh — see log'}
           {phase === 'done'   && '✓ Install complete — click Continue'}
-          {phase === 'failed' && '✘ Install failed — see log, then Retry'}
+          {phase === 'failed' && (
+            <span>
+              ✘ Install failed — <span className="text-slate-300">Retry</span> to re-run as-is,
+              or <span className="text-slate-300">Back</span> to fix a config field first
+            </span>
+          )}
         </div>
         <button
           onClick={go}
