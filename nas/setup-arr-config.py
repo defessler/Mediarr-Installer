@@ -851,14 +851,24 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
 def configure_qbittorrent(base, username, password):
     """Set qBittorrent preferences via the Web API (cookie auth).
 
-    On linuxserver/qbittorrent's first boot the WebUI password may be a
-    randomly-generated temp password that gets printed to docker logs
-    until the user changes it. Our custom-cont-init.d script writes
-    the configured password into the qBittorrent.conf BEFORE the daemon
-    starts — but if the daemon was racing the init script (rare, but
-    happens on slow Synology spinning rust), the credentials we send
-    won't match. Retry the login a few times before giving up so we
-    don't false-negative on timing."""
+    setup-folders.sh pre-writes /volume1/docker/media/qbittorrent/config/
+    qBittorrent/qBittorrent.conf with a PBKDF2 hash derived from
+    QBITTORRENT_PASS, so the daemon boots with the user's credentials
+    on first launch. If login still fails here it's either:
+      (a) the daemon's still finishing startup (transient — retry once)
+      (b) a stale .credentials-set file from an old wizard version (the
+          legacy in-container init script which we now clean up in
+          setup-folders.sh, but a re-run might come AFTER that script
+          already ran with the bug)
+      (c) the password truly doesn't match (user manually changed it
+          in the qBittorrent UI after a previous install)
+
+    Distinguish (a) from (c): qBittorrent's auth API returns 'Ok.' on
+    success, 'Fails.' on wrong creds, and empty body when the daemon is
+    busy/restarting. Only retry on the empty/network case — retrying a
+    'Fails.' just burns through qBittorrent's IP-ban budget (default 5
+    failed logins / 5 minutes → 1 hour ban) and makes diagnostics
+    harder."""
     section("qBittorrent")
 
     import http.cookiejar
@@ -867,42 +877,52 @@ def configure_qbittorrent(base, username, password):
     cj = http.cookiejar.CookieJar()
     opener = build_opener(HTTPCookieProcessor(cj))
 
-    # Login with a short retry loop. qBittorrent's WebUI also enforces
-    # a brief lock-out after a couple of failed attempts, so back off
-    # generously between tries.
-    last_result = ''
-    last_error = None
-    authed = False
-    for attempt in range(4):
-        if attempt > 0:
-            time.sleep(8)
+    def attempt_login() -> tuple[str, Exception | None]:
+        """Returns (response-body, error). Empty body + None error = 200 OK
+        with no content (qBittorrent under stress). Non-None error = network
+        / HTTP failure."""
         try:
-            login_data = urlencode({'username': username, 'password': password}).encode()
-            resp = opener.open(f"{base}/api/v2/auth/login", login_data, timeout=10)
-            last_result = resp.read().decode().strip()
-            if last_result == 'Ok.':
-                authed = True
-                break
+            data = urlencode({'username': username, 'password': password}).encode()
+            resp = opener.open(f"{base}/api/v2/auth/login", data, timeout=10)
+            return resp.read().decode().strip(), None
         except Exception as e:
-            last_error = e
+            return '', e
 
-    if not authed:
+    last_result, last_error = attempt_login()
+    # 'Fails.' is qBittorrent's "wrong credentials" — no point retrying,
+    # would just burn through the ban budget. Anything else (empty body,
+    # network error, connection reset) might be a transient first-boot
+    # issue worth ONE retry.
+    if last_result != 'Ok.' and last_result != 'Fails.':
+        time.sleep(8)
+        last_result, last_error = attempt_login()
+
+    if last_result == 'Ok.':
+        ok("qBittorrent authenticated")
+    elif last_result == 'Fails.':
+        warn(f"qBittorrent login rejected: username='{username}' did not match qBittorrent.conf.")
+        warn("This usually means qBittorrent's WebUI password was changed manually after a")
+        warn("previous install. Fix:")
+        warn("  1. docker logs qbittorrent | grep -i 'temporary password'  — if recent, use that")
+        warn("  2. Either log in via the qBittorrent UI and set the password to match")
+        warn("     QBITTORRENT_PASS in .env, OR delete the qBittorrent config and re-run:")
+        warn("       rm /volume1/docker/media/qbittorrent/config/qBittorrent/qBittorrent.conf")
+        warn("       docker compose restart qbittorrent")
+        warn("       sudo bash /volume1/docker/media/setup.sh")
+        warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
+        return
+    else:
+        # Empty body or network error — qBittorrent's WebUI is up but
+        # auth handler didn't speak to us. Common right after a fresh
+        # container start.
         if last_error is not None:
             warn(f"qBittorrent not reachable: {last_error} — skipping watch folder setup")
         else:
-            # Most common cause on a fresh install: linuxserver's image
-            # generated a temp password that printed to its container
-            # log, and the user hasn't run the wizard's init-script yet.
-            # Surface the actionable fix instead of an opaque empty body.
-            warn(f"qBittorrent login failed (last response: '{last_result}' — wrong username/password?)")
-            warn("Fix order:")
-            warn("  1. docker logs qbittorrent | grep -i 'temporary password'  — see what qBittorrent generated")
-            warn("  2. Either log in with that temp password and change it to match QBITTORRENT_PASS in .env,")
-            warn("     OR delete /volume1/docker/media/qbittorrent/config/.credentials-set and restart the")
-            warn("     qbittorrent container to re-trigger the init script that writes the password.")
-            warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
+            warn(f"qBittorrent login returned empty response — daemon may still be starting.")
+            warn("Re-run sudo bash /volume1/docker/media/setup.sh in a minute or two; if it")
+            warn("keeps happening, check 'docker logs qbittorrent' for startup errors.")
+        warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
         return
-    ok("qBittorrent authenticated")
 
     # Get current scan_dirs
     try:
@@ -1470,15 +1490,24 @@ def main():
     if not LIDARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Lidarr", LIDARR, LIDARR_KEY, "/api/v1/system/status"):
-        # Lidarr's API can answer /system/status before its default
-        # quality/metadata profiles are inserted (especially on a fresh
-        # first-run DB). Poll the profile endpoints with a short backoff
-        # so we don't try to attach the root folder to a non-existent
-        # defaultQualityProfileId=1 (the previous fallback — Lidarr
-        # then 400s with "Quality Profile does not exist").
+        # Lidarr's API answers /system/status well before its DB has
+        # inserted the default quality + metadata profiles (Sonarr and
+        # Radarr also lazy-init these, but Lidarr is noticeably slower
+        # on first run — 30s was previously not enough on Synology
+        # spinning rust). Two-pronged approach:
+        #   1. Hit several Lidarr endpoints first so any lazy-init they
+        #      trigger (e.g. metadata profiles get created on first
+        #      access in some Lidarr versions) is kicked off.
+        #   2. Poll for up to 2 minutes (24×5s) instead of 30s.
+        # If profiles STILL haven't appeared after 2 minutes the user
+        # almost certainly needs to visit the UI once — surface the
+        # actionable hint then.
+        for warmup in ("/api/v1/qualityprofile", "/api/v1/metadataprofile",
+                       "/api/v1/customformat", "/api/v1/indexer"):
+            GET(LIDARR, LIDARR_KEY, warmup)  # ignore results, just touch them
         lidarr_quality_id = None
         lidarr_meta_id    = None
-        for attempt in range(6):  # up to ~30s
+        for attempt in range(24):  # up to ~120s
             qprofiles = GET(LIDARR, LIDARR_KEY, "/api/v1/qualityprofile") or []
             mprofiles = GET(LIDARR, LIDARR_KEY, "/api/v1/metadataprofile") or []
             if qprofiles and mprofiles:
@@ -1489,12 +1518,15 @@ def main():
                                or 'standard' in p['name'].lower()), None)
                 lidarr_quality_id = (qmatch or qprofiles[0])['id']
                 lidarr_meta_id    = mprofiles[0]['id']
+                if attempt > 0:
+                    print(f"    Lidarr profiles appeared after {attempt * 5}s.")
                 break
             time.sleep(5)
         if lidarr_quality_id is None or lidarr_meta_id is None:
-            fail("Lidarr: quality/metadata profiles not available after 30s — "
+            fail("Lidarr: quality/metadata profiles not available after 2 min — "
                  "open http://<NAS>:49154 once to let Lidarr finish first-run "
-                 "setup, then re-run this script.")
+                 "setup, then re-run setup.sh. (Lidarr sometimes needs a UI "
+                 "visit to seed its defaults on Synology.)")
         else:
             add_root_folder(LIDARR, LIDARR_KEY, "api/v1", "/data/Media/Music", {
                 "defaultQualityProfileId":  lidarr_quality_id,

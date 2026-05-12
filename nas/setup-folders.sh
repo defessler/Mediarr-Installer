@@ -232,66 +232,99 @@ if [ -d "$DATA_ROOT" ]; then
     fi
 fi
 
-# ── qBittorrent credential + config init script ────────────────────────────────
+# ── qBittorrent credentials + initial config ────────────────────────────────
 #
-# This script runs inside the qBittorrent container at startup (custom-cont-init.d).
-# Sets credentials, download paths, and the watched folder (/downloads/ToFetch).
-# A sentinel file ensures it only runs once — config is never wiped on restart.
+# qBittorrent's WebUI password is stored as a PBKDF2-HMAC-SHA512 hash in
+# qBittorrent.conf. The hash needs to be generated *somewhere* and the
+# linuxserver/qbittorrent image is Alpine-based without python3, so we
+# can't generate it inside the container (the previous "init script"
+# approach failed silently when `python3` returned empty, leaving the
+# container booting with its random temp password and the user unable
+# to log in).
+#
+# Fix: generate the hash on the HOST (where setup.sh always has python3
+# — it's a hard requirement of setup-arr-config.py) and pre-write the
+# whole qBittorrent.conf before the container ever starts. Idempotent:
+# only fires when the conf doesn't exist yet, so re-running the wizard
+# doesn't clobber user changes from the qBittorrent UI.
+
+# env_val helper — same idea as in setup-nordvpn.sh, scoped here so this
+# script doesn't depend on a sourced helper module.
+env_val() {
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+}
+QB_CONF_DIR="/volume1/docker/media/qbittorrent/config/qBittorrent"
+QB_CONF_FILE="$QB_CONF_DIR/qBittorrent.conf"
+QB_USER=$(env_val QBITTORRENT_USER)
+QB_PASS=$(env_val QBITTORRENT_PASS)
+: "${QB_USER:=admin}"
 
 echo ""
-echo "Deploying qBittorrent init script..."
-INIT_DST="/volume1/docker/media/qbittorrent/custom-cont-init.d/set-credentials.sh"
-cat > "$INIT_DST" << 'INITEOF'
-#!/bin/bash
-# Sets qBittorrent credentials, download paths, and watched folder.
-# Runs inside the container at startup via /custom-cont-init.d.
-# Only runs once — sentinel file prevents re-running on restart.
-
-[ -z "$WEBUI_PASSWORD" ] && exit 0
-
-CONF_DIR="/config/qBittorrent"
-CONF_FILE="$CONF_DIR/qBittorrent.conf"
-SENTINEL="/config/.credentials-set"
-
-if [ -f "$SENTINEL" ]; then
-    echo "[init] qBittorrent already initialised — skipping"
-    exit 0
-fi
-
-mkdir -p "$CONF_DIR"
-
-USERNAME="${WEBUI_USERNAME:-admin}"
-
-# Generate PBKDF2-HMAC-SHA512 hash — qBittorrent's WebUI password format
-HASH=$(python3 - <<'PYEOF'
-import hashlib, os, base64
-password = os.environ.get('WEBUI_PASSWORD', '').encode('utf-8')
+echo "Writing qBittorrent config (with WebUI credentials)..."
+if [ -f "$QB_CONF_FILE" ]; then
+    echo "  ⏭ $QB_CONF_FILE already exists — leaving user's changes alone."
+    echo "    To reset to wizard defaults: delete that file and re-run setup.sh."
+elif [ -z "$QB_PASS" ]; then
+    echo "  ⚠ QBITTORRENT_PASS empty in .env — qBittorrent will boot with"
+    echo "    a random temp password (see 'docker logs qbittorrent' once it's up)."
+else
+    mkdir -p "$QB_CONF_DIR"
+    # Generate PBKDF2-HMAC-SHA512 hash on the host. 100k iters is what
+    # qBittorrent's own GUI uses when you set a password through it.
+    HASH=$(python3 - "$QB_PASS" <<'PYEOF'
+import sys, hashlib, os, base64
+password = sys.argv[1].encode('utf-8')
 salt = os.urandom(16)
 key = hashlib.pbkdf2_hmac('sha512', password, salt, 100000)
 print('@ByteArray(' + base64.b64encode(salt).decode() + ':' + base64.b64encode(key).decode() + ')')
 PYEOF
-)
+    )
+    if [ -z "$HASH" ]; then
+        echo "  ✘ python3 PBKDF2 generation failed — install python3 on the NAS"
+        echo "    (Package Center → Python 3) and re-run setup.sh."
+    else
+        # Newlines in the printf below MUST be \n (printf interprets), and
+        # qBittorrent.conf uses literal backslash-letter for nested keys
+        # (Downloads\SavePath, WebUI\Username, etc.) — printf %s avoids
+        # any interpretation of those backslashes.
+        cat > "$QB_CONF_FILE" <<EOF
+[LegalNotice]
+Accepted=true
 
-if [ -z "$HASH" ]; then
-    echo "[init] WARNING: failed to generate password hash — credentials not set"
-    exit 1
+[BitTorrent]
+Session\\DefaultSavePath=/downloads/Completed
+Session\\TempPath=/downloads/InProgress
+Session\\TempPathEnabled=true
+
+[Preferences]
+Downloads\\SavePath=/downloads/Completed
+Downloads\\TempPath=/downloads/InProgress
+Downloads\\TempPathEnabled=true
+WebUI\\Username=$QB_USER
+WebUI\\Password_PBKDF2="$HASH"
+WebUI\\AuthSubnetWhitelistEnabled=true
+WebUI\\AuthSubnetWhitelist=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+
+[ScanDirs]
+size=1
+1\\dir=/downloads/ToFetch
+EOF
+        chown -R $PUID:$PGID /volume1/docker/media/qbittorrent/config
+        chmod 644 "$QB_CONF_FILE"
+        echo "  ✔ $QB_CONF_FILE written (user: $QB_USER, watched: /downloads/ToFetch)"
+    fi
 fi
 
-if [ ! -f "$CONF_FILE" ]; then
-    printf '[LegalNotice]\nAccepted=true\n\n[BitTorrent]\nSession\\DefaultSavePath=/downloads/Completed\nSession\\TempPath=/downloads/InProgress\nSession\\TempPathEnabled=true\n\n[Preferences]\nDownloads\\SavePath=/downloads/Completed\nDownloads\\TempPath=/downloads/InProgress\nDownloads\\TempPathEnabled=true\nWebUI\\Username=%s\nWebUI\\Password_PBKDF2="%s"\nWebUI\\AuthSubnetWhitelistEnabled=true\nWebUI\\AuthSubnetWhitelist=192.168.0.0/16\n\n[ScanDirs]\nsize=1\n1\\dir=/downloads/ToFetch\n' \
-        "$USERNAME" "$HASH" > "$CONF_FILE"
-else
-    printf '\nWebUI\\Username=%s\nWebUI\\Password_PBKDF2="%s"\nWebUI\\AuthSubnetWhitelistEnabled=true\nWebUI\\AuthSubnetWhitelist=192.168.0.0/16\n\n[ScanDirs]\nsize=1\n1\\dir=/downloads/ToFetch\n' \
-        "$USERNAME" "$HASH" >> "$CONF_FILE"
+# Best-effort cleanup of the old custom-cont-init.d stub from previous
+# wizard versions — it tried to do the same PBKDF2 work INSIDE the
+# container and silently no-op'd because the linuxserver image has no
+# python3. Removing it avoids the "init script failed, qBittorrent
+# booted with temp password" trap from older installs that re-run setup.
+OLD_INIT="/volume1/docker/media/qbittorrent/custom-cont-init.d/set-credentials.sh"
+if [ -f "$OLD_INIT" ]; then
+    rm -f "$OLD_INIT"
+    echo "  Cleaned up legacy in-container init script."
 fi
-
-touch "$SENTINEL"
-echo "[init] qBittorrent configured (user: $USERNAME, watched: /downloads/ToFetch)"
-INITEOF
-
-chown $PUID:$PGID "$INIT_DST"
-chmod 755 "$INIT_DST"
-echo "  Deployed: $INIT_DST"
 
 echo ""
 echo "Done. All folders are ready."
