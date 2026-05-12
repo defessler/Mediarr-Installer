@@ -261,12 +261,22 @@ QB_PASS=$(env_val QBITTORRENT_PASS)
 
 echo ""
 echo "Writing qBittorrent config (with WebUI credentials)..."
-if [ -f "$QB_CONF_FILE" ]; then
-    echo "  ⏭ $QB_CONF_FILE already exists — leaving user's changes alone."
-    echo "    To reset to wizard defaults: delete that file and re-run setup.sh."
-elif [ -z "$QB_PASS" ]; then
+
+# Decide whether to (re-)write the conf. A file we wrote will contain
+# our distinctive subnet whitelist; a file qBittorrent wrote on its own
+# (during a previous install where our credential-write failed silently)
+# won't. Re-write in that case so the user's QBITTORRENT_PASS actually
+# takes effect. Trust the user's manual UI edits when our signature is
+# present — re-running setup.sh shouldn't clobber custom settings.
+QB_SIGNATURE="WebUI\\\\AuthSubnetWhitelist=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+WROTE_CONF=false
+
+if [ -z "$QB_PASS" ]; then
     echo "  ⚠ QBITTORRENT_PASS empty in .env — qBittorrent will boot with"
     echo "    a random temp password (see 'docker logs qbittorrent' once it's up)."
+elif [ -f "$QB_CONF_FILE" ] && grep -qF "$QB_SIGNATURE" "$QB_CONF_FILE" 2>/dev/null; then
+    echo "  ⏭ $QB_CONF_FILE already has our signature — leaving user's changes alone."
+    echo "    To reset to wizard defaults: delete that file and re-run setup.sh."
 else
     mkdir -p "$QB_CONF_DIR"
     # Generate PBKDF2-HMAC-SHA512 hash on the host. 100k iters is what
@@ -283,10 +293,18 @@ PYEOF
         echo "  ✘ python3 PBKDF2 generation failed — install python3 on the NAS"
         echo "    (Package Center → Python 3) and re-run setup.sh."
     else
-        # Newlines in the printf below MUST be \n (printf interprets), and
-        # qBittorrent.conf uses literal backslash-letter for nested keys
-        # (Downloads\SavePath, WebUI\Username, etc.) — printf %s avoids
-        # any interpretation of those backslashes.
+        # If a non-signature conf is here it was written by qBittorrent
+        # itself during a botched previous install (the python3-in-
+        # container hash generator silently failed, qBittorrent booted
+        # without our creds, generated a temp password and wrote its
+        # own conf). Back it up before clobbering so the user can
+        # inspect later if anything in there was customised by hand.
+        if [ -f "$QB_CONF_FILE" ]; then
+            BACKUP="$QB_CONF_FILE.before-mediarr-$(date +%Y%m%d-%H%M%S).bak"
+            cp "$QB_CONF_FILE" "$BACKUP" 2>/dev/null \
+                && echo "  Backed up previous conf → $BACKUP"
+        fi
+        mkdir -p "$QB_CONF_DIR"
         cat > "$QB_CONF_FILE" <<EOF
 [LegalNotice]
 Accepted=true
@@ -312,6 +330,24 @@ EOF
         chown -R $PUID:$PGID /volume1/docker/media/qbittorrent/config
         chmod 644 "$QB_CONF_FILE"
         echo "  ✔ $QB_CONF_FILE written (user: $QB_USER, watched: /downloads/ToFetch)"
+        WROTE_CONF=true
+    fi
+fi
+
+# If the qBittorrent container is already running (re-run of setup.sh
+# after a botched first install) and we just rewrote its conf, the
+# daemon won't pick up the new credentials until it restarts —
+# `docker compose up -d` later only recreates containers whose IMAGE
+# changed, not bind-mounted config files. Restart explicitly.
+if [ "$WROTE_CONF" = true ]; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^qbittorrent$'; then
+        echo "  Restarting qbittorrent so it picks up the new credentials..."
+        if docker restart qbittorrent >/dev/null 2>&1; then
+            echo "  ✔ qbittorrent restarted"
+        else
+            echo "  ⚠ docker restart qbittorrent failed — please run it manually:"
+            echo "      docker compose restart qbittorrent"
+        fi
     fi
 fi
 
