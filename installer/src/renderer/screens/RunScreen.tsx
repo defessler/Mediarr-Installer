@@ -426,15 +426,15 @@ export function RunScreen() {
         )
       }
 
-      // 1.5. Grant the container's PUID a write ACL on /volume1/Data.
+      // 1.5. Grant the container's PUID write access to DATA_ROOT.
       //
       // Synology shared folders layer their own ACL on top of POSIX.
       // chown + chmod 775 in setup-folders.sh isn't enough — Sonarr /
-      // Radarr / Lidarr probes "is this writable" from inside their
-      // container (as PUID), the shared-folder ACL says no, and the arr
-      // reports "Path does not exist" (it conflates EACCES + ENOENT in
-      // the root-folder validator). The cure is to add an explicit
-      // write ACE to /volume1/Data with file+directory inheritance.
+      // Radarr / Lidarr probe "is this writable" from inside the
+      // container (as PUID), the shared-folder ACL says no, and the
+      // arr reports "Path does not exist" (it conflates EACCES + ENOENT
+      // in the root-folder validator). The cure is to add an explicit
+      // write ACE to DATA_ROOT with file+directory inheritance.
       //
       // We do this from the wizard (rather than only in setup-folders.sh)
       // for two reasons:
@@ -442,18 +442,36 @@ export function RunScreen() {
       //      synoacltool reliably — DSM puts it at /usr/syno/bin which
       //      isn't on PATH for non-interactive sudo'd shells, and the
       //      file is a symlink so `find -type f` skips it without `-L`.
-      //   2. We can re-test the result by attempting a touch as the PUID
-      //      and surface a clear failure if the ACL still isn't enough
-      //      (e.g. DSM Control Panel hasn't granted the user share-level
+      //   2. We can re-test the result by attempting a touch as the
+      //      PUID and surface a clear failure if the ACL still isn't
+      //      enough (DSM Control Panel hasn't granted share-level
       //      access at all).
+      //
+      // The remote shell branches on /etc/synoinfo.conf inside the
+      // command so non-Synology hosts (Unraid / QNAP / TrueNAS / Linux)
+      // skip the synoacltool path cleanly — POSIX permissions already
+      // applied by `prep` above are enough for them, and the family-
+      // specific fallback chain in setup-folders.sh handles the rest.
       const puid = (config.PUID ?? '').trim() || '1026'
-      const dataRoot = '/volume1/Data'
+      const dataRoot = (config.DATA_ROOT ?? '').trim() || '/volume1/Data'
       wlog(`Applying shared-folder ACL on ${dataRoot} (so containers can write)...`)
       try {
         const acl = await window.installer.ssh.exec({
           sessionId,
           cmd:
-            `PUID="${puid}"; DATA="${dataRoot}"; ` +
+            `PUID="${puid}"; DATA=${shellQuote(dataRoot)}; ` +
+            // Non-Synology hosts skip the ACL grant entirely — POSIX
+            // permissions handle write access on Unraid / TrueNAS /
+            // QNAP / Linux without an overlay ACL layer to override.
+            `if [ ! -f /etc/synoinfo.conf ]; then ` +
+            `  echo "[acl] non-Synology host — POSIX permissions already applied by prep; nothing to do."; ` +
+            `  if [ -d "$DATA" ]; then ` +
+            `    echo "[acl] verified: $DATA exists"; ` +
+            `  else ` +
+            `    echo "[acl] WARN: $DATA does not exist on this host. Create it (or change DATA_ROOT in the wizard) before continuing — every arr container bind-mounts it as /data."; ` +
+            `  fi; ` +
+            `  exit 0; ` +
+            `fi; ` +
             // Resolve the username from the PUID. Synology busybox does
             // ship getent for the passwd database; fall back to awk on
             // /etc/passwd if it's not there.

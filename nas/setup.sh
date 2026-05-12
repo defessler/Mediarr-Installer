@@ -9,6 +9,42 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── Required .env vars ───────────────────────────────────────────────────────
+# Belt-and-suspenders: docker compose substitutes empty for any unset
+# variable in docker-compose.yml. With ${INSTALL_DIR}/plex/config and
+# INSTALL_DIR missing, the bind mount becomes "/plex/config:/config",
+# which compose then happily tries to bind from the host's root — usually
+# failing or, worse, creating a stray directory. Catch that here.
+#
+# The Mediarr Installer wizard always writes these vars. They'd only be
+# missing if someone hand-edited .env or copied an older one over the
+# top. Back-compat: if INSTALL_DIR is missing but a .env exists, we
+# auto-fill it with SCRIPT_DIR (which IS the install dir by definition,
+# since setup.sh lives there). DATA_ROOT has no portable default — bail
+# with a clear message rather than guess.
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+    if ! grep -q '^INSTALL_DIR=' "$ENV_FILE"; then
+        echo "INSTALL_DIR was missing from .env — auto-filling with $SCRIPT_DIR (setup.sh's directory)."
+        echo "INSTALL_DIR=$SCRIPT_DIR" >> "$ENV_FILE"
+    fi
+    if ! grep -q '^DATA_ROOT=' "$ENV_FILE"; then
+        echo "Error: DATA_ROOT is missing from $ENV_FILE"
+        echo ""
+        echo "  DATA_ROOT names the directory where your media + downloads tree lives;"
+        echo "  it's bind-mounted into every arr / qBittorrent / sabnzbd container as"
+        echo "  /data. Without it, docker compose would silently substitute empty"
+        echo "  and create stray bind mounts at the host's root."
+        echo ""
+        echo "  If you're on Synology DSM, the historical default is /volume1/Data."
+        echo "  On Unraid: /mnt/user/data.  On QNAP: /share/Data.  Add a line like:"
+        echo "    DATA_ROOT=/volume1/Data"
+        echo "  to $ENV_FILE and re-run setup.sh — or re-run the Mediarr Installer"
+        echo "  wizard to regenerate .env from scratch."
+        exit 1
+    fi
+fi
+
 # Force docker compose to emit plain progress output. Default ("auto")
 # detects a TTY and emits an animated multi-line spinner that's
 # unreadable when streamed to a non-terminal log panel (every frame
@@ -164,18 +200,28 @@ run_step 2 "Create data and config directories" \
 # firewall via their own UI (Unraid's UI, QTS's UI, ufw/firewalld, …)
 # so we skip the step cleanly instead of dumping rules into rc.d/ that
 # never run.
+#
+# Going through run_step in BOTH branches so the wizard's stepper rail
+# parses a matching "Step 3 complete" marker and advances the progress
+# bar regardless of which path was taken. The non-Synology skip body
+# emits the same final "✔ Step 3 complete" line, just after a "what
+# you need to do" hint for the user.
 if [ -f /etc/synoinfo.conf ]; then
     run_step 3 "Apply firewall rules" \
         bash "$SCRIPT_DIR/setup-firewall.sh"
 else
-    echo ""
-    echo "  ⏭ Step 3 (firewall): skipped — not Synology DSM."
-    echo "    The wizard's firewall step installs DSM-specific rc.d rules."
-    echo "    On this host, open the stack's ports in your NAS's firewall UI"
-    echo "    (Unraid Settings → Network, QTS Control Panel → Security,"
-    echo "    OPNsense / pfSense / ufw — whatever you use). Required ports:"
-    echo "      32400 (Plex), 3000 (Homepage), 5056 (Seerr), 8181 (Tautulli),"
-    echo "      8191 (Flaresolverr), 49150-49156 (arrs + qBittorrent + SAB)."
+    run_step 3 "Apply firewall rules" bash -c '
+        echo "  ⏭ Synology-specific firewall integration skipped — not DSM."
+        echo "    The wizard's firewall step installs DSM-style rc.d rules"
+        echo "    that no other NAS family uses. On this host, open the"
+        echo "    stack ports in your NAS firewall UI (Unraid Settings →"
+        echo "    Network, QTS Control Panel → Security, ufw / firewalld /"
+        echo "    OPNsense — whatever applies). Required ports:"
+        echo "      32400 (Plex), 3000 (Homepage), 5056 (Seerr),"
+        echo "      8181 (Tautulli), 8191 (Flaresolverr),"
+        echo "      49150–49156 (arrs + qBittorrent + SAB)."
+        exit 0
+    '
 fi
 
 echo "  Note: fetches your WireGuard private key from the NordVPN API"

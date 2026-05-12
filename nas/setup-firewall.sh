@@ -1,8 +1,14 @@
 #!/bin/bash
 # ── Synology Firewall Boot Script for Media Stack ──
 #
+# Synology-specific — this script writes iptables rules and installs
+# itself into /usr/local/etc/rc.d/ which DSM auto-runs on boot. Other
+# NAS families don't use rc.d/ for boot scripts; setup.sh skips this
+# step entirely on Unraid / QNAP / TrueNAS / generic Linux. There, you
+# open the stack's ports in your NAS firewall UI instead.
+#
 # Install (run once):
-#   sudo cp /volume1/docker/media/setup-firewall.sh /usr/local/etc/rc.d/media-firewall.sh
+#   sudo cp <INSTALL_DIR>/setup-firewall.sh /usr/local/etc/rc.d/media-firewall.sh
 #   sudo chmod 755 /usr/local/etc/rc.d/media-firewall.sh
 #
 # Synology auto-runs scripts in /usr/local/etc/rc.d/ on every boot.

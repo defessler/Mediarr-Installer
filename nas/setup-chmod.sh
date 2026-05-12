@@ -1,11 +1,14 @@
 #!/bin/bash
 # ── File Permission Setup ──
 #
-# Sets correct permissions on all stack files.
+# Sets correct permissions on all stack files. Path-agnostic — uses
+# $SCRIPT_DIR (where this script lives) for everything, so it works
+# wherever the wizard installed the stack: Synology /volume1/docker/media,
+# Unraid /mnt/user/appdata/mediarr, QNAP /share/Container/mediarr, etc.
 # Safe to run multiple times.
 #
 # Usage:
-#   bash /volume1/docker/media/setup-chmod.sh
+#   bash <INSTALL_DIR>/setup-chmod.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

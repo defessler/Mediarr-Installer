@@ -109,6 +109,22 @@ export async function detectEnv(
       'for d in /volume1 /volume2 /mnt/user /mnt/cache /share /share/CACHEDEV1_DATA /mnt /srv; do ' +
       '  [ -d "$d" ] && echo "$d"; ' +
       'done',
+    // TrueNAS-style pool roots: enumerate top-level dirs under /mnt
+    // (each pool gets mounted as /mnt/<poolname>). We skip the
+    // /mnt/user and /mnt/cache used by Unraid since those already
+    // got picked up by the candidates list above. Lets the family
+    // defaults below name the actual pool the user has instead of
+    // guessing "tank" — most TrueNAS installs use whatever the user
+    // typed during pool creation (storage, main, tank, default, etc).
+    'echo "===mnt_children==="; ' +
+      'if [ -d /mnt ]; then ' +
+      '  for d in /mnt/*; do ' +
+      '    [ -d "$d" ] || continue; ' +
+      '    name=$(basename "$d"); ' +
+      '    case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; ' +
+      '    echo "$d"; ' +
+      '  done; ' +
+      'fi',
     'echo "===docker_v2==="; docker compose version 2>&1; echo "RC=$?"',
     'echo "===docker_v1==="; command -v docker-compose 2>&1; echo "RC=$?"',
     'echo "===volume1==="; [ -d /volume1 ] && echo ok; echo "RC=$?"',
@@ -308,12 +324,22 @@ export async function detectEnv(
   // in the order the detection probe walked. The renderer picks one
   // (defaulting to the first that matches family expectations, or
   // letting the user override).
-  const dataCandidates = section(o, 'data_candidates')
+  const dataCandidatesBase = section(o, 'data_candidates')
     .split('\n').map((l) => l.trim()).filter(Boolean)
+  const mntChildren = section(o, 'mnt_children')
+    .split('\n').map((l) => l.trim()).filter(Boolean)
+  // Merge enumerated /mnt pool children into the candidates list so the
+  // Detect screen's "Other share roots present" surfaces them as
+  // quick-pick options the user can click. Stable order: probed
+  // standard dirs first, then the dynamically-found pool mounts.
+  const dataCandidates = [
+    ...dataCandidatesBase,
+    ...mntChildren.filter((p) => !dataCandidatesBase.includes(p)),
+  ]
 
   // Pre-compute the family-appropriate defaults so the renderer doesn't
   // need to know the conventions — single source of truth lives here.
-  const familyDefaults = pickFamilyDefaults(nasFamily, dataCandidates)
+  const familyDefaults = pickFamilyDefaults(nasFamily, dataCandidates, mntChildren)
   const osVersion = section(o, 'os_version').split('\n')[0]?.trim() || null
 
   // /volume1/Data ACL state — surfaced as a check on the Detect screen
@@ -386,6 +412,7 @@ export async function detectEnv(
 function pickFamilyDefaults(
   family: EnvDetectResult['nasFamily'],
   candidates: string[],
+  mntChildren: string[] = [],
 ): { installDir: string; dataRoot: string } {
   const has = (p: string) => candidates.includes(p)
   switch (family) {
@@ -413,14 +440,19 @@ function pickFamilyDefaults(
         installDir: '/mnt/user/appdata/mediarr',
         dataRoot:   '/mnt/user/data',
       }
-    case 'truenas':
-      // TrueNAS SCALE: ZFS datasets at /mnt/<pool>/<dataset>. We can't
-      // detect the pool name without listing — suggest a reasonable
-      // skeleton the user fills in.
+    case 'truenas': {
+      // TrueNAS SCALE: ZFS datasets at /mnt/<pool>/<dataset>. Pool
+      // names vary wildly (tank, storage, main, default, anything the
+      // user typed during pool creation). Use the first pool we
+      // actually found at /mnt/*; only fall back to /mnt/tank when
+      // nothing exists yet (fresh box / no pool created yet — the
+      // user would obviously need to fix that before installing).
+      const pool = mntChildren[0] ?? '/mnt/tank'
       return {
-        installDir: '/mnt/tank/apps/mediarr',
-        dataRoot:   '/mnt/tank/data',
+        installDir: `${pool}/apps/mediarr`,
+        dataRoot:   `${pool}/data`,
       }
+    }
     case 'omv':
       // OpenMediaVault: shared folders typically under /srv/<uuid>/<name>
       // OR /export/<name> via symlink. Hard to guess without listing.
