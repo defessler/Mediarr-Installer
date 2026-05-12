@@ -849,7 +849,16 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
 # ── qBittorrent ───────────────────────────────────────────────────────────────
 
 def configure_qbittorrent(base, username, password):
-    """Set qBittorrent preferences via the Web API (cookie auth)."""
+    """Set qBittorrent preferences via the Web API (cookie auth).
+
+    On linuxserver/qbittorrent's first boot the WebUI password may be a
+    randomly-generated temp password that gets printed to docker logs
+    until the user changes it. Our custom-cont-init.d script writes
+    the configured password into the qBittorrent.conf BEFORE the daemon
+    starts — but if the daemon was racing the init script (rare, but
+    happens on slow Synology spinning rust), the credentials we send
+    won't match. Retry the login a few times before giving up so we
+    don't false-negative on timing."""
     section("qBittorrent")
 
     import http.cookiejar
@@ -858,19 +867,42 @@ def configure_qbittorrent(base, username, password):
     cj = http.cookiejar.CookieJar()
     opener = build_opener(HTTPCookieProcessor(cj))
 
-    # Login
-    try:
-        login_data = urlencode({'username': username, 'password': password}).encode()
-        resp = opener.open(f"{base}/api/v2/auth/login", login_data, timeout=10)
-        result = resp.read().decode()
-        if result.strip() != 'Ok.':
-            warn(f"qBittorrent login failed: {result.strip()[:80]}")
-            warn("Watched folder not configured — set manually in Settings → Downloads")
-            return
-        ok("qBittorrent authenticated")
-    except Exception as e:
-        warn(f"qBittorrent not reachable ({e}) — skipping watch folder setup")
+    # Login with a short retry loop. qBittorrent's WebUI also enforces
+    # a brief lock-out after a couple of failed attempts, so back off
+    # generously between tries.
+    last_result = ''
+    last_error = None
+    authed = False
+    for attempt in range(4):
+        if attempt > 0:
+            time.sleep(8)
+        try:
+            login_data = urlencode({'username': username, 'password': password}).encode()
+            resp = opener.open(f"{base}/api/v2/auth/login", login_data, timeout=10)
+            last_result = resp.read().decode().strip()
+            if last_result == 'Ok.':
+                authed = True
+                break
+        except Exception as e:
+            last_error = e
+
+    if not authed:
+        if last_error is not None:
+            warn(f"qBittorrent not reachable: {last_error} — skipping watch folder setup")
+        else:
+            # Most common cause on a fresh install: linuxserver's image
+            # generated a temp password that printed to its container
+            # log, and the user hasn't run the wizard's init-script yet.
+            # Surface the actionable fix instead of an opaque empty body.
+            warn(f"qBittorrent login failed (last response: '{last_result}' — wrong username/password?)")
+            warn("Fix order:")
+            warn("  1. docker logs qbittorrent | grep -i 'temporary password'  — see what qBittorrent generated")
+            warn("  2. Either log in with that temp password and change it to match QBITTORRENT_PASS in .env,")
+            warn("     OR delete /volume1/docker/media/qbittorrent/config/.credentials-set and restart the")
+            warn("     qbittorrent container to re-trigger the init script that writes the password.")
+            warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
         return
+    ok("qBittorrent authenticated")
 
     # Get current scan_dirs
     try:
@@ -978,10 +1010,34 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key)
         warn("Then re-run:  python3 /volume1/docker/media/setup-arr-config.py")
         return
 
-    main_settings = GET(base, key, "/api/v1/settings/main")
-    if main_settings is None:
-        warn("Seerr setup wizard not yet complete — skipping Sonarr/Radarr wiring.")
-        warn("Visit http://<NAS>:5056, finish the wizard, then re-run this script.")
+    # Probe with a direct urlopen so we can recognise the "wizard not
+    # finished" 403 without _safe_request first printing "HTTP 403: …"
+    # raw. Seerr returns 403 on every settings endpoint until the user
+    # completes the in-browser first-run wizard (which is the only
+    # path that issues a real session and finalises the API key) —
+    # there's nothing useful to scrape from the response body.
+    try:
+        req = Request(f"{base}/api/v1/settings/main",
+                      headers={'X-Api-Key': key,
+                               'Content-Type': 'application/json',
+                               'User-Agent': 'setup-arr-config/1.0'})
+        with urlopen(req, timeout=15) as resp:
+            main_settings = json.loads(resp.read())
+    except HTTPError as e:
+        if e.code in (401, 403):
+            warn("Seerr first-run wizard not finished — API key isn't usable yet.")
+            warn("  1. Visit http://<NAS>:5056 in your browser")
+            warn("  2. Click 'Sign in with Plex' and complete the wizard (it'll")
+            warn("     auto-detect the Sonarr/Radarr we set up here).")
+            warn("  3. Or back here: sudo bash setup.sh   (this step is idempotent)")
+            return
+        warn(f"Seerr API error HTTP {e.code} — skipping Sonarr/Radarr wiring")
+        return
+    except URLError as e:
+        warn(f"Seerr not reachable: {e.reason}")
+        return
+    except Exception as e:
+        warn(f"Seerr probe errored: {e}")
         return
 
     if main_settings.get('localLogin') is False:

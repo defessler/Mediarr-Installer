@@ -74,8 +74,10 @@ PUBLIC_TORRENT_INDEXERS = [
     "LimeTorrents",
     "The Pirate Bay",
     "Knaben",            # Large Norwegian index, excellent general coverage
-    "Bitsearch",         # Good general tracker
-    "Solidtorrents",     # Aggregator with broad coverage
+    # NB: Bitsearch and Solidtorrents were removed from Prowlarr's
+    # indexer DB upstream (renamed / discontinued). Adding them here
+    # just produced `not found in Prowlarr` failures during install
+    # with nothing the user could do about it.
     # ── TV ────────────────────────────────────────────────────────────────────
     "ShowRSS",
     # ── Anime / Japanese ──────────────────────────────────────────────────────
@@ -89,8 +91,13 @@ PUBLIC_TORRENT_INDEXERS = [
 USENET_INDEXERS = [
     # ── Free (no account required, or optional key for higher limits) ─────────
     ("AnimeTosho",     "https://feed.animetosho.org",      None,                    "ANIMETOSHO_API_KEY"),
-    ("ABNzb",          "https://abnzb.com",                None,                    None),
-    ("Althub",         "https://www.althub.co.za",         None,                    None),
+    # ── Optional-key (free to register but still require an API key) ─────────
+    # ABNzb and Althub historically allowed RSS-only access without a
+    # key, but their current backends reject add-attempts without
+    # `Indexer requires an API key`. Treat them like any other Newznab
+    # indexer that needs creds — skip cleanly when the key isn't set.
+    ("ABNzb",          "https://abnzb.com",                "ABNZB_API_KEY",         None),
+    ("Althub",         "https://www.althub.co.za",         "ALTHUB_API_KEY",        None),
     # ── Account required ──────────────────────────────────────────────────────
     ("NZBGeek",        "https://api.nzbgeek.info",         "NZBGEEK_API_KEY",       None),
     ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY",     None),
@@ -105,7 +112,11 @@ USENET_INDEXERS = [
 # Private torrent trackers — added only if credentials are set in .env.
 PRIVATE_TORRENT_INDEXERS = [
     # Asian content
-    ("AvistaZ",         "AvistaZ",         {"username": "AVISTAZ_USER",       "password": "AVISTAZ_PASS"}),
+    # AvistaZ requires a `pid` field (their "passkey" — find it under
+    # your profile on the site). Without it Prowlarr's validator 400s
+    # with "'Pid' must not be empty." Treat as required.
+    ("AvistaZ",         "AvistaZ",         {"username": "AVISTAZ_USER",       "password": "AVISTAZ_PASS",
+                                            "pid":      "AVISTAZ_PID"}),
     ("HHD",             "HHD",             {"apiKey":   "HHD_API_KEY"}),
     # Anime
     ("AnimeTorrents",   "AnimeTorrents",   {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS"}),
