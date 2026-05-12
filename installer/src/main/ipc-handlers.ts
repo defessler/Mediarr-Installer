@@ -12,10 +12,16 @@ import { detectEnv as detectEnvReal } from './env-detector.js'
 import { fetchVpnKey as fetchVpnKeyReal } from './vpn-service.js'
 import * as mock from './mock-services.js'
 import * as profiles from './profile-store.js'
-import { saveTextToFile } from './dialog-service.js'
+import { saveTextToFile, openTextFromFile } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
 import * as installLog from './install-log.js'
-import { getMainWindow, getCachedUpdateInfo } from './index.js'
+import {
+  getMainWindow,
+  getCachedUpdateInfo,
+  downloadUpdateZip,
+  isUpdateSkipped,
+  skipCurrentUpdate,
+} from './index.js'
 
 export const isMockMode = (): boolean =>
   process.env.INSTALLER_MOCK === '1' || process.env.INSTALLER_MOCK === 'true'
@@ -61,11 +67,20 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC.profileDelete, (_e, args: { id: string }) => profiles.deleteProfile(args.id))
   ipcMain.handle(IPC.profileGetSecret, (_e, args: { id: string }) => profiles.getSecret(args.id))
   ipcMain.handle(IPC.profileTouch, (_e, args: { id: string }) => profiles.touchProfile(args.id))
+  ipcMain.handle(IPC.profileExport, (_e, args: { id: string; passphrase: string }) =>
+    profiles.exportProfile(args.id, args.passphrase))
+  ipcMain.handle(IPC.profileImport, (_e, args: { envelope: unknown; passphrase: string }) =>
+    profiles.importProfile({ envelope: args.envelope as never, passphrase: args.passphrase }))
 
   // ── Dialogs ───────────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.dialogSaveText, (_e, args: { defaultName: string; content: string; title?: string }) =>
-    saveTextToFile(args),
-  )
+  ipcMain.handle(IPC.dialogSaveText, (_e, args: {
+    defaultName: string; content: string; title?: string
+    filters?: { name: string; extensions: string[] }[]
+  }) => saveTextToFile(args))
+  ipcMain.handle(IPC.dialogOpenText, (_e, args: {
+    title?: string
+    filters?: { name: string; extensions: string[] }[]
+  }) => openTextFromFile(args ?? {}))
 
   // ── App info ──────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.appGetInfo, () => ({
@@ -73,8 +88,23 @@ export function registerIpcHandlers() {
     version: app.getVersion(),
     payloadSha: payloadSha(),
     logPath: log.transports.file.getFile().path,
-    updateAvailable: getCachedUpdateInfo(),
+    // Suppress the update notification when the user has explicitly
+    // skipped this exact version. They can still get to the release
+    // page from the footer's About / GitHub link if there is one.
+    updateAvailable: isUpdateSkipped() ? null : getCachedUpdateInfo(),
   }))
+  ipcMain.handle(IPC.appDownloadUpdate, async () => {
+    try {
+      const r = await downloadUpdateZip()
+      return r
+    } catch (e) {
+      return { path: null, bytes: 0, error: (e as Error).message }
+    }
+  })
+  ipcMain.handle(IPC.appSkipUpdateVersion, () => {
+    skipCurrentUpdate()
+    return undefined
+  })
   // Opens the active log file in the user's default text editor.
   // Returns the path so the renderer can show it in a toast.
   ipcMain.handle(IPC.appOpenLog, async () => {

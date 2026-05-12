@@ -176,10 +176,28 @@ export interface AppInfo {
   logPath: string
   /** GitHub-releases ping result populated shortly after app launch.
    *  Null = up to date, network unreachable, or fetch still in flight.
-   *  When set, the renderer shows a small "v0.x available" pill in the
-   *  footer linking to `url` (the release's html_url). Notification only —
-   *  the wizard does not auto-download or apply updates. */
-  updateAvailable: { latest: string; url: string } | null
+   *  When set, the renderer shows the WhatsNew banner on Welcome and
+   *  a small "v0.x available" pill in the footer. The wizard does not
+   *  auto-apply updates — the user downloads + replaces the folder. */
+  updateAvailable: {
+    latest: string
+    url: string
+    /** GitHub release `body` (Markdown). Rendered in the WhatsNew banner. */
+    notes: string
+    /** Direct URL to a `win-unpacked.zip` release asset if present.
+     *  When set, the renderer can offer a one-click "Download zip"
+     *  button that saves the zip to the user's Downloads folder and
+     *  opens Explorer pointing at it. */
+    zipUrl: string | null
+  } | null
+}
+
+export interface UpdateDownloadResult {
+  /** Where the zip landed on disk (typically ~/Downloads/<name>.zip).
+   *  Null when the user cancelled or the download failed. */
+  path: string | null
+  /** Bytes written, for the renderer to show a "x.y MB downloaded" hint. */
+  bytes: number
 }
 
 // ── Connection profiles ───────────────────────────────────────────────────────
@@ -237,6 +255,27 @@ export interface SaveProfileInput {
   config: Record<string, string>
 }
 
+/** Passphrase-protected portable envelope produced by profile-crypto.
+ *  The renderer treats this as an opaque blob — pass it to a save
+ *  dialog or accept it from an open dialog and round-trip via IPC. */
+export interface ProfileExportEnvelope {
+  format: 'mediarr-profile/v1'
+  label: string
+  exportedAt: number
+  kdf: { name: string; iters: number; salt: string }
+  cipher: { name: string; iv: string; tag: string; ct: string }
+}
+
+export interface ProfileImportRequest {
+  envelope: ProfileExportEnvelope
+  passphrase: string
+}
+
+/** Stable error string returned by profile:import when the passphrase
+ *  doesn't match. Renderers can pattern-match this instead of
+ *  pattern-matching raw OpenSSL strings. */
+export const PROFILE_IMPORT_WRONG_PASSPHRASE = 'wrong-passphrase'
+
 // ── Streaming events (main → renderer) ───────────────────────────────────────
 
 export interface SshStreamData {
@@ -275,13 +314,18 @@ export const IPC = {
   profileDelete:   'profile:delete',
   profileGetSecret:'profile:get-secret',     // legacy, kept for compatibility
   profileTouch:    'profile:touch',
+  profileExport:   'profile:export',
+  profileImport:   'profile:import',
   // Native dialogs
   dialogSaveText:  'dialog:save-text',
+  dialogOpenText:  'dialog:open-text',
   // App
   appGetInfo:      'app:get-info',
   appOpenLog:      'app:open-log',
   appShowLogInFolder: 'app:show-log-in-folder',
   appOpenDevTools: 'app:open-devtools',
+  appDownloadUpdate: 'app:download-update',
+  appSkipUpdateVersion: 'app:skip-update-version',
   // Install log (per-run mirror of streamed output to a local file)
   installLogStart:  'install-log:start',
   installLogAppend: 'install-log:append',

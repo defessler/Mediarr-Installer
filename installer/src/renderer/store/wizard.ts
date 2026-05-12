@@ -139,21 +139,40 @@ export const useWizard = create<WizardState>()(
       targetDir: DEFAULT_TARGET,
       setTargetDir: (targetDir) => set({ targetDir }),
 
-      loadFromProfile: (p) => set({
-        activeProfileId: p.id,
-        activeProfileLabel: p.label,
-        connection: { ...defaultConnection, ...p.connection },
-        // Plex claim tokens expire 4 minutes after generation. Persisting
-        // them in the profile means a stale token from a previous session
-        // is restored on app launch — and the countdown widget would
-        // optimistically show "4:00 fresh" because mount-time is taken as
-        // the entry time. Strip it on load so the field is empty and the
-        // user pastes a fresh one.
-        config: { ...defaultConfig, ...p.config, PLEX_CLAIM: undefined },
-        plexClaimSetAt: null,
-        targetDir: p.targetDir || DEFAULT_TARGET,
-        sessionId: null,    // any prior session is dead now
-      }),
+      loadFromProfile: (p) => {
+        // Backward-compat migration: profiles created before the
+        // multi-provider VPN refactor only had NORDVPN_PRIVATE_KEY.
+        // Mirror that into the generic WIREGUARD_PRIVATE_KEY slot
+        // (and set VPN_PROVIDER=nordvpn if missing) so the new
+        // Configure UI shows the key in the right spot and gluetun
+        // gets the key under both names. Idempotent: only fires when
+        // the new field is empty.
+        const incomingConfig: Record<string, string> = { ...p.config }
+        if (
+          incomingConfig.NORDVPN_PRIVATE_KEY &&
+          !incomingConfig.WIREGUARD_PRIVATE_KEY
+        ) {
+          incomingConfig.WIREGUARD_PRIVATE_KEY = incomingConfig.NORDVPN_PRIVATE_KEY
+        }
+        if (!incomingConfig.VPN_PROVIDER) {
+          incomingConfig.VPN_PROVIDER = 'nordvpn'
+        }
+        return set({
+          activeProfileId: p.id,
+          activeProfileLabel: p.label,
+          connection: { ...defaultConnection, ...p.connection },
+          // Plex claim tokens expire 4 minutes after generation. Persisting
+          // them in the profile means a stale token from a previous session
+          // is restored on app launch — and the countdown widget would
+          // optimistically show "4:00 fresh" because mount-time is taken as
+          // the entry time. Strip it on load so the field is empty and the
+          // user pastes a fresh one.
+          config: { ...defaultConfig, ...incomingConfig, PLEX_CLAIM: undefined },
+          plexClaimSetAt: null,
+          targetDir: p.targetDir || DEFAULT_TARGET,
+          sessionId: null,    // any prior session is dead now
+        })
+      },
 
       reset: () =>
         set({

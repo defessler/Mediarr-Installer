@@ -29,6 +29,12 @@ import {
   decryptFromBase64,
   isEncryptionAvailable,
 } from './secret-store.js'
+import {
+  decryptExport,
+  encryptExport,
+  EXPORT_FORMAT_VERSION,
+  type ProfileExportEnvelope,
+} from './profile-crypto.js'
 import type {
   LoadedProfile,
   ProfileConnection,
@@ -260,4 +266,83 @@ export async function touchProfile(id: string): Promise<void> {
   if (!p) return
   p.lastUsedAt = Date.now()
   await writeFile(data)
+}
+
+// ── Export / Import (portable, passphrase-protected) ─────────────────────────
+//
+// The in-app profile store encrypts secrets via Electron safeStorage, which
+// is machine-bound (DPAPI / Keychain / libsecret). That's the right call
+// for resting data on this device, but useless if you want to carry a
+// profile to a different NAS-management workstation. The export flow
+// re-encrypts under a user-chosen passphrase (PBKDF2 + AES-GCM in
+// profile-crypto.ts) so the file is portable.
+//
+// We deliberately strip the machine-local id during export and the stale
+// Plex claim from the config block on import (Plex claim tokens expire 4
+// minutes after issuance — restoring one from a file is always wrong).
+
+/** Build the export envelope for a profile. Caller is expected to
+ *  prompt for the passphrase before invoking this. */
+export async function exportProfile(id: string, passphrase: string): Promise<ProfileExportEnvelope> {
+  const p = await loadProfile(id)
+  if (!p) throw new Error(`profile ${id} not found`)
+  // Payload shape mirrors LoadedProfile minus the machine-local id and
+  // lastUsedAt — both regenerated on import. Plex claim DOES round-trip
+  // intentionally; we only strip it on the IMPORT side, since a user
+  // exporting and importing on the same day might still have a valid one.
+  const payload = {
+    label: p.label,
+    connection: p.connection,
+    targetDir: p.targetDir,
+    config: p.config,
+  }
+  return encryptExport({ payload, passphrase, label: p.label })
+}
+
+/** Decrypt an envelope and persist as a brand-new profile. Returns
+ *  the new SavedProfile (with a fresh id) so the renderer can route
+ *  the user straight into it. Throws "wrong-passphrase" on tag-mismatch. */
+export async function importProfile(args: {
+  envelope: ProfileExportEnvelope
+  passphrase: string
+}): Promise<SavedProfile> {
+  if (args.envelope?.format !== EXPORT_FORMAT_VERSION) {
+    throw new Error(`Unsupported export format "${args.envelope?.format}".`)
+  }
+  const plaintext = decryptExport({ envelope: args.envelope, passphrase: args.passphrase })
+  const parsed = JSON.parse(plaintext) as {
+    label?: string
+    connection?: ProfileConnection
+    targetDir?: string
+    config?: Record<string, string>
+  }
+  if (!parsed?.connection || !parsed?.label) {
+    throw new Error('Export file is missing required fields (connection / label).')
+  }
+
+  // De-conflict the label: if a profile with the same name already
+  // exists, suffix " (imported)" so the user doesn't get two cards
+  // labelled identically. Repeat the suffix as needed.
+  const existing = await readFile()
+  let label = parsed.label
+  const taken = new Set(existing.profiles.map((p) => p.label))
+  if (taken.has(label)) {
+    let n = 1
+    while (taken.has(`${parsed.label} (imported${n === 1 ? '' : ' ' + n})`)) n++
+    label = `${parsed.label} (imported${n === 1 ? '' : ' ' + n})`
+  }
+
+  // Strip Plex claim tokens — they expire in 4 minutes and a restored
+  // one from any meaningful-aged export is always dead. The user will
+  // re-paste a fresh one on the Run screen.
+  const cleanConfig = { ...(parsed.config ?? {}) }
+  delete cleanConfig.PLEX_CLAIM
+
+  const saved = await saveProfile({
+    label,
+    connection: parsed.connection,
+    targetDir: parsed.targetDir || DEFAULT_TARGET,
+    config: cleanConfig,
+  })
+  return saved
 }

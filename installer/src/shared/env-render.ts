@@ -34,11 +34,22 @@ export interface EnvFormValues {
   /** When 'false', setup.sh applies docker-compose.no-vpn.yml and gluetun
    *  is skipped. qBittorrent then runs on the regular bridge network. */
   VPN_ENABLED?: string          // 'true' | 'false' — default 'true'
-  VPN_PROVIDER: string          // 'nordvpn'
-  VPN_TYPE: string              // 'wireguard'
+  VPN_PROVIDER: string          // 'nordvpn' | 'protonvpn' | 'mullvad' | 'airvpn' | 'surfshark' | 'custom'
+  VPN_TYPE: string              // 'wireguard' | 'openvpn'
   VPN_COUNTRIES: string         // 'United States,Canada'
-  NORDVPN_ACCESS_TOKEN?: string // not strictly needed once private key is set
-  NORDVPN_PRIVATE_KEY?: string  // optional when VPN_ENABLED=false
+  /** NordVPN-only: API token used to fetch a WireGuard private key. */
+  NORDVPN_ACCESS_TOKEN?: string
+  /** Generic WireGuard credentials (Gluetun reads these directly). */
+  WIREGUARD_PRIVATE_KEY?: string
+  WIREGUARD_ADDRESSES?: string      // tunnel address e.g. "10.2.0.2/32" — Proton, Mullvad, AirVPN
+  WIREGUARD_PRESHARED_KEY?: string  // AirVPN
+  /** OpenVPN credentials (Surfshark, etc.). */
+  OPENVPN_USER?: string
+  OPENVPN_PASSWORD?: string
+  /** Free-form env block for the "Custom" provider escape hatch. */
+  CUSTOM_VPN_ENV?: string
+  /** Legacy field, kept for migration. New profiles use WIREGUARD_PRIVATE_KEY. */
+  NORDVPN_PRIVATE_KEY?: string
 
   // ── Usenet indexers (paste API key to enable)
   ANIMETOSHO_API_KEY?: string
@@ -124,13 +135,33 @@ export function renderEnv(v: EnvFormValues): string {
     line('USENET_SSL', v.USENET_SSL || '1'),
     line('USENET_NAME', v.USENET_NAME || 'primary'),
     '',
-    '# VPN (NordVPN + WireGuard) — set VPN_ENABLED=true to route qBittorrent through gluetun',
+    '# VPN — set VPN_ENABLED=true to route qBittorrent through gluetun.',
+    '# Gluetun (the actual VPN client) reads VPN_SERVICE_PROVIDER + VPN_TYPE +',
+    '# the per-provider credentials below. Unused vars are ignored.',
     line('VPN_ENABLED', v.VPN_ENABLED || 'false'),
     line('VPN_PROVIDER', v.VPN_PROVIDER),
     line('VPN_TYPE', v.VPN_TYPE),
-    line('NORDVPN_ACCESS_TOKEN', v.NORDVPN_ACCESS_TOKEN),
-    line('NORDVPN_PRIVATE_KEY', v.NORDVPN_PRIVATE_KEY),
     line('VPN_COUNTRIES', v.VPN_COUNTRIES),
+    '# WireGuard credentials (Proton/Mullvad/AirVPN/NordVPN)',
+    // NORDVPN_PRIVATE_KEY mirrors WIREGUARD_PRIVATE_KEY for back-compat;
+    // old setup-nordvpn.sh and prior profiles still reference it.
+    line('WIREGUARD_PRIVATE_KEY', v.WIREGUARD_PRIVATE_KEY || v.NORDVPN_PRIVATE_KEY),
+    line('NORDVPN_PRIVATE_KEY', v.NORDVPN_PRIVATE_KEY || v.WIREGUARD_PRIVATE_KEY),
+    line('NORDVPN_ACCESS_TOKEN', v.NORDVPN_ACCESS_TOKEN),
+    line('WIREGUARD_ADDRESSES', v.WIREGUARD_ADDRESSES),
+    line('WIREGUARD_PRESHARED_KEY', v.WIREGUARD_PRESHARED_KEY),
+    '# OpenVPN credentials (Surfshark, others)',
+    line('OPENVPN_USER', v.OPENVPN_USER),
+    line('OPENVPN_PASSWORD', v.OPENVPN_PASSWORD),
+    // Custom-provider escape hatch: paste raw env block. We expand it
+    // here so docker-compose / gluetun sees the keys directly, and
+    // skip lines that don't look like KEY=value.
+    ...(v.CUSTOM_VPN_ENV
+      ? ['# Custom VPN env (Custom provider escape hatch)',
+         ...v.CUSTOM_VPN_ENV.split('\n')
+            .map((l) => l.trim())
+            .filter((l) => /^[A-Z_][A-Z0-9_]*=/.test(l))]
+      : []),
     '',
     '# Usenet indexers',
     line('ANIMETOSHO_API_KEY', v.ANIMETOSHO_API_KEY),

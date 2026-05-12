@@ -7,6 +7,12 @@ import {
   PRIVATE_TRACKERS,
   BAZARR_PROVIDERS,
 } from '../../shared/env-render.js'
+import {
+  VPN_PROVIDERS,
+  findVpnProvider,
+  type VpnField,
+  type VpnProvider,
+} from '../../shared/vpn-providers.js'
 import type { Country } from '../../shared/ipc.js'
 import { IndexerCard } from '../components/IndexerCard.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
@@ -45,6 +51,210 @@ function Field({ label, k, type = 'text', placeholder }: {
         onChange={(e) => update(k, e.target.value || undefined)}
       />
     </div>
+  )
+}
+
+// ── VPN section ─────────────────────────────────────────────────────────────
+//
+// Provider-aware UI driven by the shared `VPN_PROVIDERS` registry. The
+// user picks a provider, the form renders its declared fields, the
+// "Fetch key" button shows only when the provider has an upstream API
+// (NordVPN today). Switching provider blanks out the previously-set
+// secrets so we don't carry a Mullvad key into a Surfshark profile.
+//
+// All field state lives in the same EnvFormValues / config bag the
+// rest of the screen uses — env-render.ts emits the right .env block
+// based on `VPN_PROVIDER` and the provider's `toGluetunEnv()`.
+
+function VpnFieldInput({ field, value, onChange }: {
+  field: VpnField
+  value: string
+  onChange: (v: string) => void
+}) {
+  if (field.type === 'textarea') {
+    return (
+      <textarea
+        rows={5}
+        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+        value={value}
+        placeholder={field.placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+  return (
+    <input
+      type={field.type === 'password' ? 'password' : 'text'}
+      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+      value={value}
+      placeholder={field.placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+function VpnSection({
+  config, update, vpnToken, setVpnToken, vpnBusy, vpnError, fetchVpnKey, countries,
+}: {
+  config: Partial<EnvFormValues>
+  update: <K extends keyof EnvFormValues>(k: K, v: EnvFormValues[K] | undefined) => void
+  vpnToken: string
+  setVpnToken: (v: string) => void
+  vpnBusy: boolean
+  vpnError: string | null
+  fetchVpnKey: () => void
+  countries: Country[]
+}) {
+  const enabled = (config.VPN_ENABLED ?? 'false').toLowerCase() === 'true'
+  const currentId = config.VPN_PROVIDER || 'nordvpn'
+  const provider = findVpnProvider(currentId)
+
+  function switchProvider(newId: VpnProvider['id']) {
+    if (newId === currentId) return
+    // Clear all VPN-secret fields when switching, so e.g. a stale
+    // Mullvad WireGuard key doesn't carry into a Surfshark profile.
+    const blanks: Partial<EnvFormValues> = {
+      VPN_PROVIDER: newId,
+      VPN_TYPE: findVpnProvider(newId).vpnType,
+      WIREGUARD_PRIVATE_KEY: undefined,
+      WIREGUARD_ADDRESSES: undefined,
+      WIREGUARD_PRESHARED_KEY: undefined,
+      OPENVPN_USER: undefined,
+      OPENVPN_PASSWORD: undefined,
+      NORDVPN_ACCESS_TOKEN: undefined,
+      NORDVPN_PRIVATE_KEY: undefined,
+      CUSTOM_VPN_ENV: undefined,
+    }
+    // Use setConfig so all fields update in one batch.
+    for (const [k, v] of Object.entries(blanks)) {
+      update(k as keyof EnvFormValues, v as EnvFormValues[keyof EnvFormValues] | undefined)
+    }
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-medium border-b border-slate-800 pb-2">VPN</h2>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => update('VPN_ENABLED', e.target.checked ? 'true' : 'false')}
+        />
+        Route torrent traffic through a VPN (off by default; check to enable)
+      </label>
+
+      {!enabled ? (
+        <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-sm text-slate-300">
+          VPN off (default). qBittorrent runs on the regular network and your
+          real public IP is visible to torrent peers. Check the box above to
+          add gluetun (Mediarr's VPN container) and route through your provider.
+        </div>
+      ) : (
+        <>
+          {/* Provider picker — radio-card grid */}
+          <div className="space-y-1">
+            <label className="block text-sm font-medium">VPN provider</label>
+            <div className="grid grid-cols-2 gap-2">
+              {VPN_PROVIDERS.map((p) => {
+                const picked = p.id === currentId
+                return (
+                  <button
+                    type="button"
+                    key={p.id}
+                    onClick={() => switchProvider(p.id)}
+                    className={
+                      'text-left rounded-md border p-2 text-sm transition-colors ' +
+                      (picked
+                        ? 'border-emerald-600/70 bg-emerald-900/20 text-emerald-100'
+                        : 'border-slate-700 bg-slate-800/40 hover:bg-slate-800 text-slate-200')
+                    }
+                  >
+                    <div className="font-medium">{p.label}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{p.blurb}</div>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              <a
+                href={provider.helpUrl}
+                target="_blank" rel="noreferrer"
+                className="text-emerald-400 hover:underline"
+              >
+                Where do I find these credentials? →
+              </a>
+            </p>
+          </div>
+
+          {/* Optional "Fetch key" button — only for providers with an API */}
+          {provider.fetchKeyEnvVar && (
+            <div className="rounded-md border border-slate-700/50 bg-slate-900/30 p-3 space-y-2">
+              <label className="block text-sm font-medium">
+                {provider.label} access token
+                <span className="text-slate-500 text-xs ml-2">
+                  (we'll fetch your WireGuard key from {provider.label}'s API)
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder="Paste your provider access token"
+                  className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                  value={vpnToken} onChange={(e) => setVpnToken(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={fetchVpnKey}
+                  disabled={vpnBusy || vpnToken.length < 16}
+                  className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+                  title="Fetch and cache the WireGuard private key"
+                >
+                  {vpnBusy ? 'Fetching…' : 'Fetch key'}
+                </button>
+              </div>
+              {vpnError && <div className="text-rose-300 text-sm">{vpnError}</div>}
+              {config.WIREGUARD_PRIVATE_KEY && !vpnError && (
+                <div className="text-emerald-300 text-sm">
+                  Got it — {config.WIREGUARD_PRIVATE_KEY.length}-char WireGuard key cached.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Dynamic per-provider fields */}
+          {provider.fields.map((f) => {
+            const value = (config[f.envKey] as string | undefined) ?? ''
+            return (
+              <div key={f.envKey}>
+                <label className="block text-sm font-medium mb-1">{f.label}</label>
+                <VpnFieldInput
+                  field={f}
+                  value={value}
+                  onChange={(v) => update(f.envKey, (v || undefined) as EnvFormValues[typeof f.envKey])}
+                />
+                {f.helpHint && (
+                  <p className="text-xs text-slate-500 mt-1">{f.helpHint}</p>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Country picker hint — only when the provider's API gave us
+              the canonical list (NordVPN today). */}
+          {countries.length > 0 && (
+            <details className="text-xs text-slate-400">
+              <summary className="cursor-pointer">
+                Known servers from {provider.label} ({countries.length} countries)
+              </summary>
+              <div className="mt-2 max-h-32 overflow-y-auto font-mono">
+                {countries.map((c) => c.name).join(', ')}
+              </div>
+            </details>
+          )}
+        </>
+      )}
+    </section>
   )
 }
 
@@ -133,11 +343,17 @@ export function ConfigureScreen() {
     setVpnBusy(true); setVpnError(null)
     try {
       const r = await window.installer.vpn.fetchKey(vpnToken)
-      setConfig({ NORDVPN_PRIVATE_KEY: r.privateKey })
+      // Store under the generic gluetun env-var name. NORDVPN_PRIVATE_KEY
+      // also gets the same value for backwards compatibility with
+      // .env-consuming scripts that haven't been updated yet.
+      setConfig({
+        WIREGUARD_PRIVATE_KEY: r.privateKey,
+        NORDVPN_PRIVATE_KEY: r.privateKey,
+      })
       setCountries(r.countries)
     } catch (e) {
       setVpnError((e as Error).message)
-      reportError('NordVPN key fetch', e)
+      reportError('VPN key fetch', e)
     } finally {
       setVpnBusy(false)
     }
@@ -268,85 +484,16 @@ export function ConfigureScreen() {
         <Field label="LAN IP of your NAS" k="LAN_IP" placeholder="192.168.1.10" />
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">VPN (NordVPN WireGuard)</h2>
-
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={(config.VPN_ENABLED ?? 'false').toLowerCase() === 'true'}
-            onChange={(e) =>
-              update('VPN_ENABLED', e.target.checked ? 'true' : 'false')
-            }
-          />
-          Route torrent traffic through a VPN (off by default; check to enable)
-        </label>
-
-        {(config.VPN_ENABLED ?? 'false').toLowerCase() !== 'true' ? (
-          <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-sm text-slate-300">
-            VPN off (default). qBittorrent will run on the regular network
-            and your real public IP will be visible to torrent peers.
-            Check the box above to add gluetun and route through NordVPN.
-          </div>
-        ) : (
-          <>
-        <p className="text-sm text-slate-400">
-          Paste your NordVPN access token (Account &rarr; Set up NordVPN
-          manually). We&apos;ll fetch the WireGuard private key directly from
-          the NordVPN API.
-        </p>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">NordVPN access token</label>
-          <div className="flex gap-2">
-            <input
-              type="password" placeholder="64-char hex token"
-              className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-              value={vpnToken} onChange={(e) => setVpnToken(e.target.value)}
-            />
-            <button
-              type="button"
-              onClick={fetchVpnKey}
-              disabled={vpnBusy || vpnToken.length < 16}
-              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
-            >
-              {vpnBusy ? 'Fetching...' : 'Fetch key'}
-            </button>
-          </div>
-          {vpnError && (
-            <div className="mt-2 text-rose-300 text-sm">{vpnError}</div>
-          )}
-          {config.NORDVPN_PRIVATE_KEY && !vpnError && (
-            <div className="mt-2 text-emerald-300 text-sm">
-              Got it — {config.NORDVPN_PRIVATE_KEY.length}-char WireGuard key cached.
-            </div>
-          )}
-        </div>
-
-        <Field label="Countries (comma-separated)" k="VPN_COUNTRIES" placeholder="United States,Canada" />
-        {countries.length > 0 && (
-          <details className="text-xs text-slate-400">
-            <summary className="cursor-pointer">Available countries ({countries.length})</summary>
-            <div className="mt-2 max-h-32 overflow-y-auto font-mono">
-              {countries.map((c) => c.name).join(', ')}
-            </div>
-          </details>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            WireGuard private key (auto-filled by Fetch key)
-          </label>
-          <textarea
-            rows={2}
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
-            value={config.NORDVPN_PRIVATE_KEY ?? ''}
-            onChange={(e) => update('NORDVPN_PRIVATE_KEY', e.target.value || undefined)}
-          />
-        </div>
-          </>
-        )}
-      </section>
+      <VpnSection
+        config={config}
+        update={update}
+        vpnToken={vpnToken}
+        setVpnToken={setVpnToken}
+        vpnBusy={vpnBusy}
+        vpnError={vpnError}
+        fetchVpnKey={fetchVpnKey}
+        countries={countries}
+      />
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Arr Web UI auth</h2>

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
-import { reportError } from '../store/errors.js'
-import type { SavedProfile } from '../../shared/ipc.js'
+import { reportError, useErrors } from '../store/errors.js'
+import type { AppInfo, SavedProfile } from '../../shared/ipc.js'
+import { ExportProfileDialog } from '../components/ExportProfileDialog.js'
+import { ImportProfileDialog } from '../components/ImportProfileDialog.js'
+import { WhatsNew } from '../components/WhatsNew.js'
 
 export function WelcomeScreen() {
   const { setMode, setStep, loadFromProfile, activeProfileId, setActiveProfileLabel } = useWizard()
@@ -12,6 +15,22 @@ export function WelcomeScreen() {
   /** id of the profile currently being label-edited inline */
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null)
   const [editingLabelText, setEditingLabelText] = useState('')
+  /** Which profile (if any) is open in the export dialog. */
+  const [exportingFor, setExportingFor] = useState<SavedProfile | null>(null)
+  /** True when the import dialog is open. */
+  const [importing, setImporting] = useState(false)
+  /** App version + update info for the WhatsNew banner. */
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+
+  async function refreshAppInfo() {
+    try {
+      const info = await window.installer.app.getInfo()
+      setAppInfo(info)
+    } catch (e) {
+      reportError('App info', e)
+    }
+  }
+  useEffect(() => { refreshAppInfo() }, [])
 
   async function refresh() {
     try {
@@ -133,6 +152,8 @@ export function WelcomeScreen() {
           </p>
         </header>
 
+        {appInfo && <WhatsNew info={appInfo} onChanged={refreshAppInfo} />}
+
         {profiles === null ? (
           <div className="text-slate-400 text-sm">Loading profiles...</div>
         ) : profiles.length === 0 ? (
@@ -213,6 +234,14 @@ export function WelcomeScreen() {
                   Update
                 </button>
                 <button
+                  onClick={() => setExportingFor(p)}
+                  disabled={busy !== null}
+                  className="px-2 py-1.5 text-sm text-slate-400 hover:text-slate-200 disabled:opacity-40"
+                  title="Export this profile to a file (passphrase-protected)"
+                >
+                  ↗
+                </button>
+                <button
                   onClick={() => deleteProfile(p.id, p.label)}
                   disabled={busy !== null}
                   className="px-2 py-1.5 text-sm text-rose-400 hover:text-rose-300 disabled:opacity-40"
@@ -222,12 +251,46 @@ export function WelcomeScreen() {
                 </button>
               </div>
             ))}
-            <div className="pt-2">
+            <div className="pt-2 flex items-center gap-4">
               <button
                 onClick={() => setCreating(true)}
                 className="text-sm text-emerald-400 hover:underline"
               >
                 + New profile
+              </button>
+              <button
+                onClick={() => setImporting(true)}
+                className="text-sm text-slate-400 hover:text-slate-200"
+                title="Import a passphrase-protected .mediarr-profile.json file"
+              >
+                ↘ Import from file
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* The empty-state fallback: when there are zero profiles, show
+            BOTH "New profile" and "Import from file" so a user migrating
+            from another machine has an obvious path. */}
+        {profiles && profiles.length === 0 && !creating && (
+          <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3 text-sm">
+            <h2 className="font-medium">Get started</h2>
+            <p className="text-slate-400">
+              No profiles yet. Create a new one for a fresh NAS, or import a profile
+              file you exported from another machine.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCreating(true)}
+                className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md"
+              >
+                + New profile
+              </button>
+              <button
+                onClick={() => setImporting(true)}
+                className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md"
+              >
+                ↘ Import from file
               </button>
             </div>
           </section>
@@ -272,6 +335,29 @@ export function WelcomeScreen() {
           </ul>
         </section>
       </div>
+
+      {exportingFor && (
+        <ExportProfileDialog
+          profileId={exportingFor.id}
+          profileLabel={exportingFor.label}
+          onClose={() => setExportingFor(null)}
+        />
+      )}
+      {importing && (
+        <ImportProfileDialog
+          onClose={() => setImporting(false)}
+          onImported={(p) => {
+            // Refresh the picker so the new profile shows up; also flash
+            // a toast so the user sees the success without parsing the
+            // list themselves.
+            refresh()
+            useErrors.getState().pushInfo(
+              'Profile imported',
+              `"${p.label}" is ready — click Install or Update to use it.`,
+            )
+          }}
+        />
+      )}
     </div>
   )
 }

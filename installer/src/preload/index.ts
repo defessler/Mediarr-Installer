@@ -12,6 +12,7 @@ import {
   type EnvDetectResult,
   type ExecResult,
   type LoadedProfile,
+  type ProfileExportEnvelope,
   type SavedProfile,
   type SaveProfileInput,
   type SftpProgress,
@@ -86,10 +87,22 @@ const installer = {
     getSecret: (id: string): Promise<string | null> =>
       ipcRenderer.invoke(IPC.profileGetSecret, { id }),
     touch:     (id: string): Promise<void> => ipcRenderer.invoke(IPC.profileTouch, { id }),
+    exportProfile: (id: string, passphrase: string): Promise<ProfileExportEnvelope> =>
+      ipcRenderer.invoke(IPC.profileExport, { id, passphrase }),
+    importProfile: (envelope: ProfileExportEnvelope, passphrase: string): Promise<SavedProfile> =>
+      ipcRenderer.invoke(IPC.profileImport, { envelope, passphrase }),
   },
   dialog: {
-    saveText: (args: { defaultName: string; content: string; title?: string }): Promise<{ saved: boolean; path: string | null }> =>
+    saveText: (args: {
+      defaultName: string; content: string; title?: string
+      filters?: { name: string; extensions: string[] }[]
+    }): Promise<{ saved: boolean; path: string | null }> =>
       ipcRenderer.invoke(IPC.dialogSaveText, args),
+    openText: (args: {
+      title?: string
+      filters?: { name: string; extensions: string[] }[]
+    }): Promise<{ opened: boolean; path: string | null; content: string | null }> =>
+      ipcRenderer.invoke(IPC.dialogOpenText, args),
   },
   app: {
     getInfo: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.appGetInfo),
@@ -99,6 +112,10 @@ const installer = {
       ipcRenderer.invoke(IPC.appShowLogInFolder),
     openDevTools: (): Promise<{ opened: boolean }> =>
       ipcRenderer.invoke(IPC.appOpenDevTools),
+    downloadUpdate: (): Promise<{ path: string | null; bytes: number; error?: string }> =>
+      ipcRenderer.invoke(IPC.appDownloadUpdate),
+    skipUpdateVersion: (): Promise<void> =>
+      ipcRenderer.invoke(IPC.appSkipUpdateVersion),
   },
   installLog: {
     start: (kind?: 'install' | 'update' | 'validate'): Promise<{ path: string }> =>

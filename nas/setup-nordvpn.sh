@@ -1,8 +1,12 @@
 #!/bin/bash
-# ── NordVPN WireGuard Key Setup ──
+# ── VPN WireGuard Key Setup (provider-aware) ──
 #
-# Fetches your WireGuard private key from the NordVPN API and writes
-# it into the .env file automatically.
+# Historically NordVPN-specific (and the filename still reflects that for
+# back-compat with older setup.sh invocations); now dispatches based on
+# VPN_PROVIDER in .env. We only call the NordVPN API for VPN_PROVIDER=nordvpn;
+# everything else is expected to have its credentials pre-populated in .env
+# by the wizard (e.g. WIREGUARD_PRIVATE_KEY pasted by the user from
+# ProtonVPN's dashboard).
 #
 # Usage:
 #   bash /volume1/docker/media/setup-nordvpn.sh
@@ -27,18 +31,58 @@ env_val() {
 VPN_ENABLED=$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')
 case "$VPN_ENABLED" in
     true|1|yes|on)
-        ;; # fall through to fetch
+        ;; # fall through to provider-specific path
     *)
-        echo "  ⏭ VPN_ENABLED=$VPN_ENABLED — skipping NordVPN key fetch (no VPN)."
+        echo "  ⏭ VPN_ENABLED=$VPN_ENABLED — skipping VPN key setup (no VPN)."
         exit 0
         ;;
 esac
 
+# Dispatch on provider. For anything other than NordVPN we expect the
+# credentials to already be in .env (the wizard collects them via the
+# Configure screen and writes them as part of the rendered .env).
+VPN_PROVIDER=$(env_val VPN_PROVIDER | tr '[:upper:]' '[:lower:]')
+case "$VPN_PROVIDER" in
+    ""|nordvpn)
+        # Existing NordVPN flow follows below.
+        ;;
+    protonvpn|mullvad|airvpn|surfshark|custom)
+        # User pasted credentials directly into Configure — nothing to fetch.
+        echo "  ⏭ VPN_PROVIDER=$VPN_PROVIDER — using user-supplied credentials in .env."
+        # Sanity-check the common case (WireGuard providers): warn if the
+        # private key isn't there. Don't fail — gluetun will surface a
+        # clearer error if creds are missing.
+        case "$VPN_PROVIDER" in
+            protonvpn|mullvad|airvpn)
+                WG=$(env_val WIREGUARD_PRIVATE_KEY)
+                if [ -z "$WG" ]; then
+                    echo "  ⚠ WIREGUARD_PRIVATE_KEY is empty in .env — gluetun won't connect."
+                    echo "    Re-run the wizard's Configure screen and paste the key from"
+                    echo "    your provider's WireGuard config."
+                fi
+                ;;
+        esac
+        exit 0
+        ;;
+    *)
+        echo "  ⚠ Unknown VPN_PROVIDER=$VPN_PROVIDER — passing through to gluetun as-is."
+        exit 0
+        ;;
+esac
+
+# ── NordVPN-specific path below ──
+
 # If a key is already populated (the wizard fetches it on the host
 # machine and writes it before running setup.sh), nothing to do.
-EXISTING_KEY=$(env_val NORDVPN_PRIVATE_KEY)
+# Check both env-var names: WIREGUARD_PRIVATE_KEY is the new generic
+# slot; NORDVPN_PRIVATE_KEY is the legacy one we still mirror for
+# backwards compatibility.
+EXISTING_KEY=$(env_val WIREGUARD_PRIVATE_KEY)
+if [ -z "$EXISTING_KEY" ]; then
+    EXISTING_KEY=$(env_val NORDVPN_PRIVATE_KEY)
+fi
 if [ -n "$EXISTING_KEY" ] && [ ${#EXISTING_KEY} -ge 43 ]; then
-    echo "  ⏭ NORDVPN_PRIVATE_KEY already set (${#EXISTING_KEY} chars) — skipping fetch."
+    echo "  ⏭ WireGuard key already set (${#EXISTING_KEY} chars) — skipping fetch."
     exit 0
 fi
 
@@ -82,7 +126,19 @@ if [ "$KEY_LEN" -ne 44 ]; then
     exit 1
 fi
 
-# Update NORDVPN_PRIVATE_KEY in .env
-sed -i "s|NORDVPN_PRIVATE_KEY=.*|NORDVPN_PRIVATE_KEY=$PRIVATE_KEY|" "$ENV_FILE"
+# Update BOTH env-var names so the rest of the stack finds the key
+# regardless of which name it reads. WIREGUARD_PRIVATE_KEY is the
+# generic name gluetun consumes; NORDVPN_PRIVATE_KEY is the legacy
+# name kept for backwards compatibility with older .env templates.
+if grep -q '^NORDVPN_PRIVATE_KEY=' "$ENV_FILE"; then
+    sed -i "s|NORDVPN_PRIVATE_KEY=.*|NORDVPN_PRIVATE_KEY=$PRIVATE_KEY|" "$ENV_FILE"
+else
+    echo "NORDVPN_PRIVATE_KEY=$PRIVATE_KEY" >> "$ENV_FILE"
+fi
+if grep -q '^WIREGUARD_PRIVATE_KEY=' "$ENV_FILE"; then
+    sed -i "s|WIREGUARD_PRIVATE_KEY=.*|WIREGUARD_PRIVATE_KEY=$PRIVATE_KEY|" "$ENV_FILE"
+else
+    echo "WIREGUARD_PRIVATE_KEY=$PRIVATE_KEY" >> "$ENV_FILE"
+fi
 
 echo "  ✔ .env updated with private key (44 chars)."

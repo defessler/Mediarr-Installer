@@ -208,7 +208,17 @@ services:
     environment:
       - VPN_SERVICE_PROVIDER=${VPN_PROVIDER}
       - VPN_TYPE=${VPN_TYPE}
-      - WIREGUARD_PRIVATE_KEY=${NORDVPN_PRIVATE_KEY}
+      # Generic credential env vars — gluetun picks the right subset
+      # for whichever VPN_SERVICE_PROVIDER is selected. Unused vars
+      # are ignored. NORDVPN_PRIVATE_KEY is the legacy name from when
+      # this stack only supported NordVPN; it's mirrored into
+      # WIREGUARD_PRIVATE_KEY by the Mediarr Installer so older
+      # profiles keep working.
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY:-${NORDVPN_PRIVATE_KEY:-}}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES:-}
+      - WIREGUARD_PRESHARED_KEY=${WIREGUARD_PRESHARED_KEY:-}
+      - OPENVPN_USER=${OPENVPN_USER:-}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD:-}
       - SERVER_COUNTRIES=${VPN_COUNTRIES}
       # Allow LAN to reach the qBittorrent WebUI through the VPN container
       - FIREWALL_INPUT_PORTS=49156

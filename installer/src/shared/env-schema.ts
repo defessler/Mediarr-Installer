@@ -49,10 +49,16 @@ export const envSchema = z.object({
   // VPN — required only when VPN_ENABLED !== 'false' (cross-validated below).
   VPN_ENABLED: optStr,
   VPN_PROVIDER: optStr,
-  VPN_TYPE: z.union([z.literal('wireguard'), z.literal('').optional()]).optional(),
+  VPN_TYPE: z.union([z.literal('wireguard'), z.literal('openvpn'), z.literal('').optional()]).optional(),
   VPN_COUNTRIES: optStr,
   NORDVPN_ACCESS_TOKEN: optStr,
   NORDVPN_PRIVATE_KEY: optStr,
+  WIREGUARD_PRIVATE_KEY: optStr,
+  WIREGUARD_ADDRESSES: optStr,
+  WIREGUARD_PRESHARED_KEY: optStr,
+  OPENVPN_USER: optStr,
+  OPENVPN_PASSWORD: optStr,
+  CUSTOM_VPN_ENV: optStr,
 
   // Indexers (all optional — leave blank to skip)
   ANIMETOSHO_API_KEY: optStr,
@@ -95,24 +101,55 @@ export const envSchema = z.object({
   }
 
   // VPN config only validated when VPN_ENABLED is explicitly on
-  // (default = off; user opts in via the checkbox).
+  // (default = off; user opts in via the checkbox). Per-provider
+  // validation lives in shared/vpn-providers.ts — here we only enforce
+  // the gate-level invariants that apply regardless of provider.
   const vpnOn = (v.VPN_ENABLED ?? 'false').toLowerCase() === 'true'
-  if (vpnOn) {
-    if (!v.NORDVPN_PRIVATE_KEY) {
-      ctx.addIssue({ code: 'custom', path: ['NORDVPN_PRIVATE_KEY'],
-        message: 'WireGuard private key is required when VPN is enabled (or turn off VPN)' })
-    } else if (v.NORDVPN_PRIVATE_KEY.length !== 43 && v.NORDVPN_PRIVATE_KEY.length !== 44) {
-      ctx.addIssue({ code: 'custom', path: ['NORDVPN_PRIVATE_KEY'],
-        message: 'WireGuard key should be 43 or 44 chars' })
+  if (!vpnOn) return
+  if (!v.VPN_PROVIDER) {
+    ctx.addIssue({ code: 'custom', path: ['VPN_PROVIDER'],
+      message: 'Pick a VPN provider (or turn VPN off).' })
+    return
+  }
+  if (!v.VPN_COUNTRIES && v.VPN_PROVIDER !== 'custom') {
+    ctx.addIssue({ code: 'custom', path: ['VPN_COUNTRIES'],
+      message: 'Pick at least one country when VPN is enabled.' })
+  }
+  // Provider-specific required-creds checks. Mirror the registry in
+  // vpn-providers.ts without pulling that module here (this file is
+  // shared between renderer + main, and zod schemas live in shared too).
+  const wg  = v.WIREGUARD_PRIVATE_KEY || v.NORDVPN_PRIVATE_KEY || ''
+  const wgOk = wg.length >= 40 && wg.length <= 60
+  const provider = v.VPN_PROVIDER
+  if (provider === 'nordvpn' || provider === 'protonvpn'
+      || provider === 'mullvad' || provider === 'airvpn') {
+    if (!wg) {
+      ctx.addIssue({ code: 'custom', path: ['WIREGUARD_PRIVATE_KEY'],
+        message: 'WireGuard private key required.' })
+    } else if (!wgOk) {
+      ctx.addIssue({ code: 'custom', path: ['WIREGUARD_PRIVATE_KEY'],
+        message: `WireGuard private keys are usually ~44 chars; got ${wg.length}.` })
     }
-    if (!v.VPN_PROVIDER) {
-      ctx.addIssue({ code: 'custom', path: ['VPN_PROVIDER'],
-        message: 'VPN provider required when VPN is enabled' })
+  }
+  if (provider === 'protonvpn' || provider === 'mullvad' || provider === 'airvpn') {
+    if (!v.WIREGUARD_ADDRESSES) {
+      ctx.addIssue({ code: 'custom', path: ['WIREGUARD_ADDRESSES'],
+        message: 'Tunnel address required (from your provider\'s WireGuard config).' })
     }
-    if (!v.VPN_COUNTRIES) {
-      ctx.addIssue({ code: 'custom', path: ['VPN_COUNTRIES'],
-        message: 'pick at least one country when VPN is enabled' })
+  }
+  if (provider === 'surfshark') {
+    if (!v.OPENVPN_USER) {
+      ctx.addIssue({ code: 'custom', path: ['OPENVPN_USER'],
+        message: 'Manual-setup username required (not your account email).' })
     }
+    if (!v.OPENVPN_PASSWORD) {
+      ctx.addIssue({ code: 'custom', path: ['OPENVPN_PASSWORD'],
+        message: 'Manual-setup password required.' })
+    }
+  }
+  if (provider === 'custom' && !v.CUSTOM_VPN_ENV) {
+    ctx.addIssue({ code: 'custom', path: ['CUSTOM_VPN_ENV'],
+      message: 'Paste a gluetun env block (at least VPN_SERVICE_PROVIDER and credentials).' })
   }
 })
 

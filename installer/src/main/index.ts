@@ -2,9 +2,11 @@
 // owns the app lifecycle.
 
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { existsSync } from 'node:fs'
+import { createWriteStream, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, join, basename } from 'node:path'
+import { pipeline } from 'node:stream/promises'
+import { Readable } from 'node:stream'
 import log from 'electron-log/main.js'
 import { registerIpcHandlers, isMockMode } from './ipc-handlers.js'
 import * as ssh from './ssh-service.js'
@@ -36,12 +38,22 @@ let mainWindow: BrowserWindow | null = null
  *  launch until that fetch resolves, and null afterwards if the API
  *  was unreachable, rate-limited, or returned no releases. The
  *  appGetInfo IPC handler reads this lazily so the renderer can show
- *  a small "v0.x available" pill in the footer. We deliberately don't
- *  block app startup on the network — the wizard works offline once
- *  you've reached the Configure screen. */
-let updateInfo: { latest: string; url: string } | null = null
+ *  the WhatsNew banner on Welcome (and the small footer pill).
+ *  We deliberately don't block app startup on the network — the
+ *  wizard works offline once you've reached the Configure screen. */
+let updateInfo: {
+  latest: string
+  url: string
+  /** Raw GitHub release body (Markdown). Renderer applies a tiny
+   *  sanitised renderer; we don't transform here so future renderer
+   *  improvements can rely on the original text. */
+  notes: string
+  /** Direct URL to a `win-unpacked.zip` asset on the release, if
+   *  present. Drives the "Download zip" button. */
+  zipUrl: string | null
+} | null = null
 
-export function getCachedUpdateInfo(): { latest: string; url: string } | null {
+export function getCachedUpdateInfo() {
   return updateInfo
 }
 
@@ -59,6 +71,61 @@ function isNewerVersion(tag: string, current: string): boolean {
   if (ta !== ca) return ta > ca
   if (tb !== cb) return tb > cb
   return tc > cc
+}
+
+// Versions the user has explicitly chosen to skip from the WhatsNew
+// banner. Persists across launches in userData so a dismissed v0.3
+// doesn't keep reappearing. Cleared automatically when an EVEN newer
+// version shows up (we only compare "skipped == latest" — if a v0.4
+// arrives, the v0.3 skip is irrelevant).
+const SKIPPED_FILE = () => join(app.getPath('userData'), 'skipped-update.txt')
+function readSkippedVersion(): string | null {
+  try { return readFileSync(SKIPPED_FILE(), 'utf8').trim() || null }
+  catch { return null }
+}
+function writeSkippedVersion(v: string): void {
+  try { writeFileSync(SKIPPED_FILE(), v, { mode: 0o600 }) }
+  catch (e) { log.error('skip-version write failed:', e) }
+}
+export function isUpdateSkipped(): boolean {
+  if (!updateInfo) return false
+  return readSkippedVersion() === updateInfo.latest
+}
+export function skipCurrentUpdate(): void {
+  if (!updateInfo) return
+  writeSkippedVersion(updateInfo.latest)
+}
+
+/** Download the cached update's win-unpacked zip into the user's
+ *  Downloads folder and reveal it in the OS file manager. Streams
+ *  with no buffer, so a 200 MB build won't blow up memory. Returns
+ *  the saved path + bytes. Throws on network failure / missing url. */
+export async function downloadUpdateZip(): Promise<{ path: string | null; bytes: number }> {
+  if (!updateInfo?.zipUrl) {
+    throw new Error('No download URL on the current release — open the release page manually.')
+  }
+  const url = updateInfo.zipUrl
+  const filename = basename(new URL(url).pathname) || `mediarr-installer-v${updateInfo.latest}.zip`
+  const target = join(app.getPath('downloads'), filename)
+
+  const res = await fetch(url, {
+    headers: { 'User-Agent': `Mediarr-Installer/${app.getVersion()}` },
+    redirect: 'follow',
+  })
+  if (!res.ok || !res.body) {
+    throw new Error(`Download failed: HTTP ${res.status} from GitHub.`)
+  }
+  // Stream node-fetch's web ReadableStream into a fs WriteStream so we
+  // never buffer the whole zip in memory.
+  const out = createWriteStream(target)
+  let bytes = 0
+  const reader = Readable.fromWeb(res.body as unknown as import('stream/web').ReadableStream)
+  reader.on('data', (chunk: Buffer) => { bytes += chunk.length })
+  await pipeline(reader, out)
+  log.info(`update zip saved: ${target} (${bytes} bytes)`)
+  // Reveal in Explorer so the user can swap the unpacked folder.
+  try { shell.showItemInFolder(target) } catch { /* non-fatal */ }
+  return { path: target, bytes }
 }
 
 /** Fire-and-forget GitHub-releases ping. Never throws — any failure
@@ -80,14 +147,32 @@ async function checkForUpdate(): Promise<void> {
     )
     clearTimeout(t)
     if (!res.ok) return            // 404 on a brand-new repo with no releases is fine
-    const body = (await res.json()) as { tag_name?: string; html_url?: string }
+    const body = (await res.json()) as {
+      tag_name?: string
+      html_url?: string
+      body?: string
+      assets?: { name?: string; browser_download_url?: string }[]
+    }
     const tag = body.tag_name ?? ''
     const url = body.html_url ?? ''
     if (!tag) return
     if (isNewerVersion(tag, app.getVersion())) {
       const stripped = tag.replace(/^[a-zA-Z-]*v?/, '')
-      updateInfo = { latest: stripped, url: url || 'https://github.com/defessler/Mediarr-Installer/releases' }
-      log.info(`update available: v${stripped} (current v${app.getVersion()})`)
+      // Find a zip asset that looks like the unpacked Windows build —
+      // electron-builder names artifacts like "win-unpacked.zip" by
+      // convention, but we also accept any zip whose name contains
+      // "win-unpacked" for forward-compat with renamed artifacts.
+      const zipAsset = body.assets?.find((a) =>
+        (a.name ?? '').toLowerCase().includes('win-unpacked') &&
+        (a.name ?? '').toLowerCase().endsWith('.zip'),
+      )
+      updateInfo = {
+        latest: stripped,
+        url: url || 'https://github.com/defessler/Mediarr-Installer/releases',
+        notes: body.body ?? '',
+        zipUrl: zipAsset?.browser_download_url ?? null,
+      }
+      log.info(`update available: v${stripped} (current v${app.getVersion()}); zip=${zipAsset?.name ?? 'n/a'}`)
     } else {
       log.info(`up to date — v${app.getVersion()} ≥ tag ${tag}`)
     }

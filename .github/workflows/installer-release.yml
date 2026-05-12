@@ -1,8 +1,14 @@
 name: Installer Release
 
 # Triggers on tag push matching `installer-v*` (e.g. installer-v0.1.0).
-# Builds Windows NSIS, macOS dmg (arm64+x64), Linux AppImage, then attaches
-# the artifacts to a draft GitHub Release that you review and publish.
+# Builds Windows unpacked zip, macOS dmg (arm64+x64), Linux AppImage, then
+# attaches the artifacts to a draft GitHub Release that you review and
+# publish.
+#
+# Windows ships as a zipped unpacked folder (the user keeps electron-builder's
+# `target: dir` from electron-builder.yml — no NSIS installer, no SmartScreen
+# warning during update). The in-app WhatsNew banner downloads this zip
+# directly when the user clicks "Download zip".
 #
 # Tag the release like this:
 #   git tag installer-v0.1.0
@@ -30,7 +36,10 @@ jobs:
         include:
           - os: windows-latest
             target: win
-            artifact_glob: 'installer/dist/*Setup*.exe'
+            # Built as an unpacked folder (electron-builder target: dir).
+            # The "Zip win-unpacked" step below produces this zip alongside
+            # the unpacked folder so the matrix has a single deliverable.
+            artifact_glob: 'installer/dist/mediarr-installer-win-unpacked.zip'
           - os: macos-latest
             target: mac
             artifact_glob: 'installer/dist/*.dmg'
@@ -74,6 +83,19 @@ jobs:
           ls -la dist || dir dist
         shell: bash
 
+      # Windows ships unpacked. Zip the win-unpacked folder so the
+      # release has a single downloadable, and so the in-app WhatsNew
+      # banner has a stable asset name to fetch on click. The filename
+      # MUST contain the substring "win-unpacked" — main/index.ts'
+      # asset-finder matches on that.
+      - name: Zip win-unpacked (Windows only)
+        if: matrix.target == 'win'
+        run: |
+          cd dist
+          7z a -tzip mediarr-installer-win-unpacked.zip win-unpacked
+          ls -la mediarr-installer-win-unpacked.zip
+        shell: bash
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -100,7 +122,8 @@ jobs:
       - name: Flatten artifacts directory
         run: |
           mkdir -p release-files
-          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' \) \
+          find artifacts -type f \
+            \( -name '*win-unpacked*.zip' -o -name '*.dmg' -o -name '*.AppImage' \) \
             -exec cp -v {} release-files/ \;
           ls -la release-files/
 
@@ -119,7 +142,7 @@ jobs:
             NAS over SSH. Wraps the bash + Python automation in `nas/`.
 
             ### Downloads
-            - **Windows**: `*Setup*.exe` — NSIS installer (unsigned; SmartScreen will warn)
+            - **Windows**: `mediarr-installer-win-unpacked.zip` — extract anywhere, run `Mediarr Installer.exe`
             - **macOS**: `*.dmg` — separate dmgs for arm64 and x64 (unsigned)
             - **Linux**: `*.AppImage` — universal x64 build
 
