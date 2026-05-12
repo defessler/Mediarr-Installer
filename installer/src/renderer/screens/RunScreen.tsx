@@ -44,6 +44,15 @@ export function RunScreen() {
   /** Path of the on-disk install log for the current run. Set when go()
    *  starts a new run; surfaces in the header so the user can open it. */
   const [installLogPath, setInstallLogPath] = useState<string | null>(null)
+  /** Issues parsed out of the streaming log. Surfaces failures and
+   *  warnings from setup-arr-config.py et al as a tidy summary above
+   *  the log panel, so the user doesn't have to scroll 500 lines to
+   *  know what needs attention. Updated incrementally as chunks
+   *  arrive; cleared at the start of each run. */
+  const [issues, setIssues] = useState<{
+    severity: 'fail' | 'warn' | 'note'
+    text: string
+  }[]>([])
   /** Tracks whether the current run has emitted an SFTP progress event
    *  yet. The first emit gets a fresh line; subsequent emits use \r to
    *  overwrite that line in place (one ticker, not 15 lines). */
@@ -54,6 +63,42 @@ export function RunScreen() {
 
   function resetSteps() {
     setSteps(SETUP_STEPS.map((s) => ({ ...s })))
+  }
+
+  /** Parse a completed log line for issue markers (✘, ⚠, !) and append
+   *  to the issues list. We deliberately ignore noise that's loud in
+   *  the log but not actionable: ANSI escapes, step-footer banners
+   *  ("✘ Step 7 failed" — already shown in the stepper), and the
+   *  end-of-script summary line. */
+  function tryRecordIssue(rawLine: string) {
+    const line = stripAnsi(rawLine).replace(/\s+/g, ' ').trim()
+    if (!line) return
+    // Skip the step-footer marker — stepper already shows it.
+    if (/^✘\s*Step\s+\d+/.test(line)) return
+    // Skip the "Done with N error(s)" summary banner — not actionable
+    // on its own; the individual ✘ entries above it are.
+    if (/^Done with \d+ error/i.test(line)) return
+    let severity: 'fail' | 'warn' | 'note' | null = null
+    let text = ''
+    // Failure: lines starting with ✘ (with optional leading spaces).
+    const failMatch = line.match(/^✘\s+(.+)$/)
+    if (failMatch) { severity = 'fail'; text = failMatch[1] }
+    // Warning: ⚠ marker (from setup-validate.sh).
+    const warnMatch = !severity && line.match(/^⚠\s+(.+)$/)
+    if (warnMatch) { severity = 'warn'; text = warnMatch[1] }
+    // Note / "needs manual action": ! marker (used liberally by the
+    // arr-config script for "set this in the UI manually" hints).
+    const noteMatch = !severity && line.match(/^!\s+(.+)$/)
+    if (noteMatch) { severity = 'note'; text = noteMatch[1] }
+    if (!severity) return
+    // Trim trailing punctuation noise.
+    text = text.replace(/[.\s]+$/, '').slice(0, 280)
+    setIssues((prev) => {
+      // De-dup adjacent identical entries (the same error can echo
+      // multiple times during retries).
+      if (prev.length > 0 && prev[prev.length - 1].text === text) return prev
+      return [...prev, { severity: severity!, text }]
+    })
   }
 
   function applyStepMarkers(newLines: string[]) {
@@ -157,7 +202,13 @@ export function RunScreen() {
       linesRef.current.splice(0, linesRef.current.length - 20_000)
     }
 
-    if (newlyCompleted.length > 0) applyStepMarkers(newlyCompleted)
+    if (newlyCompleted.length > 0) {
+      applyStepMarkers(newlyCompleted)
+      // Same loop also feeds the issues parser — every newly-finalised
+      // line gets scanned for ✘/⚠/! markers so the summary panel
+      // updates as the install progresses.
+      for (const line of newlyCompleted) tryRecordIssue(line)
+    }
     setTick((t) => t + 1)
   }
 
@@ -289,6 +340,7 @@ export function RunScreen() {
     setErrorMsg(null)
     linesRef.current = []
     resetSteps()
+    setIssues([])
     sftpFirstRef.current = true   // next sftp progress event starts a fresh line
     setTick((t) => t + 1)
 
@@ -738,6 +790,52 @@ export function RunScreen() {
           </span>
         </div>
       </div>
+
+      {/* Issues summary: surfaces ✘ failures, ⚠ warnings and ! manual-
+          action notes as a compact list so the user doesn't have to
+          scroll the log to find them. Only renders while there ARE
+          issues to show; collapses by severity-group to stay tidy. */}
+      {issues.length > 0 && (
+        <details
+          open={issues.some((i) => i.severity === 'fail') && (phase === 'failed' || phase === 'done')}
+          className="rounded-md border border-slate-800 bg-slate-900/40 shrink-0 max-h-48 overflow-hidden"
+        >
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium flex items-center gap-3 select-none">
+            <span>Issues found</span>
+            {(() => {
+              const fails = issues.filter((i) => i.severity === 'fail').length
+              const warns = issues.filter((i) => i.severity === 'warn').length
+              const notes = issues.filter((i) => i.severity === 'note').length
+              return (
+                <span className="flex items-center gap-2 text-xs">
+                  {fails > 0 && <span className="text-rose-300">✘ {fails}</span>}
+                  {warns > 0 && <span className="text-amber-300">⚠ {warns}</span>}
+                  {notes > 0 && <span className="text-sky-300">! {notes} manual step{notes === 1 ? '' : 's'}</span>}
+                </span>
+              )
+            })()}
+            <span className="ml-auto text-xs text-slate-500">click to expand/collapse</span>
+          </summary>
+          <ul className="px-3 pb-3 space-y-1 text-xs font-mono overflow-y-auto max-h-40">
+            {issues.map((it, i) => {
+              const cls =
+                it.severity === 'fail' ? 'text-rose-300'
+                : it.severity === 'warn' ? 'text-amber-300'
+                : 'text-sky-300'
+              const glyph =
+                it.severity === 'fail' ? '✘'
+                : it.severity === 'warn' ? '⚠'
+                : '!'
+              return (
+                <li key={i} className={`flex gap-2 ${cls}`}>
+                  <span className="shrink-0">{glyph}</span>
+                  <span className="break-words">{it.text}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </details>
+      )}
 
       {/* Two-pane: stepper rail on the left, streaming log on the right */}
       <div className="flex-1 min-h-0 grid grid-cols-[260px_1fr] gap-4">

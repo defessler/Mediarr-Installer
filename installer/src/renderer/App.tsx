@@ -142,17 +142,30 @@ export function App() {
     }
   }, [])
 
-  // Watch every SSH stream close — if a remote command exits non-zero
-  // and the screen that owns the stream doesn't surface the error, the
-  // toast guarantees the user still sees it.
+  // Watch every SSH stream close — fall-through safety net for any
+  // channel that DOESN'T have a screen showing its exit status. The
+  // streaming channels we run today are all owned by a screen:
+  //   - setup-sh-main / setup-sh-rerun-*  → RunScreen (stepper + log)
+  //   - compose-update                    → UpdateRunScreen (status bar)
+  //   - post-deploy-validate              → DoneScreen (re-check button)
+  // Those screens already render the exit code, the stepper colour,
+  // and the streamed log — a toast on top is duplicate noise. Skip
+  // toasts for those known IDs but keep the catch-all behaviour for
+  // anything new added without UI, so a future regression doesn't
+  // disappear silently.
   useEffect(() => {
     const off = window.installer.ssh.onStreamClose((d) => {
-      if (d.exitCode != null && d.exitCode !== 0) {
-        useErrors.getState().pushWarn(
-          `Remote command exited with code ${d.exitCode}`,
-          `channel: ${d.channelId}${d.signal ? `\nsignal: ${d.signal}` : ''}`,
-        )
-      }
+      if (d.exitCode == null || d.exitCode === 0) return
+      const owned =
+        d.channelId === 'setup-sh-main' ||
+        d.channelId === 'compose-update' ||
+        d.channelId === 'post-deploy-validate' ||
+        d.channelId.startsWith('setup-sh-rerun-')
+      if (owned) return  // The owning screen surfaces it; don't double up.
+      useErrors.getState().pushWarn(
+        `Remote command exited with code ${d.exitCode}`,
+        `channel: ${d.channelId}${d.signal ? `\nsignal: ${d.signal}` : ''}`,
+      )
     })
     return () => { off() }
   }, [])
