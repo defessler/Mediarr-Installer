@@ -1414,13 +1414,36 @@ def main():
     if not LIDARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Lidarr", LIDARR, LIDARR_KEY, "/api/v1/system/status"):
-        lidarr_quality_id, _ = get_quality_profile(LIDARR, LIDARR_KEY, "api/v1")
-        lidarr_meta_profiles = GET(LIDARR, LIDARR_KEY, "/api/v1/metadataprofile") or []
-        lidarr_meta_id = lidarr_meta_profiles[0]['id'] if lidarr_meta_profiles else 1
-        add_root_folder(LIDARR, LIDARR_KEY, "api/v1", "/data/Media/Music", {
-            "defaultQualityProfileId":  lidarr_quality_id or 1,
-            "defaultMetadataProfileId": lidarr_meta_id,
-        }, container="lidarr")
+        # Lidarr's API can answer /system/status before its default
+        # quality/metadata profiles are inserted (especially on a fresh
+        # first-run DB). Poll the profile endpoints with a short backoff
+        # so we don't try to attach the root folder to a non-existent
+        # defaultQualityProfileId=1 (the previous fallback — Lidarr
+        # then 400s with "Quality Profile does not exist").
+        lidarr_quality_id = None
+        lidarr_meta_id    = None
+        for attempt in range(6):  # up to ~30s
+            qprofiles = GET(LIDARR, LIDARR_KEY, "/api/v1/qualityprofile") or []
+            mprofiles = GET(LIDARR, LIDARR_KEY, "/api/v1/metadataprofile") or []
+            if qprofiles and mprofiles:
+                # Prefer something with "Lossless" or "Standard" in its
+                # name if available, else first one. Same for metadata.
+                qmatch = next((p for p in qprofiles
+                               if 'lossless' in p['name'].lower()
+                               or 'standard' in p['name'].lower()), None)
+                lidarr_quality_id = (qmatch or qprofiles[0])['id']
+                lidarr_meta_id    = mprofiles[0]['id']
+                break
+            time.sleep(5)
+        if lidarr_quality_id is None or lidarr_meta_id is None:
+            fail("Lidarr: quality/metadata profiles not available after 30s — "
+                 "open http://<NAS>:49154 once to let Lidarr finish first-run "
+                 "setup, then re-run this script.")
+        else:
+            add_root_folder(LIDARR, LIDARR_KEY, "api/v1", "/data/Media/Music", {
+                "defaultQualityProfileId":  lidarr_quality_id,
+                "defaultMetadataProfileId": lidarr_meta_id,
+            }, container="lidarr")
         add_download_client(LIDARR, LIDARR_KEY, "api/v1", "qBittorrent", "QBittorrent", {
             "host": QB_HOST, "port": QB_PORT, "useSsl": False,
             "username": QB_USER, "password": QB_PASS, "category": "lidarr",

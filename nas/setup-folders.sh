@@ -162,7 +162,15 @@ SETFACL=$(find_tool setfacl \
     /bin/setfacl) || SETFACL=""
 
 if [ -d "$DATA_ROOT" ]; then
+    # Try getent first (works on most Linuxes including DSM7) but fall
+    # back to awk over /etc/passwd — Synology's busybox doesn't always
+    # ship getent, and an empty USERNAME used to wedge us into the
+    # else branch reporting "no ACL tool found" even when synoacltool
+    # was found at /usr/syno/bin.
     USERNAME=$(getent passwd "$PUID" 2>/dev/null | cut -d: -f1)
+    if [ -z "$USERNAME" ]; then
+        USERNAME=$(awk -F: -v u="$PUID" '$3==u{print $1; exit}' /etc/passwd 2>/dev/null)
+    fi
 
     if [ -n "$SYNOACL" ] && [ -n "$USERNAME" ]; then
         echo ""
@@ -196,20 +204,30 @@ if [ -d "$DATA_ROOT" ]; then
         "$SETFACL" -R -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
             echo "  ✔ POSIX ACL applied" || \
             echo "  ⚠ setfacl failed — filesystem may not support ACLs"
+    elif [ -n "$SYNOACL" ] && [ -z "$USERNAME" ]; then
+        echo ""
+        echo "  ⚠ Found $SYNOACL but couldn't resolve a username for"
+        echo "    PUID=${PUID}. The Mediarr Installer wizard normally"
+        echo "    applies the shared-folder ACL itself (and did, if you"
+        echo "    see [acl] lines above this step) — this script's grant"
+        echo "    is a backup. Continuing."
     else
         echo ""
         echo "  ⚠ No ACL tool found anywhere — synoacltool and setfacl both"
         echo "    missing from PATH, /usr, and /bin. This is unusual on DSM."
-        echo "    You will need to grant write access manually:"
         echo ""
+        echo "    The Mediarr Installer wizard usually applies the ACL itself"
+        echo "    before this script runs — check the [acl] lines earlier in"
+        echo "    the install log. If those reported success, you can ignore"
+        echo "    this warning."
+        echo ""
+        echo "    Otherwise, grant write access manually in DSM:"
+        echo "      Control Panel → Shared Folder → Data → Edit → Permissions"
         if [ -n "$USERNAME" ]; then
-            echo "    DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
-            echo "    Find user '${USERNAME}', check Read/Write, click Save."
+            echo "      Find user '${USERNAME}', check Read/Write, click Save."
         else
-            echo "    DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
-            echo "    Find the user matching PUID=${PUID}, check Read/Write, click Save."
+            echo "      Find the user matching PUID=${PUID}, check Read/Write, click Save."
         fi
-        echo ""
         echo "    Then re-run: sudo bash /volume1/docker/media/setup.sh"
     fi
 fi

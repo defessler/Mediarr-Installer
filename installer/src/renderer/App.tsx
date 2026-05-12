@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
@@ -88,18 +88,34 @@ export function App() {
   //   - any step needing an SSH session but sessionId is null → connect
   // Without these, a persisted "step: 'run'" + cold start would leave
   // the user staring at "No SSH session" with no obvious recovery.
+  //
+  // Toast policy: don't blast a "Reconnect required" notice on every
+  // cold-start bounce — the app was just launched, of course there's
+  // no live SSH session yet, and the user is already being moved to
+  // the Connect screen which makes that perfectly obvious. The toast
+  // only adds value when the user was actively working in a session-
+  // dependent step and the session DROPPED (e.g. SSH timeout mid-
+  // install). We approximate that with a ref that flips true after
+  // the first render — subsequent missing-session bounces are
+  // "something changed under the user's feet," worth surfacing.
+  const firstBounceRef = useRef(true)
   useEffect(() => {
     if (step !== 'welcome' && !activeProfileId) {
       setStep('welcome')
       return
     }
     if (STEPS_NEEDING_SESSION.includes(step) && !sessionId) {
-      useErrors.getState().pushInfo(
-        'Reconnect required',
-        'Your SSH session expired (probably because the app was restarted). Bouncing back to Connect.',
-      )
+      // Silent on the initial bounce (cold start / app reload).
+      // Subsequent bounces mean a session expired mid-flight — toast.
+      if (!firstBounceRef.current) {
+        useErrors.getState().pushInfo(
+          'Reconnect required',
+          'Your SSH session expired. Bouncing back to Connect so you can reopen it.',
+        )
+      }
       setStep('connect')
     }
+    firstBounceRef.current = false
   }, [step, activeProfileId, sessionId, setStep])
 
   useEffect(() => {
