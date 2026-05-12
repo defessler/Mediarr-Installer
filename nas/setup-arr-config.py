@@ -877,10 +877,15 @@ def configure_qbittorrent(base, username, password):
     cj = http.cookiejar.CookieJar()
     opener = build_opener(HTTPCookieProcessor(cj))
 
-    def attempt_login() -> tuple[str, Exception | None]:
-        """Returns (response-body, error). Empty body + None error = 200 OK
-        with no content (qBittorrent under stress). Non-None error = network
-        / HTTP failure."""
+    def attempt_login():
+        """Returns (response-body: str, error: Exception or None).
+        Empty body + None error = 200 OK with no content (qBittorrent
+        under stress). Non-None error = network / HTTP failure.
+
+        Note: deliberately untyped — Synology DSM7 ships python 3.9 in
+        Container Manager, which doesn't yet have PEP 604 (X | None
+        union syntax). An earlier annotated version crashed setup.sh
+        with TypeError before the function ever ran."""
         try:
             data = urlencode({'username': username, 'password': password}).encode()
             resp = opener.open(f"{base}/api/v2/auth/login", data, timeout=10)
