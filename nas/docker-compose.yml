@@ -15,8 +15,8 @@ services:
     ports:
       - ${LAN_IP}:32400:32400
     volumes:
-      - /volume1/docker/media/plex/config:/config
-      - /volume1/Data/Media:/media
+      - ${INSTALL_DIR}/plex/config:/config
+      - ${DATA_ROOT}/Media:/media
     # Uncomment for Intel Arc / NVIDIA GPU transcoding:
     # devices:
     #   - /dev/dri:/dev/dri
@@ -34,7 +34,7 @@ services:
     ports:
       - ${LAN_IP}:8181:8181
     volumes:
-      - /volume1/docker/media/tautulli/config:/config
+      - ${INSTALL_DIR}/tautulli/config:/config
     restart: unless-stopped
 
   seerr:
@@ -49,7 +49,7 @@ services:
     ports:
       - ${LAN_IP}:5056:5055
     volumes:
-      - /volume1/docker/media/seerr/config:/app/config
+      - ${INSTALL_DIR}/seerr/config:/app/config
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/status || exit 1
       start_period: 20s
@@ -70,7 +70,7 @@ services:
     ports:
       - ${LAN_IP}:3000:3000
     volumes:
-      - /volume1/docker/media/homepage/config:/app/config
+      - ${INSTALL_DIR}/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
 
@@ -87,7 +87,7 @@ services:
     ports:
       - ${LAN_IP}:49150:9696
     volumes:
-      - /volume1/docker/media/prowlarr/config:/config
+      - ${INSTALL_DIR}/prowlarr/config:/config
     healthcheck:
       test: curl -sf http://localhost:9696/api/v1/system/status?apikey=none > /dev/null || exit 0
       start_period: 30s
@@ -127,8 +127,8 @@ services:
     ports:
       - ${LAN_IP}:49152:8989
     volumes:
-      - /volume1/docker/media/sonarr/config:/config
-      - /volume1/Data:/data
+      - ${INSTALL_DIR}/sonarr/config:/config
+      - ${DATA_ROOT}:/data
     healthcheck:
       test: curl -sf http://localhost:8989/api/v3/system/status > /dev/null || exit 1
       start_period: 60s
@@ -149,8 +149,8 @@ services:
     ports:
       - ${LAN_IP}:49151:7878
     volumes:
-      - /volume1/docker/media/radarr/config:/config
-      - /volume1/Data:/data
+      - ${INSTALL_DIR}/radarr/config:/config
+      - ${DATA_ROOT}:/data
     healthcheck:
       test: curl -sf http://localhost:7878/api/v3/system/status > /dev/null || exit 1
       start_period: 60s
@@ -171,8 +171,8 @@ services:
     ports:
       - ${LAN_IP}:49153:6767
     volumes:
-      - /volume1/docker/media/bazarr/config:/config
-      - /volume1/Data:/data
+      - ${INSTALL_DIR}/bazarr/config:/config
+      - ${DATA_ROOT}:/data
     restart: unless-stopped
 
   lidarr:
@@ -187,8 +187,8 @@ services:
     ports:
       - ${LAN_IP}:49154:8686
     volumes:
-      - /volume1/docker/media/lidarr/config:/config
-      - /volume1/Data:/data
+      - ${INSTALL_DIR}/lidarr/config:/config
+      - ${DATA_ROOT}:/data
     healthcheck:
       test: curl -sf http://localhost:8686/api/v1/system/status > /dev/null || exit 1
       start_period: 60s
@@ -249,9 +249,9 @@ services:
       - WEBUI_USERNAME=${QBITTORRENT_USER:-admin}
       - WEBUI_PASSWORD=${QBITTORRENT_PASS}
     volumes:
-      - /volume1/docker/media/qbittorrent/config:/config
-      - /volume1/docker/media/qbittorrent/custom-cont-init.d:/custom-cont-init.d:ro
-      - /volume1/Data/Downloads/Torrents:/downloads
+      - ${INSTALL_DIR}/qbittorrent/config:/config
+      - ${INSTALL_DIR}/qbittorrent/custom-cont-init.d:/custom-cont-init.d:ro
+      - ${DATA_ROOT}/Downloads/Torrents:/downloads
     restart: unless-stopped
 
   sabnzbd:
@@ -265,8 +265,8 @@ services:
     ports:
       - ${LAN_IP}:49155:8080
     volumes:
-      - /volume1/docker/media/sabnzbd/config:/config
-      - /volume1/Data/Downloads/Usenet:/data
+      - ${INSTALL_DIR}/sabnzbd/config:/config
+      - ${DATA_ROOT}/Downloads/Usenet:/data
     restart: unless-stopped
 
   # ── Maintenance ───────────────────────────────────────────
@@ -281,7 +281,7 @@ services:
       - TZ=${TZ}
       - RECYCLARR_CREATE_CONFIG=true
     volumes:
-      - /volume1/docker/media/recyclarr/config:/config
+      - ${INSTALL_DIR}/recyclarr/config:/config
     restart: unless-stopped
 
   unpackerr:
@@ -298,8 +298,8 @@ services:
       - UN_RADARR_0_URL=http://radarr:7878
       - UN_RADARR_0_API_KEY=${RADARR_API_KEY}
     volumes:
-      - /volume1/docker/media/unpackerr/config:/config
-      - /volume1/Data:/data
+      - ${INSTALL_DIR}/unpackerr/config:/config
+      - ${DATA_ROOT}:/data
     restart: unless-stopped
 
 networks:

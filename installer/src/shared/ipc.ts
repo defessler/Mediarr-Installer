@@ -135,6 +135,25 @@ export interface EnvDetectResult {
     /** Inheritance flags, e.g. "fd--" = file+directory inherit. */
     inherit: string
   }[]
+  /** Detected NAS family. Drives sensible defaults for INSTALL_DIR
+   *  and DATA_ROOT, and gates family-specific features (Synology ACL
+   *  via synoacltool, QNAP qpkg paths, Unraid /mnt/user, etc.). */
+  nasFamily: 'synology' | 'qnap' | 'unraid' | 'truenas' | 'omv' | 'linux'
+  /** Short OS version string the NAS self-reports (DSM build, Unraid
+   *  version, kernel uname). Surfaced on Detect so the user can sanity-
+   *  check what they're installing onto. */
+  osVersion: string | null
+  /** Existing top-level dirs that look like NAS data share roots. We
+   *  scan a fixed candidate list at detect time and report only the
+   *  ones that exist — the Configure screen offers them as quick-pick
+   *  options for DATA_ROOT. */
+  dataCandidates: string[]
+  /** Family-aware default for INSTALL_DIR (where the wizard installs
+   *  its compose stack). User can override on Configure. */
+  suggestedInstallDir: string
+  /** Family-aware default for DATA_ROOT (where the user's media +
+   *  downloads live — bind-mounted as /data inside the arr containers). */
+  suggestedDataRoot: string
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────

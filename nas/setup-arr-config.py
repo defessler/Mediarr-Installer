@@ -328,7 +328,29 @@ def acl_diagnostic(path):
     """Print the standard 'Synology shared-folder ACL' diagnostic block.
     Centralised here so root-folder, remote-path-mapping and any other
     write-bound API call surface the same guidance."""
-    host_path = path.replace('/data/', '/volume1/Data/', 1)
+    # Map container's /data/* path back to the host's DATA_ROOT/* path.
+    # The wizard writes DATA_ROOT into .env so we can name the actual
+    # host directory in the error message (Synology /volume1/Data,
+    # Unraid /mnt/user/data, QNAP /share/Data, …). Falls back to the
+    # historical Synology layout for older .envs that pre-date the
+    # multi-NAS refactor.
+    data_root = os.environ.get('DATA_ROOT')
+    if not data_root:
+        # Fish it out of the local .env via a quick file read — we're
+        # already inside main() so script_dir is available, but
+        # acl_diagnostic is module-level so we walk up to find it.
+        try:
+            here = os.path.dirname(os.path.realpath(__file__))
+            with open(os.path.join(here, '.env')) as f:
+                for line in f:
+                    if line.startswith('DATA_ROOT='):
+                        data_root = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+    if not data_root:
+        data_root = '/volume1/Data'
+    host_path = path.replace('/data/', data_root.rstrip('/') + '/', 1)
     # Look up the username for PUID so the DSM-UI instruction can name
     # the actual account the user needs to grant write access to,
     # rather than asking them to guess "the user matching PUID=1026."
@@ -349,22 +371,40 @@ def acl_diagnostic(path):
     print(f"      (running as uid={CONTAINER_UID} gid={CONTAINER_GID}).")
     print(f"      Read works ({path} is visible — post-deploy-validate")
     print(f"      sees its contents) but Sonarr/Radarr/Lidarr need write")
-    print(f"      access to drop a .test file there, and Synology's")
-    print(f"      shared-folder ACL on /volume1/Data is denying it.")
-    print(f"      Host equivalent: {host_path}")
+    print(f"      access to drop a .test file there.")
+    print(f"      Host path: {host_path}")
+    print(f"      Data root: {data_root}")
     print(f"")
-    print(f"      Fix it in DSM (easiest, no CLI required):")
-    print(f"        1. Control Panel → Shared Folder → click 'Data' → Edit")
-    print(f"        2. Permissions tab")
-    print(f"        3. Find user '{user_name}' in the list")
-    print(f"        4. Check the 'Read/Write' box, click Save")
-    print(f"        5. Back here:  docker compose restart")
-    print(f"        6. Re-run:  sudo bash {os.path.dirname(os.path.realpath(__file__))}/setup.sh")
-    print(f"")
-    print(f"      Or from CLI (if synoacltool is on the box):")
-    print(f"        sudo synoacltool -add /volume1/Data \\")
-    print(f'          "user:{user_name}:allow:rwxpdDaARWcCo:fd--"')
-    print(f"        sudo synoacltool -enforce-inherit /volume1/Data")
+    # Family-aware fix instructions. /etc/synoinfo.conf is the Synology
+    # fingerprint we use elsewhere in the stack; check it here so the
+    # diagnostic shows DSM Control Panel steps on Synology and a more
+    # generic chmod/chgrp + ACL hint on other NASes.
+    is_synology = os.path.exists('/etc/synoinfo.conf')
+    if is_synology:
+        print(f"      Synology's shared-folder ACL is denying it. Fix in DSM:")
+        print(f"        1. Control Panel → Shared Folder → click the share for {data_root}")
+        print(f"        2. Edit → Permissions tab")
+        print(f"        3. Find user '{user_name}' in the list")
+        print(f"        4. Check 'Read/Write', click Save")
+        print(f"        5. Back here:  docker compose restart")
+        print(f"        6. Re-run:  sudo bash {os.path.dirname(os.path.realpath(__file__))}/setup.sh")
+        print(f"")
+        print(f"      Or from CLI:")
+        print(f"        sudo synoacltool -add {data_root} \\")
+        print(f'          "user:{user_name}:allow:rwxpdDaARWcCo:fd--"')
+        print(f"        sudo synoacltool -enforce-inherit {data_root}")
+    else:
+        # Unraid / QNAP / TrueNAS / generic Linux — POSIX is the source
+        # of truth. Walk the user through chgrp + chmod + setfacl.
+        print(f"      Fix from your NAS shell:")
+        print(f"        sudo chgrp -R {CONTAINER_GID} {host_path}")
+        print(f"        sudo chmod -R g+rwX {host_path}")
+        print(f"      Or with POSIX ACL (if your filesystem supports it):")
+        print(f"        sudo setfacl -R -m  u:{CONTAINER_UID}:rwx {host_path}")
+        print(f"        sudo setfacl -R -d -m u:{CONTAINER_UID}:rwx {host_path}")
+        print(f"      Then:")
+        print(f"        docker compose restart")
+        print(f"        sudo bash {os.path.dirname(os.path.realpath(__file__))}/setup.sh")
 
 
 def add_root_folder(base, key, api, path, extra_fields=None, container=None):
@@ -905,26 +945,33 @@ def configure_qbittorrent(base, username, password):
     if last_result == 'Ok.':
         ok("qBittorrent authenticated")
     elif last_result == 'Fails.':
+        # `base` is the host:port URL the wizard derived from .env;
+        # `install_dir` comes from .env via the caller. Surface them
+        # verbatim so the user gets paths that match their actual NAS
+        # layout (Synology /volume1/docker/media vs Unraid /mnt/user/
+        # appdata/mediarr vs whatever).
+        install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
         warn(f"qBittorrent login rejected: username='{username}' did not match qBittorrent.conf.")
         warn("This usually means qBittorrent's WebUI password was changed manually after a")
         warn("previous install. Fix:")
         warn("  1. docker logs qbittorrent | grep -i 'temporary password'  — if recent, use that")
         warn("  2. Either log in via the qBittorrent UI and set the password to match")
         warn("     QBITTORRENT_PASS in .env, OR delete the qBittorrent config and re-run:")
-        warn("       rm /volume1/docker/media/qbittorrent/config/qBittorrent/qBittorrent.conf")
+        warn(f"       rm {install_dir}/qbittorrent/config/qBittorrent/qBittorrent.conf")
         warn("       docker compose restart qbittorrent")
-        warn("       sudo bash /volume1/docker/media/setup.sh")
+        warn(f"       sudo bash {install_dir}/setup.sh")
         warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
         return
     else:
         # Empty body or network error — qBittorrent's WebUI is up but
         # auth handler didn't speak to us. Common right after a fresh
         # container start.
+        install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
         if last_error is not None:
             warn(f"qBittorrent not reachable: {last_error} — skipping watch folder setup")
         else:
             warn(f"qBittorrent login returned empty response — daemon may still be starting.")
-            warn("Re-run sudo bash /volume1/docker/media/setup.sh in a minute or two; if it")
+            warn(f"Re-run sudo bash {install_dir}/setup.sh in a minute or two; if it")
             warn("keeps happening, check 'docker logs qbittorrent' for startup errors.")
         warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
         return
@@ -1031,8 +1078,9 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
 def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key):
     section("Seerr")
     if not key:
+        install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
         warn("Seerr settings.json not found — complete the setup wizard first.")
-        warn("Then re-run:  python3 /volume1/docker/media/setup-arr-config.py")
+        warn(f"Then re-run:  python3 {install_dir}/setup-arr-config.py")
         return
 
     # Probe with a direct urlopen so we can recognise the "wizard not
@@ -1349,7 +1397,19 @@ def main():
     LIDARR_INT = "http://lidarr:8686"
 
     # ── API keys — .env takes priority, config files are the fallback ─────────
-    B = "/volume1/docker/media"
+    # B = the wizard's install dir on this host. NAS-family-portable:
+    # comes from .env (INSTALL_DIR) on every install since the multi-NAS
+    # refactor; falls back to Synology's historical path for older .envs
+    # the user might have hand-edited, and finally to script_dir which
+    # is where setup.sh always runs from anyway.
+    B = env.get('INSTALL_DIR') or script_dir or '/volume1/docker/media'
+    # Expose INSTALL_DIR + DATA_ROOT to module-level helpers (like
+    # acl_diagnostic / configure_qbittorrent) that need them but don't
+    # take env as a parameter. Cheaper than threading them through every
+    # function signature.
+    os.environ['INSTALL_DIR'] = B
+    if env.get('DATA_ROOT'):
+        os.environ['DATA_ROOT'] = env['DATA_ROOT']
 
     # Poll all config files together until available (up to 120s)
     arr_configs = {

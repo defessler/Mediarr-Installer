@@ -411,6 +411,11 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
       { kind: 'user', name: 'heoki',          allow: true, perms: 'rwxpdDaARWcCo', inherit: 'fd--' },
       { kind: 'group', name: 'administrators', allow: true, perms: 'rwxpdDaARWc--', inherit: 'fd--' },
     ],
+    nasFamily: 'synology',
+    osVersion: 'DSM 7.2.1-69057',
+    dataCandidates: ['/volume1', '/volume2'],
+    suggestedInstallDir: '/volume1/docker/media',
+    suggestedDataRoot: '/volume1/Data',
   }
 }
 

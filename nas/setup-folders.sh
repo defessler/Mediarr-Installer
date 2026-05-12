@@ -19,52 +19,63 @@ fi
 
 PUID=$(grep -m1 '^PUID=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r')
 PGID=$(grep -m1 '^PGID=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r')
+INSTALL_DIR=$(grep -m1 '^INSTALL_DIR=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | sed 's/^"//; s/"$//')
+DATA_ROOT=$(grep -m1 '^DATA_ROOT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '\r' | sed 's/^"//; s/"$//')
 
 if [ -z "$PUID" ] || [ -z "$PGID" ]; then
     echo "Error: PUID and PGID must both be set in $ENV_FILE"
     exit 1
 fi
+# NAS-family-portable path defaults. The wizard normally writes
+# INSTALL_DIR + DATA_ROOT explicitly into .env; the fallbacks below
+# only matter when this script runs against an older .env or stand-
+# alone (someone tweaked their own setup and re-ran our scripts).
+: "${INSTALL_DIR:=$SCRIPT_DIR}"
+: "${DATA_ROOT:=/volume1/Data}"
 
-echo "Using PUID=$PUID PGID=$PGID (from ${ENV_FILE})"
+echo "Using PUID=$PUID PGID=$PGID  (from ${ENV_FILE})"
+echo "       INSTALL_DIR=$INSTALL_DIR  DATA_ROOT=$DATA_ROOT"
 echo ""
 
 # ── Config directories ─────────────────────────────────────────────────────────
 
 CONFIG_DIRS=(
-    /volume1/docker/media/plex/config
-    /volume1/docker/media/tautulli/config
-    /volume1/docker/media/seerr/config
-    /volume1/docker/media/prowlarr/config
-    /volume1/docker/media/sonarr/config
-    /volume1/docker/media/radarr/config
-    /volume1/docker/media/bazarr/config
-    /volume1/docker/media/lidarr/config
-    /volume1/docker/media/qbittorrent/config
-    /volume1/docker/media/qbittorrent/config/.cache/qBittorrent
-    /volume1/docker/media/qbittorrent/custom-cont-init.d
-    /volume1/docker/media/sabnzbd/config
-    /volume1/docker/media/recyclarr/config
-    /volume1/docker/media/unpackerr/config
-    /volume1/docker/media/homepage/config
+    "$INSTALL_DIR/plex/config"
+    "$INSTALL_DIR/tautulli/config"
+    "$INSTALL_DIR/seerr/config"
+    "$INSTALL_DIR/prowlarr/config"
+    "$INSTALL_DIR/sonarr/config"
+    "$INSTALL_DIR/radarr/config"
+    "$INSTALL_DIR/bazarr/config"
+    "$INSTALL_DIR/lidarr/config"
+    "$INSTALL_DIR/qbittorrent/config"
+    "$INSTALL_DIR/qbittorrent/config/.cache/qBittorrent"
+    "$INSTALL_DIR/qbittorrent/custom-cont-init.d"
+    "$INSTALL_DIR/sabnzbd/config"
+    "$INSTALL_DIR/recyclarr/config"
+    "$INSTALL_DIR/unpackerr/config"
+    "$INSTALL_DIR/homepage/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
+# All under $DATA_ROOT. The arrs see them as /data/Media/* and
+# /data/Downloads/* via the bind mount in docker-compose.yml.
 
 DATA_DIRS=(
-    "/volume1/Data/Media/Movies"
-    "/volume1/Data/Media/TV Shows"
-    "/volume1/Data/Media/Anime/Movies"
-    "/volume1/Data/Media/Anime/TV Shows"
-    /volume1/Data/Media/Music
-    /volume1/Data/Downloads/Torrents/ToFetch
-    /volume1/Data/Downloads/Torrents/InProgress
-    /volume1/Data/Downloads/Torrents/Completed/tv-sonarr
-    /volume1/Data/Downloads/Torrents/Completed/radarr
-    /volume1/Data/Downloads/Usenet/incomplete
-    /volume1/Data/Downloads/Usenet/complete
-    /volume1/Data/Downloads/Usenet/complete/tv
-    /volume1/Data/Downloads/Usenet/complete/movies
-    /volume1/Data/Downloads/Usenet/complete/music
+    "$DATA_ROOT/Media/Movies"
+    "$DATA_ROOT/Media/TV Shows"
+    "$DATA_ROOT/Media/Anime/Movies"
+    "$DATA_ROOT/Media/Anime/TV Shows"
+    "$DATA_ROOT/Media/Music"
+    "$DATA_ROOT/Downloads/Torrents/ToFetch"
+    "$DATA_ROOT/Downloads/Torrents/InProgress"
+    "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"
+    "$DATA_ROOT/Downloads/Torrents/Completed/radarr"
+    "$DATA_ROOT/Downloads/Usenet/incomplete"
+    "$DATA_ROOT/Downloads/Usenet/complete"
+    "$DATA_ROOT/Downloads/Usenet/complete/tv"
+    "$DATA_ROOT/Downloads/Usenet/complete/movies"
+    "$DATA_ROOT/Downloads/Usenet/complete/music"
 )
 
 # ── Create and chown ───────────────────────────────────────────────────────────
@@ -113,14 +124,17 @@ done
 # because it talks the same ACL language the share itself uses, but
 # setfacl is a useful fallback if the directory tree is on a btrfs
 # volume that supports POSIX ACLs directly.
-DATA_ROOT="/volume1/Data"
-
 # Resolve synoacltool / setfacl by checking PATH first, then known DSM
 # locations, then a recursive find under /usr — SSH-non-interactive
 # shells on Synology don't include /usr/syno/bin, /usr/syno/sbin,
 # or /usr/local/bin by default and the binary's exact location varies
 # by DSM version + which packages are installed (DSM6 vs DSM7,
 # Container Manager replacing Docker, etc).
+#
+# On non-Synology NASes (Unraid, QNAP, TrueNAS, generic Linux), there's
+# no synoacltool. setfacl handles POSIX ACL on filesystems that support
+# it (ext4, xfs, btrfs, zfs in SCALE). If neither is available we fall
+# all the way back to chgrp + chmod g+rwx which works on plain POSIX.
 find_tool() {
     local name="$1"; shift
     if command -v "$name" >/dev/null 2>&1; then
@@ -162,14 +176,18 @@ SETFACL=$(find_tool setfacl \
     /bin/setfacl) || SETFACL=""
 
 if [ -d "$DATA_ROOT" ]; then
-    # Try getent first (works on most Linuxes including DSM7) but fall
-    # back to awk over /etc/passwd — Synology's busybox doesn't always
-    # ship getent, and an empty USERNAME used to wedge us into the
-    # else branch reporting "no ACL tool found" even when synoacltool
-    # was found at /usr/syno/bin.
+    # Try getent first (works on most Linuxes) but fall back to awk
+    # over /etc/passwd — Synology's busybox doesn't always ship
+    # getent, and an empty USERNAME used to wedge us into the else
+    # branch reporting "no ACL tool found" even when synoacltool was
+    # at /usr/syno/bin.
     USERNAME=$(getent passwd "$PUID" 2>/dev/null | cut -d: -f1)
     if [ -z "$USERNAME" ]; then
         USERNAME=$(awk -F: -v u="$PUID" '$3==u{print $1; exit}' /etc/passwd 2>/dev/null)
+    fi
+    GROUPNAME=$(getent group "$PGID" 2>/dev/null | cut -d: -f1)
+    if [ -z "$GROUPNAME" ]; then
+        GROUPNAME=$(awk -F: -v g="$PGID" '$3==g{print $1; exit}' /etc/group 2>/dev/null)
     fi
 
     if [ -n "$SYNOACL" ] && [ -n "$USERNAME" ]; then
@@ -213,22 +231,35 @@ if [ -d "$DATA_ROOT" ]; then
         echo "    is a backup. Continuing."
     else
         echo ""
-        echo "  ⚠ No ACL tool found anywhere — synoacltool and setfacl both"
-        echo "    missing from PATH, /usr, and /bin. This is unusual on DSM."
-        echo ""
-        echo "    The Mediarr Installer wizard usually applies the ACL itself"
-        echo "    before this script runs — check the [acl] lines earlier in"
-        echo "    the install log. If those reported success, you can ignore"
-        echo "    this warning."
-        echo ""
-        echo "    Otherwise, grant write access manually in DSM:"
-        echo "      Control Panel → Shared Folder → Data → Edit → Permissions"
-        if [ -n "$USERNAME" ]; then
-            echo "      Find user '${USERNAME}', check Read/Write, click Save."
-        else
-            echo "      Find the user matching PUID=${PUID}, check Read/Write, click Save."
+        echo "  No ACL tool found (synoacltool / setfacl). Falling back to"
+        echo "  pure POSIX permissions (chgrp + chmod g+rwx on $DATA_ROOT)."
+        echo "  This works for Unraid / TrueNAS / generic Linux where ext4 /"
+        echo "  xfs / zfs honor POSIX semantics without an ACL layer on top."
+        if [ -n "$GROUPNAME" ] && chgrp -R "$GROUPNAME" "$DATA_ROOT" 2>/dev/null; then
+            echo "  ✔ Group ownership set to $GROUPNAME on $DATA_ROOT"
         fi
-        echo "    Then re-run: sudo bash /volume1/docker/media/setup.sh"
+        if chmod -R g+rwX "$DATA_ROOT" 2>/dev/null; then
+            echo "  ✔ Group rwx granted on $DATA_ROOT"
+        fi
+        # On Synology specifically, POSIX may not be enough — DSM's
+        # share-level ACL can still deny writes regardless of chmod.
+        # Surface the DSM Control Panel walkthrough in that case.
+        if [ -f /etc/synoinfo.conf ]; then
+            echo ""
+            echo "  ⚠ This looks like a Synology DSM box but synoacltool wasn't"
+            echo "    found. The Mediarr Installer wizard usually applies the"
+            echo "    Synology ACL itself before this script runs — check the"
+            echo "    [acl] lines earlier in the install log. If those reported"
+            echo "    success, you can ignore this. Otherwise, grant write"
+            echo "    access manually in DSM:"
+            echo "      Control Panel → Shared Folder → Data → Edit → Permissions"
+            if [ -n "$USERNAME" ]; then
+                echo "      Find user '${USERNAME}', check Read/Write, click Save."
+            else
+                echo "      Find the user matching PUID=${PUID}, check Read/Write, click Save."
+            fi
+            echo "    Then re-run: sudo bash \"$SCRIPT_DIR/setup.sh\""
+        fi
     fi
 fi
 
@@ -253,7 +284,7 @@ fi
 env_val() {
     grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
 }
-QB_CONF_DIR="/volume1/docker/media/qbittorrent/config/qBittorrent"
+QB_CONF_DIR="$INSTALL_DIR/qbittorrent/config/qBittorrent"
 QB_CONF_FILE="$QB_CONF_DIR/qBittorrent.conf"
 QB_USER=$(env_val QBITTORRENT_USER)
 QB_PASS=$(env_val QBITTORRENT_PASS)
@@ -327,7 +358,7 @@ WebUI\\AuthSubnetWhitelist=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
 size=1
 1\\dir=/downloads/ToFetch
 EOF
-        chown -R $PUID:$PGID /volume1/docker/media/qbittorrent/config
+        chown -R $PUID:$PGID "$INSTALL_DIR/qbittorrent/config"
         chmod 644 "$QB_CONF_FILE"
         echo "  ✔ $QB_CONF_FILE written (user: $QB_USER, watched: /downloads/ToFetch)"
         WROTE_CONF=true
@@ -356,7 +387,7 @@ fi
 # container and silently no-op'd because the linuxserver image has no
 # python3. Removing it avoids the "init script failed, qBittorrent
 # booted with temp password" trap from older installs that re-run setup.
-OLD_INIT="/volume1/docker/media/qbittorrent/custom-cont-init.d/set-credentials.sh"
+OLD_INIT="$INSTALL_DIR/qbittorrent/custom-cont-init.d/set-credentials.sh"
 if [ -f "$OLD_INIT" ]; then
     rm -f "$OLD_INIT"
     echo "  Cleaned up legacy in-container init script."

@@ -82,6 +82,13 @@ const defaultConfig: Partial<EnvFormValues> = {
   PUID: '1026',
   PGID: '100',
   TZ: 'America/New_York',
+  // NAS-portable path defaults. Synology values match the historical
+  // baseline so existing profiles round-trip without changes; non-
+  // Synology users get a sensible suggestion from EnvDetect's
+  // `suggestedInstallDir` / `suggestedDataRoot` which the Configure
+  // screen applies when the field is empty.
+  INSTALL_DIR: '/volume1/docker/media',
+  DATA_ROOT:   '/volume1/Data',
   // VPN is opt-in. setup.sh applies docker-compose.no-vpn.yml unless the
   // user flips this on, in which case it asks for the WireGuard key etc.
   VPN_ENABLED: 'false',

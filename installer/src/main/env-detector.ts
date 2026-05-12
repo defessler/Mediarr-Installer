@@ -69,13 +69,46 @@ export async function detectEnv(
   // single bash invocation that prints labelled sections, parsed below.
   const tq = shellQuote(targetDir)
   const batch = [
-    // SSH non-interactive shells on Synology typically have PATH=
-    // /usr/bin:/bin:/usr/sbin:/sbin, which doesn't include where Docker
-    // and Container Manager actually install their binaries. Augment up
-    // front so `docker`, `docker compose`, and `docker-compose` are
-    // findable here AND when setup.sh runs later.
-    'export PATH="/usr/local/bin:/usr/local/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:$PATH"',
+    // SSH non-interactive shells often have a narrow PATH (just
+    // /usr/bin:/bin:/usr/sbin:/sbin), which on most NAS distros
+    // doesn't include where Docker actually installs its binaries.
+    // Augment with paths used by every NAS family we support so
+    // `docker`, `docker compose`, and `docker-compose` are findable
+    // here AND when setup.sh runs later.
+    //
+    //   Synology DSM: /var/packages/ContainerManager/target/usr/bin
+    //                 /var/packages/Docker/target/usr/bin (legacy)
+    //   QNAP QTS:     /share/CACHEDEV1_DATA/.qpkg/container-station/bin
+    //                 /share/.qpkg/container-station/bin (some setups)
+    //   Unraid:       /usr/local/sbin / /usr/local/bin (already covered)
+    //   TrueNAS / Linux: /usr/local/bin / /usr/bin (already covered)
+    'export PATH="/usr/local/bin:/usr/local/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/share/.qpkg/container-station/bin:$PATH"',
     'set +e',
+    // NAS family fingerprint. Multiple signals matter — some Synology
+    // boxes have /volume1 mirrored on Unraid hosts when users symlink
+    // things, so we look at OS-level marker files first. Highest-
+    // specificity match wins (Synology's /etc/synoinfo.conf, QNAP's
+    // /etc/config/qpkg.conf, Unraid's /etc/unraid-version, TrueNAS's
+    // /etc/version content). Generic Linux is the fallback.
+    'echo "===nas_synology==="; [ -f /etc/synoinfo.conf ] && echo y',
+    'echo "===nas_qnap==="; ( [ -f /etc/config/qpkg.conf ] || [ -d /etc/init.d/QPKG.conf ] || [ -d /share/CACHEDEV1_DATA ] ) && echo y',
+    'echo "===nas_unraid==="; [ -f /etc/unraid-version ] && echo y',
+    'echo "===nas_truenas==="; ( grep -qiE "truenas|freenas" /etc/version 2>/dev/null || [ -f /etc/truenas_version ] ) && echo y',
+    'echo "===nas_omv==="; ( [ -f /etc/openmediavault/config.xml ] || dpkg -l openmediavault 2>/dev/null | grep -q "^ii" ) && echo y',
+    // OS version string the NAS reports (helps surface DSM7.2 vs 7.1, etc.)
+    'echo "===os_version==="; ' +
+      '( [ -f /etc.defaults/VERSION ] && grep -E "^productversion|^buildnumber" /etc.defaults/VERSION ) || ' +
+      '( [ -f /etc/unraid-version ] && cat /etc/unraid-version ) || ' +
+      '( [ -f /etc/version ] && head -1 /etc/version ) || ' +
+      'uname -r',
+    // Candidate "data share" roots — directories the user's media most
+    // likely lives under. We don't pick one; we surface all that exist
+    // so the Detect screen can show the candidates and the user picks
+    // (or the wizard auto-picks the first match for their NAS family).
+    'echo "===data_candidates==="; ' +
+      'for d in /volume1 /volume2 /mnt/user /mnt/cache /share /share/CACHEDEV1_DATA /mnt /srv; do ' +
+      '  [ -d "$d" ] && echo "$d"; ' +
+      'done',
     'echo "===docker_v2==="; docker compose version 2>&1; echo "RC=$?"',
     'echo "===docker_v1==="; command -v docker-compose 2>&1; echo "RC=$?"',
     'echo "===volume1==="; [ -d /volume1 ] && echo ok; echo "RC=$?"',
@@ -259,6 +292,30 @@ export async function detectEnv(
   const sshClientIp = section(o, 'ssh_client') || null
   const replyIp = section(o, 'reply_ip') || null
 
+  // NAS family fingerprint. Order matters — Synology DSM, then the
+  // distros that mimic Synology paths (none today), then the others.
+  // Used to pick sensible defaults for INSTALL_DIR / DATA_ROOT and
+  // gate Synology-only features like the `synoacltool` ACL grant.
+  let nasFamily: EnvDetectResult['nasFamily']
+  if (section(o, 'nas_synology') === 'y')      nasFamily = 'synology'
+  else if (section(o, 'nas_qnap')    === 'y')  nasFamily = 'qnap'
+  else if (section(o, 'nas_unraid')  === 'y')  nasFamily = 'unraid'
+  else if (section(o, 'nas_truenas') === 'y')  nasFamily = 'truenas'
+  else if (section(o, 'nas_omv')     === 'y')  nasFamily = 'omv'
+  else                                          nasFamily = 'linux'
+
+  // The candidate data-share roots that actually exist on this host,
+  // in the order the detection probe walked. The renderer picks one
+  // (defaulting to the first that matches family expectations, or
+  // letting the user override).
+  const dataCandidates = section(o, 'data_candidates')
+    .split('\n').map((l) => l.trim()).filter(Boolean)
+
+  // Pre-compute the family-appropriate defaults so the renderer doesn't
+  // need to know the conventions — single source of truth lives here.
+  const familyDefaults = pickFamilyDefaults(nasFamily, dataCandidates)
+  const osVersion = section(o, 'os_version').split('\n')[0]?.trim() || null
+
   // /volume1/Data ACL state — surfaced as a check on the Detect screen
   // so the user can fix DSM share permissions before the install
   // bothers to upload anything. The wizard's install-time [acl] step
@@ -311,5 +368,71 @@ export async function detectEnv(
     dataShareExists,
     dataShareWritable,
     dataShareAcl,
+    nasFamily,
+    osVersion,
+    dataCandidates,
+    suggestedInstallDir: familyDefaults.installDir,
+    suggestedDataRoot:   familyDefaults.dataRoot,
+  }
+}
+
+/** Family-aware path defaults. Single source of truth for "where does
+ *  this NAS family conventionally put media + appdata?" — used by the
+ *  Detect screen to populate Configure's INSTALL_DIR / DATA_ROOT fields
+ *  with values the user can keep or override.
+ *
+ *  We bias toward the EXISTING candidate dirs we found at detect time
+ *  so the suggestion isn't a phantom path that doesn't exist. */
+function pickFamilyDefaults(
+  family: EnvDetectResult['nasFamily'],
+  candidates: string[],
+): { installDir: string; dataRoot: string } {
+  const has = (p: string) => candidates.includes(p)
+  switch (family) {
+    case 'synology':
+      // DSM convention: /volume1 (or /volume2 if user picked that for
+      // Docker). The "Docker" shared folder on Synology DSM is the
+      // canonical home for compose stacks.
+      return {
+        installDir: has('/volume1') ? '/volume1/docker/media' : '/volume1/docker/media',
+        dataRoot:   has('/volume1') ? '/volume1/Data' : '/volume1/Data',
+      }
+    case 'qnap':
+      // QNAP exposes Container Station's working dir under /share/Container.
+      // Shared folders are under /share/<name>/ (symlinks to /share/
+      // CACHEDEV*_DATA/<name>). The wizard's compose tree fits under
+      // /share/Container/mediarr.
+      return {
+        installDir: '/share/Container/mediarr',
+        dataRoot:   has('/share/Data') ? '/share/Data' : '/share/Multimedia',
+      }
+    case 'unraid':
+      // Unraid: /mnt/user/appdata for service configs (cache pool moves
+      // it to /mnt/cache/appdata for fast SSD I/O), /mnt/user for shares.
+      return {
+        installDir: '/mnt/user/appdata/mediarr',
+        dataRoot:   '/mnt/user/data',
+      }
+    case 'truenas':
+      // TrueNAS SCALE: ZFS datasets at /mnt/<pool>/<dataset>. We can't
+      // detect the pool name without listing — suggest a reasonable
+      // skeleton the user fills in.
+      return {
+        installDir: '/mnt/tank/apps/mediarr',
+        dataRoot:   '/mnt/tank/data',
+      }
+    case 'omv':
+      // OpenMediaVault: shared folders typically under /srv/<uuid>/<name>
+      // OR /export/<name> via symlink. Hard to guess without listing.
+      return {
+        installDir: '/srv/mediarr',
+        dataRoot:   '/srv/data',
+      }
+    default:
+      // Generic Linux server — go with FHS conventions.
+      return {
+        installDir: '/opt/mediarr',
+        dataRoot:   '/srv/data',
+      }
   }
 }

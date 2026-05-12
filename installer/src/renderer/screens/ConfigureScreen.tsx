@@ -401,14 +401,38 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Install location</h2>
+        <p className="text-xs text-slate-400">
+          Two paths matter: where the wizard's compose stack + config dirs
+          land (<code className="font-mono">INSTALL_DIR</code>), and where your
+          media + downloads live (<code className="font-mono">DATA_ROOT</code>).
+          The Detect screen auto-fills both based on the NAS family it found
+          — override for non-standard layouts.
+        </p>
         <div>
-          <label className="block text-sm font-medium mb-1">Target directory on NAS</label>
+          <label className="block text-sm font-medium mb-1">
+            Install directory <span className="text-slate-500 text-xs ml-1">(compose stack + per-container configs)</span>
+          </label>
           <input
             type="text"
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
-            value={targetDir} onChange={(e) => setTargetDir(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-sm"
+            placeholder="/volume1/docker/media"
+            value={config.INSTALL_DIR ?? targetDir}
+            onChange={(e) => {
+              // Keep INSTALL_DIR (used by docker-compose.yml) and the
+              // wizard's targetDir (used by SFTP upload + setup.sh
+              // invocation) in lockstep — they're conceptually the
+              // same value, just exposed twice for historical reasons.
+              const v = e.target.value
+              setConfig({ INSTALL_DIR: v || undefined })
+              setTargetDir(v)
+            }}
           />
         </div>
+        <Field
+          label="Data root (media + downloads, bind-mounted as /data inside containers)"
+          k="DATA_ROOT"
+          placeholder="/volume1/Data"
+        />
       </section>
 
       <section className="space-y-4">

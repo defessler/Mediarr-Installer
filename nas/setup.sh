@@ -158,8 +158,25 @@ run_step 1 "Set file permissions" \
 run_step 2 "Create data and config directories" \
     bash "$SCRIPT_DIR/setup-folders.sh"
 
-run_step 3 "Apply firewall rules" \
-    bash "$SCRIPT_DIR/setup-firewall.sh"
+# Synology-specific firewall integration uses iptables rules that get
+# installed in /usr/local/etc/rc.d/ to survive reboots. That layout is
+# DSM-specific — on Unraid/QNAP/TrueNAS/generic Linux the user manages
+# firewall via their own UI (Unraid's UI, QTS's UI, ufw/firewalld, …)
+# so we skip the step cleanly instead of dumping rules into rc.d/ that
+# never run.
+if [ -f /etc/synoinfo.conf ]; then
+    run_step 3 "Apply firewall rules" \
+        bash "$SCRIPT_DIR/setup-firewall.sh"
+else
+    echo ""
+    echo "  ⏭ Step 3 (firewall): skipped — not Synology DSM."
+    echo "    The wizard's firewall step installs DSM-specific rc.d rules."
+    echo "    On this host, open the stack's ports in your NAS's firewall UI"
+    echo "    (Unraid Settings → Network, QTS Control Panel → Security,"
+    echo "    OPNsense / pfSense / ufw — whatever you use). Required ports:"
+    echo "      32400 (Plex), 3000 (Homepage), 5056 (Seerr), 8181 (Tautulli),"
+    echo "      8191 (Flaresolverr), 49150-49156 (arrs + qBittorrent + SAB)."
+fi
 
 echo "  Note: fetches your WireGuard private key from the NordVPN API"
 run_step 4 "Fetch NordVPN WireGuard key" \

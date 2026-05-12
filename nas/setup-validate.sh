@@ -135,34 +135,41 @@ fi
 
 section "Directories"
 
+# NAS-family-portable: read INSTALL_DIR / DATA_ROOT from .env and
+# fall back to the Synology-historical defaults for older .envs.
+INSTALL_DIR=$(env_val "INSTALL_DIR")
+DATA_ROOT=$(env_val "DATA_ROOT")
+: "${INSTALL_DIR:=$SCRIPT_DIR}"
+: "${DATA_ROOT:=/volume1/Data}"
+
 REQUIRED_DIRS=(
-    /volume1/docker/media/plex/config
-    /volume1/docker/media/tautulli/config
-    /volume1/docker/media/seerr/config
-    /volume1/docker/media/prowlarr/config
-    /volume1/docker/media/sonarr/config
-    /volume1/docker/media/radarr/config
-    /volume1/docker/media/bazarr/config
-    /volume1/docker/media/lidarr/config
-    /volume1/docker/media/qbittorrent/config
-    /volume1/docker/media/sabnzbd/config
-    /volume1/docker/media/recyclarr/config
-    /volume1/docker/media/unpackerr/config
-    /volume1/docker/media/homepage/config
-    /volume1/Data/Media/Movies
-    "/volume1/Data/Media/TV Shows"
-    /volume1/Data/Media/Anime/Movies
-    "/volume1/Data/Media/Anime/TV Shows"
-    /volume1/Data/Media/Music
-    /volume1/Data/Downloads/Torrents/ToFetch
-    /volume1/Data/Downloads/Torrents/InProgress
-    /volume1/Data/Downloads/Torrents/Completed/tv-sonarr
-    /volume1/Data/Downloads/Torrents/Completed/radarr
-    /volume1/Data/Downloads/Usenet/incomplete
-    /volume1/Data/Downloads/Usenet/complete
-    /volume1/Data/Downloads/Usenet/complete/tv
-    /volume1/Data/Downloads/Usenet/complete/movies
-    /volume1/Data/Downloads/Usenet/complete/music
+    "$INSTALL_DIR/plex/config"
+    "$INSTALL_DIR/tautulli/config"
+    "$INSTALL_DIR/seerr/config"
+    "$INSTALL_DIR/prowlarr/config"
+    "$INSTALL_DIR/sonarr/config"
+    "$INSTALL_DIR/radarr/config"
+    "$INSTALL_DIR/bazarr/config"
+    "$INSTALL_DIR/lidarr/config"
+    "$INSTALL_DIR/qbittorrent/config"
+    "$INSTALL_DIR/sabnzbd/config"
+    "$INSTALL_DIR/recyclarr/config"
+    "$INSTALL_DIR/unpackerr/config"
+    "$INSTALL_DIR/homepage/config"
+    "$DATA_ROOT/Media/Movies"
+    "$DATA_ROOT/Media/TV Shows"
+    "$DATA_ROOT/Media/Anime/Movies"
+    "$DATA_ROOT/Media/Anime/TV Shows"
+    "$DATA_ROOT/Media/Music"
+    "$DATA_ROOT/Downloads/Torrents/ToFetch"
+    "$DATA_ROOT/Downloads/Torrents/InProgress"
+    "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"
+    "$DATA_ROOT/Downloads/Torrents/Completed/radarr"
+    "$DATA_ROOT/Downloads/Usenet/incomplete"
+    "$DATA_ROOT/Downloads/Usenet/complete"
+    "$DATA_ROOT/Downloads/Usenet/complete/tv"
+    "$DATA_ROOT/Downloads/Usenet/complete/movies"
+    "$DATA_ROOT/Downloads/Usenet/complete/music"
 )
 
 for dir in "${REQUIRED_DIRS[@]}"; do

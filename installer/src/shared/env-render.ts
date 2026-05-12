@@ -12,6 +12,24 @@ export interface EnvFormValues {
   TZ: string
   LAN_IP: string
 
+  // ── Paths (NAS-family-portable)
+  /** Where the wizard installs its compose stack — config dirs for
+   *  every container live under this. Defaults per family:
+   *    Synology: /volume1/docker/media
+   *    Unraid:   /mnt/user/appdata/mediarr
+   *    QNAP:     /share/Container/mediarr
+   *    Generic:  /opt/mediarr
+   *  docker-compose.yml references ${INSTALL_DIR}/<container>/config. */
+  INSTALL_DIR?: string
+  /** Where the user's media + downloads tree lives. Bind-mounted into
+   *  every arr / qbittorrent / sabnzbd container as /data. Defaults
+   *  per family:
+   *    Synology: /volume1/Data
+   *    Unraid:   /mnt/user/data
+   *    QNAP:     /share/Data
+   *    Generic:  /srv/data */
+  DATA_ROOT?: string
+
   // ── Plex
   PLEX_CLAIM?: string
 
@@ -150,6 +168,10 @@ export function renderEnv(v: EnvFormValues): string {
     line('PUID', v.PUID),
     line('PGID', v.PGID),
     line('TZ', v.TZ),
+    '',
+    '# Paths — NAS-family-portable. docker-compose.yml references both.',
+    line('INSTALL_DIR', v.INSTALL_DIR || '/volume1/docker/media'),
+    line('DATA_ROOT',   v.DATA_ROOT   || '/volume1/Data'),
     '',
     '# Network',
     line('LAN_IP', v.LAN_IP),

@@ -90,6 +90,36 @@ export function EnvDetectScreen() {
         // been good enough to reach the NAS but isn't necessarily what
         // services should bind. Trust the NAS's own self-report.
         if (lanIp) patch.LAN_IP = lanIp
+        // NAS-family-aware path defaults. The wizard's defaultConfig
+        // seeds these with Synology values, so a fresh Unraid / QNAP /
+        // Linux profile would otherwise carry phantom /volume1/* paths
+        // until the user edits them. We override when EITHER the field
+        // is empty OR it still holds a Synology default AND the box
+        // isn't actually Synology — that way an explicit user edit on
+        // a previous run survives, but the seeded default gets fixed
+        // up for non-Synology hosts before they reach Configure.
+        const SYNOLOGY_DEFAULT_INSTALL = '/volume1/docker/media'
+        const SYNOLOGY_DEFAULT_DATA    = '/volume1/Data'
+        const wrongFamilyDefault = r.nasFamily !== 'synology'
+        if (r.suggestedInstallDir && (
+            !config.INSTALL_DIR ||
+            (wrongFamilyDefault && config.INSTALL_DIR === SYNOLOGY_DEFAULT_INSTALL)
+          )) {
+          patch.INSTALL_DIR = r.suggestedInstallDir
+        }
+        if (r.suggestedDataRoot && (
+            !config.DATA_ROOT ||
+            (wrongFamilyDefault && config.DATA_ROOT === SYNOLOGY_DEFAULT_DATA)
+          )) {
+          patch.DATA_ROOT = r.suggestedDataRoot
+        }
+        // INSTALL_DIR also drives the wizard's targetDir (where the
+        // payload + setup.sh land on the NAS). Keep them in sync so
+        // RunScreen doesn't try to SFTP to /volume1/docker/media on an
+        // Unraid host where that path doesn't exist.
+        if (patch.INSTALL_DIR && targetDir !== patch.INSTALL_DIR) {
+          useWizard.getState().setTargetDir(patch.INSTALL_DIR)
+        }
         if (Object.keys(patch).length > 0) setConfig(patch)
 
         setStatus('ok')
@@ -148,6 +178,54 @@ export function EnvDetectScreen() {
 
       {r && (
         <>
+          {/* NAS family banner. Surfaces what the wizard auto-detected
+              + the paths it picked — gives the user a sanity check
+              before they commit to those paths on Configure. */}
+          <section className="rounded-md border border-slate-800 p-4 space-y-2">
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-slate-400 uppercase tracking-wide text-xs">
+                Detected NAS
+              </span>
+              <span className="font-medium">
+                {{
+                  synology: 'Synology DSM',
+                  qnap:     'QNAP QTS / QuTS',
+                  unraid:   'Unraid',
+                  truenas:  'TrueNAS',
+                  omv:      'OpenMediaVault',
+                  linux:    'Generic Linux',
+                }[r.nasFamily]}
+              </span>
+              {r.osVersion && (
+                <span className="font-mono text-xs text-slate-500">{r.osVersion}</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-slate-500">Install dir:</span>{' '}
+                <span className="font-mono text-slate-300">{r.suggestedInstallDir}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Data root:</span>{' '}
+                <span className="font-mono text-slate-300">{r.suggestedDataRoot}</span>
+              </div>
+            </div>
+            {r.nasFamily !== 'synology' && (
+              <p className="text-xs text-emerald-300/80">
+                Non-Synology host detected. The wizard auto-fills these paths
+                on the Configure screen; you can override them there.
+              </p>
+            )}
+            {r.dataCandidates.length > 0 && (
+              <div className="text-xs text-slate-500">
+                Other share roots present:{' '}
+                <span className="font-mono text-slate-400">
+                  {r.dataCandidates.filter((d) => d !== r.suggestedDataRoot).join(', ') || '—'}
+                </span>
+              </div>
+            )}
+          </section>
+
           <section className="rounded-md border border-slate-800 p-4 space-y-1">
             <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
               Required
@@ -157,7 +235,13 @@ export function EnvDetectScreen() {
               label="Docker"
               value={r.docker === 'v2' ? 'v2' : r.docker === 'v1-legacy' ? 'v1 (legacy)' : 'missing'}
             />
-            <Check ok={r.volume1} label="/volume1 exists" value={r.volume1 ? 'yes' : 'no'} />
+            <Check
+              ok={r.volume1 || r.nasFamily !== 'synology'}
+              label={r.nasFamily === 'synology' ? '/volume1 exists' : 'Storage root present'}
+              value={r.volume1 ? '/volume1 (Synology)'
+                : r.dataCandidates[0] ? r.dataCandidates[0]
+                : 'no candidate found'}
+            />
             <Check ok={!!r.python3} label="python3" value={r.python3 ?? 'missing'} />
             <Check ok={!!r.iptables} label="iptables" value={r.iptables ?? 'missing'} />
           </section>

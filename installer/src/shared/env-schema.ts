@@ -17,6 +17,16 @@ export const envSchema = z.object({
   TZ: z.string().regex(/^[A-Z][a-zA-Z_]+\/[A-Za-z_+-]+$/, 'expected Area/City'),
   LAN_IP: ipv4,
 
+  // Paths (NAS-family-portable). Absolute paths only — relative paths
+  // would resolve against /root or wherever sudo's cwd lands and that
+  // way lies madness. Cross-validated below: INSTALL_DIR and DATA_ROOT
+  // must NOT be the same dir (the .env file + compose stack would
+  // collide with the user's media).
+  INSTALL_DIR: optStr.refine((v) => !v || v.startsWith('/'),
+    'must be an absolute path starting with /'),
+  DATA_ROOT: optStr.refine((v) => !v || v.startsWith('/'),
+    'must be an absolute path starting with /'),
+
   // Plex
   PLEX_CLAIM: optStr.refine(
     (v) => !v || v.startsWith('claim-'),
@@ -88,6 +98,17 @@ export const envSchema = z.object({
   ADDIC7ED_USER: optStr,
   ADDIC7ED_PASS: optStr,
 }).superRefine((v, ctx) => {
+  // INSTALL_DIR and DATA_ROOT can't be the same path — the wizard
+  // writes .env + docker-compose.yml under INSTALL_DIR, and bind-
+  // mounts DATA_ROOT into every container as /data. If they're the
+  // same, the user's media tree gets the wizard's compose tooling
+  // dropped on top of it. Allow a nested layout (DATA_ROOT under
+  // INSTALL_DIR or vice-versa) — that's just unusual, not broken.
+  if (v.INSTALL_DIR && v.DATA_ROOT && v.INSTALL_DIR === v.DATA_ROOT) {
+    ctx.addIssue({ code: 'custom', path: ['DATA_ROOT'],
+      message: 'must differ from INSTALL_DIR (compose tooling and media tree should be separate)' })
+  }
+
   // Usenet creds only meaningful when host is set.
   if (v.USENET_HOST) {
     if (!v.USENET_USER) {
