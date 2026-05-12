@@ -1391,7 +1391,13 @@ def main():
     except: CONTAINER_GID = 100
 
     if not LAN_IP:  print("Error: LAN_IP not set in .env");           sys.exit(1)
-    if not QB_PASS: print("Error: QBITTORRENT_PASS not set in .env"); sys.exit(1)
+    # QBITTORRENT_PASS is only required when qBittorrent is in the stack.
+    # The configure_qbittorrent() block at the bottom of main() is gated
+    # on ENABLE_QBITTORRENT, but this top-level check fires before that
+    # gate — so it would refuse to run setup-arr-config.py at all on an
+    # install where the user opted out of qBittorrent.
+    if is_enabled(env, 'ENABLE_QBITTORRENT') and not QB_PASS:
+        print("Error: QBITTORRENT_PASS not set in .env"); sys.exit(1)
 
     # ── Service URLs (host-mapped, used by this script) ───────────────────────
     SONARR   = f"http://{LAN_IP}:49152"
@@ -1462,8 +1468,21 @@ def main():
     BAZARR_KEY   = env.get('BAZARR_API_KEY')   or read_bazarr_key(f"{B}/bazarr/config")
     SEERR_KEY    = env.get('SEERR_API_KEY')    or read_json_key(f"{B}/seerr/config/settings.json", "main", "apiKey")
 
-    # qBittorrent shares Gluetun's network namespace — use gluetun as host
-    QB_HOST = "gluetun"
+    # qBittorrent's reachable host inside the media network depends on
+    # whether VPN is wrapping it:
+    #   - VPN_ENABLED=true: qBittorrent shares gluetun's net namespace
+    #     (network_mode: service:gluetun in compose), so the only DNS
+    #     name that resolves is "gluetun".
+    #   - VPN_ENABLED=false: docker-compose.no-vpn.yml override drops
+    #     the gluetun sidecar and switches qBittorrent to bridge on
+    #     the media network, so it's reachable as "qbittorrent".
+    # Pre-multi-NAS this defaulted to "gluetun" unconditionally and
+    # silently broke the no-VPN install (Sonarr would log connect-
+    # refused at qBittorrent every 15s because there's no "gluetun"
+    # host to resolve). Pick the right one based on VPN_ENABLED so
+    # both code paths work.
+    vpn_on = (env.get('VPN_ENABLED', 'false') or 'false').strip().lower() in ('true', '1', 'yes', 'on')
+    QB_HOST = "gluetun" if vpn_on else "qbittorrent"
     QB_PORT = 49156
 
     print(f"\n{BOLD}╔══════════════════════════════════════════╗")
@@ -1525,23 +1544,32 @@ def main():
     elif wait_ready("Sonarr", SONARR, SONARR_KEY, "/api/v3/system/status"):
         add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/TV Shows", container="sonarr")
         add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/Anime/TV Shows", container="sonarr")
-        add_download_client(SONARR, SONARR_KEY, "api/v3", "qBittorrent", "QBittorrent", {
-            "host": QB_HOST, "port": QB_PORT, "useSsl": False,
-            "username": QB_USER, "password": QB_PASS, "category": "tv-sonarr",
-        })
-        if SABNZBD_KEY:
+        # Download clients + remote-path-mappings are only useful when
+        # their target service is in the stack. Adding a qBittorrent
+        # download client when ENABLE_QBITTORRENT=false would leave
+        # Sonarr with a phantom downloader pointing at gluetun:49156
+        # (nonexistent host) — the UI badge would go red and Sonarr
+        # would log connection errors every 15s. Same trap for
+        # SABnzbd when ENABLE_SABNZBD=false (caught indirectly by
+        # SABNZBD_KEY being blanked, but make the gate explicit).
+        if is_enabled(env, 'ENABLE_QBITTORRENT'):
+            add_download_client(SONARR, SONARR_KEY, "api/v3", "qBittorrent", "QBittorrent", {
+                "host": QB_HOST, "port": QB_PORT, "useSsl": False,
+                "username": QB_USER, "password": QB_PASS, "category": "tv-sonarr",
+            })
+            add_remote_path_mapping(SONARR, SONARR_KEY, "api/v3",
+                                    QB_HOST, "/downloads", "/data/Downloads/Torrents",
+                                    container="sonarr")
+        if is_enabled(env, 'ENABLE_SABNZBD') and SABNZBD_KEY:
             add_download_client(SONARR, SONARR_KEY, "api/v3", "SABnzbd", "Sabnzbd", {
                 "host": "sabnzbd", "port": 8080, "useSsl": False,
                 "apiKey": SABNZBD_KEY, "category": "tv",
             })
-        else:
+            add_remote_path_mapping(SONARR, SONARR_KEY, "api/v3",
+                                    "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
+                                    container="sonarr")
+        elif is_enabled(env, 'ENABLE_SABNZBD') and not SABNZBD_KEY:
             warn("SABnzbd key not found — skipping")
-        add_remote_path_mapping(SONARR, SONARR_KEY, "api/v3",
-                                QB_HOST, "/downloads", "/data/Downloads/Torrents",
-                                container="sonarr")
-        add_remote_path_mapping(SONARR, SONARR_KEY, "api/v3",
-                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
-                                container="sonarr")
         enable_hardlinks(SONARR, SONARR_KEY, "api/v3")
         if ARR_USER and ARR_PASS:
             configure_auth(SONARR, SONARR_KEY, "api/v3", ARR_USER, ARR_PASS)
@@ -1557,23 +1585,25 @@ def main():
     elif wait_ready("Radarr", RADARR, RADARR_KEY, "/api/v3/system/status"):
         add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Movies", container="radarr")
         add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Anime/Movies", container="radarr")
-        add_download_client(RADARR, RADARR_KEY, "api/v3", "qBittorrent", "QBittorrent", {
-            "host": QB_HOST, "port": QB_PORT, "useSsl": False,
-            "username": QB_USER, "password": QB_PASS, "category": "radarr",
-        })
-        if SABNZBD_KEY:
+        # See Sonarr block for why these are gated on ENABLE_*.
+        if is_enabled(env, 'ENABLE_QBITTORRENT'):
+            add_download_client(RADARR, RADARR_KEY, "api/v3", "qBittorrent", "QBittorrent", {
+                "host": QB_HOST, "port": QB_PORT, "useSsl": False,
+                "username": QB_USER, "password": QB_PASS, "category": "radarr",
+            })
+            add_remote_path_mapping(RADARR, RADARR_KEY, "api/v3",
+                                    QB_HOST, "/downloads", "/data/Downloads/Torrents",
+                                    container="radarr")
+        if is_enabled(env, 'ENABLE_SABNZBD') and SABNZBD_KEY:
             add_download_client(RADARR, RADARR_KEY, "api/v3", "SABnzbd", "Sabnzbd", {
                 "host": "sabnzbd", "port": 8080, "useSsl": False,
                 "apiKey": SABNZBD_KEY, "category": "movies",
             })
-        else:
+            add_remote_path_mapping(RADARR, RADARR_KEY, "api/v3",
+                                    "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
+                                    container="radarr")
+        elif is_enabled(env, 'ENABLE_SABNZBD') and not SABNZBD_KEY:
             warn("SABnzbd key not found — skipping")
-        add_remote_path_mapping(RADARR, RADARR_KEY, "api/v3",
-                                QB_HOST, "/downloads", "/data/Downloads/Torrents",
-                                container="radarr")
-        add_remote_path_mapping(RADARR, RADARR_KEY, "api/v3",
-                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
-                                container="radarr")
         enable_hardlinks(RADARR, RADARR_KEY, "api/v3")
         if ARR_USER and ARR_PASS:
             configure_auth(RADARR, RADARR_KEY, "api/v3", ARR_USER, ARR_PASS)
@@ -1629,23 +1659,25 @@ def main():
                 "defaultQualityProfileId":  lidarr_quality_id,
                 "defaultMetadataProfileId": lidarr_meta_id,
             }, container="lidarr")
-        add_download_client(LIDARR, LIDARR_KEY, "api/v1", "qBittorrent", "QBittorrent", {
-            "host": QB_HOST, "port": QB_PORT, "useSsl": False,
-            "username": QB_USER, "password": QB_PASS, "category": "lidarr",
-        })
-        if SABNZBD_KEY:
+        # See Sonarr block for why these are gated on ENABLE_*.
+        if is_enabled(env, 'ENABLE_QBITTORRENT'):
+            add_download_client(LIDARR, LIDARR_KEY, "api/v1", "qBittorrent", "QBittorrent", {
+                "host": QB_HOST, "port": QB_PORT, "useSsl": False,
+                "username": QB_USER, "password": QB_PASS, "category": "lidarr",
+            })
+            add_remote_path_mapping(LIDARR, LIDARR_KEY, "api/v1",
+                                    QB_HOST, "/downloads", "/data/Downloads/Torrents",
+                                    container="lidarr")
+        if is_enabled(env, 'ENABLE_SABNZBD') and SABNZBD_KEY:
             add_download_client(LIDARR, LIDARR_KEY, "api/v1", "SABnzbd", "Sabnzbd", {
                 "host": "sabnzbd", "port": 8080, "useSsl": False,
                 "apiKey": SABNZBD_KEY, "category": "music",
             })
-        else:
+            add_remote_path_mapping(LIDARR, LIDARR_KEY, "api/v1",
+                                    "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
+                                    container="lidarr")
+        elif is_enabled(env, 'ENABLE_SABNZBD') and not SABNZBD_KEY:
             warn("SABnzbd key not found — skipping")
-        add_remote_path_mapping(LIDARR, LIDARR_KEY, "api/v1",
-                                QB_HOST, "/downloads", "/data/Downloads/Torrents",
-                                container="lidarr")
-        add_remote_path_mapping(LIDARR, LIDARR_KEY, "api/v1",
-                                "sabnzbd", "/data/complete", "/data/Downloads/Usenet/complete",
-                                container="lidarr")
         enable_hardlinks(LIDARR, LIDARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)

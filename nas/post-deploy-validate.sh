@@ -25,6 +25,29 @@ section() {
 
 env_val() { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r'; }
 
+# Default-on opt-out semantics matching the rest of the toolchain
+# (env-render.ts isEnabled / setup.sh is_enabled / setup-arr-config.py
+# is_enabled). Missing or empty → enabled; only an explicit
+# false/0/no/off (any case) counts as disabled.
+is_enabled() {
+    local val
+    val="$(env_val "$1" | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$val" in
+        false|0|no|off) return 1 ;;
+        *)              return 0 ;;
+    esac
+}
+
+# VPN flag — used to gate the gluetun checks.
+vpn_on() {
+    local val
+    val="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$val" in
+        true|1|yes|on) return 0 ;;
+        *)             return 1 ;;
+    esac
+}
+
 LAN_IP=$(env_val "LAN_IP")
 
 echo "============================================="
@@ -35,7 +58,23 @@ echo "============================================="
 
 section "Containers"
 
-CONTAINERS=(plex tautulli seerr homepage prowlarr flaresolverr sonarr radarr bazarr lidarr gluetun qbittorrent sabnzbd recyclarr unpackerr)
+# Build the list of containers we expect to see running based on the
+# ENABLE_* flags. Prowlarr + Flaresolverr are always-on (not profile-
+# gated in docker-compose.yml). Each user-toggled service maps to one
+# or more container names — Plex stack groups three under ENABLE_PLEX,
+# qBittorrent pulls in gluetun when VPN_ENABLED.
+CONTAINERS=(prowlarr flaresolverr)
+is_enabled ENABLE_PLEX        && CONTAINERS+=(plex tautulli seerr)
+is_enabled ENABLE_SONARR      && CONTAINERS+=(sonarr)
+is_enabled ENABLE_RADARR      && CONTAINERS+=(radarr)
+is_enabled ENABLE_LIDARR      && CONTAINERS+=(lidarr)
+is_enabled ENABLE_BAZARR      && CONTAINERS+=(bazarr)
+is_enabled ENABLE_QBITTORRENT && CONTAINERS+=(qbittorrent)
+is_enabled ENABLE_QBITTORRENT && vpn_on && CONTAINERS+=(gluetun)
+is_enabled ENABLE_SABNZBD     && CONTAINERS+=(sabnzbd)
+is_enabled ENABLE_HOMEPAGE    && CONTAINERS+=(homepage)
+is_enabled ENABLE_RECYCLARR   && CONTAINERS+=(recyclarr)
+is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -64,60 +103,78 @@ check_url() {
     fi
 }
 
-check_url "Homepage"     "http://$LAN_IP:3000"
-check_url "Plex"         "http://$LAN_IP:32400/web"
-check_url "Sonarr"       "http://$LAN_IP:49152"
-check_url "Radarr"       "http://$LAN_IP:49151"
-check_url "Lidarr"       "http://$LAN_IP:49154"
+# Check URL only when the underlying service is enabled — checking a
+# disabled service would return HTTP 000 (nothing listening) and false-
+# fail the post-deploy.
+is_enabled ENABLE_HOMEPAGE    && check_url "Homepage"     "http://$LAN_IP:3000"
+is_enabled ENABLE_PLEX        && check_url "Plex"         "http://$LAN_IP:32400/web"
+is_enabled ENABLE_SONARR      && check_url "Sonarr"       "http://$LAN_IP:49152"
+is_enabled ENABLE_RADARR      && check_url "Radarr"       "http://$LAN_IP:49151"
+is_enabled ENABLE_LIDARR      && check_url "Lidarr"       "http://$LAN_IP:49154"
 check_url "Prowlarr"     "http://$LAN_IP:49150"
-check_url "Bazarr"       "http://$LAN_IP:49153"
-check_url "SABnzbd"      "http://$LAN_IP:49155"
-check_url "qBittorrent"  "http://$LAN_IP:49156"
-check_url "Seerr"        "http://$LAN_IP:5056"
-check_url "Tautulli"     "http://$LAN_IP:8181"
+is_enabled ENABLE_BAZARR      && check_url "Bazarr"       "http://$LAN_IP:49153"
+is_enabled ENABLE_SABNZBD     && check_url "SABnzbd"      "http://$LAN_IP:49155"
+is_enabled ENABLE_QBITTORRENT && check_url "qBittorrent"  "http://$LAN_IP:49156"
+is_enabled ENABLE_PLEX        && check_url "Seerr"        "http://$LAN_IP:5056"
+is_enabled ENABLE_PLEX        && check_url "Tautulli"     "http://$LAN_IP:8181"
 check_url "Flaresolverr" "http://$LAN_IP:8191"
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
-section "Plex External Access"
+# Fetch public IP up-front — both Plex external check and VPN check need
+# it, and they're each independently gated below.
+PUBLIC_IP=""
+if is_enabled ENABLE_PLEX || { is_enabled ENABLE_QBITTORRENT && vpn_on; }; then
+    echo "  Fetching public IP..."
+    PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org)
+fi
 
-echo "  Fetching public IP..."
-PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org)
-
-if [ -z "$PUBLIC_IP" ]; then
-    fail "Could not determine public IP — check internet connectivity"
-else
-    ok "Public IP: $PUBLIC_IP"
-    echo "  Testing Plex on $PUBLIC_IP:32400 from outside..."
-    PLEX_EXTERNAL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://$PUBLIC_IP:32400/identity")
-    if [[ "$PLEX_EXTERNAL" =~ ^(200|301)$ ]]; then
-        ok "Plex is reachable externally on port 32400"
+if is_enabled ENABLE_PLEX; then
+    section "Plex External Access"
+    if [ -z "$PUBLIC_IP" ]; then
+        fail "Could not determine public IP — check internet connectivity"
     else
-        warn "Plex is not reachable externally (HTTP $PLEX_EXTERNAL)"
-        warn "Port 32400 may not be forwarded on your router — remote access via relay will still work"
+        ok "Public IP: $PUBLIC_IP"
+        echo "  Testing Plex on $PUBLIC_IP:32400 from outside..."
+        PLEX_EXTERNAL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://$PUBLIC_IP:32400/identity")
+        if [[ "$PLEX_EXTERNAL" =~ ^(200|301)$ ]]; then
+            ok "Plex is reachable externally on port 32400"
+        else
+            warn "Plex is not reachable externally (HTTP $PLEX_EXTERNAL)"
+            warn "Port 32400 may not be forwarded on your router — remote access via relay will still work"
+        fi
     fi
 fi
 
 # ── Gluetun VPN ───────────────────────────────────────────────────────────────
 
-section "Gluetun VPN"
-
-echo "  Checking VPN IP..."
-VPN_IP=$(docker exec gluetun wget -qO- --timeout=10 https://api.ipify.org 2>/dev/null)
-
-if [ -z "$VPN_IP" ]; then
-    fail "Could not get IP through Gluetun — VPN may not be connected"
-else
-    if [ "$VPN_IP" = "$PUBLIC_IP" ]; then
-        fail "VPN IP matches your public IP — traffic is NOT going through the VPN"
+# Only meaningful when the user actually opted into VPN-wrapped torrenting
+# (VPN_ENABLED=true AND ENABLE_QBITTORRENT=true). Otherwise gluetun isn't
+# running and `docker exec gluetun` would fail; skip with a clear note.
+if is_enabled ENABLE_QBITTORRENT && vpn_on; then
+    section "Gluetun VPN"
+    echo "  Checking VPN IP..."
+    VPN_IP=$(docker exec gluetun wget -qO- --timeout=10 https://api.ipify.org 2>/dev/null)
+    if [ -z "$VPN_IP" ]; then
+        fail "Could not get IP through Gluetun — VPN may not be connected"
     else
-        ok "VPN is active — qBittorrent traffic exits via $VPN_IP"
+        if [ "$VPN_IP" = "$PUBLIC_IP" ]; then
+            fail "VPN IP matches your public IP — traffic is NOT going through the VPN"
+        else
+            ok "VPN is active — qBittorrent traffic exits via $VPN_IP"
+        fi
     fi
 fi
 
 # ── Media Visibility ──────────────────────────────────────────────────────────
 
-section "Media Visibility"
+# docker exec'ing into disabled arrs fails ("no such container") and
+# false-fails the post-deploy. Each media check needs its container to
+# exist — gate them on the matching ENABLE_*.
+
+if is_enabled ENABLE_SONARR || is_enabled ENABLE_RADARR || is_enabled ENABLE_LIDARR; then
+    section "Media Visibility"
+fi
 
 check_media() {
     local container="$1"
@@ -132,12 +189,18 @@ check_media() {
     fi
 }
 
-check_media "sonarr" "/data/Media/TV Shows"       "TV Shows"
-check_media "sonarr" "/data/Media/Anime/TV Shows" "Anime TV"
-check_media "radarr" "/data/Media/Movies"         "Movies"
-check_media "radarr" "/data/Media/Anime/Movies"   "Anime Movies"
-check_media "lidarr" "/data/Media/Music"          "Music"
-check_media "sonarr" "/data/Downloads"            "Downloads folder"
+if is_enabled ENABLE_SONARR; then
+    check_media "sonarr" "/data/Media/TV Shows"       "TV Shows"
+    check_media "sonarr" "/data/Media/Anime/TV Shows" "Anime TV"
+    check_media "sonarr" "/data/Downloads"            "Downloads folder"
+fi
+if is_enabled ENABLE_RADARR; then
+    check_media "radarr" "/data/Media/Movies"         "Movies"
+    check_media "radarr" "/data/Media/Anime/Movies"   "Anime Movies"
+fi
+if is_enabled ENABLE_LIDARR; then
+    check_media "lidarr" "/data/Media/Music"          "Music"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 

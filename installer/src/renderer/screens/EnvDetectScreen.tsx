@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import type { EnvDetectResult } from '../../shared/ipc.js'
-import type { EnvFormValues } from '../../shared/env-render.js'
+import { type EnvFormValues, isEnabled } from '../../shared/env-render.js'
 import { reportError } from '../store/errors.js'
 
 /** Map a stack-container name to the ENABLE_* form key that toggles
@@ -579,8 +579,7 @@ export function EnvDetectScreen() {
                 .filter((k): k is keyof EnvFormValues => k !== null),
             ))
             if (detectedKeys.length === 0) return null
-            const isOn = (k: keyof EnvFormValues) =>
-              ((config[k] as string | undefined) ?? 'true').toLowerCase() !== 'false'
+            const isOn = (k: keyof EnvFormValues) => isEnabled(config[k] as string | undefined)
             const skipAll = () => {
               const patch: Partial<EnvFormValues> = {}
               for (const k of detectedKeys) patch[k] = 'false' as never

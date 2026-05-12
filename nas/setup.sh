@@ -186,6 +186,46 @@ abort_if_failed() {
     fi
 }
 
+# Stop + remove containers for services the user opted out of since the
+# last run. `docker compose up -d` with COMPOSE_PROFILES set only
+# touches services in the active profile set — it doesn't stop services
+# that *were* in a previously-active profile but aren't now. So a user
+# who initially installs everything, then re-runs with ENABLE_LIDARR=
+# false, would still have lidarr running afterwards. Reach in and
+# explicitly stop+rm those containers so the stack matches the user's
+# selection cleanly. Safe to run when nothing's running yet (the docker
+# ps grep just returns nothing).
+stop_disabled_services() {
+    local pairs=(
+        "plex:ENABLE_PLEX"        "tautulli:ENABLE_PLEX"  "seerr:ENABLE_PLEX"
+        "sonarr:ENABLE_SONARR"    "radarr:ENABLE_RADARR"
+        "lidarr:ENABLE_LIDARR"    "bazarr:ENABLE_BAZARR"
+        "qbittorrent:ENABLE_QBITTORRENT" "gluetun:ENABLE_QBITTORRENT"
+        "sabnzbd:ENABLE_SABNZBD"
+        "homepage:ENABLE_HOMEPAGE"
+        "recyclarr:ENABLE_RECYCLARR"
+        "unpackerr:ENABLE_UNPACKERR"
+    )
+    local pair container flag stopped=0
+    for pair in "${pairs[@]}"; do
+        container="${pair%:*}"
+        flag="${pair#*:}"
+        # Service is enabled → leave the container alone, up -d will
+        # (re-)create or update it as needed.
+        is_enabled "$flag" && continue
+        # Service is disabled but the container exists → stop + remove.
+        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
+            docker stop "$container" >/dev/null 2>&1 || true
+            docker rm   "$container" >/dev/null 2>&1 || true
+            echo "  ✔ Removed $container (now opted out via $flag=false)"
+            stopped=$((stopped + 1))
+        fi
+    done
+    if [ $stopped -eq 0 ]; then
+        echo "  No previously-running services to remove."
+    fi
+}
+
 wait_for_services() {
     local max_wait=600
     local interval=10
@@ -308,6 +348,10 @@ run_step 5 "Validate configuration" \
 abort_if_failed
 
 # ── Stack ─────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "  Removing any containers the user opted out of since last run..."
+stop_disabled_services
 
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"

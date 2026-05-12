@@ -142,29 +142,59 @@ DATA_ROOT=$(env_val "DATA_ROOT")
 : "${INSTALL_DIR:=$SCRIPT_DIR}"
 : "${DATA_ROOT:=/volume1/Data}"
 
-REQUIRED_DIRS=(
+# Default-on opt-out check, matching env-render.ts / setup.sh / setup-
+# arr-config.py / post-deploy-validate.sh. Missing/empty → enabled;
+# only an explicit false/0/no/off (any case) opts out.
+is_enabled() {
+    local val
+    val="$(env_val "$1" | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$val" in
+        false|0|no|off) return 1 ;;
+        *)              return 0 ;;
+    esac
+}
+
+# Build the required-dirs list dynamically based on which services the
+# user enabled in .env. setup-folders.sh creates dirs for everything
+# regardless (cheap, idempotent), so a disabled service's config dir
+# WOULD exist and pass the check — but we skip it from the check list
+# anyway so the output focuses on what actually matters for the
+# user's deployment. Prowlarr is always-on, never gated.
+REQUIRED_DIRS=("$INSTALL_DIR/prowlarr/config")
+is_enabled ENABLE_PLEX && REQUIRED_DIRS+=(
     "$INSTALL_DIR/plex/config"
     "$INSTALL_DIR/tautulli/config"
     "$INSTALL_DIR/seerr/config"
-    "$INSTALL_DIR/prowlarr/config"
-    "$INSTALL_DIR/sonarr/config"
-    "$INSTALL_DIR/radarr/config"
-    "$INSTALL_DIR/bazarr/config"
-    "$INSTALL_DIR/lidarr/config"
-    "$INSTALL_DIR/qbittorrent/config"
-    "$INSTALL_DIR/sabnzbd/config"
-    "$INSTALL_DIR/recyclarr/config"
-    "$INSTALL_DIR/unpackerr/config"
-    "$INSTALL_DIR/homepage/config"
-    "$DATA_ROOT/Media/Movies"
+)
+is_enabled ENABLE_SONARR      && REQUIRED_DIRS+=("$INSTALL_DIR/sonarr/config")
+is_enabled ENABLE_RADARR      && REQUIRED_DIRS+=("$INSTALL_DIR/radarr/config")
+is_enabled ENABLE_BAZARR      && REQUIRED_DIRS+=("$INSTALL_DIR/bazarr/config")
+is_enabled ENABLE_LIDARR      && REQUIRED_DIRS+=("$INSTALL_DIR/lidarr/config")
+is_enabled ENABLE_QBITTORRENT && REQUIRED_DIRS+=("$INSTALL_DIR/qbittorrent/config")
+is_enabled ENABLE_SABNZBD     && REQUIRED_DIRS+=("$INSTALL_DIR/sabnzbd/config")
+is_enabled ENABLE_RECYCLARR   && REQUIRED_DIRS+=("$INSTALL_DIR/recyclarr/config")
+is_enabled ENABLE_UNPACKERR   && REQUIRED_DIRS+=("$INSTALL_DIR/unpackerr/config")
+is_enabled ENABLE_HOMEPAGE    && REQUIRED_DIRS+=("$INSTALL_DIR/homepage/config")
+
+# Data-tree dirs — gated on whichever arr would write into them. Sonarr's
+# Anime TV folder is sonarr's responsibility; same for radarr / lidarr.
+# Downloads dirs are gated on the matching downloader.
+is_enabled ENABLE_SONARR && REQUIRED_DIRS+=(
     "$DATA_ROOT/Media/TV Shows"
-    "$DATA_ROOT/Media/Anime/Movies"
     "$DATA_ROOT/Media/Anime/TV Shows"
-    "$DATA_ROOT/Media/Music"
+)
+is_enabled ENABLE_RADARR && REQUIRED_DIRS+=(
+    "$DATA_ROOT/Media/Movies"
+    "$DATA_ROOT/Media/Anime/Movies"
+)
+is_enabled ENABLE_LIDARR && REQUIRED_DIRS+=("$DATA_ROOT/Media/Music")
+is_enabled ENABLE_QBITTORRENT && REQUIRED_DIRS+=(
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"
     "$DATA_ROOT/Downloads/Torrents/Completed/radarr"
+)
+is_enabled ENABLE_SABNZBD && REQUIRED_DIRS+=(
     "$DATA_ROOT/Downloads/Usenet/incomplete"
     "$DATA_ROOT/Downloads/Usenet/complete"
     "$DATA_ROOT/Downloads/Usenet/complete/tv"
@@ -194,14 +224,18 @@ check_port() {
     fi
 }
 
-check_port 32400 "Plex"
+# Skip firewall checks for services the user opted out of — those ports
+# won't be bound by anything so iptables will (correctly) say no rule
+# exists for them, which would false-fail this validator. Prowlarr stays
+# always-on.
+is_enabled ENABLE_PLEX        && check_port 32400 "Plex"
 check_port 49150 "Prowlarr"
-check_port 49151 "Radarr"
-check_port 49152 "Sonarr"
-check_port 49153 "Bazarr"
-check_port 49154 "Lidarr"
-check_port 49155 "SABnzbd"
-check_port 49156 "qBittorrent"
+is_enabled ENABLE_RADARR      && check_port 49151 "Radarr"
+is_enabled ENABLE_SONARR      && check_port 49152 "Sonarr"
+is_enabled ENABLE_BAZARR      && check_port 49153 "Bazarr"
+is_enabled ENABLE_LIDARR      && check_port 49154 "Lidarr"
+is_enabled ENABLE_SABNZBD     && check_port 49155 "SABnzbd"
+is_enabled ENABLE_QBITTORRENT && check_port 49156 "qBittorrent"
 check_port 5056  "Seerr"
 check_port 8181  "Tautulli"
 check_port 3000  "Homepage"

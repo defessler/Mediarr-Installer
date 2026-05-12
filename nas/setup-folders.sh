@@ -284,6 +284,28 @@ fi
 env_val() {
     grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
 }
+
+# Default-on opt-out check, matching the rest of the toolchain.
+is_enabled() {
+    local val
+    val="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$val" in
+        false|0|no|off) return 1 ;;
+        *)              return 0 ;;
+    esac
+}
+
+# Skip the whole qBittorrent config-write when the user opted out — no
+# container will ever read the file we'd write, and the empty
+# QBITTORRENT_PASS path below would print a misleading "qBittorrent
+# will boot with a random temp password" message.
+if ! is_enabled ENABLE_QBITTORRENT; then
+    echo ""
+    echo "Skipping qBittorrent config (ENABLE_QBITTORRENT=false)."
+fi
+
+if is_enabled ENABLE_QBITTORRENT; then
+
 QB_CONF_DIR="$INSTALL_DIR/qbittorrent/config/qBittorrent"
 QB_CONF_FILE="$QB_CONF_DIR/qBittorrent.conf"
 QB_USER=$(env_val QBITTORRENT_USER)
@@ -381,6 +403,8 @@ if [ "$WROTE_CONF" = true ]; then
         fi
     fi
 fi
+
+fi    # end: if is_enabled ENABLE_QBITTORRENT
 
 # Best-effort cleanup of the old custom-cont-init.d stub from previous
 # wizard versions — it tried to do the same PBKDF2 work INSIDE the

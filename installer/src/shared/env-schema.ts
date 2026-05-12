@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ENABLE_DISABLED_VALUES } from './env-render.js'
 
 const numericString = z.string().regex(/^\d+$/, 'must be a positive integer')
 const ipv4 = z
@@ -10,7 +11,30 @@ const ipv4 = z
 
 const optStr = z.string().optional()
 
+/** Default-on enable-flag check, mirrors env-render.ts isEnabled().
+ *  Kept here as a private function (rather than re-imported) so we can
+ *  duplicate the trivial logic without forcing zod consumers to import
+ *  env-render's runtime helpers. */
+const flagOn = (v: string | undefined): boolean =>
+  !ENABLE_DISABLED_VALUES.has((v ?? '').trim().toLowerCase())
+
 export const envSchema = z.object({
+  // Service selection — per-service ENABLE_* opt-out flags. All optional;
+  // missing is treated as enabled. The superRefine block below uses
+  // these to skip credential validation for services the user has
+  // turned off (no point demanding QBITTORRENT_PASS when qBittorrent
+  // isn't in the stack).
+  ENABLE_PLEX: optStr,
+  ENABLE_SONARR: optStr,
+  ENABLE_RADARR: optStr,
+  ENABLE_LIDARR: optStr,
+  ENABLE_BAZARR: optStr,
+  ENABLE_QBITTORRENT: optStr,
+  ENABLE_SABNZBD: optStr,
+  ENABLE_HOMEPAGE: optStr,
+  ENABLE_RECYCLARR: optStr,
+  ENABLE_UNPACKERR: optStr,
+
   // Identity
   PUID: numericString,
   PGID: numericString,
@@ -37,9 +61,13 @@ export const envSchema = z.object({
   ARR_USERNAME: optStr,
   ARR_PASSWORD: optStr,
 
-  // qBittorrent
-  QBITTORRENT_USER: z.string().min(1),
-  QBITTORRENT_PASS: z.string().min(8, 'at least 8 characters'),
+  // qBittorrent — fields are optional at the schema level; the
+  // superRefine block below escalates them to required *only* when
+  // ENABLE_QBITTORRENT is on (default). Avoids a "password too short"
+  // error when the user has explicitly disabled qBittorrent and
+  // doesn't care.
+  QBITTORRENT_USER: optStr,
+  QBITTORRENT_PASS: optStr,
 
   // SABnzbd usenet provider (all optional — host gates the rest)
   USENET_HOST: optStr,
@@ -109,8 +137,28 @@ export const envSchema = z.object({
       message: 'must differ from INSTALL_DIR (compose tooling and media tree should be separate)' })
   }
 
-  // Usenet creds only meaningful when host is set.
-  if (v.USENET_HOST) {
+  // qBittorrent credentials — required only when the service is in
+  // the stack (ENABLE_QBITTORRENT defaults to on; explicit false-y opts
+  // out). When disabled, we don't validate the user/pass at all — the
+  // user shouldn't have to invent a password for a container that
+  // will never start.
+  const qbitOn = flagOn(v.ENABLE_QBITTORRENT)
+  if (qbitOn) {
+    if (!v.QBITTORRENT_USER || v.QBITTORRENT_USER.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['QBITTORRENT_USER'],
+        message: 'required when qBittorrent is enabled' })
+    }
+    if (!v.QBITTORRENT_PASS || v.QBITTORRENT_PASS.length < 8) {
+      ctx.addIssue({ code: 'custom', path: ['QBITTORRENT_PASS'],
+        message: 'at least 8 characters (qBittorrent enforces this on first boot)' })
+    }
+  }
+
+  // SABnzbd usenet creds only meaningful when host is set AND SABnzbd
+  // is enabled. Skipping the host-set check entirely when SAB is off
+  // means a pre-populated USENET_HOST from a previous run doesn't
+  // false-fire validation after the user disables SABnzbd.
+  if (flagOn(v.ENABLE_SABNZBD) && v.USENET_HOST) {
     if (!v.USENET_USER) {
       ctx.addIssue({ code: 'custom', path: ['USENET_USER'],
         message: 'username required when USENET_HOST is set' })
@@ -121,12 +169,13 @@ export const envSchema = z.object({
     }
   }
 
-  // VPN config only validated when VPN_ENABLED is explicitly on
-  // (default = off; user opts in via the checkbox). Per-provider
-  // validation lives in shared/vpn-providers.ts — here we only enforce
-  // the gate-level invariants that apply regardless of provider.
+  // VPN config only validated when VPN_ENABLED is explicitly on AND
+  // qBittorrent is in the stack. Without qBittorrent there's no
+  // service the VPN routes for, so even VPN_ENABLED=true should not
+  // trigger required-cred validation (the install just won't activate
+  // the "vpn" profile in COMPOSE_PROFILES).
   const vpnOn = (v.VPN_ENABLED ?? 'false').toLowerCase() === 'true'
-  if (!vpnOn) return
+  if (!vpnOn || !qbitOn) return
   if (!v.VPN_PROVIDER) {
     ctx.addIssue({ code: 'custom', path: ['VPN_PROVIDER'],
       message: 'Pick a VPN provider (or turn VPN off).' })

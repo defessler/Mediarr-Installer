@@ -185,9 +185,20 @@ function renderVpnBlock(v: EnvFormValues): string[] {
 /** Default-on if the field is missing or empty. Backwards-compat with
  *  profiles created before service selection existed — those .envs
  *  have no ENABLE_* keys, so we treat every service as enabled. The
- *  user explicitly opts a service OFF by setting ENABLE_FOO=false. */
-const isEnabled = (v: string | undefined): boolean =>
-  (v ?? 'true').toLowerCase() !== 'false'
+ *  user explicitly opts a service OFF by setting ENABLE_FOO to any
+ *  of false/0/no/off (any case).
+ *
+ *  CRITICAL: the disable set here MUST match the shell helpers in
+ *  setup.sh (is_enabled) and the python helper in setup-arr-config.py
+ *  (is_enabled). If a user types '0' in .env, every layer must agree
+ *  that it means disabled — otherwise the wizard would emit
+ *  ENABLE_FOO=true into a freshly-rendered .env (renderer treats '0'
+ *  as enabled) while setup.sh skips the service (treats '0' as
+ *  disabled), leaving the user wondering why their .env says yes but
+ *  the install says no. */
+export const ENABLE_DISABLED_VALUES = new Set(['false', '0', 'no', 'off'])
+export const isEnabled = (v: string | undefined): boolean =>
+  !ENABLE_DISABLED_VALUES.has((v ?? '').trim().toLowerCase())
 
 export function renderEnv(v: EnvFormValues): string {
   return [

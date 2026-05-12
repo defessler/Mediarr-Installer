@@ -6,6 +6,7 @@ import {
   USENET_INDEXERS,
   PRIVATE_TRACKERS,
   BAZARR_PROVIDERS,
+  isEnabled,
 } from '../../shared/env-render.js'
 import {
   VPN_PROVIDERS,
@@ -103,9 +104,9 @@ function ServicesSection({
   config: Partial<EnvFormValues>
   update: <K extends keyof EnvFormValues>(k: K, v: EnvFormValues[K] | undefined) => void
 }) {
-  // Default-on for any missing key, matching env-render's isEnabled().
-  const isOn = (k: keyof EnvFormValues) =>
-    ((config[k] as string | undefined) ?? 'true').toLowerCase() !== 'false'
+  // Imported from env-render so the renderer, setup.sh, and setup-arr-
+  // config.py all agree on what counts as disabled (0/no/off/false).
+  const isOn = (k: keyof EnvFormValues) => isEnabled(config[k] as string | undefined)
   const enabledCount = SERVICE_TOGGLES.filter((t) => isOn(t.key)).length
 
   return (
@@ -640,16 +641,23 @@ export function ConfigureScreen() {
         <Field label="LAN IP of your NAS" k="LAN_IP" placeholder="192.168.1.10" />
       </section>
 
-      <VpnSection
-        config={config}
-        update={update}
-        vpnToken={vpnToken}
-        setVpnToken={setVpnToken}
-        vpnBusy={vpnBusy}
-        vpnError={vpnError}
-        fetchVpnKey={fetchVpnKey}
-        countries={countries}
-      />
+      {/* VPN section only renders when qBittorrent is in the stack —
+          gluetun is the VPN sidecar for qBittorrent, so without
+          qBittorrent there's nothing to route through it. Avoids
+          surprising the user with a half-filled VPN form whose key
+          would be silently unused at install time. */}
+      {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
+        <VpnSection
+          config={config}
+          update={update}
+          vpnToken={vpnToken}
+          setVpnToken={setVpnToken}
+          vpnBusy={vpnBusy}
+          vpnError={vpnError}
+          fetchVpnKey={fetchVpnKey}
+          countries={countries}
+        />
+      )}
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Arr Web UI auth</h2>
@@ -663,33 +671,37 @@ export function ConfigureScreen() {
         </div>
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">qBittorrent WebUI</h2>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={qbitSameAsArr}
-            onChange={(e) => setQbitSameAsArr(e.target.checked)}
-          />
-          Use same credentials as ARR Web UI
-        </label>
-        {!qbitSameAsArr && (
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Username" k="QBITTORRENT_USER" />
-            <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
-          </div>
-        )}
-        {qbitSameAsArr && (
-          <p className="text-xs text-slate-500">
-            qBittorrent will use{' '}
-            <span className="font-mono text-slate-300">
-              {config.ARR_USERNAME || '<empty>'}
-            </span>{' '}
-            from the ARR auth section above. Note: qBittorrent requires the
-            password to be at least 8 characters.
-          </p>
-        )}
-      </section>
+      {/* qBittorrent WebUI credentials only matter when qBittorrent is
+          in the stack — same reasoning as the VPN section above. */}
+      {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-medium border-b border-slate-800 pb-2">qBittorrent WebUI</h2>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={qbitSameAsArr}
+              onChange={(e) => setQbitSameAsArr(e.target.checked)}
+            />
+            Use same credentials as ARR Web UI
+          </label>
+          {!qbitSameAsArr && (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Username" k="QBITTORRENT_USER" />
+              <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
+            </div>
+          )}
+          {qbitSameAsArr && (
+            <p className="text-xs text-slate-500">
+              qBittorrent will use{' '}
+              <span className="font-mono text-slate-300">
+                {config.ARR_USERNAME || '<empty>'}
+              </span>{' '}
+              from the ARR auth section above. Note: qBittorrent requires the
+              password to be at least 8 characters.
+            </p>
+          )}
+        </section>
+      )}
 
       {/* Plex claim is collected on the Run screen instead — it expires
           4 minutes after generation, so capturing it earlier risks the

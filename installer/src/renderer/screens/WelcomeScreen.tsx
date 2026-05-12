@@ -21,7 +21,7 @@ function timeAgo(ts: number): string {
 }
 
 export function WelcomeScreen() {
-  const { setMode, setStep, loadFromProfile, activeProfileId, setActiveProfileLabel, lastRuns } = useWizard()
+  const { setMode, setStep, loadFromProfile, activeProfileId, setActiveProfileLabel, lastRuns, clearRunResult } = useWizard()
   const [profiles, setProfiles] = useState<SavedProfile[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -147,6 +147,12 @@ export function WelcomeScreen() {
     if (!window.confirm(`Delete profile "${label}"?`)) return
     try {
       await window.installer.profiles.delete(id)
+      // Drop the lastRuns entry for this profile too — otherwise it
+      // becomes an orphan in the persisted wizard state (small, but it
+      // would linger forever and the user might re-create a profile
+      // with the same id and inherit a stale "last install failed"
+      // pill that doesn't reflect reality).
+      clearRunResult(id)
       await refresh()
     } catch (e) {
       reportError('Delete profile', e)

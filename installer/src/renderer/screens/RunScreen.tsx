@@ -39,6 +39,13 @@ export function RunScreen() {
   const [steps, setSteps] = useState<SetupStep[]>(() =>
     SETUP_STEPS.map((s) => ({ ...s })),
   )
+  // Mirror `steps` into a ref so the stream-close handler can read the
+  // latest array WITHOUT going through a setSteps setter callback —
+  // React StrictMode runs setter callbacks twice in dev, and the close
+  // handler's side-effect (recordRunResult) would fire twice as a
+  // result. The ref read is single-shot.
+  const stepsRef = useRef<SetupStep[]>(steps)
+  useEffect(() => { stepsRef.current = steps }, [steps])
   const [rerunningStep, setRerunningStep] = useState<number | null>(null)
   const [, setTick] = useState(0) // force re-render on log append
   /** Path of the on-disk install log for the current run. Set when go()
@@ -259,20 +266,25 @@ export function RunScreen() {
         // (fresh slate); on failure we record exitCode + the first
         // step that's still in 'running' or 'fail' state, which the
         // marker parser populated.
+        //
+        // Read the current steps via the Zustand store directly (NOT
+        // via a setSteps setter side-effect — React StrictMode runs
+        // setter callbacks twice on dev, which would record the run
+        // result twice and the second `recordRunResult` call would
+        // see Date.now() a few µs later and update finishedAt to a
+        // slightly-different value, churning persisted state for no
+        // reason). useWizard.getState() reads the latest steps array
+        // without any subscription / lifecycle gymnastics.
         if (activeProfileId) {
           if (d.exitCode === 0) {
             clearRunResult(activeProfileId)
           } else {
-            // Snapshot steps at the moment of close — useState's setter
-            // gives us the latest state without a stale-closure read.
-            setSteps((prev) => {
-              const failed = prev.find((s) => s.status === 'fail' || s.status === 'running')
-              recordRunResult(activeProfileId, {
-                phase: 'failed',
-                exitCode: d.exitCode,
-                failedStep: failed?.number,
-              })
-              return prev    // unchanged — we only needed the snapshot
+            const currentSteps = stepsRef.current
+            const failed = currentSteps.find((s) => s.status === 'fail' || s.status === 'running')
+            recordRunResult(activeProfileId, {
+              phase: 'failed',
+              exitCode: d.exitCode,
+              failedStep: failed?.number,
             })
           }
         }
