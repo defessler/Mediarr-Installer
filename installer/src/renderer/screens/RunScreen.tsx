@@ -837,6 +837,44 @@ export function RunScreen() {
         </details>
       )}
 
+      {/* Prominent "Retry just that step" banner — shows up when the
+          install ended in failure and EXACTLY one step is red. Re-runs
+          via the existing rerunStep() plumbing, which the stream
+          handlers naturally pick up so the stepper goes red → amber
+          pulse → green/red without any other code changes. The footer
+          Retry button (re-runs the entire install from scratch) stays
+          available for the multi-failure case or a clean-slate re-run. */}
+      {(() => {
+        if (phase !== 'failed') return null
+        const failed = steps.filter((s) => s.status === 'fail')
+        if (failed.length !== 1) return null
+        const f = failed[0]
+        const inFlight = rerunningStep === f.number
+        return (
+          <div className="rounded-md border border-amber-700/60 bg-amber-900/20 p-3 shrink-0 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-amber-200">
+                Step {f.number} failed — {f.label}
+              </div>
+              <div className="text-xs text-amber-200/70 mt-0.5">
+                Re-runs idempotently. Most step failures are fixed by a single retry
+                once the underlying issue is sorted (containers slow to boot, transient
+                API errors, Synology shared-folder ACL settling, etc.).
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => rerunStep(f.number)}
+              disabled={inFlight || rerunningStep !== null}
+              title={inFlight ? 'Re-running…' : `Re-run step ${f.number}`}
+              className="shrink-0 px-4 py-2 text-sm bg-amber-600 hover:bg-amber-500 rounded-md disabled:opacity-40 font-medium"
+            >
+              {inFlight ? 'Re-running…' : `Retry step ${f.number}`}
+            </button>
+          </div>
+        )
+      })()}
+
       {/* Two-pane: stepper rail on the left, streaming log on the right */}
       <div className="flex-1 min-h-0 grid grid-cols-[260px_1fr] gap-4">
         <aside className="overflow-y-auto rounded-md border border-slate-800 bg-slate-900/40 p-4">

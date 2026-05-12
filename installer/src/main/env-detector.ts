@@ -120,6 +120,35 @@ export async function detectEnv(
     // is up, "no curl reachability" is usually a false negative.
     'echo "===dockerhub_dns==="; getent hosts registry-1.docker.io 2>/dev/null | awk \'{print $1; exit}\' || true',
     'echo "===docker_info==="; docker info --format \'{{.ServerVersion}}\' 2>/dev/null || true',
+    // Synology shared-folder ACL on /volume1/Data — the source of the
+    // long-running "Sonarr says root folder doesn\'t exist" trap. We
+    // do TWO probes:
+    //   1. data_share_exists: is the /volume1/Data dir present at all?
+    //      (If not, the user hasn\'t made the shared folder yet —
+    //      different problem to surface than ACL.)
+    //   2. data_share_writable: can the SSH user (whose UID typically
+    //      matches PUID) write to that share? This is the same probe
+    //      the wizard\'s install-time [acl] step does — running it
+    //      during detect lets us warn EARLY instead of at install.
+    //      We deliberately do NOT require sudo here — the SSH user
+    //      must be able to write under their own identity, which is
+    //      what the arr containers will be doing with PUID set.
+    'echo "===data_share_exists==="; [ -d /volume1/Data ] && echo y || echo n',
+    'echo "===data_share_writable==="; ' +
+      'if [ -d /volume1/Data ]; then ' +
+      '  if touch /volume1/Data/.mediarr-detect-probe 2>/dev/null && rm /volume1/Data/.mediarr-detect-probe 2>/dev/null; then ' +
+      '    echo y; ' +
+      '  else echo n; fi; ' +
+      'else echo skip; fi',
+    // Snapshot of the current ACL on /volume1/Data so we can show the
+    // user "here\'s who has access right now" if the write probe fails.
+    // synoacltool lives at known-stable paths on DSM (we resolve them
+    // explicitly because the SSH non-interactive PATH doesn\'t include
+    // /usr/syno/bin by default).
+    'echo "===acl_dump==="; ' +
+      'for c in /usr/syno/bin/synoacltool /usr/syno/sbin/synoacltool /usr/local/bin/synoacltool /usr/bin/synoacltool; do ' +
+      '  if [ -e "$c" ]; then "$c" -get /volume1/Data 2>/dev/null && break; fi; ' +
+      'done',
   ].join('\n')
 
   const r = await run(sessionId, `bash -c ${shellQuote(batch)}`)
@@ -230,6 +259,35 @@ export async function detectEnv(
   const sshClientIp = section(o, 'ssh_client') || null
   const replyIp = section(o, 'reply_ip') || null
 
+  // /volume1/Data ACL state — surfaced as a check on the Detect screen
+  // so the user can fix DSM share permissions before the install
+  // bothers to upload anything. The wizard's install-time [acl] step
+  // still runs as a backup, but this gives an earlier signal.
+  const dataShareExists = section(o, 'data_share_exists') === 'y'
+  const dataShareWritableRaw = section(o, 'data_share_writable')
+  let dataShareWritable: boolean | null
+  if (dataShareWritableRaw === 'y') dataShareWritable = true
+  else if (dataShareWritableRaw === 'n') dataShareWritable = false
+  else dataShareWritable = null    // 'skip' (share missing) → unknown
+  // Parse the synoacltool -get dump into a tiny structured list so the
+  // UI can render "user heoki: rwx,inherited / user admin: rwx,inherited
+  // / group users: r-x,inherited" without re-parsing in the renderer.
+  // Lines look like:
+  //   [0] user:admin:allow:rwxpdDaARWc--:fd-- (level:0)
+  const aclDump = section(o, 'acl_dump')
+  const dataShareAcl: { kind: 'user' | 'group'; name: string; allow: boolean; perms: string; inherit: string }[] = []
+  for (const raw of aclDump.split('\n')) {
+    const m = raw.match(/^\s*\[\d+\]\s*(user|group):([^:]+):(allow|deny):([^:\s]+):([^\s]+)/)
+    if (!m) continue
+    dataShareAcl.push({
+      kind: m[1] as 'user' | 'group',
+      name: m[2],
+      allow: m[3] === 'allow',
+      perms: m[4],
+      inherit: m[5],
+    })
+  }
+
   return {
     docker: dockerV2OK ? 'v2' : dockerV1OK ? 'v1-legacy' : 'missing',
     volume1: volume1Out.startsWith('ok'),
@@ -250,5 +308,8 @@ export async function detectEnv(
     defaultIp,
     sshClientIp,
     replyIp,
+    dataShareExists,
+    dataShareWritable,
+    dataShareAcl,
   }
 }

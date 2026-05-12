@@ -31,6 +31,72 @@ process.on('uncaughtException', (err) => {
 
 let mainWindow: BrowserWindow | null = null
 
+/** Cached result of the GitHub-releases ping. Populated by
+ *  checkForUpdate() shortly after app.whenReady(); null on first
+ *  launch until that fetch resolves, and null afterwards if the API
+ *  was unreachable, rate-limited, or returned no releases. The
+ *  appGetInfo IPC handler reads this lazily so the renderer can show
+ *  a small "v0.x available" pill in the footer. We deliberately don't
+ *  block app startup on the network — the wizard works offline once
+ *  you've reached the Configure screen. */
+let updateInfo: { latest: string; url: string } | null = null
+
+export function getCachedUpdateInfo(): { latest: string; url: string } | null {
+  return updateInfo
+}
+
+/** Compare a GitHub tag like "installer-v0.2.0" / "v0.2.0" / "0.2.0"
+ *  against app.getVersion() (always a "X.Y.Z" semver-ish triple).
+ *  Returns true when the tag is strictly newer. Avoids pulling in the
+ *  full `semver` package — we don't use pre-release identifiers in
+ *  this project so a numeric triple compare is enough. */
+function isNewerVersion(tag: string, current: string): boolean {
+  const stripPrefix = (s: string) => s.replace(/^[a-zA-Z-]*v?/, '')
+  const parse = (s: string) =>
+    stripPrefix(s).split(/[.-]/).slice(0, 3).map((n) => Number(n) || 0)
+  const [ta, tb, tc] = parse(tag)
+  const [ca, cb, cc] = parse(current)
+  if (ta !== ca) return ta > ca
+  if (tb !== cb) return tb > cb
+  return tc > cc
+}
+
+/** Fire-and-forget GitHub-releases ping. Never throws — any failure
+ *  just leaves updateInfo=null and the footer pill stays hidden. */
+async function checkForUpdate(): Promise<void> {
+  if (isMockMode()) return       // skip in mock — no real version meaning
+  try {
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), 8_000)
+    const res = await fetch(
+      'https://api.github.com/repos/defessler/Mediarr-Installer/releases/latest',
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': `Mediarr-Installer/${app.getVersion()}`,
+        },
+        signal: ac.signal,
+      },
+    )
+    clearTimeout(t)
+    if (!res.ok) return            // 404 on a brand-new repo with no releases is fine
+    const body = (await res.json()) as { tag_name?: string; html_url?: string }
+    const tag = body.tag_name ?? ''
+    const url = body.html_url ?? ''
+    if (!tag) return
+    if (isNewerVersion(tag, app.getVersion())) {
+      const stripped = tag.replace(/^[a-zA-Z-]*v?/, '')
+      updateInfo = { latest: stripped, url: url || 'https://github.com/defessler/Mediarr-Installer/releases' }
+      log.info(`update available: v${stripped} (current v${app.getVersion()})`)
+    } else {
+      log.info(`up to date — v${app.getVersion()} ≥ tag ${tag}`)
+    }
+  } catch (e) {
+    // Network errors, abort, JSON parse errors — leave updateInfo null.
+    log.info('update check failed (non-fatal):', (e as Error).message)
+  }
+}
+
 function createWindow() {
   const preloadPath = join(__dirname_main, '..', 'preload', 'index.mjs')
   const indexHtml = join(__dirname_main, '..', 'renderer', 'index.html')
@@ -148,6 +214,10 @@ app.whenReady().then(() => {
   log.info('app ready, registering IPC handlers')
   registerIpcHandlers()
   createWindow()
+
+  // Fire-and-forget update check. Non-blocking — result lands in
+  // `updateInfo` and gets surfaced by appGetInfo on the next IPC call.
+  checkForUpdate().catch(() => { /* checkForUpdate already logs */ })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

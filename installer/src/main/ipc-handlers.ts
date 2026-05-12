@@ -15,7 +15,7 @@ import * as profiles from './profile-store.js'
 import { saveTextToFile } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
 import * as installLog from './install-log.js'
-import { getMainWindow } from './index.js'
+import { getMainWindow, getCachedUpdateInfo } from './index.js'
 
 export const isMockMode = (): boolean =>
   process.env.INSTALLER_MOCK === '1' || process.env.INSTALLER_MOCK === 'true'
@@ -73,6 +73,7 @@ export function registerIpcHandlers() {
     version: app.getVersion(),
     payloadSha: payloadSha(),
     logPath: log.transports.file.getFile().path,
+    updateAvailable: getCachedUpdateInfo(),
   }))
   // Opens the active log file in the user's default text editor.
   // Returns the path so the renderer can show it in a toast.

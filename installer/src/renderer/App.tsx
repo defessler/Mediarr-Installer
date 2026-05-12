@@ -286,7 +286,20 @@ export function App() {
       {/* Footer with build info — handy for support */}
       {info && (
         <footer className="text-xs text-slate-600 px-4 py-1.5 border-t border-slate-900 flex justify-between items-center gap-3">
-          <span>v{info.version}</span>
+          <div className="flex items-center gap-2">
+            <span>v{info.version}</span>
+            {info.updateAvailable && (
+              <a
+                href={info.updateAvailable.url}
+                target="_blank"
+                rel="noreferrer"
+                className="px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-200 hover:bg-emerald-600/60 font-medium"
+                title={`Click to open the v${info.updateAvailable.latest} release page on GitHub`}
+              >
+                ↑ v{info.updateAvailable.latest} available
+              </a>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"

@@ -401,6 +401,16 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
     defaultIp: '192.168.1.10',
     sshClientIp: '192.168.1.42',
     replyIp: '192.168.1.10',
+    // /volume1/Data exists + the SSH user can write to it (happy path).
+    // ACL has two ACEs so the renderer's "details" expander has something
+    // to show. Toggle dataShareWritable to false locally to preview the
+    // red-banner UI without needing a real broken NAS.
+    dataShareExists: true,
+    dataShareWritable: true,
+    dataShareAcl: [
+      { kind: 'user', name: 'heoki',          allow: true, perms: 'rwxpdDaARWcCo', inherit: 'fd--' },
+      { kind: 'group', name: 'administrators', allow: true, perms: 'rwxpdDaARWc--', inherit: 'fd--' },
+    ],
   }
 }
 

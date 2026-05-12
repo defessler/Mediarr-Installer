@@ -304,6 +304,82 @@ export function EnvDetectScreen() {
             )}
           </section>
 
+          {/* /volume1/Data shared-folder ACL — the source of the
+              long-running "Sonarr says root folder doesn't exist" trap.
+              Synology layers its own ACL on top of POSIX, and if the
+              wizard's user / PUID isn't explicitly granted Read/Write
+              on the share, every arr's "is this writable?" probe fails
+              at step 7. Surface the state here so the user can fix it
+              in DSM Control Panel BEFORE clicking Install. The install-
+              time [acl] step in RunScreen still tries to auto-apply
+              when synoacltool is available; this section is the early
+              warning. */}
+          <section className="rounded-md border border-slate-800 p-4 space-y-2">
+            <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
+              Shared folder ACL
+            </h2>
+            <Check
+              ok={r.dataShareExists}
+              label="/volume1/Data exists"
+              value={r.dataShareExists ? 'yes' : 'missing'}
+            />
+            {!r.dataShareExists && (
+              <p className="text-amber-300 text-xs ml-5 mt-1">
+                Create it in DSM → Control Panel → Shared Folder → Create.
+                The wizard's data tree (Media + Downloads) lives there.
+              </p>
+            )}
+            {r.dataShareExists && (
+              <Check
+                ok={r.dataShareWritable === true}
+                label={`Writable as ${r.username ?? 'SSH user'}`}
+                value={
+                  r.dataShareWritable === true ? 'yes'
+                  : r.dataShareWritable === false ? 'denied by ACL'
+                  : 'unknown'
+                }
+              />
+            )}
+            {r.dataShareExists && r.dataShareWritable === false && (
+              <div className="ml-5 mt-2 text-xs text-amber-200/90 space-y-1">
+                <p>
+                  Synology's shared-folder ACL is denying write access. The
+                  arrs will fail to register their root folders at step 7
+                  unless this is fixed (the wizard tries to grant it
+                  automatically via <code className="font-mono">synoacltool</code>
+                  during install, but DSM Control Panel is the source of
+                  truth).
+                </p>
+                <p>
+                  <span className="text-amber-300 font-medium">Fix in DSM:</span>{' '}
+                  Control Panel → Shared Folder → click <span className="font-mono">Data</span> → Edit → Permissions →
+                  find <span className="font-mono">{r.username ?? 'your user'}</span> → check Read/Write → Save. Then
+                  click Re-detect on this screen.
+                </p>
+              </div>
+            )}
+            {r.dataShareExists && r.dataShareAcl.length > 0 && (
+              <details className="ml-5 mt-1">
+                <summary className="cursor-pointer text-xs text-slate-500 select-none">
+                  Current ACL ({r.dataShareAcl.length} entries) — click to expand
+                </summary>
+                <ul className="mt-2 space-y-0.5 text-xs font-mono text-slate-400">
+                  {r.dataShareAcl.map((ace, i) => (
+                    <li key={i}>
+                      <span className="text-slate-500">[{i}]</span>{' '}
+                      <span className="text-slate-300">{ace.kind}:{ace.name}</span>{' '}
+                      <span className={ace.allow ? 'text-emerald-400' : 'text-rose-400'}>
+                        {ace.allow ? 'allow' : 'deny'}
+                      </span>{' '}
+                      <span className="text-slate-500">{ace.perms}</span>{' '}
+                      <span className="text-slate-600">inherit={ace.inherit}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </section>
+
           <section className="rounded-md border border-slate-800 p-4 text-sm">
             <div className="flex items-center gap-3">
               <span

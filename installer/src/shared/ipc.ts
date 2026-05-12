@@ -117,6 +117,24 @@ export interface EnvDetectResult {
   /** IP the NAS would use to reply to the SSH client. If different from
    *  defaultIp, the SSH session is on a non-LAN network (e.g. Tailscale). */
   replyIp: string | null
+  /** Does /volume1/Data (the media shared folder) exist? */
+  dataShareExists: boolean
+  /** Can the SSH user write to /volume1/Data right now? null = couldn't
+   *  test (share missing). False is the Synology shared-folder ACL trap
+   *  the install used to fail on at step 7. */
+  dataShareWritable: boolean | null
+  /** Parsed `synoacltool -get /volume1/Data` ACEs, used to show the user
+   *  which accounts currently have access. Empty if synoacltool wasn't
+   *  found or /volume1/Data has no Synology ACL layer. */
+  dataShareAcl: {
+    kind: 'user' | 'group'
+    name: string
+    allow: boolean
+    /** Permission bitmask string (synology format), e.g. "rwxpdDaARWcCo". */
+    perms: string
+    /** Inheritance flags, e.g. "fd--" = file+directory inherit. */
+    inherit: string
+  }[]
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────
@@ -156,6 +174,12 @@ export interface AppInfo {
   payloadSha: string | null
   /** Absolute path to electron-log's current log file on this machine. */
   logPath: string
+  /** GitHub-releases ping result populated shortly after app launch.
+   *  Null = up to date, network unreachable, or fetch still in flight.
+   *  When set, the renderer shows a small "v0.x available" pill in the
+   *  footer linking to `url` (the release's html_url). Notification only —
+   *  the wizard does not auto-download or apply updates. */
+  updateAvailable: { latest: string; url: string } | null
 }
 
 // ── Connection profiles ───────────────────────────────────────────────────────
