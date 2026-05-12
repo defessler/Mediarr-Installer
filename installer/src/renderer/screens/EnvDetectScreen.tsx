@@ -1,7 +1,33 @@
 import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import type { EnvDetectResult } from '../../shared/ipc.js'
+import type { EnvFormValues } from '../../shared/env-render.js'
 import { reportError } from '../store/errors.js'
+
+/** Map a stack-container name to the ENABLE_* form key that toggles
+ *  it on/off. Used by the "Bring your own" panel to translate "I see
+ *  Plex already running" into "set ENABLE_PLEX=false" with one click.
+ *  Containers without a corresponding flag (prowlarr, flaresolverr —
+ *  always-on, not profile-gated) return null so the UI just shows
+ *  them as "managed in place; we'll keep yours" without a Skip option. */
+function containerToEnableKey(c: string): keyof EnvFormValues | null {
+  switch (c) {
+    case 'plex':
+    case 'tautulli':
+    case 'seerr':         return 'ENABLE_PLEX'
+    case 'sonarr':        return 'ENABLE_SONARR'
+    case 'radarr':        return 'ENABLE_RADARR'
+    case 'lidarr':        return 'ENABLE_LIDARR'
+    case 'bazarr':        return 'ENABLE_BAZARR'
+    case 'qbittorrent':
+    case 'gluetun':       return 'ENABLE_QBITTORRENT'
+    case 'sabnzbd':       return 'ENABLE_SABNZBD'
+    case 'homepage':      return 'ENABLE_HOMEPAGE'
+    case 'recyclarr':     return 'ENABLE_RECYCLARR'
+    case 'unpackerr':     return 'ENABLE_UNPACKERR'
+    default:              return null
+  }
+}
 
 type Status = 'detecting' | 'ok' | 'failed'
 
@@ -528,6 +554,113 @@ export function EnvDetectScreen() {
               </p>
             )}
           </section>
+
+          {/* Bring-your-own panel — when the NAS already has stack-known
+              container names running, let the user opt those services
+              out of THIS install with one click each. Use case:
+                - User has an existing Plex installed manually + curated;
+                  they want the wizard to install Sonarr/Radarr/qBit but
+                  leave Plex alone.
+                - User has a remote Plex on a separate box; tautulli +
+                  seerr should follow Plex's lead and stay off here.
+              The Skip button toggles the corresponding ENABLE_*=false
+              flag in the wizard config. The user can confirm or reverse
+              on the next Configure screen. We DON'T currently read API
+              keys out of the external service's config (that's a fuller
+              "Adopt" mode for a follow-up) — Skip is the safe MVP. */}
+          {r.existingInstall.runningContainers.length > 0 && (() => {
+            // Distinct enable-keys for the detected containers, so e.g.
+            // plex+tautulli+seerr collapse into a single "Skip Plex stack"
+            // option (they share ENABLE_PLEX). null-mapped containers
+            // (prowlarr, flaresolverr) don't get a skip option here.
+            const detectedKeys = Array.from(new Set(
+              r.existingInstall.runningContainers
+                .map(containerToEnableKey)
+                .filter((k): k is keyof EnvFormValues => k !== null),
+            ))
+            if (detectedKeys.length === 0) return null
+            const isOn = (k: keyof EnvFormValues) =>
+              ((config[k] as string | undefined) ?? 'true').toLowerCase() !== 'false'
+            const skipAll = () => {
+              const patch: Partial<EnvFormValues> = {}
+              for (const k of detectedKeys) patch[k] = 'false' as never
+              setConfig(patch)
+            }
+            const allSkipped = detectedKeys.every((k) => !isOn(k))
+            return (
+              <section className="rounded-md border border-amber-700/50 bg-amber-900/10 p-4 space-y-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <span className="font-medium">Services already running — keep them?</span>
+                </div>
+                <p className="text-slate-300 text-xs">
+                  We see container(s) with the stack&apos;s standard names already
+                  running. The default install will rebuild them from this wizard&apos;s
+                  compose file (preserving config dirs / .env). If you&apos;d rather
+                  the wizard leave them alone — e.g. you maintain Plex yourself
+                  with a custom config — Skip the matching service(s) below and
+                  this install won&apos;t touch them.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {detectedKeys.map((k) => {
+                    const skipped = !isOn(k)
+                    // Label = "Plex" not "ENABLE_PLEX". Strip the prefix
+                    // and title-case the rest so the UI reads naturally.
+                    const label = k
+                      .replace(/^ENABLE_/, '')
+                      .toLowerCase()
+                      .replace(/^\w/, (c) => c.toUpperCase())
+                    // Pretty-print which containers from the detected
+                    // set match this key — gives the user a sanity check
+                    // that "Plex stack" really means "plex + tautulli + seerr".
+                    const matched = r.existingInstall.runningContainers
+                      .filter((c) => containerToEnableKey(c) === k)
+                    return (
+                      <label
+                        key={k}
+                        className={
+                          'flex items-start gap-2 rounded-md border p-2 cursor-pointer text-xs ' +
+                          (skipped
+                            ? 'border-slate-700 bg-slate-900/40 opacity-80'
+                            : 'border-amber-700/40 bg-amber-900/10')
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 shrink-0"
+                          checked={skipped}
+                          onChange={(e) => {
+                            setConfig({ [k]: e.target.checked ? 'false' : 'true' } as Partial<EnvFormValues>)
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium">
+                            Skip {label}
+                          </div>
+                          <div className="text-xs text-slate-400 font-mono truncate">
+                            {matched.join(', ')}
+                          </div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+                {!allSkipped && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={skipAll}
+                      className="px-3 py-1.5 text-xs bg-amber-700/60 hover:bg-amber-600 rounded-md"
+                    >
+                      Skip all detected ({detectedKeys.length})
+                    </button>
+                    <span className="text-xs text-slate-500 self-center">
+                      Equivalent to ticking every Skip box above
+                    </span>
+                  </div>
+                )}
+              </section>
+            )
+          })()}
 
           {/* Existing install banner — switch to Update mode when found */}
           {(r.existingInstall.hasCompose || r.existingInstall.runningContainers.length > 0) && (
