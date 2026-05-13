@@ -246,7 +246,7 @@ function wrapSudo(sessionId: string, cmd: string, sudo: boolean): string {
 function execOnce(
   client: Client,
   cmd: string,
-  opts?: { stdinPassword?: string; timeoutMs?: number },
+  opts?: { stdinPassword?: string; stdinBytes?: Buffer; timeoutMs?: number },
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     let settled = false
@@ -305,12 +305,36 @@ function execOnce(
       if (opts?.stdinPassword !== undefined) {
         stream.write(opts.stdinPassword + '\n')
         stream.end()
+      } else if (opts?.stdinBytes !== undefined) {
+        // Raw-bytes path for the SFTP-disabled upload fallback —
+        // piping the file body via stdin to a remote `cat > file`
+        // avoids the ARG_MAX trap that the previous "base64 in argv"
+        // approach hit on big files (Synology DSM's busybox /bin/sh
+        // refuses argvs >~80KB with "Argument list too long"). Honor
+        // backpressure with a drain handler so a 1MB+ payload doesn't
+        // OOM the local Node side or starve the SSH channel.
+        const buf = opts.stdinBytes
+        if (!stream.write(buf)) {
+          stream.once('drain', () => stream.end())
+        } else {
+          stream.end()
+        }
       }
     })
   })
 }
 
-export async function exec(args: { sessionId: string; cmd: string; sudo?: boolean }): Promise<ExecResult> {
+export async function exec(args: {
+  sessionId: string
+  cmd: string
+  sudo?: boolean
+  /** Raw bytes to write to the remote process's stdin. Mutually exclusive
+   *  with sudo:true on non-root sessions (sudo -S would gobble the bytes
+   *  thinking they're the password). Used by the SFTP fallback uploader
+   *  to pipe file contents into `cat > remote` instead of cramming them
+   *  through argv. */
+  stdinBytes?: Buffer
+}): Promise<ExecResult> {
   const sess = sessions.get(args.sessionId)
   if (!sess) throw new Error(`unknown sessionId ${args.sessionId}`)
   const wrapped = wrapSudo(args.sessionId, args.cmd, !!args.sudo)
@@ -328,8 +352,15 @@ export async function exec(args: { sessionId: string; cmd: string; sudo?: boolea
       `root or fill in the "Sudo password" field.`,
     )
   }
+  if (args.stdinBytes !== undefined && needsSudoPassword) {
+    throw new Error(
+      'exec: stdinBytes + sudo on a non-root session conflict — sudo -S ' +
+      'reads its password from the same stdin we want to feed the payload to.',
+    )
+  }
   return execOnce(sess.client, wrapped, {
     stdinPassword: needsSudoPassword ? (sess.config.sudoPassword ?? '') : undefined,
+    stdinBytes: args.stdinBytes,
   })
 }
 

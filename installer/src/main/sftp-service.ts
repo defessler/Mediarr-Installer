@@ -166,14 +166,21 @@ async function uploadDirViaExec(args: {
     })
 
     const buf = await fs.readFile(local)
-    const b64 = buf.toString('base64')
     const remoteEsc = remote.replace(/'/g, `'\\''`)
-    // base64 -d works on Synology busybox AND coreutils. -o is GNU-only,
-    // so we use redirection. chmod immediately after.
+    // Pipe the raw file body via stdin to `cat > remote`. The earlier
+    // approach was `printf %s <base64> | base64 -d > remote`, which
+    // jammed the base64-encoded payload into a SINGLE shell argv to
+    // `printf`. Synology DSM's busybox /bin/sh refuses argvs above
+    // ~80KB with "Argument list too long" — so any payload script
+    // bigger than ~60KB raw (× 4/3 for base64) crashed the upload.
+    // stdin pipes through the SSH channel with no per-argument size
+    // limit, so it works for arbitrarily large files. We still chmod
+    // immediately after the write succeeds.
     const r = await exec({
       sessionId: args.sessionId,
-      cmd: `printf %s ${quote(b64)} | base64 -d > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
+      cmd: `cat > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
       sudo: false,
+      stdinBytes: buf,
     })
     if (r.exitCode !== 0) {
       throw new Error(`Upload of ${f.rel} failed: ${(r.stderr || r.stdout).slice(0, 200)}`)
@@ -185,11 +192,6 @@ async function uploadDirViaExec(args: {
   return { uploaded, bytesTotal: totalBytes }
 }
 
-function quote(s: string): string {
-  // Single-quote for safe inline insertion. base64 has no single quotes
-  // so this is a degenerate case — but be defensive anyway.
-  return `'${s.replace(/'/g, `'\\''`)}'`
-}
 
 /** SFTP can fail in subtle ways on Synology — common ones we've hit:
  *  - "Unable to start subsystem: sftp"  (SFTP service toggle off in DSM)
@@ -331,12 +333,14 @@ export async function writeFile(args: {
     return
   } catch { /* fall through to exec */ }
 
-  const b64 = Buffer.from(args.content, 'utf8').toString('base64')
+  // Same stdin-pipe trick as uploadDirViaExec — avoids the
+  // /bin/sh: Argument list too long trap for large .env files.
   const remoteEsc = args.remotePath.replace(/'/g, `'\\''`)
   const r = await exec({
     sessionId: args.sessionId,
-    cmd: `printf %s ${quote(b64)} | base64 -d > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
+    cmd: `cat > '${remoteEsc}' && chmod ${mode.toString(8)} '${remoteEsc}'`,
     sudo: false,
+    stdinBytes: Buffer.from(args.content, 'utf8'),
   })
   if (r.exitCode !== 0) {
     throw new Error(`writeFile failed (both SFTP and exec): ${(r.stderr || r.stdout).slice(0, 200)}`)
