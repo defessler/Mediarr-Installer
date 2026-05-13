@@ -198,7 +198,16 @@ if [ -d "$DATA_ROOT" ]; then
         # delete subfolder (D) + read/write attrs (a/A) + read/write
         # xattrs (R/W) + read/change perms (c/C) + take ownership (o).
         # Inheritance: file + directory (fd--).
-        if "$SYNOACL" -add "$DATA_ROOT" "user:${USERNAME}:allow:rwxpdDaARWcCo:fd--"; then
+        #
+        # synoacltool -add is NOT idempotent — it appends a new ACE
+        # even when a matching one already exists. Real-world logs
+        # have shown 6+ identical heoki ACEs accumulated after a few
+        # re-runs of the wizard. Grep -get output first; only -add
+        # when the target ACE isn't already present.
+        TARGET_ACE="user:${USERNAME}:allow:rwxpdDaARWcCo:fd--"
+        if "$SYNOACL" -get "$DATA_ROOT" 2>/dev/null | grep -qF "$TARGET_ACE"; then
+            echo "  ✔ ACL ACE already present for $USERNAME (skipped to avoid duplicate)"
+        elif "$SYNOACL" -add "$DATA_ROOT" "$TARGET_ACE"; then
             echo "  ✔ ACL granted to user $USERNAME"
         else
             echo "  ⚠ synoacltool -add failed — grant write access manually in"

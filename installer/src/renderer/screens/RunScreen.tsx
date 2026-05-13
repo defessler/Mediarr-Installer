@@ -533,12 +533,18 @@ export function RunScreen() {
             `  echo "[acl] DSM fix: Control Panel → Shared Folder → Data → Edit → Permissions → grant $USERNAME Read/Write"; ` +
             `  exit 0; ` +
             `fi; ` +
-            // Apply the ACE. If a matching ACE already exists, -add
-            // returns non-zero with an "already exists" message — we
-            // treat that as success.
-            `if "$SYNOACL" -add "$DATA" "user:$USERNAME:allow:rwxpdDaARWcCo:fd--" 2>&1; then ` +
-            `  echo "[acl] ACE added/updated for $USERNAME on $DATA"; ` +
-            `else rc=$?; echo "[acl] -add returned $rc (often means ACE already exists — ok)"; fi; ` +
+            // Apply the ACE — but check existence FIRST. synoacltool
+            // -add is NOT idempotent: invoking it with a matching ACE
+            // returns success and appends a duplicate entry. Real-world
+            // user logs have shown up to 6 identical heoki ACEs after
+            // a handful of re-installs. Grep the current -get output
+            // for the exact ACE string we'd add; only -add if absent.
+            `TARGET_ACE="user:$USERNAME:allow:rwxpdDaARWcCo:fd--"; ` +
+            `if "$SYNOACL" -get "$DATA" 2>/dev/null | grep -qF "$TARGET_ACE"; then ` +
+            `  echo "[acl] ACE already present for $USERNAME on $DATA — skip add"; ` +
+            `elif "$SYNOACL" -add "$DATA" "$TARGET_ACE" 2>&1; then ` +
+            `  echo "[acl] ACE added for $USERNAME on $DATA"; ` +
+            `else rc=$?; echo "[acl] -add returned $rc"; fi; ` +
             // Propagate inheritance to existing children so the dirs
             // the arrs need are writable on first run, not just new ones.
             `if "$SYNOACL" -enforce-inherit "$DATA" 2>&1; then ` +

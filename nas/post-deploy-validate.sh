@@ -103,6 +103,28 @@ check_url() {
     fi
 }
 
+# Same as check_url but treats HTTP 000 (connection refused) as a
+# warning rather than a hard failure. Used for services that legitimately
+# might not be serving HTTP yet at the end of `setup.sh` even though
+# their container is up — Seerr in particular doesn't bind to its port
+# until the user completes its first-run wizard in the browser, and a
+# hard fail there marks the whole install as failed when nothing is
+# actually broken. Other codes still fail as usual.
+check_url_lenient() {
+    local label="$1"
+    local url="$2"
+    local hint="$3"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url")
+    if [[ "$http_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]; then
+        ok "$label ($url) — HTTP $http_code"
+    elif [ "$http_code" = "000" ]; then
+        warn "$label ($url) — not serving HTTP yet. $hint"
+    else
+        fail "$label ($url) — HTTP $http_code (not reachable)"
+    fi
+}
+
 # Check URL only when the underlying service is enabled — checking a
 # disabled service would return HTTP 000 (nothing listening) and false-
 # fail the post-deploy.
@@ -115,7 +137,13 @@ check_url "Prowlarr"     "http://$LAN_IP:49150"
 is_enabled ENABLE_BAZARR      && check_url "Bazarr"       "http://$LAN_IP:49153"
 is_enabled ENABLE_SABNZBD     && check_url "SABnzbd"      "http://$LAN_IP:49155"
 is_enabled ENABLE_QBITTORRENT && check_url "qBittorrent"  "http://$LAN_IP:49156"
-is_enabled ENABLE_PLEX        && check_url "Seerr"        "http://$LAN_IP:5056"
+# Seerr binds to its port only AFTER the user completes the first-run
+# wizard at http://<NAS>:5056 in a browser. Until then curl gets HTTP
+# 000 (connection refused). Treat that as a warning, not a fail —
+# step 7 already told the user to complete the wizard. Once they do,
+# this validator passes on re-run.
+is_enabled ENABLE_PLEX        && check_url_lenient "Seerr" "http://$LAN_IP:5056" \
+    "Complete the first-run wizard at http://$LAN_IP:5056 to bind its port."
 is_enabled ENABLE_PLEX        && check_url "Tautulli"     "http://$LAN_IP:8181"
 check_url "Flaresolverr" "http://$LAN_IP:8191"
 
