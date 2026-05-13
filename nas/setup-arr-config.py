@@ -47,6 +47,21 @@ BOLD   = "\033[1m"
 DIM    = "\033[2m"
 RESET  = "\033[0m"
 
+# Tracks which post-install "manual" steps the script managed to do
+# automatically. The "Still needs manual setup" summary at the end of
+# main() reads this and only prints items that are TRULY pending —
+# previous versions printed the full list unconditionally, including
+# items the script had just automated. configure_* functions set the
+# matching key to True on success; the rendering helper below skips
+# any line whose flag is True.
+AUTOMATED = {
+    'sab_provider':    False,   # SABnzbd news-server added via API
+    'tautulli_token':  False,   # Tautulli wired to Plex with token
+    'seerr_wizard':    False,   # Seerr first-run wizard completed via API
+    'recyclarr_synced': False,  # `docker exec recyclarr recyclarr sync` ran
+    'qbit_prefs':      False,   # qBittorrent default prefs applied
+}
+
 errors = 0
 
 # Container UID/GID for the docker-exec write probe. Set by main() from
@@ -790,6 +805,7 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
             and pms.get('pms_ip') == 'plex'
             and pms.get('pms_port') == '32400'):
         skip("Tautulli already wired to plex:32400 with the current token")
+        AUTOMATED['tautulli_token'] = True
         return
 
     # Write the [PMS] section. Tautulli expects lowercase keys despite
@@ -819,6 +835,7 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
         with open(tautulli_ini_path, 'w') as f:
             cp.write(f)
         ok(f"Tautulli config written (PMS_IP=plex, token from Plex)")
+        AUTOMATED['tautulli_token'] = True
     except Exception as e:
         fail(f"Could not write Tautulli config: {e}")
         return
@@ -863,6 +880,7 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
     existing = (existing_resp or {}).get('config', {}).get('servers', [])
     if any(s.get('name') == name for s in existing):
         skip(f"Usenet provider '{name}' already configured ({host})")
+        AUTOMATED['sab_provider'] = True
         return
 
     # SABnzbd's set_config for the servers section uses a flat query string.
@@ -884,6 +902,7 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
     if result is not None and result.get('status') is not False:
         masked = host[:max(3, len(host) - 6)] + '***'
         ok(f"Usenet provider added: {masked}:{port} (user: {user[:3]}***, {connections} conn, SSL={'on' if use_ssl else 'off'})")
+        AUTOMATED['sab_provider'] = True
     else:
         fail(f"Failed to add usenet provider {host}:{port}")
 
@@ -997,6 +1016,32 @@ def configure_qbittorrent(base, username, password):
         except Exception as e:
             fail(f"qBittorrent: failed to set watched folder ({e})")
 
+    # Apply sensible seeding defaults so users don't have to dig through
+    # Settings → BitTorrent on first boot. Conservative numbers — torrents
+    # stop after either 2× upload ratio OR 10 days seeded (qBit takes
+    # whichever fires first). Idempotent: skips when the values already
+    # match what we'd set, so a power-user who tuned them stays untouched.
+    desired = {
+        'max_ratio_enabled':         True,
+        'max_ratio':                 2.0,
+        'max_ratio_act':             1,        # 1 = pause (vs 0 = nothing)
+        'max_seeding_time_enabled':  True,
+        'max_seeding_time':          14400,    # minutes = 10 days
+    }
+    matches = all(prefs.get(k) == v for k, v in desired.items())
+    if matches:
+        skip("Seeding limits (already at 2.0 ratio / 10 days)")
+        AUTOMATED['qbit_prefs'] = True
+    else:
+        try:
+            prefs_json = json.dumps(desired)
+            set_data = urlencode({'json': prefs_json}).encode()
+            opener.open(f"{base}/api/v2/app/setPreferences", set_data, timeout=10)
+            ok("Seeding limits: ratio 2.0 OR 10 days → pause torrent")
+            AUTOMATED['qbit_prefs'] = True
+        except Exception as e:
+            warn(f"qBittorrent: couldn't set seeding defaults ({e}) — set manually in Settings → BitTorrent")
+
 # ── Bazarr ────────────────────────────────────────────────────────────────────
 
 def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
@@ -1076,7 +1121,103 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
 
 # ── Seerr ─────────────────────────────────────────────────────────────────────
 
-def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key):
+def complete_seerr_first_run(base, plex_token):
+    """Best-effort: complete Seerr's first-run wizard via API using the
+    Plex token Tautulli also reads (PlexOnlineToken in Preferences.xml).
+
+    Seerr/Overseerr deliberately blocks every settings endpoint with HTTP
+    403 until the in-browser wizard authorises the first admin account.
+    Pre-flexibility-pass behaviour was to warn the user and bail — they'd
+    visit http://<NAS>:5056, click 'Sign in with Plex', wire up Sonarr/
+    Radarr manually, then re-run setup.sh. That's 5+ minutes of clicking
+    they shouldn't need to do; we already have a valid Plex token and
+    everything else the wizard would ask for.
+
+    Flow:
+      1. POST /api/v1/auth/plex { authToken } — creates the first admin
+         user and a session cookie. This is the same call the in-browser
+         wizard's 'Sign in with Plex' button makes.
+      2. POST /api/v1/settings/plex with the in-stack server config
+         (host=plex, port=32400) so library scans target the right host.
+
+    Returns True if step 1 succeeded (admin user now exists; the existing
+    configure_seerr() function's X-Api-Key auth will work from here on).
+    Returns False on any failure — caller falls back to the manual-hint
+    path. Defensive: every call is wrapped in try/except so a Seerr API
+    quirk can't crash the whole install."""
+    import http.cookiejar
+    from urllib.request import build_opener, HTTPCookieProcessor
+
+    if not plex_token:
+        return False
+
+    cj = http.cookiejar.CookieJar()
+    opener = build_opener(HTTPCookieProcessor(cj))
+
+    # Sign in with Plex token — creates the first admin user. Seerr's
+    # POST /api/v1/auth/plex accepts { authToken: <plex token> } and
+    # returns 200 with the user object on success. 403/422 typically
+    # means the wizard's already done (and the in-stack Plex token was
+    # rotated since), so we treat those as "skip but don't fail".
+    try:
+        body = json.dumps({"authToken": plex_token}).encode()
+        req = Request(f"{base}/api/v1/auth/plex", data=body,
+                      headers={'Content-Type': 'application/json',
+                               'User-Agent': 'setup-arr-config/1.0'},
+                      method='POST')
+        with opener.open(req, timeout=20) as resp:
+            resp.read()  # discard body; we just need the cookie
+        print(f"  {GREEN}✔{RESET} Seerr: signed in with Plex token (first admin created)")
+    except HTTPError as e:
+        # 403 = already initialized; let the regular configure_seerr take over.
+        if e.code in (200, 201, 202, 204):
+            pass
+        else:
+            warn(f"Seerr auth/plex returned HTTP {e.code} — falling back to manual wizard")
+            return False
+    except Exception as e:
+        warn(f"Seerr auth/plex failed ({e}) — falling back to manual wizard")
+        return False
+
+    # Configure the Plex server so Seerr knows where to scan libraries
+    # from. This is the second step of the in-browser wizard. Best-effort:
+    # if this fails the admin user still exists, so the existing
+    # configure_seerr() path will still take over and the user has a
+    # working Seerr — just without Plex auto-configured.
+    try:
+        body = json.dumps({
+            "name": "Plex",
+            "hostname": "plex",
+            "port": 32400,
+            "useSsl": False,
+            "libraries": [],
+        }).encode()
+        req = Request(f"{base}/api/v1/settings/plex", data=body,
+                      headers={'Content-Type': 'application/json',
+                               'User-Agent': 'setup-arr-config/1.0'},
+                      method='POST')
+        opener.open(req, timeout=15)
+        print(f"  {GREEN}✔{RESET} Seerr: Plex server registered (plex:32400)")
+    except Exception:
+        # Non-fatal — admin user still exists, Plex can be wired manually.
+        pass
+
+    # Trigger a library sync so Movies / TV libraries appear in Seerr's
+    # settings → libraries page. Optional and slow on big libraries, so
+    # we just fire-and-forget without waiting for completion.
+    try:
+        req = Request(f"{base}/api/v1/settings/plex/library?sync=true",
+                      method='GET',
+                      headers={'User-Agent': 'setup-arr-config/1.0'})
+        opener.open(req, timeout=10)
+    except Exception:
+        pass
+
+    return True
+
+
+def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
+                    plex_token=None):
     section("Seerr")
     if not key:
         install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
@@ -1099,20 +1240,46 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key)
             main_settings = json.loads(resp.read())
     except HTTPError as e:
         if e.code in (401, 403):
-            warn("Seerr first-run wizard not finished — API key isn't usable yet.")
-            warn("  1. Visit http://<NAS>:5056 in your browser")
-            warn("  2. Click 'Sign in with Plex' and complete the wizard (it'll")
-            warn("     auto-detect the Sonarr/Radarr we set up here).")
-            warn("  3. Or back here: sudo bash setup.sh   (this step is idempotent)")
+            # Wizard not done. Try to complete it via API using the
+            # Plex token we already have (read from Preferences.xml).
+            # On success, retry the settings/main GET; on failure, fall
+            # back to the manual-instructions hint.
+            if plex_token and complete_seerr_first_run(base, plex_token):
+                try:
+                    req = Request(f"{base}/api/v1/settings/main",
+                                  headers={'X-Api-Key': key,
+                                           'Content-Type': 'application/json',
+                                           'User-Agent': 'setup-arr-config/1.0'})
+                    with urlopen(req, timeout=15) as resp:
+                        main_settings = json.loads(resp.read())
+                    AUTOMATED['seerr_wizard'] = True
+                    ok("Seerr first-run wizard auto-completed via Plex token")
+                except Exception as ee:
+                    warn(f"Seerr auto-complete partial — settings/main re-probe failed ({ee})")
+                    warn("  Visit http://<NAS>:5056 once to verify the wizard finished, then re-run setup.sh.")
+                    return
+            else:
+                warn("Seerr first-run wizard not finished — API key isn't usable yet.")
+                warn("  1. Visit http://<NAS>:5056 in your browser")
+                warn("  2. Click 'Sign in with Plex' and complete the wizard (it'll")
+                warn("     auto-detect the Sonarr/Radarr we set up here).")
+                warn("  3. Or back here: sudo bash setup.sh   (this step is idempotent)")
+                return
+        else:
+            warn(f"Seerr API error HTTP {e.code} — skipping Sonarr/Radarr wiring")
             return
-        warn(f"Seerr API error HTTP {e.code} — skipping Sonarr/Radarr wiring")
-        return
     except URLError as e:
         warn(f"Seerr not reachable: {e.reason}")
         return
     except Exception as e:
         warn(f"Seerr probe errored: {e}")
         return
+
+    # If we reach this point the settings/main probe succeeded → the
+    # wizard's been initialized (either previously via browser, or just
+    # now via complete_seerr_first_run). Mark the flag so the final
+    # summary doesn't print the stale "complete the Seerr wizard" hint.
+    AUTOMATED['seerr_wizard'] = True
 
     if main_settings.get('localLogin') is False:
         main_settings['localLogin'] = True
@@ -1640,10 +1807,19 @@ def main():
         SABNZBD_KEY = None
 
     # ── Tautulli (auto-wires to Plex via PlexOnlineToken from Preferences.xml) ─
+    #
+    # Read the Plex token up front — same value Tautulli wants for its
+    # PMS config and Seerr wants for its first-run auth. One filesystem
+    # read shared between the two.
 
+    plex_token = None
     if is_enabled(env, 'ENABLE_PLEX'):
         PLEX_PREFS = f"{B}/plex/config/Library/Application Support/Plex Media Server/Preferences.xml"
         TAUTULLI_INI = f"{B}/tautulli/config/config.ini"
+        try:
+            plex_token = read_plex_prefs(PLEX_PREFS).get('PlexOnlineToken')
+        except Exception:
+            plex_token = None
         configure_tautulli(B, PLEX_PREFS, TAUTULLI_INI)
     else:
         section("Tautulli")
@@ -1844,7 +2020,13 @@ def main():
         # Seerr ships as part of the Plex stack — pointless without Plex
         # (it's a Plex request system). Gated on ENABLE_PLEX rather than
         # a separate flag.
-        configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY)
+        #
+        # Pass the Plex token so configure_seerr can auto-complete the
+        # first-run wizard if it hasn't been done in-browser yet. Without
+        # the token Seerr's API returns 403 on every settings endpoint
+        # and the user has to click through the wizard manually.
+        configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY,
+                        plex_token=plex_token)
     else:
         section("Seerr")
         print(f"  {DIM}⏭  ENABLE_PLEX=false — Seerr not deployed.{RESET}")
@@ -1873,8 +2055,45 @@ def main():
                 sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
                 radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
             ))
+        # Auto-run an initial sync if we have real keys to talk to the
+        # arrs. The shipped recyclarr.yml has the TRaSH Guide defaults
+        # (HD-1080p quality profile + standard custom formats), so a
+        # zero-customisation sync still produces useful results. Power
+        # users editing recyclarr.yml afterwards can re-run sync any
+        # time. Skipped when SONARR_KEY + RADARR_KEY are both missing
+        # (likely a disabled-arrs install) — nothing to sync into.
         if SONARR_KEY or RADARR_KEY:
-            warn("Customise recyclarr.yml then run:  docker exec recyclarr recyclarr sync")
+            import subprocess
+            try:
+                # `docker exec recyclarr recyclarr sync` runs inside the
+                # container we just started. Container's --network points
+                # at the same media network the arrs live on, so the
+                # http://sonarr:8989 / http://radarr:7878 URLs in
+                # recyclarr.yml resolve. Capture output and surface a
+                # one-line summary; if sync hits an error the user will
+                # need to look at the full output in docker logs.
+                r = subprocess.run(
+                    ['docker', 'exec', 'recyclarr', 'recyclarr', 'sync'],
+                    capture_output=True, timeout=120, text=True,
+                )
+                if r.returncode == 0:
+                    ok("Recyclarr initial sync ran — TRaSH Guide profiles applied")
+                    AUTOMATED['recyclarr_synced'] = True
+                else:
+                    warn(f"Recyclarr sync returned rc={r.returncode}")
+                    warn("  Customise recyclarr.yml and retry:  docker exec recyclarr recyclarr sync")
+                    # First-line hint from stderr/stdout to help diagnose
+                    last_line = (r.stderr or r.stdout or '').strip().splitlines()[-1:] or ['']
+                    if last_line[0]:
+                        warn(f"  Last line: {last_line[0][:140]}")
+            except subprocess.TimeoutExpired:
+                warn("Recyclarr sync timed out (>120s) — check the container manually")
+                warn("  docker logs recyclarr  /  docker exec recyclarr recyclarr sync")
+            except FileNotFoundError:
+                warn("docker not in PATH — run manually: docker exec recyclarr recyclarr sync")
+            except Exception as e:
+                warn(f"Recyclarr sync errored ({e}) — run manually:")
+                warn("  docker exec recyclarr recyclarr sync")
     else:
         print(f"  {DIM}⏭  ENABLE_RECYCLARR=false — skipping.{RESET}")
 
@@ -1919,14 +2138,39 @@ def main():
     else:
         print(f"{RED}{BOLD}  Done with {errors} error(s) — review output above.{RESET}")
 
-    print(f"""
-  Still needs manual setup:
-  • SABnzbd     http://{LAN_IP}:49155  → Config → Servers → add usenet provider
-  • Seerr       http://{LAN_IP}:5056   → complete setup wizard, then re-run script
-  • Tautulli    http://{LAN_IP}:8181   → connect Plex (needs your Plex token)
-  • Recyclarr   customise recyclarr.yml then: docker exec recyclarr recyclarr sync
-  • qBittorrent http://{LAN_IP}:49156  → Settings → BitTorrent → set seeding limits
-""")
+    # Build the "still needs manual setup" list dynamically — only show
+    # items that DIDN'T get automated during this run. Pre-flexibility-
+    # pass we printed the full 5-item list every time, including for
+    # services we'd just auto-configured in the same install (the user's
+    # log showed "✔ Usenet provider added" followed by "• SABnzbd → add
+    # usenet provider" in the manual list, which is contradictory and
+    # erodes trust). Each line below pairs with one AUTOMATED flag;
+    # filtered out when the matching flag is True. Plex-stack lines also
+    # filter when ENABLE_PLEX is false.
+    plex_on    = is_enabled(env, 'ENABLE_PLEX')
+    sab_on     = is_enabled(env, 'ENABLE_SABNZBD')
+    qbit_on    = is_enabled(env, 'ENABLE_QBITTORRENT')
+    recy_on    = is_enabled(env, 'ENABLE_RECYCLARR')
+
+    pending = []
+    if sab_on and not AUTOMATED['sab_provider']:
+        pending.append(f"  • SABnzbd     http://{LAN_IP}:49155  → Config → Servers → add usenet provider")
+    if plex_on and not AUTOMATED['seerr_wizard']:
+        pending.append(f"  • Seerr       http://{LAN_IP}:5056   → complete setup wizard, then re-run script")
+    if plex_on and not AUTOMATED['tautulli_token']:
+        pending.append(f"  • Tautulli    http://{LAN_IP}:8181   → connect Plex (needs your Plex token)")
+    if recy_on and not AUTOMATED['recyclarr_synced']:
+        pending.append(f"  • Recyclarr   customise recyclarr.yml then: docker exec recyclarr recyclarr sync")
+    if qbit_on and not AUTOMATED['qbit_prefs']:
+        pending.append(f"  • qBittorrent http://{LAN_IP}:49156  → Settings → BitTorrent → set seeding limits")
+
+    if pending:
+        print("\n  Still needs manual setup:")
+        for line in pending:
+            print(line)
+        print()
+    else:
+        print(f"\n  {GREEN}Everything's wired up — no manual steps required.{RESET}\n")
     print('═' * 52)
     sys.exit(0 if errors == 0 else 1)
 
