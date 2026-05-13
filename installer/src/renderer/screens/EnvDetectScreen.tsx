@@ -719,6 +719,20 @@ export function EnvDetectScreen() {
                     {c.process && (
                       <span className="text-slate-500"> — held by {c.process}</span>
                     )}
+                    {/* Synology-specific: port 49152 = Media Server (DLNA)
+                        almost without exception. Surface the precise fix
+                        path inline so the user doesn't have to dig. The
+                        stack's port range (49150-49156) overlaps with the
+                        IANA dynamic-port range that DLNA / UPnP commonly
+                        squat on; only DSM ships a package that does
+                        this by default. */}
+                    {c.port === 49152 && r.nasFamily === 'synology' && (
+                      <div className="ml-5 mt-1 text-amber-200/80">
+                        Likely cause: Synology Media Server (DLNA).
+                        Fix: DSM → Package Center → Media Server → Stop
+                        (or uninstall if you don&apos;t use DLNA).
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -226,6 +226,87 @@ stop_disabled_services() {
     fi
 }
 
+# Pre-flight check: is any port we're about to bind already in use by
+# something OTHER than one of our containers? `docker compose up -d`
+# would fail late with a cryptic "driver failed programming external
+# connectivity ... bind: address already in use" — better to fail fast
+# here with a specific port + service + a likely-cause hint.
+#
+# The classic offender on Synology DSM: the Media Server package binds
+# port 49152 for DLNA, which is exactly Sonarr's port in this stack.
+# The IANA dynamic-port range (49152-65535) was picked here originally
+# to avoid clashes with well-known service ports, but it overlaps with
+# what DLNA/UPnP commonly uses. Surface this specifically when we see
+# 49152 conflicts on a DSM host.
+check_port_conflicts() {
+    # Build a port-list paired with the service name. The list ONLY
+    # includes services the user actually opted into for this install;
+    # always-on services (prowlarr / flaresolverr) are added too.
+    local pairs="prowlarr:49150 flaresolverr:8191"
+    is_enabled ENABLE_PLEX        && pairs="$pairs plex:32400 seerr:5056 tautulli:8181"
+    is_enabled ENABLE_SONARR      && pairs="$pairs sonarr:49152"
+    is_enabled ENABLE_RADARR      && pairs="$pairs radarr:49151"
+    is_enabled ENABLE_LIDARR      && pairs="$pairs lidarr:49154"
+    is_enabled ENABLE_BAZARR      && pairs="$pairs bazarr:49153"
+    is_enabled ENABLE_QBITTORRENT && pairs="$pairs qbittorrent:49156"
+    # 6881 (BT default) is also bound by gluetun/qbittorrent on the host
+    # but we don't pre-check it here — it's owned by gluetun-or-qbit
+    # depending on VPN_ENABLED, and the simple svc-name match below would
+    # false-positive that ownership. The compose-up error is clear enough
+    # if another torrent client on the NAS already holds 6881.
+    is_enabled ENABLE_SABNZBD     && pairs="$pairs sabnzbd:49155"
+    is_enabled ENABLE_HOMEPAGE    && pairs="$pairs homepage:3000"
+
+    local conflicts=""
+    local pair port svc
+    for pair in $pairs; do
+        svc="${pair%:*}"
+        port="${pair#*:}"
+        # netstat present on every supported NAS family. Match :PORT
+        # followed by whitespace to avoid catching :49152x or :4915.
+        if netstat -lnt 2>/dev/null | awk -v p=":$port$" '$4 ~ p { found=1 } END { exit !found }'; then
+            # Port is bound. Is it by OUR container of the same name?
+            # If yes, it's not a conflict — compose will recreate that
+            # container in step 6. If no, something foreign is holding
+            # the port and step 6 will fail.
+            if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$svc"; then
+                conflicts="$conflicts $svc:$port"
+            fi
+        fi
+    done
+
+    if [ -n "$conflicts" ]; then
+        echo ""
+        echo "  ✘ Port conflict — these ports are bound by something other"
+        echo "    than the wizard's containers, so docker compose up would"
+        echo "    fail. Fix the conflict and re-run setup.sh:"
+        echo ""
+        for pair in $conflicts; do
+            svc="${pair%:*}"
+            port="${pair#*:}"
+            echo "    • $svc needs port $port (currently in use)"
+            # Synology-specific: 49152 + DSM = Media Server / DLNA almost
+            # always. Surface the precise fix path so the user doesn't
+            # have to dig.
+            if [ "$port" = "49152" ] && [ -f /etc/synoinfo.conf ]; then
+                echo "      Most likely cause: Synology Media Server (DLNA) package."
+                echo "      Fix: DSM → Package Center → Media Server → Stop."
+                echo "           (Or uninstall it if you don't use DLNA.)"
+            fi
+            echo "      Investigate what's holding it:"
+            echo "        sudo netstat -lnp 2>/dev/null | grep :$port"
+            echo "        sudo ss     -lnp 2>/dev/null | grep :$port"
+            if command -v lsof >/dev/null 2>&1; then
+                echo "        sudo lsof -i :$port"
+            fi
+            echo ""
+        done
+        return 1
+    fi
+    echo "  ✔ All required ports are free (or already held by our containers)."
+    return 0
+}
+
 wait_for_services() {
     local max_wait=600
     local interval=10
@@ -352,6 +433,18 @@ abort_if_failed
 echo ""
 echo "  Removing any containers the user opted out of since last run..."
 stop_disabled_services
+
+echo ""
+echo "  Pre-flight: checking that no other process holds the ports we'll bind..."
+if ! check_port_conflicts; then
+    # Treat as step-6 failure so the wizard's stepper rail + retry banner
+    # behave the same way they would if compose had hit the error. The
+    # detailed remediation hints are already printed by the helper.
+    FAIL=$((FAIL + 1))
+    echo ""
+    echo "  ✘ Step 6 (port pre-check) failed — fix the conflict and re-run."
+    abort_if_failed
+fi
 
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
