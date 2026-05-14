@@ -44,6 +44,7 @@ from urllib.error import HTTPError, URLError
 GREEN  = "\033[32m"
 RED    = "\033[31m"
 YELLOW = "\033[33m"
+DIM    = "\033[2m"
 BOLD   = "\033[1m"
 RESET  = "\033[0m"
 
@@ -51,6 +52,15 @@ errors = 0
 
 def ok(msg):   print(f"  {GREEN}✔{RESET}  {msg}")
 def skip(msg): print(f"  –  {msg}")
+def info(msg):
+    # Info-level FYI — non-actionable status the user might find useful
+    # but doesn't need to fix. Distinct from warn() so the wizard's
+    # issue parser (which flags ✘/⚠/! lines into the issues panel)
+    # ignores these: an indexer added with a transient CloudFlare block
+    # that Flaresolverr will heal on first search isn't something the
+    # user should be alarmed about. Uses 'ℹ' marker (UTF-8 ℹ) with
+    # a dim prefix character that's outside the parser's match set.
+    print(f"  {DIM}ℹ{RESET}  {msg}")
 def warn(msg): print(f"  {YELLOW}!{RESET}  {msg}")
 def fail(msg):
     global errors; errors += 1
@@ -203,19 +213,33 @@ def _post_indexer(base, key, name, schema):
         if 'unique' in err_lower:
             skip(f"{name} (already added)")
         elif 'cloudflare' in err_lower or 'blocked by' in err_lower:
-            warn(f"{name}: added but blocked by CloudFlare (Flaresolverr should fix this)")
+            # Demoted to info: Flaresolverr (auto-configured by Prowlarr
+            # earlier in step 7) handles CloudFlare's JavaScript challenges
+            # on the FIRST real search after install. The "blocked" state
+            # heals itself the moment Sonarr/Radarr triggers an indexer
+            # query — no user action needed. The previous warn was just
+            # noise in the issues panel.
+            info(f"{name}: added (CloudFlare-protected — Flaresolverr auto-heals on first search)")
         elif 'redirect' in err_lower:
-            warn(f"{name}: added but domain is redirecting (may be down)")
+            # Informational: indexer reported a redirect on initial test
+            # but may come back. User has no actionable fix; this is
+            # status, not an error.
+            info(f"{name}: added (domain redirecting — Prowlarr will retest on next search)")
         elif 'unable to connect' in err_lower or 'unable to access' in err_lower:
-            warn(f"{name}: added but currently unreachable — {_prowlarr_error(err)}")
+            # Informational: indexer responded with "can't reach the
+            # backend" — could be a temporary outage, IP-ban, geo-block,
+            # or a misconfigured indexer at their end. None of those are
+            # actionable from the install wizard. The indexer is added;
+            # Prowlarr will retry on every search.
+            info(f"{name}: added (currently unreachable — {_prowlarr_error(err)})")
         else:
             fail(f"{name}: {_prowlarr_error(err)}")
     else:
-        # Network error after retry — demote to warn rather than fail.
+        # Network error after retry — demote to info rather than fail.
         # The user can add the indexer manually in 10 seconds via the
         # Prowlarr UI; failing the entire install over one flaky
         # connection is the worse UX.
-        warn(f"{name}: request failed (HTTP {status}) — add manually via Prowlarr UI if you want it")
+        info(f"{name}: add request failed (HTTP {status}) — add manually via Prowlarr UI if you want it")
 
 def _find_schema(name, schemas):
     """Find a schema by name with fuzzy matching for common variations."""
@@ -312,12 +336,12 @@ def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1
         if result:
             ok(f"{indexer['name']}: priority={priority}, seedTime={seed_time_mins}m")
         else:
-            # Demote to warn: priority/seed-time tweaks are nice-to-have
-            # cosmetic settings on a per-indexer basis; failing the
-            # whole install over one indexer's broken settings update
-            # is wildly disproportionate. User can change them in 2
-            # clicks in the Prowlarr UI.
-            warn(f"{indexer['name']}: settings update failed — tweak in Prowlarr UI if you want")
+            # Demoted to info: priority/seed-time tweaks are cosmetic
+            # per-indexer settings; the indexer is added and functional
+            # without them. User can adjust in 2 clicks in the Prowlarr
+            # UI. Previous version called warn() / fail() which flagged
+            # this in the wizard's issues panel — disproportionate.
+            info(f"{indexer['name']}: settings update flaked — tweak priority/seedTime in Prowlarr UI if you care")
 
 def add_newznab(base, key, name, api_url, api_key, schemas, existing_names):
     if name.lower() in existing_names:

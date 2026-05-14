@@ -97,6 +97,13 @@ export function RunScreen() {
     // arr-config script for "set this in the UI manually" hints).
     const noteMatch = !severity && line.match(/^!\s+(.+)$/)
     if (noteMatch) { severity = 'note'; text = noteMatch[1] }
+    // Deliberately NOT matched: ℹ (U+2139). The bash/python helpers
+    // use info() with that prefix for self-healing or non-actionable
+    // status (CloudFlare-blocked indexers that Flaresolverr will heal
+    // on first search; Seerr library selection that's part of normal
+    // UI setup). Including it in the issues panel made successful
+    // installs look broken. If you ever want to surface info, add a
+    // separate 'info' severity tier — don't promote ℹ into this set.
     if (!severity) return
     // Trim trailing punctuation noise.
     text = text.replace(/[.\s]+$/, '').slice(0, 280)

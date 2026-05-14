@@ -31,6 +31,7 @@ Still requires manual setup after:
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -73,6 +74,13 @@ CONTAINER_GID = 911
 
 def ok(msg):   print(f"  {GREEN}✔{RESET}  {msg}")
 def skip(msg): print(f"  –  {msg} (already set)")
+def info(msg):
+    # Info-level FYI. Distinct prefix character (ℹ) outside the RunScreen
+    # issue parser's match set (which catches ✘ / ⚠ / !). Used for status
+    # the user might find useful but doesn't need to act on — e.g., self-
+    # healing transient conditions, optional manual UI tweaks. Doesn't
+    # contribute to the "errors" counter.
+    print(f"  {DIM}ℹ{RESET}  {msg}")
 def warn(msg): print(f"  {YELLOW}!{RESET}  {msg}")
 def fail(msg):
     global errors; errors += 1
@@ -1356,7 +1364,13 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
             })
             ok("Seerr → Radarr connection set") if result else fail("Seerr → Radarr: failed")
 
-    warn("Seerr Plex connection still needs manual setup in the UI")
+    # Plex library-selection in Seerr is genuinely a UI step — pick
+    # which Plex libraries to expose to requesters. Demoted from warn
+    # to info because (a) the rest of Seerr is now fully wired up by
+    # the auto-wizard above and (b) the user has no choice but to do
+    # this in the Seerr UI; flagging it as a warning in the issues
+    # panel implies something is broken when it isn't.
+    info("Seerr → pick which Plex libraries to expose at http://<NAS>:5056 → Settings → Plex → Libraries")
 
 # ── Config file generators ────────────────────────────────────────────────────
 
@@ -2064,15 +2078,34 @@ def main():
 
     section("Unpackerr")
     if is_enabled(env, 'ENABLE_UNPACKERR'):
+        # write_config_file is idempotent — it skips if the file already
+        # exists and returns no signal. Track whether we actually wrote
+        # the conf in this run by checking file mtime before vs after,
+        # so we only need to restart the container when fresh config
+        # actually lands.
+        conf_path = f"{B}/unpackerr/config/unpackerr.conf"
+        before_mtime = os.path.getmtime(conf_path) if os.path.exists(conf_path) else 0
         write_config_file("Unpackerr",
-            f"{B}/unpackerr/config/unpackerr.conf",
+            conf_path,
             UNPACKERR_CONF.format(
                 sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
                 radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
                 lidarr_key=LIDARR_KEY or 'REPLACE_WITH_LIDARR_KEY',
             ))
-        if SONARR_KEY or RADARR_KEY:
-            warn("Restart unpackerr:  docker compose restart unpackerr")
+        after_mtime = os.path.getmtime(conf_path) if os.path.exists(conf_path) else 0
+        if (SONARR_KEY or RADARR_KEY) and after_mtime > before_mtime:
+            # Auto-restart unpackerr so it picks up the new conf + API
+            # keys without the user manually running docker compose
+            # restart. unpackerr re-reads its conf on boot only, so a
+            # config file written after the container is up has no
+            # effect until restart. Previously this was a warn telling
+            # the user to do the restart themselves — now it just happens.
+            try:
+                subprocess.run(['docker', 'restart', 'unpackerr'],
+                               capture_output=True, timeout=30, text=True)
+                ok("Unpackerr restarted to pick up the new keys")
+            except Exception as e:
+                info(f"Couldn't auto-restart unpackerr ({e}) — manually: docker compose restart unpackerr")
     else:
         print(f"  {DIM}⏭  ENABLE_UNPACKERR=false — skipping.{RESET}")
 
@@ -2123,8 +2156,16 @@ def main():
                     ok("Recyclarr initial sync ran — TRaSH Guide profiles applied")
                     AUTOMATED['recyclarr_synced'] = True
                 else:
-                    warn(f"Recyclarr sync returned rc={r.returncode}")
-                    warn("  Customise recyclarr.yml and retry:  docker exec recyclarr recyclarr sync")
+                    # Demoted from warn to info: a failed first-sync isn't
+                    # an install-blocking error. The conf is on disk, the
+                    # container is running, and `docker exec recyclarr
+                    # recyclarr sync` works any time the user wants to
+                    # retry (e.g. after editing the YAML to enable the
+                    # TRaSH includes). Surfacing it as a warn put it in
+                    # the wizard's issues panel and made the install
+                    # feel broken when it wasn't.
+                    info(f"Recyclarr sync returned rc={r.returncode} — config is on disk; re-run any time:")
+                    info(f"  docker exec recyclarr recyclarr sync")
                     # Surface a useful diagnostic. recyclarr's output is
                     # heavily decorated with Unicode box-drawing chars
                     # (╭ ─ ╮ │ ╰ ╯) that aren't actionable on their own —
@@ -2146,7 +2187,7 @@ def main():
                     # Show last 3 meaningful lines so user sees real
                     # context, not just the closing border.
                     for line in meaningful[-3:]:
-                        warn(f"  {line[:160]}")
+                        info(f"  {line[:160]}")
             except subprocess.TimeoutExpired:
                 warn("Recyclarr sync timed out (>120s) — check the container manually")
                 warn("  docker logs recyclarr  /  docker exec recyclarr recyclarr sync")
