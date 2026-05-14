@@ -785,10 +785,28 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
         warn("  this script again after Plex claims successfully.")
         return
 
+    # Tautulli writes config.ini on first boot — but on a fresh install
+    # it might not exist YET by the time setup-arr-config.py runs (the
+    # 45s post-step-6 settle wait isn't always enough for Tautulli to
+    # finish initial setup on slow disks). Poll up to 60s before bailing
+    # so we don't false-warn that the container's "not running" when
+    # it's just slow to write its first config.
     if not os.path.exists(tautulli_ini_path):
-        warn(f"Tautulli config.ini not found at {tautulli_ini_path}")
-        warn("  Is the tautulli container running?")
-        return
+        sys.stdout.write("    Waiting for Tautulli to write its initial config.ini ")
+        sys.stdout.flush()
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            time.sleep(3)
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            if os.path.exists(tautulli_ini_path):
+                print(' ✔')
+                break
+        else:
+            print(f' {RED}✘ timed out{RESET}')
+            warn(f"Tautulli config.ini still not found at {tautulli_ini_path}")
+            warn("  Container may have crashed — check 'docker logs tautulli'.")
+            return
 
     import configparser
     cp = configparser.ConfigParser()
@@ -956,10 +974,17 @@ def configure_qbittorrent(base, username, password):
     last_result, last_error = attempt_login()
     # 'Fails.' is qBittorrent's "wrong credentials" — no point retrying,
     # would just burn through the ban budget. Anything else (empty body,
-    # network error, connection reset) might be a transient first-boot
-    # issue worth ONE retry.
-    if last_result != 'Ok.' and last_result != 'Fails.':
-        time.sleep(8)
+    # network error, connection reset) is almost always a transient
+    # first-boot issue. Real-world install logs showed qBittorrent
+    # still warming up at the 8-second mark on Synology spinning rust;
+    # extended to 4 retries × 10s = 40s of patience before giving up.
+    # 'Fails.' short-circuits immediately so the IP-ban budget isn't
+    # touched by retries.
+    retries = 0
+    while last_result != 'Ok.' and last_result != 'Fails.' and retries < 4:
+        time.sleep(10)
+        retries += 1
+        print(f"    qBittorrent not ready yet — retry {retries}/4")
         last_result, last_error = attempt_login()
 
     if last_result == 'Ok.':
@@ -2082,10 +2107,28 @@ def main():
                 else:
                     warn(f"Recyclarr sync returned rc={r.returncode}")
                     warn("  Customise recyclarr.yml and retry:  docker exec recyclarr recyclarr sync")
-                    # First-line hint from stderr/stdout to help diagnose
-                    last_line = (r.stderr or r.stdout or '').strip().splitlines()[-1:] or ['']
-                    if last_line[0]:
-                        warn(f"  Last line: {last_line[0][:140]}")
+                    # Surface a useful diagnostic. recyclarr's output is
+                    # heavily decorated with Unicode box-drawing chars
+                    # (╭ ─ ╮ │ ╰ ╯) that aren't actionable on their own —
+                    # the FIRST run was emitting "Last line: ╰─────╯"
+                    # which gave the user zero signal. Filter to the
+                    # last ~5 lines that contain real text + an error
+                    # marker if any, and print up to 3 of them.
+                    raw = (r.stderr or r.stdout or '').splitlines()
+                    meaningful = []
+                    for line in raw:
+                        # Strip box-drawing chars + whitespace; skip if
+                        # nothing alphanumeric is left.
+                        stripped = ''.join(c for c in line if c.isascii() or c.isalnum())
+                        clean = stripped.strip(' │─╭╮╰╯|')
+                        if not clean:
+                            continue
+                        # Prefer lines with error-y keywords
+                        meaningful.append(line.rstrip())
+                    # Show last 3 meaningful lines so user sees real
+                    # context, not just the closing border.
+                    for line in meaningful[-3:]:
+                        warn(f"  {line[:160]}")
             except subprocess.TimeoutExpired:
                 warn("Recyclarr sync timed out (>120s) — check the container manually")
                 warn("  docker logs recyclarr  /  docker exec recyclarr recyclarr sync")

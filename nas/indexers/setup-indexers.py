@@ -179,8 +179,22 @@ def wait_ready(base, key, retries=24, interval=5):
 # ── Add indexer ───────────────────────────────────────────────────────────────
 
 def _post_indexer(base, key, name, schema):
-    """POST the indexer schema; classify 400 errors into clean messages."""
+    """POST the indexer schema; classify 400 errors into clean messages.
+
+    Network-level transient failures (status=None) get one retry with
+    a 3-second backoff before being demoted to warn(). Real-world install
+    logs showed AnimeTosho occasionally failing here with HTTP None when
+    Prowlarr was still building its indexer cache from a fresh container
+    — a single retry catches the steady-state case, and a warn (not fail)
+    means a flaky network doesn't false-fail the whole install over
+    indexers that can be re-added from the Prowlarr UI in seconds."""
     result, status, err = POST(base, key, "/api/v1/indexer", schema)
+    # One retry on transient network errors. status=None means the HTTP
+    # call itself didn't complete (timeout, connection reset, DNS), not
+    # a Prowlarr-side rejection — most often clears within a few seconds.
+    if result is None and status is None:
+        time.sleep(3)
+        result, status, err = POST(base, key, "/api/v1/indexer", schema)
     if result is not None:
         ok(f"{name}")
         return
@@ -197,7 +211,11 @@ def _post_indexer(base, key, name, schema):
         else:
             fail(f"{name}: {_prowlarr_error(err)}")
     else:
-        fail(f"{name}: request failed (HTTP {status})")
+        # Network error after retry — demote to warn rather than fail.
+        # The user can add the indexer manually in 10 seconds via the
+        # Prowlarr UI; failing the entire install over one flaky
+        # connection is the worse UX.
+        warn(f"{name}: request failed (HTTP {status}) — add manually via Prowlarr UI if you want it")
 
 def _find_schema(name, schemas):
     """Find a schema by name with fuzzy matching for common variations."""
