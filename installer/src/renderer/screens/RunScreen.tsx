@@ -3,6 +3,7 @@ import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
 import { PlexClaimRefresh } from '../components/PlexClaimRefresh.js'
+import { IssuesModal } from '../components/IssuesModal.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
 import { renderEnv, isEnabled, type EnvFormValues } from '../../shared/env-render.js'
@@ -60,6 +61,12 @@ export function RunScreen() {
     severity: 'fail' | 'warn' | 'note'
     text: string
   }[]>([])
+  /** Which tab the IssuesModal opened on, or null if closed. The
+   *  buttons set this to 'fail' or 'action'; the modal calls
+   *  setIssuesModal(null) on close. Living here rather than inside
+   *  IssuesModal means clicking a different button mid-open re-mounts
+   *  the modal with a fresh initialTab. */
+  const [issuesModal, setIssuesModal] = useState<'fail' | 'action' | null>(null)
   /** Tracks whether the current run has emitted an SFTP progress event
    *  yet. The first emit gets a fresh line; subsequent emits use \r to
    *  overwrite that line in place (one ticker, not 15 lines). */
@@ -108,9 +115,14 @@ export function RunScreen() {
     // Trim trailing punctuation noise.
     text = text.replace(/[.\s]+$/, '').slice(0, 280)
     setIssues((prev) => {
-      // De-dup adjacent identical entries (the same error can echo
-      // multiple times during retries).
-      if (prev.length > 0 && prev[prev.length - 1].text === text) return prev
+      // De-dup by exact-text match across the whole history (not just
+      // adjacent). Same root cause can emit identical issue lines from
+      // multiple retry/probe cycles inside one install run — previously
+      // only the adjacent-duplicate case was caught, so a user with a
+      // genuinely-flaky service would see the same issue 3-4 times in
+      // the modal. Per-text-once is the right granularity here:
+      // different text = different problem worth surfacing.
+      if (prev.some((it) => it.text === text)) return prev
       return [...prev, { severity: severity!, text }]
     })
   }
@@ -349,6 +361,14 @@ export function RunScreen() {
     setSteps((prev) =>
       prev.map((s) => (s.number === stepNumber ? { ...s, status: 'running' } : s)),
     )
+    // Clear the issues list when starting a step rerun. Issues from the
+    // PREVIOUS attempt of this step are stale by definition — the user
+    // is re-running because they presumably fixed something. Issues
+    // from OTHER steps will be re-parsed if they recur during this
+    // session's log scroll, but we don't expect those to be re-emitted
+    // by a single-step rerun. Net: cleaner modal contents that reflect
+    // ONLY the in-flight attempt, not a growing history.
+    setIssues([])
 
     // Echo a small banner into the log so the user can find this re-run later.
     const banner = `\n--- Re-running step ${stepNumber}: ${step.label} ---\n`
@@ -867,50 +887,53 @@ export function RunScreen() {
         </div>
       </div>
 
-      {/* Issues summary: surfaces ✘ failures, ⚠ warnings and ! manual-
-          action notes as a compact list so the user doesn't have to
-          scroll the log to find them. Only renders while there ARE
-          issues to show; collapses by severity-group to stay tidy. */}
-      {issues.length > 0 && (
-        <details
-          open={issues.some((i) => i.severity === 'fail') && (phase === 'failed' || phase === 'done')}
-          className="rounded-md border border-slate-800 bg-slate-900/40 shrink-0 max-h-48 overflow-hidden"
-        >
-          <summary className="cursor-pointer px-3 py-2 text-sm font-medium flex items-center gap-3 select-none">
-            <span>Issues found</span>
-            {(() => {
-              const fails = issues.filter((i) => i.severity === 'fail').length
-              const warns = issues.filter((i) => i.severity === 'warn').length
-              const notes = issues.filter((i) => i.severity === 'note').length
-              return (
-                <span className="flex items-center gap-2 text-xs">
-                  {fails > 0 && <span className="text-rose-300">✘ {fails}</span>}
-                  {warns > 0 && <span className="text-amber-300">⚠ {warns}</span>}
-                  {notes > 0 && <span className="text-sky-300">! {notes} manual step{notes === 1 ? '' : 's'}</span>}
-                </span>
-              )
-            })()}
-            <span className="ml-auto text-xs text-slate-500">click to expand/collapse</span>
-          </summary>
-          <ul className="px-3 pb-3 space-y-1 text-xs font-mono overflow-y-auto max-h-40">
-            {issues.map((it, i) => {
-              const cls =
-                it.severity === 'fail' ? 'text-rose-300'
-                : it.severity === 'warn' ? 'text-amber-300'
-                : 'text-sky-300'
-              const glyph =
-                it.severity === 'fail' ? '✘'
-                : it.severity === 'warn' ? '⚠'
-                : '!'
-              return (
-                <li key={i} className={`flex gap-2 ${cls}`}>
-                  <span className="shrink-0">{glyph}</span>
-                  <span className="break-words">{it.text}</span>
-                </li>
-              )
-            })}
-          </ul>
-        </details>
+      {/* Issues summary buttons. Replace the previous inline <details>
+          panel — it took layout space even when collapsed and pushed
+          the user toward "is something wrong?" anxiety even on clean
+          runs. The two-button design only renders when there's
+          actually something to look at, so absence of buttons is
+          itself a positive signal ("looks clean"). Clicking either
+          button opens IssuesModal pre-selected to that tab.
+
+          'Failed' counts ✘ entries (hard install errors).
+          'Needs action' counts ⚠ + ! entries — folded together per
+          the post-research three-bucket recommendation (warn/note both
+          surface as "you might want to look at this manually"; further
+          subdividing them just creates anxiety without information). */}
+      {(() => {
+        const failCount   = issues.filter((i) => i.severity === 'fail').length
+        const actionCount = issues.length - failCount
+        if (failCount === 0 && actionCount === 0) return null
+        return (
+          <div className="flex items-center gap-2 shrink-0">
+            {failCount > 0 && (
+              <button
+                onClick={() => setIssuesModal('fail')}
+                className="px-3 py-1.5 text-sm bg-rose-900/30 hover:bg-rose-800/40 border border-rose-700/50 rounded-md text-rose-200"
+              >
+                ✘ {failCount} failed
+              </button>
+            )}
+            {actionCount > 0 && (
+              <button
+                onClick={() => setIssuesModal('action')}
+                className="px-3 py-1.5 text-sm bg-amber-900/20 hover:bg-amber-800/30 border border-amber-700/40 rounded-md text-amber-200"
+              >
+                ! {actionCount} need{actionCount === 1 ? 's' : ''} action
+              </button>
+            )}
+            <span className="text-xs text-slate-500 ml-1">
+              click to view details
+            </span>
+          </div>
+        )
+      })()}
+      {issuesModal && (
+        <IssuesModal
+          initialTab={issuesModal}
+          issues={issues}
+          onClose={() => setIssuesModal(null)}
+        />
       )}
 
       {/* Prominent "Retry just that step" banner — shows up when the

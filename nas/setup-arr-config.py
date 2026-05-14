@@ -1206,12 +1206,22 @@ def complete_seerr_first_run(base, plex_token):
             resp.read()  # discard body; we just need the cookie
         print(f"  {GREEN}✔{RESET} Seerr: signed in with Plex token (first admin created)")
     except HTTPError as e:
-        # 403 = already initialized; let the regular configure_seerr take over.
-        if e.code in (200, 201, 202, 204):
-            pass
-        else:
-            warn(f"Seerr auth/plex returned HTTP {e.code} — falling back to manual wizard")
-            return False
+        # HTTPError only fires for non-2xx codes; checking `in (200..)`
+        # here is unreachable (audit caught this). What we actually want:
+        #   - 200/201/204 from urlopen never reach this handler (success
+        #     above didn't raise).
+        #   - 403 = the wizard has already been initialised by a prior
+        #     install / manual sign-in; the existing admin token now
+        #     accepts X-Api-Key for /settings endpoints. Return True so
+        #     the caller proceeds to its retry probe of /settings/main
+        #     with the existing api key.
+        #   - 422 = malformed body / token expired. Real failure.
+        #   - Anything else = real failure; fall back to manual hint.
+        if e.code == 403:
+            print(f"  {DIM}ℹ{RESET} Seerr wizard appears already initialised — using existing api key")
+            return True
+        warn(f"Seerr auth/plex returned HTTP {e.code} — falling back to manual wizard")
+        return False
     except Exception as e:
         warn(f"Seerr auth/plex failed ({e}) — falling back to manual wizard")
         return False
