@@ -301,11 +301,23 @@ def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1
         if not changed:
             skip(f"{indexer['name']} (priority={priority}, seedTime={seed_time_mins}m)")
             continue
+        # Retry the PUT once on transient failure (same reasoning as
+        # _post_indexer's retry): Prowlarr can briefly 503 while loading
+        # an indexer's schema in the background, and we don't want a
+        # single setting update to fail-the-whole-step over a flake.
         result = PUT(base, key, f"/api/v1/indexer/{indexer['id']}", indexer)
+        if result is None:
+            time.sleep(2)
+            result = PUT(base, key, f"/api/v1/indexer/{indexer['id']}", indexer)
         if result:
             ok(f"{indexer['name']}: priority={priority}, seedTime={seed_time_mins}m")
         else:
-            fail(f"{indexer['name']}: failed to update settings")
+            # Demote to warn: priority/seed-time tweaks are nice-to-have
+            # cosmetic settings on a per-indexer basis; failing the
+            # whole install over one indexer's broken settings update
+            # is wildly disproportionate. User can change them in 2
+            # clicks in the Prowlarr UI.
+            warn(f"{indexer['name']}: settings update failed — tweak in Prowlarr UI if you want")
 
 def add_newznab(base, key, name, api_url, api_key, schemas, existing_names):
     if name.lower() in existing_names:
@@ -454,9 +466,21 @@ def main():
     if errors == 0:
         print(f"{GREEN}{BOLD}  All done — no errors.{RESET}")
     else:
-        print(f"{RED}{BOLD}  Done with {errors} error(s) — review output above.{RESET}")
+        print(f"{YELLOW}{BOLD}  Done with {errors} per-indexer issue(s) — review output above.{RESET}")
+        print(f"  These are best-effort additions; each failed indexer can be")
+        print(f"  added/tweaked manually via the Prowlarr UI in seconds. None")
+        print(f"  of them block the rest of the install.")
     print(f"{'═' * 52}\n")
-    sys.exit(0 if errors == 0 else 1)
+    # Always exit 0 once we've reached this point. Real "step 8 broken"
+    # scenarios (Prowlarr unreachable, API key wrong, etc.) sys.exit(1)
+    # earlier from the wait_ready / arg-validation phase. Per-indexer
+    # add/settings failures are surfaced as warnings/errors in the log
+    # but don't fail-the-step — that was producing too many false-
+    # failed installs over transient single-indexer connectivity issues
+    # (real-world logs: Tokyo Toshokan settings update, AnimeTosho add
+    # racing Prowlarr's schema cache, etc.). User gets the diagnostic
+    # in the log; the stack as a whole keeps running.
+    sys.exit(0)
 
 
 if __name__ == '__main__':

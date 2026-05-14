@@ -317,11 +317,19 @@ wait_for_services() {
     # "containers didn't come up" error. Prowlarr + Flaresolverr are
     # always-on (not profile-gated) so they're always in the list.
     local services="prowlarr flaresolverr"
-    is_enabled ENABLE_SONARR  && services="$services sonarr"
-    is_enabled ENABLE_RADARR  && services="$services radarr"
-    is_enabled ENABLE_LIDARR  && services="$services lidarr"
-    is_enabled ENABLE_BAZARR  && services="$services bazarr"
-    is_enabled ENABLE_SABNZBD && services="$services sabnzbd"
+    is_enabled ENABLE_SONARR      && services="$services sonarr"
+    is_enabled ENABLE_RADARR      && services="$services radarr"
+    is_enabled ENABLE_LIDARR      && services="$services lidarr"
+    is_enabled ENABLE_BAZARR      && services="$services bazarr"
+    is_enabled ENABLE_SABNZBD     && services="$services sabnzbd"
+    # qBittorrent shares gluetun's network namespace when VPN is on,
+    # so `docker inspect '{{.State.Status}}'` is the only readiness
+    # signal we have for it. Real-world logs showed configure_qbit
+    # consistently hitting empty-login responses because qbit hadn't
+    # finished launching by the time step 7 ran — adding it to the
+    # wait list buys ~30-60s of extra settle time and dramatically
+    # reduces the retry-storm during configuration.
+    is_enabled ENABLE_QBITTORRENT && services="$services qbittorrent"
 
     echo ""
     echo "  Waiting for containers to become healthy..."

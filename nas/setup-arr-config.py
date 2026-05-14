@@ -975,16 +975,20 @@ def configure_qbittorrent(base, username, password):
     # 'Fails.' is qBittorrent's "wrong credentials" — no point retrying,
     # would just burn through the ban budget. Anything else (empty body,
     # network error, connection reset) is almost always a transient
-    # first-boot issue. Real-world install logs showed qBittorrent
-    # still warming up at the 8-second mark on Synology spinning rust;
-    # extended to 4 retries × 10s = 40s of patience before giving up.
-    # 'Fails.' short-circuits immediately so the IP-ban budget isn't
-    # touched by retries.
+    # first-boot issue.
+    #
+    # Successive real-world logs on Synology spinning rust have shown
+    # qBittorrent still not ready at the 40s mark (4 retries × 10s) —
+    # bumped to 8 retries × 10s = 80s. After this, the daemon is
+    # almost certainly stuck (image issue, port already taken inside
+    # gluetun's namespace, etc.) and more retries won't help. 'Fails.'
+    # short-circuits immediately so the IP-ban budget isn't touched.
+    MAX_RETRIES = 8
     retries = 0
-    while last_result != 'Ok.' and last_result != 'Fails.' and retries < 4:
+    while last_result != 'Ok.' and last_result != 'Fails.' and retries < MAX_RETRIES:
         time.sleep(10)
         retries += 1
-        print(f"    qBittorrent not ready yet — retry {retries}/4")
+        print(f"    qBittorrent not ready yet — retry {retries}/{MAX_RETRIES}")
         last_result, last_error = attempt_login()
 
     if last_result == 'Ok.':
@@ -2089,18 +2093,32 @@ def main():
         # (likely a disabled-arrs install) — nothing to sync into.
         if SONARR_KEY or RADARR_KEY:
             import subprocess
-            try:
+            def run_recyclarr_sync():
                 # `docker exec recyclarr recyclarr sync` runs inside the
                 # container we just started. Container's --network points
                 # at the same media network the arrs live on, so the
                 # http://sonarr:8989 / http://radarr:7878 URLs in
-                # recyclarr.yml resolve. Capture output and surface a
-                # one-line summary; if sync hits an error the user will
-                # need to look at the full output in docker logs.
-                r = subprocess.run(
+                # recyclarr.yml resolve. Capture output and return the
+                # CompletedProcess for caller to handle.
+                return subprocess.run(
                     ['docker', 'exec', 'recyclarr', 'recyclarr', 'sync'],
                     capture_output=True, timeout=120, text=True,
                 )
+            try:
+                r = run_recyclarr_sync()
+                # First-sync flakes are common — recyclarr starts before
+                # sonarr/radarr have finished their first-run init, and
+                # gets a TCP connect or HTTP 503 from the API. Retry
+                # once after a 20s settle in that case. Real-world log:
+                #   "[series] Connection failed - check your base_url"
+                # which is recyclarr's wording for "couldn't talk to the
+                # arr at all", almost always a timing race.
+                if r.returncode != 0:
+                    err_lower = ((r.stderr or '') + (r.stdout or '')).lower()
+                    if 'connection failed' in err_lower or 'connection refused' in err_lower:
+                        print("    Recyclarr sync hit a connection failure — retrying once after 20s...")
+                        time.sleep(20)
+                        r = run_recyclarr_sync()
                 if r.returncode == 0:
                     ok("Recyclarr initial sync ran — TRaSH Guide profiles applied")
                     AUTOMATED['recyclarr_synced'] = True
