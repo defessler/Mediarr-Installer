@@ -144,12 +144,21 @@ def _headers(key):
     return {'X-Api-Key': key, 'Content-Type': 'application/json',
             'User-Agent': 'setup-indexers/1.0'}
 
-def _request(url, headers, method='GET', data=None):
-    """Returns (result, status_code, error_body). Never prints."""
+def _request(url, headers, method='GET', data=None, timeout=45):
+    """Returns (result, status_code, error_body). Never prints.
+
+    Timeout bumped from 15s to 45s default. POST /api/v1/indexer does
+    a synchronous reachability test of the indexer URL as part of
+    validation — for invite-only / IP-banned indexers (AnimeTorrents,
+    some private trackers behind CloudFlare), that test can take 20+
+    seconds before returning a 400 to us. The 15s default fired our
+    timeout BEFORE Prowlarr replied, so we'd see status=None (network
+    error) instead of the actual 400 + error message — losing the
+    chance to retry with forceSave=true."""
     body = json.dumps(data).encode() if data is not None else None
     req = Request(url, data=body, headers=headers, method=method)
     try:
-        with urlopen(req, timeout=15) as resp:
+        with urlopen(req, timeout=timeout) as resp:
             content = resp.read()
             return json.loads(content) if content else {}, resp.status, None
     except HTTPError as e:
@@ -291,10 +300,21 @@ def _post_indexer(base, key, name, schema):
         # implementation rename in a newer Prowlarr version.
         fail(f"{name}: forceSave also rejected — original: {_prowlarr_error(err)} / forceSave: {_prowlarr_error(force_err)}")
     else:
-        # Network error after retry — demote to info rather than fail.
-        # The user can add the indexer manually in 10 seconds via the
-        # Prowlarr UI; failing the entire install over one flaky
-        # connection is the worse UX.
+        # status=None means the POST didn't get a response at all
+        # (network timeout, connection reset, DNS). Most often: Prowlarr
+        # was synchronously testing the indexer URL and the test took
+        # longer than our request timeout. Try forceSave=true as a last
+        # resort — that skips the test on the Prowlarr side and saves
+        # the indexer immediately, side-stepping the timeout entirely.
+        force_url = "/api/v1/indexer?forceSave=true"
+        force_result, force_status, force_err = POST(base, key, force_url, schema)
+        if force_result is not None:
+            info(f"{name}: saved via forceSave (initial POST timed out — likely a slow reachability test on Prowlarr's side)")
+            return
+        # forceSave also failed at the network level — genuinely
+        # unreachable Prowlarr (rare) or actually-broken request body.
+        # Demote to info since user can add manually in ~10s; failing
+        # the entire install over one flaky connection is worse UX.
         info(f"{name}: add request failed (HTTP {status}) — add manually via Prowlarr UI if you want it")
 
 def _find_schema(name, schemas):
