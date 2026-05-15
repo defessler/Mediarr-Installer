@@ -213,48 +213,54 @@ def _post_indexer(base, key, name, schema):
         if 'unique' in err_lower:
             skip(f"{name} (already added)")
             return
-        # Real bug from the latest install log: when Prowlarr's TEST on
-        # the new indexer fails (CloudFlare-blocked, redirecting domain,
-        # unreachable backend), the default POST returns 400 and the
-        # indexer is NOT saved. The previous code said "added but blocked
-        # by CloudFlare" — that "added" was a lie. Indexer was nowhere
-        # in the Prowlarr UI.
+        # Prowlarr's POST /api/v1/indexer runs a synchronous test of the
+        # indexer's reachability as part of validation, and returns 400
+        # WITHOUT saving when the test fails. The previous "added but
+        # blocked by CloudFlare" classifier was wrong — it remapped the
+        # error message to friendlier wording but the indexer was never
+        # actually saved to Prowlarr's DB.
         #
-        # Fix: retry the POST with ?forceSave=true. This is the exact
-        # same path the Prowlarr Web UI uses when you click "Save anyway"
-        # after a failed test — the indexer is stored in the DB with a
-        # red test-failed badge, and Prowlarr retries the test on every
-        # scheduled search. Flaresolverr / a CloudFlare cookie / a fixed
-        # DNS issue resolves it in the background without any further
-        # user action. Far better than silently dropping the indexer.
-        test_failed_keywords = (
-            'cloudflare', 'blocked by', 'redirect',
-            'unable to connect', 'unable to access',
-        )
-        if any(k in err_lower for k in test_failed_keywords):
-            force_result, force_status, force_err = POST(
-                base, key, "/api/v1/indexer?forceSave=true", schema)
-            if force_result is not None:
-                # Saved with test-failed flag — Prowlarr will retest on
-                # the next scheduled search; user sees the indexer in
-                # their list with a red badge that auto-clears once the
-                # test passes (typically minutes after install when the
-                # arrs trigger their first indexer query).
-                if 'cloudflare' in err_lower or 'blocked by' in err_lower:
-                    info(f"{name}: saved with forceSave (CloudFlare test failed — Flaresolverr will retry on next search)")
-                elif 'redirect' in err_lower:
-                    info(f"{name}: saved with forceSave (domain redirecting — Prowlarr retests on next search)")
-                else:
-                    info(f"{name}: saved with forceSave (currently unreachable — {_prowlarr_error(err)})")
-                return
-            # forceSave also rejected — something more fundamental is
-            # wrong (schema mismatch, required field missing, etc.).
-            # Fall through to the generic-fail path.
-            fail(f"{name}: forceSave also rejected — {_prowlarr_error(force_err or err)}")
+        # Fix: ANY non-unique 400 retries with ?forceSave=true (the
+        # same endpoint Prowlarr's Web UI uses when you click "Save
+        # anyway" after a failed test). The indexer enters the DB with
+        # a red test-failed badge, Prowlarr retries automatically on
+        # the next scheduled search, and self-healing conditions
+        # (Flaresolverr CloudFlare bypass, DNS recovery, etc.) clear
+        # the badge in the background.
+        #
+        # Previously this only retried on specific keywords (cloudflare,
+        # redirect, unable-to-connect) — but Prowlarr's error wording
+        # has historically varied across versions ("Test was aborted",
+        # "Connection refused", "404", etc.). Casting the net wider so
+        # any test-failure 400 gets the forceSave treatment. Real
+        # validation errors (schema mismatch, required field missing,
+        # malformed body) ALSO get a forceSave retry; if those forceSave
+        # too, we fail() with the underlying error so the user knows.
+        force_url = "/api/v1/indexer?forceSave=true"
+        force_result, force_status, force_err = POST(base, key, force_url, schema)
+        if force_result is not None:
+            # Classify the original 400 so the info line is informative.
+            # All three branches mean "saved, Prowlarr will retest later"
+            # — we just describe WHY the initial test failed so the user
+            # knows whether to expect a red badge in the UI.
+            if 'cloudflare' in err_lower or 'blocked by' in err_lower:
+                info(f"{name}: saved (CloudFlare test failed — Flaresolverr will retry on next search)")
+            elif 'redirect' in err_lower:
+                info(f"{name}: saved (domain redirecting — Prowlarr retests on next search)")
+            elif 'unable to connect' in err_lower or 'unable to access' in err_lower or 'refused' in err_lower:
+                info(f"{name}: saved (currently unreachable — {_prowlarr_error(err)})")
+            else:
+                # Generic "test failed for unknown reason" — surface the
+                # message so user has at least some context. Still
+                # saved successfully.
+                info(f"{name}: saved with forceSave — initial test failed: {_prowlarr_error(err)}")
             return
-        # Unknown 400 — surface the Prowlarr error verbatim so the user
-        # can act on it (or open an issue).
-        fail(f"{name}: {_prowlarr_error(err)}")
+        # forceSave ALSO rejected — this is a real validation failure,
+        # not a transient test issue. Surface both errors so user has
+        # context to debug. Most likely cause: schema mismatch (indexer
+        # name doesn't match anything in Prowlarr's catalog) or
+        # implementation rename in a newer Prowlarr version.
+        fail(f"{name}: forceSave also rejected — original: {_prowlarr_error(err)} / forceSave: {_prowlarr_error(force_err)}")
     else:
         # Network error after retry — demote to info rather than fail.
         # The user can add the indexer manually in 10 seconds via the
