@@ -832,6 +832,82 @@ def configure_sabnzbd(base, key, ini_path):
         warn("  docker compose restart sabnzbd")
 
 
+def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
+    """Force Plex to advertise its public direct-connection URL so
+    Plex.tv stops routing clients through the Plex Relay.
+
+    Symptom this fixes: post-deploy log says
+        ✔ Plex is reachable externally on port 32400
+    but Plex clients (mobile, web, etc.) still show "Indirect connection"
+    or "Relayed". Root cause: Plex's "Manual Port Mapping" is OFF by
+    default. Plex relies on NAT-PMP / UPnP to discover its public port,
+    and many home routers either don't support those protocols or have
+    them disabled. When discovery fails, Plex.tv has no public address
+    to publish — even though port 32400 IS forwarded — so it falls
+    back to Relay.
+
+    Fix: PUT /:/prefs?ManualPortMappingMode=1&ManualPortMappingPort=32400
+    via Plex's HTTP API. This tells Plex "stop trying to discover, the
+    port is just X on my router." Plex then publishes
+    [public-ip]:32400 to Plex.tv, and clients connect directly.
+
+    Idempotent — re-running with the same values is a no-op on Plex's
+    side. We don't probe current values first; the PUT is cheap.
+
+    Limitations:
+      - Requires the user to actually have port 32400 forwarded on
+        their router (the wizard's post-deploy validator confirms
+        this; if it isn't, the manual mapping just tells Plex to
+        publish an unreachable URL).
+      - If the user wants a NON-standard external port (e.g. ISP
+        blocks 32400 inbound, so they forward 32401 → 32400), they
+        need to edit Plex Settings → Remote Access → Custom Public
+        Port manually. We default to 32400 which matches the wizard's
+        firewall rules + post-deploy check."""
+    section("Plex Remote Access")
+    if not plex_token:
+        warn("Plex token not found — server not claimed yet?")
+        warn("  Run the install again after the Plex container has claimed itself")
+        warn("  (PLEX_CLAIM in .env triggers claim on first boot).")
+        return
+    if not lan_ip:
+        warn("LAN_IP not set in .env — can't reach Plex API")
+        return
+    # Plex's REST endpoint for preferences. PUT keys as query string,
+    # auth via X-Plex-Token header (or query string; we use header).
+    plex_base = f"http://{lan_ip}:32400"
+    params = urlencode({
+        'ManualPortMappingMode': '1',
+        'ManualPortMappingPort': str(public_port),
+    })
+    try:
+        req = Request(
+            f"{plex_base}/:/prefs?{params}",
+            method='PUT',
+            headers={
+                'X-Plex-Token': plex_token,
+                'Accept':       'application/json',
+                'User-Agent':   'setup-arr-config/1.0',
+            },
+        )
+        with urlopen(req, timeout=10) as resp:
+            resp.read()
+        ok(f"Manual port mapping enabled (Plex will advertise [public-ip]:{public_port} to clients)")
+        info("If clients still report 'indirect' after a minute:")
+        info("  1. Settings → Remote Access in Plex web UI → 'Retry'")
+        info("  2. Verify port 32400 is forwarded on your router to this NAS")
+        info("  3. Some ISPs (CGNAT) block inbound — only Plex Relay works in that case")
+    except HTTPError as e:
+        if e.code == 401:
+            warn("Plex API rejected our token — server may not be fully claimed yet")
+            warn("  Re-run setup.sh once Plex has finished its first-run sequence")
+        else:
+            warn(f"Plex prefs PUT returned HTTP {e.code} — set Manual Port Mapping manually in Plex web UI")
+    except Exception as e:
+        warn(f"Couldn't reach Plex API at {plex_base} ({e})")
+        info("  Set Manual Port Mapping manually: Plex → Settings → Remote Access")
+
+
 def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
     """Wire Tautulli to the Plex container by writing its config.ini and
     restarting the container to apply.
@@ -2002,6 +2078,11 @@ def main():
             plex_token = read_plex_prefs(PLEX_PREFS).get('PlexOnlineToken')
         except Exception:
             plex_token = None
+        # Set Manual Port Mapping in Plex so Plex.tv stops routing
+        # clients through the Relay. Runs BEFORE Tautulli's config
+        # write so that if Plex is still warming up, we get a clean
+        # error here rather than a corrupted Tautulli config.
+        configure_plex_remote_access(LAN_IP, plex_token)
         configure_tautulli(B, PLEX_PREFS, TAUTULLI_INI)
     else:
         section("Tautulli")

@@ -188,6 +188,12 @@ def PUT(base, key, path, data):
     result, _, _ = _request(f"{base}{path}", _headers(key), 'PUT', data)
     return result
 
+def PUT_with_status(base, key, path, data):
+    """Like PUT but exposes (result, status, error) — used by paths
+    that surface error messages (e.g., cred-update PATCH that wants
+    to tell the user WHY a credential refresh failed)."""
+    return _request(f"{base}{path}", _headers(key), 'PUT', data)
+
 # ── Wait for Prowlarr ─────────────────────────────────────────────────────────
 
 def wait_ready(base, key, retries=24, interval=5):
@@ -373,13 +379,69 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
     _post_indexer(base, key, display, schema)
 
 def add_private_indexer(base, key, name, implementation, field_map, schemas, existing_names,
-                        flaresolverr_tag_id=None):
-    """Add a private torrent tracker (auth required). Many private
-    trackers also sit behind CloudFlare or aggressive bot protection,
-    so the flaresolverr tag is applied here too when available."""
-    if name.lower() in existing_names:
-        skip(f"{name} (already added)"); return
+                        flaresolverr_tag_id=None, existing_indexers=None):
+    """Add OR re-sync a private torrent tracker.
 
+    Two modes:
+      1. New: indexer not in Prowlarr → fetch schema, fill creds, POST.
+      2. Re-sync: indexer already added → compare its stored creds to
+         what's in .env (passed via field_map). If different, PATCH
+         the indexer with the new values. This is the path that lets
+         users update credentials (rotate AvistaZ PID, refresh
+         IPTorrents cookie, etc.) by editing the Configure form and
+         re-running step 8 — no need to delete + re-add in Prowlarr.
+
+    field_map values here are already resolved STRINGS from .env (not
+    env-var names). Caller does the env lookup so we can compare
+    apples-to-apples to Prowlarr's stored field values."""
+
+    # Re-sync path: indexer already exists, compare/update creds.
+    if name.lower() in existing_names:
+        if existing_indexers is None:
+            # No indexer list passed — fall back to legacy "skip" behaviour.
+            skip(f"{name} (already added)")
+            return
+        current = next((i for i in existing_indexers if i.get('name', '').lower() == name.lower()), None)
+        if current is None:
+            skip(f"{name} (already added)")
+            return
+        # Build a {field_name: stored_value} dict for the indexer as it
+        # exists in Prowlarr right now. Compare against the requested
+        # field_map. If they all match, skip; otherwise PATCH.
+        current_fields = {f.get('name'): f.get('value') for f in current.get('fields', [])}
+        changed = []
+        for fname, requested_value in field_map.items():
+            if requested_value == '':
+                continue    # empty .env value = "don't touch"
+            stored = current_fields.get(fname)
+            # Prowlarr returns password-type fields as empty string when
+            # GETing the indexer back (security feature — they don't echo
+            # creds). So we can't reliably diff passwords. Apply unless
+            # we KNOW the stored value matches.
+            if stored != requested_value:
+                changed.append(fname)
+        if not changed:
+            skip(f"{name} (already added, creds match)")
+            return
+        # Apply the new field values to the existing indexer and PUT.
+        fm = {f['name']: i for i, f in enumerate(current.get('fields', []))}
+        for fname, fval in field_map.items():
+            if fval == '':
+                continue
+            if fname in fm:
+                current['fields'][fm[fname]]['value'] = fval
+        # Ensure the flaresolverr tag stays attached on resync (covers
+        # users on the upgrade path who never had the tag).
+        if flaresolverr_tag_id is not None:
+            current['tags'] = list(set(current.get('tags') or []) | {flaresolverr_tag_id})
+        result, status, err = PUT_with_status(base, key, f"/api/v1/indexer/{current['id']}", current)
+        if result is not None:
+            ok(f"{name}: credentials updated ({', '.join(changed)})")
+        else:
+            warn(f"{name}: credential update failed (HTTP {status}) — {_prowlarr_error(err or '')}")
+        return
+
+    # New-indexer path: fetch schema, fill creds, POST.
     schema, resolved_name = _find_schema(implementation, schemas)
     if schema is None:
         fail(f"{name}: implementation '{implementation}' not found in Prowlarr")
@@ -436,9 +498,51 @@ def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1
             # this in the wizard's issues panel — disproportionate.
             info(f"{indexer['name']}: settings update flaked — tweak priority/seedTime in Prowlarr UI if you care")
 
-def add_newznab(base, key, name, api_url, api_key, schemas, existing_names):
+def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, existing_indexers=None):
+    """Add or re-sync a Newznab usenet indexer.
+
+    Re-sync semantics match add_private_indexer: if the indexer's
+    already in Prowlarr, compare its stored apiKey + baseUrl to what
+    we'd write. If they differ, PATCH. This lets users rotate API
+    keys (NZBGeek + other paid usenet providers often require periodic
+    refresh) by editing .env and re-running step 8."""
+
     if name.lower() in existing_names:
-        skip(f"{name} (already added)"); return
+        if existing_indexers is None:
+            skip(f"{name} (already added)")
+            return
+        current = next((i for i in existing_indexers if i.get('name', '').lower() == name.lower()), None)
+        if current is None:
+            skip(f"{name} (already added)")
+            return
+        current_fields = {f.get('name'): f.get('value') for f in current.get('fields', [])}
+        desired = {'baseUrl': api_url, 'apiKey': api_key or ''}
+        changed = []
+        for fname, requested in desired.items():
+            if requested == '' and fname == 'apiKey':
+                # Empty .env api_key = "don't touch". The user likely
+                # disabled the indexer by clearing the .env value;
+                # leaving the stored key in place gives them an easy
+                # rollback if they re-fill the .env later.
+                continue
+            stored = current_fields.get(fname)
+            if stored != requested:
+                changed.append(fname)
+        if not changed:
+            skip(f"{name} (already added, creds match)")
+            return
+        fm = {f['name']: i for i, f in enumerate(current.get('fields', []))}
+        for fname, fval in desired.items():
+            if fval == '' and fname == 'apiKey':
+                continue
+            if fname in fm:
+                current['fields'][fm[fname]]['value'] = fval
+        result, status, err = PUT_with_status(base, key, f"/api/v1/indexer/{current['id']}", current)
+        if result is not None:
+            ok(f"{name}: credentials updated ({', '.join(changed)})")
+        else:
+            warn(f"{name}: credential update failed (HTTP {status}) — {_prowlarr_error(err or '')}")
+        return
 
     schema = next((s for s in schemas
                    if s.get('implementation', '').lower() == 'newznab'), None)
@@ -597,13 +701,13 @@ def main():
                 ok_note = f"{name} (with API key — higher limits)"
             else:
                 ok_note = name
-            add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names)
+            add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names, existing_indexers=existing)
         else:
             api_key = env.get(required_key, '')
             if not api_key:
                 skip(f"{name} (set {required_key} in .env to enable)")
             else:
-                add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names)
+                add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names, existing_indexers=existing)
 
     # ── Private torrent trackers ──────────────────────────────────────────────
 
@@ -619,7 +723,8 @@ def main():
             continue
         add_private_indexer(PROWLARR, PROWLARR_KEY, name, implementation,
                             creds, schemas, existing_names,
-                            flaresolverr_tag_id=flaresolverr_tag_id)
+                            flaresolverr_tag_id=flaresolverr_tag_id,
+                            existing_indexers=existing)
         private_added += 1
 
     if private_added == 0:
