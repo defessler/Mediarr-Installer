@@ -1204,8 +1204,30 @@ def configure_qbittorrent(base, username, password):
         print(f"    qBittorrent not ready yet — retry {retries}/{MAX_RETRIES}")
         last_result, last_error = attempt_login()
 
+    # Last-resort: 80s of retries and still empty body. Most likely
+    # the qBit container is stuck in a half-started state (LinuxServer's
+    # init scripts occasionally race the WebUI bind on Synology) OR
+    # it's running with a stale qBittorrent.conf that doesn't match
+    # the password we just wrote (setup-folders.sh rewrites the conf
+    # but if the daemon never re-read it, the new PBKDF2 hash never
+    # takes effect). `docker restart qbittorrent` cures both — the
+    # container fully reinitializes + re-reads the conf on boot.
+    restarted = False
+    if last_result != 'Ok.' and last_result != 'Fails.':
+        print(f"    qBittorrent still not responding — forcing container restart and waiting 20s...")
+        try:
+            subprocess.run(
+                ['docker', 'restart', 'qbittorrent'],
+                capture_output=True, timeout=30, text=True,
+            )
+            restarted = True
+            time.sleep(20)
+            last_result, last_error = attempt_login()
+        except Exception as e:
+            warn(f"docker restart qbittorrent failed ({e}) — qBit may need manual attention")
+
     if last_result == 'Ok.':
-        ok("qBittorrent authenticated")
+        ok("qBittorrent authenticated" + (" (after forced restart)" if restarted else ""))
     elif last_result == 'Fails.':
         # `base` is the host:port URL the wizard derived from .env;
         # `install_dir` comes from .env via the caller. Surface them
@@ -2331,12 +2353,63 @@ def main():
 
     section("Recyclarr")
     if is_enabled(env, 'ENABLE_RECYCLARR'):
-        write_config_file("Recyclarr",
-            f"{B}/recyclarr/config/recyclarr.yml",
-            RECYCLARR_CONF.format(
-                sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
-                radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
-            ))
+        recyclarr_yml = f"{B}/recyclarr/config/recyclarr.yml"
+        # write_config_file is idempotent — skips when the file exists.
+        # That's right for user customisations, but it ALSO means an
+        # older wizard's recyclarr.yml with stale base_url / api_key
+        # values persists forever. Common case: a previous install
+        # wrote http://localhost:8989 (which doesn't resolve from
+        # inside the recyclarr container), and the user's been
+        # seeing "Connection failed - check your base_url" ever since.
+        # Detect that specifically + force-rewrite when we find a
+        # broken-by-design URL we know we'd never produce.
+        wants_force = False
+        if os.path.exists(recyclarr_yml):
+            try:
+                with open(recyclarr_yml, 'r') as f:
+                    body = f.read()
+                bad_url_signs = (
+                    'localhost:', '127.0.0.1:',
+                    '://0.0.0.0', 'REPLACE_WITH_',
+                )
+                if any(s in body for s in bad_url_signs):
+                    wants_force = True
+                    info("Existing recyclarr.yml has non-container URLs (likely from an older "
+                         "wizard or hand-edit) — refreshing it to use http://sonarr:8989 / "
+                         "http://radarr:7878 inside the container's docker network.")
+                # Also rewrite if the keys are still REPLACE_WITH placeholders
+                # (means the previous run had no api keys at write-time).
+                if SONARR_KEY and 'REPLACE_WITH_SONARR_KEY' in body:
+                    wants_force = True
+                if RADARR_KEY and 'REPLACE_WITH_RADARR_KEY' in body:
+                    wants_force = True
+            except Exception:
+                pass
+        if wants_force:
+            # Use overwrite_config_file (the existing helper that DOES
+            # overwrite). Backup the user's file first in case they
+            # customised it.
+            try:
+                ts = time.strftime('%Y%m%d-%H%M%S')
+                bak = f"{recyclarr_yml}.before-mediarr-{ts}.bak"
+                import shutil as _shutil
+                _shutil.copy(recyclarr_yml, bak)
+                info(f"  Backed up your previous recyclarr.yml → {bak}")
+            except Exception:
+                pass
+            overwrite_config_file("Recyclarr",
+                recyclarr_yml,
+                RECYCLARR_CONF.format(
+                    sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
+                    radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
+                ))
+        else:
+            write_config_file("Recyclarr",
+                recyclarr_yml,
+                RECYCLARR_CONF.format(
+                    sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
+                    radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
+                ))
         # Auto-run an initial sync if we have real keys to talk to the
         # arrs. The shipped recyclarr.yml has the TRaSH Guide defaults
         # (HD-1080p quality profile + standard custom formats), so a

@@ -299,11 +299,24 @@ def _post_indexer(base, key, name, schema):
                 # saved successfully.
                 info(f"{name}: saved with forceSave — initial test failed: {_prowlarr_error(err)}")
             return
-        # forceSave ALSO rejected — this is a real validation failure,
-        # not a transient test issue. Surface both errors so user has
-        # context to debug. Most likely cause: schema mismatch (indexer
-        # name doesn't match anything in Prowlarr's catalog) or
-        # implementation rename in a newer Prowlarr version.
+        # forceSave ALSO rejected. Inspect the error message: if it's a
+        # connectivity / domain-redirect issue (TorrentGalaxy moves its
+        # canonical domain every few weeks; Prowlarr's bundled URLs go
+        # stale), that's not actually the wizard's fault and not
+        # something the user can fix from here — they'd need a fresher
+        # Prowlarr build or to manually point the indexer at a working
+        # mirror. Demote to info() so this single-indexer failure
+        # doesn't pollute the Issues panel and make a successful
+        # install LOOK broken.
+        #
+        # Real schema mismatches (indexer renamed upstream, missing
+        # required field) still fail() — those need code-side fixes
+        # and we want them surfaced.
+        combined = (err_lower + ' ' + (_prowlarr_error(force_err) or '').lower())
+        if any(k in combined for k in ('redirect', 'unable to connect', 'unable to access', 'timed out', 'refused')):
+            info(f"{name}: couldn't add — {_prowlarr_error(force_err or err)}")
+            info(f"  Bundled URL is likely stale; try adding from the Prowlarr UI which may have a fresher mirror.")
+            return
         fail(f"{name}: forceSave also rejected — original: {_prowlarr_error(err)} / forceSave: {_prowlarr_error(force_err)}")
     else:
         # status=None means the POST didn't get a response at all
