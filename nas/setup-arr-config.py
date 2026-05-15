@@ -654,24 +654,80 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
     result = POST(prowlarr_base, prowlarr_key, "/api/v1/applications", data)
     ok(f"Prowlarr app: {app_name}") if result else fail(f"Prowlarr app: {app_name}")
 
+def _get_or_create_tag(prowlarr_base, prowlarr_key, label):
+    """Get or create a Prowlarr tag by label. Returns the tag id or None.
+
+    Prowlarr's indexer-proxy + indexer tagging model is the entire reason
+    Flaresolverr works: a proxy only applies to indexers that share at
+    least one tag with it. We need a stable named tag both the proxy
+    creation step (here) and the indexer adds (in setup-indexers.py)
+    can converge on. Idempotent — re-runs find the existing tag."""
+    existing = GET(prowlarr_base, prowlarr_key, "/api/v1/tag") or []
+    for t in existing:
+        if t.get('label') == label:
+            return t.get('id')
+    # Doesn't exist yet — create it.
+    new_tag = POST(prowlarr_base, prowlarr_key, "/api/v1/tag", {'label': label})
+    return (new_tag or {}).get('id')
+
+
 def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
-    """Wire Flaresolverr into Prowlarr so CloudFlare-protected indexers work."""
+    """Wire Flaresolverr into Prowlarr so CloudFlare-protected indexers work.
+
+    Critical detail learned the hard way: Prowlarr's IndexerProxy only
+    applies to indexers that share at least one tag with the proxy. A
+    Flaresolverr proxy created with `tags: []` is functionally dead —
+    Prowlarr never routes through it, and every CloudFlare-protected
+    indexer (1337x, EZTV, TorrentGalaxy, etc.) silently fails the
+    reachability test during add.
+
+    Correct flow (matches the canonical TRaSH guide):
+      1. Create a tag named 'flaresolverr'
+      2. Attach the tag to this proxy
+      3. setup-indexers.py attaches the same tag to every public torrent
+         indexer when adding them — Prowlarr then routes their requests
+         through Flaresolverr automatically.
+
+    Returns the tag id so the caller can stash it in env / pass it
+    downstream — but setup-indexers.py also looks it up itself via
+    _get_or_create_tag(), so this is informational."""
     existing = GET(prowlarr_base, prowlarr_key, "/api/v1/indexerProxy")
     if existing is None:
-        fail("Flaresolverr proxy: can't reach Prowlarr API"); return
-    if any(p.get('implementation') == 'FlareSolverr' for p in existing):
-        skip("Flaresolverr proxy (already configured)"); return
+        fail("Flaresolverr proxy: can't reach Prowlarr API"); return None
+
+    # Create / find the flaresolverr tag FIRST — even when the proxy
+    # already exists, we may need to attach the tag to it (older
+    # installs created the proxy with `tags: []` per the now-fixed bug).
+    tag_id = _get_or_create_tag(prowlarr_base, prowlarr_key, 'flaresolverr')
+    if tag_id is None:
+        warn("Flaresolverr tag: couldn't create — indexer tagging will fall back to add-without-proxy")
+        return None
+
+    flaresolverr_proxy = next((p for p in existing if p.get('implementation') == 'FlareSolverr'), None)
+    if flaresolverr_proxy is not None:
+        # Already exists. Verify the tag is attached; if not, attach it
+        # (covers users upgrading from the buggy `tags: []` version).
+        if tag_id not in (flaresolverr_proxy.get('tags') or []):
+            flaresolverr_proxy['tags'] = list(set(flaresolverr_proxy.get('tags') or []) | {tag_id})
+            updated = PUT(prowlarr_base, prowlarr_key,
+                          f"/api/v1/indexerProxy/{flaresolverr_proxy['id']}", flaresolverr_proxy)
+            if updated:
+                ok("Flaresolverr proxy: tag attached (was missing — CloudFlare-protected indexers will now route through Flaresolverr)")
+            else:
+                warn("Flaresolverr proxy: tag attach failed — set 'flaresolverr' tag on it manually in Prowlarr UI")
+        else:
+            skip("Flaresolverr proxy (already configured, tag present)")
+        return tag_id
 
     schemas = GET(prowlarr_base, prowlarr_key, "/api/v1/indexerProxy/schema") or []
     schema = next((s for s in schemas if s.get('implementation') == 'FlareSolverr'), None)
     if schema is None:
-        # Prowlarr may not have the schema yet — try posting without schema lookup
         warn("Flaresolverr schema not found in Prowlarr — may need to restart Prowlarr")
-        return
+        return tag_id
 
     schema = json.loads(json.dumps(schema))  # deep copy
     schema['name'] = 'FlareSolverr'
-    schema['tags'] = []  # empty tags = applies to all indexers
+    schema['tags'] = [tag_id]    # critical — see docstring
 
     fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
     for fname, fval in [('host', 'http://flaresolverr:8191'), ('requestTimeout', 60)]:
@@ -679,8 +735,11 @@ def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
             schema['fields'][fm[fname]]['value'] = fval
 
     result = POST(prowlarr_base, prowlarr_key, "/api/v1/indexerProxy", schema)
-    ok("Flaresolverr proxy: configured (CloudFlare bypass active)") if result \
-        else fail("Flaresolverr proxy: failed to add")
+    if result:
+        ok("Flaresolverr proxy: configured (tag='flaresolverr', CloudFlare bypass active)")
+    else:
+        fail("Flaresolverr proxy: failed to add")
+    return tag_id
 
 # ── SABnzbd ───────────────────────────────────────────────────────────────────
 

@@ -186,6 +186,30 @@ def wait_ready(base, key, retries=24, interval=5):
         time.sleep(interval)
     print(f"{RED}✘ timed out{RESET}"); return False
 
+# ── Tag helpers ───────────────────────────────────────────────────────────────
+
+def get_or_create_tag(base, key, label):
+    """Find or create a Prowlarr tag by label, return its id (or None).
+
+    Used to tag indexers with 'flaresolverr' so they share a tag with
+    the Flaresolverr IndexerProxy — without that shared tag, Prowlarr
+    NEVER routes the indexer's requests through Flaresolverr, and any
+    CloudFlare-protected indexer fails the reachability test during
+    add. This is the single most subtle piece of Prowlarr config our
+    wizard needs to get right.
+
+    Idempotent — re-runs reuse the existing tag instead of creating
+    a duplicate. setup-arr-config.py also creates this tag (in
+    add_flaresolverr_proxy) so the two scripts converge on the same
+    tag id regardless of run order."""
+    existing = GET(base, key, "/api/v1/tag") or []
+    for t in existing:
+        if t.get('label') == label:
+            return t.get('id')
+    new_tag, _, _ = POST(base, key, "/api/v1/tag", {'label': label})
+    return (new_tag or {}).get('id')
+
+
 # ── Add indexer ───────────────────────────────────────────────────────────────
 
 def _post_indexer(base, key, name, schema):
@@ -289,7 +313,16 @@ def _find_schema(name, schemas):
         return candidates[0], candidates[0]['name']
     return None, None
 
-def add_indexer(base, key, name, schemas, existing_names):
+def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=None):
+    """Add a public torrent indexer to Prowlarr.
+
+    flaresolverr_tag_id: if provided, attached to the indexer's tags
+    so Prowlarr routes the indexer's HTTP requests through the
+    FlareSolverr proxy. Mandatory for CloudFlare-protected indexers
+    (1337x, EZTV, TorrentGalaxy, etc.) — without it the add fails the
+    reachability test and the indexer never enters the DB. Cheap and
+    safe to apply to non-CloudFlare indexers too: Flaresolverr just
+    passes their requests through transparently."""
     if name.lower() in existing_names:
         skip(f"{name} (already added)"); return
 
@@ -309,10 +342,16 @@ def add_indexer(base, key, name, schemas, existing_names):
     schema['name'] = resolved_name
     schema['enable'] = True
     schema['appProfileId'] = 1
+    if flaresolverr_tag_id is not None:
+        schema['tags'] = list(set(schema.get('tags') or []) | {flaresolverr_tag_id})
     display = f"{name} → {resolved_name}" if resolved_name != name else name
     _post_indexer(base, key, display, schema)
 
-def add_private_indexer(base, key, name, implementation, field_map, schemas, existing_names):
+def add_private_indexer(base, key, name, implementation, field_map, schemas, existing_names,
+                        flaresolverr_tag_id=None):
+    """Add a private torrent tracker (auth required). Many private
+    trackers also sit behind CloudFlare or aggressive bot protection,
+    so the flaresolverr tag is applied here too when available."""
     if name.lower() in existing_names:
         skip(f"{name} (already added)"); return
 
@@ -324,6 +363,8 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
     schema['name'] = name
     schema['enable'] = True
     schema['appProfileId'] = 1
+    if flaresolverr_tag_id is not None:
+        schema['tags'] = list(set(schema.get('tags') or []) | {flaresolverr_tag_id})
 
     fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
     for fname, fval in field_map.items():
@@ -460,11 +501,63 @@ def main():
     existing = GET(PROWLARR, PROWLARR_KEY, "/api/v1/indexer") or []
     existing_names = {i['name'].lower() for i in existing}
 
+    # Locate or create the 'flaresolverr' tag. setup-arr-config.py
+    # creates this tag in add_flaresolverr_proxy and attaches it to
+    # the Flaresolverr IndexerProxy — Prowlarr only routes through
+    # the proxy for indexers that SHARE a tag with it. Without this
+    # tag on the indexer, CloudFlare-protected adds (1337x, EZTV,
+    # TorrentGalaxy, AnimeTorrents, etc.) fail the reachability test
+    # during add and never enter the DB. Passing the tag to every
+    # public + private indexer add is safe (Flaresolverr proxies
+    # non-CloudFlare requests transparently with negligible overhead).
+    flaresolverr_tag_id = get_or_create_tag(PROWLARR, PROWLARR_KEY, 'flaresolverr')
+    if flaresolverr_tag_id is not None:
+        info(f"Flaresolverr tag id = {flaresolverr_tag_id} — applying to public + private torrent indexers")
+        # Patch the FlareSolverr IndexerProxy itself to include the
+        # tag, in case it was created by an OLDER wizard version with
+        # empty tags (the historical bug). Without the proxy ALSO
+        # having the tag, indexer-tagging is meaningless — Prowlarr
+        # only routes when both sides share a tag. Idempotent: if the
+        # proxy already has the tag, we don't re-PUT.
+        proxies = GET(PROWLARR, PROWLARR_KEY, "/api/v1/indexerProxy") or []
+        flaresolverr_proxy = next(
+            (p for p in proxies if p.get('implementation') == 'FlareSolverr'),
+            None,
+        )
+        if flaresolverr_proxy is None:
+            warn("FlareSolverr IndexerProxy not configured — run setup-arr-config.py first (step 7)")
+        elif flaresolverr_tag_id not in (flaresolverr_proxy.get('tags') or []):
+            flaresolverr_proxy['tags'] = list(
+                set(flaresolverr_proxy.get('tags') or []) | {flaresolverr_tag_id}
+            )
+            updated, _, _ = POST(
+                PROWLARR, PROWLARR_KEY,
+                f"/api/v1/indexerProxy/{flaresolverr_proxy['id']}?_method=PUT",
+                flaresolverr_proxy,
+            )
+            # Some Prowlarr versions don't accept _method override on
+            # POST; try a real PUT helper too. Either succeeding is
+            # enough.
+            if not updated:
+                updated_alt = PUT(
+                    PROWLARR, PROWLARR_KEY,
+                    f"/api/v1/indexerProxy/{flaresolverr_proxy['id']}",
+                    flaresolverr_proxy,
+                )
+                updated = updated_alt
+            if updated:
+                info("Attached 'flaresolverr' tag to existing FlareSolverr proxy (was missing — fixes routing)")
+            else:
+                warn("FlareSolverr proxy missing 'flaresolverr' tag — manually add it in Prowlarr UI to enable CloudFlare bypass")
+    else:
+        warn("Couldn't find/create 'flaresolverr' tag — CloudFlare-protected indexers may fail to add")
+
     # ── Public torrent indexers ───────────────────────────────────────────────
 
     section("Public Torrent Indexers")
     for name in PUBLIC_TORRENT_INDEXERS:
-        add_indexer(PROWLARR, PROWLARR_KEY, name, schemas, existing_names)
+        add_indexer(PROWLARR, PROWLARR_KEY, name, schemas, existing_names,
+                    flaresolverr_tag_id=flaresolverr_tag_id)
 
     # ── Usenet indexers ───────────────────────────────────────────────────────
 
@@ -500,7 +593,8 @@ def main():
             skip(f"{name} (add {', '.join(missing)} to .env to enable)")
             continue
         add_private_indexer(PROWLARR, PROWLARR_KEY, name, implementation,
-                            creds, schemas, existing_names)
+                            creds, schemas, existing_names,
+                            flaresolverr_tag_id=flaresolverr_tag_id)
         private_added += 1
 
     if private_added == 0:
