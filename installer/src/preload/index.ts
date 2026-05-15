@@ -13,6 +13,10 @@ import {
   type ExecResult,
   type LoadedProfile,
   type ProfileExportEnvelope,
+  type QbitFetchListRequest,
+  type QbitFetchListResult,
+  type QbitMigrateOneRequest,
+  type QbitMigrateOneResult,
   type SavedProfile,
   type SaveProfileInput,
   type SftpProgress,
@@ -72,6 +76,12 @@ const installer = {
   env: {
     detect: (sessionId: string, targetDir?: string): Promise<EnvDetectResult> =>
       ipcRenderer.invoke(IPC.envDetect, { sessionId, targetDir }),
+  },
+  qbit: {
+    fetchList: (args: QbitFetchListRequest): Promise<QbitFetchListResult> =>
+      ipcRenderer.invoke(IPC.qbitFetchList, args),
+    migrateOne: (args: QbitMigrateOneRequest): Promise<QbitMigrateOneResult> =>
+      ipcRenderer.invoke(IPC.qbitMigrateOne, args),
   },
   vpn: {
     fetchKey: (token: string): Promise<VpnFetchResult> =>

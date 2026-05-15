@@ -29,6 +29,7 @@
 
 import { useEffect, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
+import type { QbitTorrent } from '../../shared/ipc.js'
 
 type ArrKind = 'sonarr' | 'radarr'
 
@@ -62,6 +63,24 @@ export function MigrateScreen() {
   const [sourceRadarrUrl, setSourceRadarrUrl] = useState('')
   const [sourceRadarrKey, setSourceRadarrKey] = useState('')
 
+  // qBittorrent migration — independent flow from the arr import,
+  // shares the screen but has its own connect / fetch / import cycle.
+  const [sourceQbitUrl, setSourceQbitUrl] = useState('')
+  const [sourceQbitUser, setSourceQbitUser] = useState('')
+  const [sourceQbitPass, setSourceQbitPass] = useState('')
+  const [qbitFetching, setQbitFetching] = useState(false)
+  const [qbitFetchError, setQbitFetchError] = useState<string | null>(null)
+  const [qbitTorrents, setQbitTorrents] = useState<QbitTorrent[] | null>(null)
+  /** Path-prefix remap. Source torrents typically save to a path like
+   *  /downloads/Completed on the OLD system; on the NEW system that
+   *  same data lives at /data/Downloads/Torrents/Completed. User
+   *  provides find/replace; we apply per-torrent at migrate time.
+   *  Defaults pre-fill once we see the first source torrent. */
+  const [qbitRemapFrom, setQbitRemapFrom] = useState('')
+  const [qbitRemapTo, setQbitRemapTo]     = useState('')
+  const [qbitImporting, setQbitImporting] = useState(false)
+  const [qbitResults, setQbitResults] = useState<ImportResult[]>([])
+
   /** Local arr URLs derived from the active profile's LAN_IP + the
    *  stack's standard ports. Could come from somewhere more robust
    *  (probing for the running containers) but the wizard's own config
@@ -71,13 +90,18 @@ export function MigrateScreen() {
   const localSonarrUrl = lanIp ? `http://${lanIp}:49152` : ''
   const localRadarrUrl = lanIp ? `http://${lanIp}:49151` : ''
 
-  /** API keys for the LOCAL arrs — read from the NAS's .env on screen
-   *  entry. Updated to non-null once SSH exec returns. If null after
-   *  the load attempt, the user has to wait for setup-arr-config.py
-   *  to have populated the keys (or re-run the install). */
-  const [localKeys, setLocalKeys] = useState<{ sonarr: string | null; radarr: string | null }>({
-    sonarr: null, radarr: null,
-  })
+  /** API keys / creds for the LOCAL services — read from the NAS's
+   *  .env on screen entry. Sonarr/Radarr use X-Api-Key auth (auto-
+   *  discovered by setup-arr-config.py). qBittorrent uses cookie auth
+   *  via WebUI user+pass (set during install via QBITTORRENT_USER /
+   *  QBITTORRENT_PASS). Loaded together in one grep so the user
+   *  doesn't see two waterfalls. */
+  const [localKeys, setLocalKeys] = useState<{
+    sonarr: string | null
+    radarr: string | null
+    qbitUser: string | null
+    qbitPass: string | null
+  }>({ sonarr: null, radarr: null, qbitUser: null, qbitPass: null })
   const [keysError, setKeysError] = useState<string | null>(null)
 
   const [fetching, setFetching] = useState(false)
@@ -96,7 +120,7 @@ export function MigrateScreen() {
       try {
         const r = await window.installer.ssh.exec({
           sessionId,
-          cmd: `grep -E '^(SONARR_API_KEY|RADARR_API_KEY)=' ${shellQuote(`${targetDir}/.env`)} 2>/dev/null`,
+          cmd: `grep -E '^(SONARR_API_KEY|RADARR_API_KEY|QBITTORRENT_USER|QBITTORRENT_PASS)=' ${shellQuote(`${targetDir}/.env`)} 2>/dev/null`,
           sudo: false,
         })
         if (cancelled) return
@@ -105,11 +129,13 @@ export function MigrateScreen() {
           return
         }
         const lines = r.stdout.split('\n')
-        const sonarr = parseEnvLine(lines, 'SONARR_API_KEY')
-        const radarr = parseEnvLine(lines, 'RADARR_API_KEY')
-        setLocalKeys({ sonarr, radarr })
-        if (!sonarr && !radarr) {
-          setKeysError("Local arrs don't have API keys yet — finish the install first, then come back here.")
+        const sonarr   = parseEnvLine(lines, 'SONARR_API_KEY')
+        const radarr   = parseEnvLine(lines, 'RADARR_API_KEY')
+        const qbitUser = parseEnvLine(lines, 'QBITTORRENT_USER')
+        const qbitPass = parseEnvLine(lines, 'QBITTORRENT_PASS')
+        setLocalKeys({ sonarr, radarr, qbitUser, qbitPass })
+        if (!sonarr && !radarr && !qbitUser) {
+          setKeysError("Local services don't have keys/creds yet — finish the install first, then come back here.")
         }
       } catch (e) {
         if (cancelled) return
@@ -162,6 +188,89 @@ export function MigrateScreen() {
     } finally {
       setImporting(false)
     }
+  }
+
+  async function fetchQbit() {
+    setQbitFetching(true)
+    setQbitFetchError(null)
+    setQbitTorrents(null)
+    try {
+      if (!sourceQbitUrl) throw new Error('Source qBittorrent URL required.')
+      const r = await window.installer.qbit.fetchList({
+        url: sourceQbitUrl,
+        username: sourceQbitUser,
+        password: sourceQbitPass,
+      })
+      if (!r.ok || !r.torrents) {
+        throw new Error(r.error || 'unknown error')
+      }
+      setQbitTorrents(r.torrents)
+      // Auto-suggest a remap if all source torrents share a path prefix.
+      // Most users have a single save dir (e.g. /downloads); pre-fill
+      // both fields with that as the From and the expected Mediarr
+      // path (/data/Downloads/Torrents) as the To so the user just
+      // tweaks rather than typing from scratch.
+      if (r.torrents.length > 0 && !qbitRemapFrom && !qbitRemapTo) {
+        const commonPrefix = longestCommonPrefix(r.torrents.map((t) => t.save_path))
+        if (commonPrefix && commonPrefix.length > 1) {
+          setQbitRemapFrom(commonPrefix.replace(/\/$/, ''))
+          setQbitRemapTo('/data/Downloads/Torrents')
+        }
+      }
+    } catch (e) {
+      setQbitFetchError((e as Error).message)
+    } finally {
+      setQbitFetching(false)
+    }
+  }
+
+  async function importQbit() {
+    if (!qbitTorrents || qbitTorrents.length === 0) return
+    if (!lanIp || !localKeys.qbitUser || !localKeys.qbitPass) {
+      setQbitFetchError("Local qBittorrent creds not loaded — wait for .env read or re-run the install.")
+      return
+    }
+    setQbitImporting(true)
+    setQbitResults([])
+    const newResults: ImportResult[] = []
+    const push = (r: ImportResult) => {
+      newResults.push(r)
+      setQbitResults([...newResults])
+    }
+    const destUrl = `http://${lanIp}:49156`
+    for (const t of qbitTorrents) {
+      const destSavePath = qbitRemapFrom && t.save_path.startsWith(qbitRemapFrom)
+        ? qbitRemapTo + t.save_path.slice(qbitRemapFrom.length)
+        : t.save_path
+      try {
+        const r = await window.installer.qbit.migrateOne({
+          sourceUrl:      sourceQbitUrl,
+          sourceUsername: sourceQbitUser,
+          sourcePassword: sourceQbitPass,
+          sourceHash:     t.hash,
+          destUrl,
+          destUsername:   localKeys.qbitUser,
+          destPassword:   localKeys.qbitPass,
+          destSavePath,
+          destCategory:   t.category,
+          destTags:       t.tags,
+          // Pause by default — gives the user a chance to verify the
+          // remapped save_path is correct before qBit starts seeding
+          // (with skip_checking=true, qBit doesn't verify files
+          // exist; mismatched paths would lead to a "missing files"
+          // error on first seed attempt).
+          paused: true,
+        })
+        if (r.ok) {
+          push({ title: t.name, status: 'ok' })
+        } else {
+          push({ title: t.name, status: 'fail', message: `${r.stage}: ${r.error}` })
+        }
+      } catch (e) {
+        push({ title: t.name, status: 'fail', message: (e as Error).message })
+      }
+    }
+    setQbitImporting(false)
   }
 
   const counts = {
@@ -304,6 +413,151 @@ export function MigrateScreen() {
           </ul>
         </section>
       )}
+
+      {/* ── qBittorrent migration ─────────────────────────────────────── */}
+      <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
+        <h2 className="font-medium">qBittorrent torrents</h2>
+        <p className="text-xs text-slate-400">
+          Move active torrents from an existing qBittorrent (your previous
+          NAS, a Linux box, etc.) to this stack&apos;s qBit so they keep
+          seeding without re-downloading. The .torrent files are exported
+          from the source and re-added to the destination with{' '}
+          <code className="bg-slate-800 px-1 rounded">skip_checking</code>
+          {' '}— files must already exist at the mapped save path on the
+          new system (move the data there first, OR keep the disk and
+          use the same paths). Torrents are added <em>paused</em> so you
+          can verify save paths before seeding starts.
+        </p>
+
+        <div className="grid grid-cols-[1fr_2fr] gap-3 text-sm items-center">
+          <label>Source qBittorrent URL</label>
+          <input
+            type="text" placeholder="http://old-nas:49156"
+            value={sourceQbitUrl}
+            onChange={(e) => setSourceQbitUrl(e.target.value.trim().replace(/\/$/, ''))}
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+          />
+          <label>Username</label>
+          <input
+            type="text"
+            value={sourceQbitUser}
+            onChange={(e) => setSourceQbitUser(e.target.value.trim())}
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+          />
+          <label>Password</label>
+          <input
+            type="password"
+            value={sourceQbitPass}
+            onChange={(e) => setSourceQbitPass(e.target.value)}
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchQbit}
+            disabled={qbitFetching || qbitImporting}
+            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm disabled:opacity-40"
+          >
+            {qbitFetching ? 'Fetching…' : 'Fetch torrent list'}
+          </button>
+          {qbitFetchError && <span className="text-rose-300 text-sm">✘ {qbitFetchError}</span>}
+        </div>
+
+        {qbitTorrents && qbitTorrents.length > 0 && (
+          <>
+            <div className="text-sm border-t border-slate-800 pt-3">
+              <span className="font-medium">{qbitTorrents.length}</span>{' '}
+              torrents on source. Sample:
+              <ul className="mt-1 text-xs text-slate-400 font-mono space-y-0.5">
+                {qbitTorrents.slice(0, 5).map((t) => (
+                  <li key={t.hash} className="truncate">· {t.name}</li>
+                ))}
+                {qbitTorrents.length > 5 && (
+                  <li className="text-slate-500">  …and {qbitTorrents.length - 5} more</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="border-t border-slate-800 pt-3 space-y-2">
+              <h3 className="text-sm font-medium">Path remap</h3>
+              <p className="text-xs text-slate-400">
+                The source torrents&apos; save paths get rewritten when
+                added to the dest. Leave blank if paths are identical
+                on both systems. Example:{' '}
+                <code className="bg-slate-800 px-1 rounded">/downloads</code>
+                {' → '}
+                <code className="bg-slate-800 px-1 rounded">/data/Downloads/Torrents</code>
+              </p>
+              <div className="grid grid-cols-[1fr_2fr] gap-2 text-sm items-center">
+                <label>Source path prefix</label>
+                <input
+                  type="text" placeholder="/downloads"
+                  value={qbitRemapFrom}
+                  onChange={(e) => setQbitRemapFrom(e.target.value.trim())}
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                />
+                <label>Destination prefix</label>
+                <input
+                  type="text" placeholder="/data/Downloads/Torrents"
+                  value={qbitRemapTo}
+                  onChange={(e) => setQbitRemapTo(e.target.value.trim())}
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                />
+              </div>
+              {qbitRemapFrom && (
+                <p className="text-xs text-slate-500">
+                  Preview: <code className="font-mono">{qbitTorrents[0].save_path}</code>
+                  {' → '}
+                  <code className="font-mono">
+                    {qbitTorrents[0].save_path.startsWith(qbitRemapFrom)
+                      ? qbitRemapTo + qbitTorrents[0].save_path.slice(qbitRemapFrom.length)
+                      : qbitTorrents[0].save_path + ' (unchanged — prefix not in path)'}
+                  </code>
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 border-t border-slate-800 pt-3">
+              <div className="text-xs text-slate-400 flex-1">
+                Destination: {' '}
+                <code className="bg-slate-800 px-1 rounded font-mono">
+                  {lanIp ? `http://${lanIp}:49156` : '(no LAN_IP)'}
+                </code>
+                {' (creds from .env)'}
+              </div>
+              <button
+                onClick={importQbit}
+                disabled={qbitImporting || qbitFetching || !localKeys.qbitUser || !localKeys.qbitPass}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm disabled:opacity-40 shrink-0"
+              >
+                {qbitImporting ? `Migrating ${qbitResults.length}/${qbitTorrents.length}…` : `Migrate ${qbitTorrents.length} torrent${qbitTorrents.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </>
+        )}
+
+        {qbitResults.length > 0 && (
+          <div className="border-t border-slate-800 pt-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">Migration results</h3>
+              <span className="text-xs text-slate-400">
+                <span className="text-emerald-300">✔ {qbitResults.filter((r) => r.status === 'ok').length}</span>
+                <span className="mx-2">·</span>
+                <span className="text-rose-300">✘ {qbitResults.filter((r) => r.status === 'fail').length}</span>
+              </span>
+            </div>
+            <ul className="text-xs font-mono space-y-0.5 max-h-48 overflow-y-auto mt-1">
+              {qbitResults.map((r, i) => (
+                <li key={i} className={r.status === 'ok' ? 'text-emerald-300' : 'text-rose-300'}>
+                  {r.status === 'ok' ? '✔' : '✘'} {r.title}
+                  {r.message && <span className="text-slate-500"> — {r.message}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       <div className="mt-auto flex justify-between gap-3">
         <button
@@ -484,4 +738,20 @@ function parseEnvLine(lines: string[], key: string): string | null {
 
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+/** Longest common string prefix across the supplied list. Used to
+ *  auto-suggest the qBit save-path remap source — most users have all
+ *  their torrents under one root (e.g. /downloads), and we'd rather
+ *  pre-fill that than have them eyeball the source paths and type. */
+function longestCommonPrefix(strs: string[]): string {
+  if (strs.length === 0) return ''
+  let prefix = strs[0]
+  for (let i = 1; i < strs.length; i++) {
+    while (!strs[i].startsWith(prefix)) {
+      prefix = prefix.slice(0, -1)
+      if (!prefix) return ''
+    }
+  }
+  return prefix
 }

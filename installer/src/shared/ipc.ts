@@ -313,6 +313,74 @@ export interface ProfileImportRequest {
  *  pattern-matching raw OpenSSL strings. */
 export const PROFILE_IMPORT_WRONG_PASSPHRASE = 'wrong-passphrase'
 
+// ── qBittorrent migration types ─────────────────────────────────────────────
+
+/** Subset of a qBittorrent torrent we surface to the renderer for
+ *  preview + migration. The qBit API returns ~30 fields per torrent;
+ *  we only forward what the user actually sees + what we need to
+ *  re-add the torrent on the destination. */
+export interface QbitTorrent {
+  hash: string
+  name: string
+  /** Source-side absolute path where the data sits. The renderer's
+   *  remap-prefix logic translates this for the destination add. */
+  save_path: string
+  category: string
+  tags: string                  // comma-separated, qBit's native format
+  /** qBit's state — paused / uploading / downloading / etc. We re-add
+   *  paused vs running based on this. */
+  state: string
+  /** Bytes completed; if the torrent is 100% the renderer can show a
+   *  "ready to seed" badge in the preview. */
+  completed: number
+  size: number
+}
+
+export interface QbitFetchListRequest {
+  url: string          // e.g. "http://old-nas:49156"
+  username: string
+  password: string
+}
+export interface QbitFetchListResult {
+  ok: boolean
+  error?: string
+  torrents?: QbitTorrent[]
+}
+
+export interface QbitMigrateOneRequest {
+  /** Source — the OLD qBittorrent we're pulling FROM. */
+  sourceUrl: string
+  sourceUsername: string
+  sourcePassword: string
+  sourceHash: string
+
+  /** Destination — the local install's qBittorrent (read from .env). */
+  destUrl: string
+  destUsername: string
+  destPassword: string
+  /** Where on the dest filesystem the data lives. The wizard derives
+   *  this by applying the user's remap prefix to the source save_path. */
+  destSavePath: string
+
+  /** Tag list to preserve on the dest torrent (qBit-native comma-
+   *  separated string format). Forwarded verbatim — qBit creates the
+   *  tags on its side if they don't already exist. */
+  destTags: string
+  destCategory: string
+
+  /** Add the torrent paused so the user can verify save-path mapping
+   *  before seeding starts. Defaults to true for safety. */
+  paused: boolean
+}
+export interface QbitMigrateOneResult {
+  ok: boolean
+  /** Optional error from the source export step (couldn't get .torrent
+   *  file) or the dest add step (qBit refused). */
+  error?: string
+  /** Step where it failed, useful for diagnosis. */
+  stage?: 'login-source' | 'export' | 'login-dest' | 'add'
+}
+
 // ── Streaming events (main → renderer) ───────────────────────────────────────
 
 export interface SshStreamData {
@@ -363,6 +431,9 @@ export const IPC = {
   appOpenDevTools: 'app:open-devtools',
   appDownloadUpdate: 'app:download-update',
   appSkipUpdateVersion: 'app:skip-update-version',
+  // qBittorrent migration (renderer → main, main fetches over HTTP)
+  qbitFetchList:    'qbit:fetch-list',
+  qbitMigrateOne:   'qbit:migrate-one',
   // Install log (per-run mirror of streamed output to a local file)
   installLogStart:  'install-log:start',
   installLogAppend: 'install-log:append',

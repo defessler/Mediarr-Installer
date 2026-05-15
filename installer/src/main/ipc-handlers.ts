@@ -15,6 +15,7 @@ import * as profiles from './profile-store.js'
 import { saveTextToFile, openTextFromFile } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
 import * as installLog from './install-log.js'
+import * as qbit from './qbit-migration.js'
 import {
   getMainWindow,
   getCachedUpdateInfo,
@@ -53,6 +54,13 @@ export function registerIpcHandlers() {
   // ── SFTP ──────────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.sftpUploadDir, (_e, args) => sftp.uploadDir(args))
   ipcMain.handle(IPC.sftpWriteFile, (_e, args) => sftp.writeFile(args))
+
+  // qBittorrent migration — fetch list + per-torrent migrate. Both run
+  // in main process to avoid CORS (qBit doesn't send CORS headers) and
+  // to handle binary .torrent export bodies cleanly. Not mocked since
+  // MigrateScreen isn't part of the install flow's mock path.
+  ipcMain.handle(IPC.qbitFetchList,  (_e, args) => qbit.qbitFetchList(args))
+  ipcMain.handle(IPC.qbitMigrateOne, (_e, args) => qbit.qbitMigrateOne(args))
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.envDetect, (_e, args: { sessionId: string; targetDir?: string }) =>

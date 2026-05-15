@@ -945,12 +945,61 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
         warn("  docker compose restart tautulli")
 
 
+def _probe_usenet_ssl(host, port, timeout=5):
+    """Probe whether host:port speaks SSL/TLS. Returns:
+        True  — SSL handshake succeeded (port speaks TLS)
+        False — TCP connect worked but SSL handshake failed (port is
+                plain — common cause is using a non-SSL port like 9000
+                with SSL=on, which surfaces as the [SSL: WRONG_VERSION_
+                NUMBER] error inside SABnzbd's connection attempt)
+        None  — TCP connect itself failed (DNS / port closed / network).
+                Caller should fall back to whatever the user picked.
+
+    We use socket + ssl.wrap_socket directly instead of trying via
+    SABnzbd's test_server because the SAB API hides the SSL-failure
+    detail behind a generic 'connect failed' string. Pre-probing gives
+    us a clean signal we can act on."""
+    import socket
+    import ssl
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+    except OSError:
+        return None
+    try:
+        ctx = ssl.create_default_context()
+        # We're probing, not securely communicating — disable hostname
+        # check + cert verify so a misconfigured provider cert doesn't
+        # produce false negatives. The PROVIDER's identity is verified
+        # by SABnzbd's actual login over TLS; we just want "does the
+        # port speak TLS at all?"
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        wrapped = ctx.wrap_socket(sock, server_hostname=host)
+        wrapped.close()
+        return True
+    except (ssl.SSLError, OSError):
+        try:
+            sock.close()
+        except Exception:
+            pass
+        return False
+
+
 def configure_sabnzbd_server(base, key, host, port, user, password,
                               name='primary', connections=8, use_ssl=True):
     """Add a usenet news server to SABnzbd.
 
     Idempotent — looks up existing servers by `name` and skips if present.
     Falls back gracefully if any field is missing (logs a skip and returns).
+
+    Auto-detects SSL mismatch: if the user asked for SSL=on but a TCP-
+    level probe shows the port doesn't speak TLS, we flip to SSL=off
+    and warn. This catches the FrugalUsenet / Eweka / Newsgroup.Ninja
+    style where ports 9000-9999 are plain and 563/443/9443 are TLS —
+    users often misconfigure by leaving SSL=on after copying their
+    provider's non-SSL port from a quickstart guide. Pre-this-fix
+    behaviour: SABnzbd silently logs SSL: WRONG_VERSION_NUMBER on
+    every connection, downloads never start.
     """
     section("SABnzbd: Usenet provider")
     if not host or not user or not password:
@@ -968,6 +1017,26 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
         AUTOMATED['sab_provider'] = True
         return
 
+    # SSL pre-probe: only when the user asked for SSL. If they explicitly
+    # picked plain, respect that — they presumably know their provider
+    # better than us. (Some hosts SUPPORT both SSL and plain on the
+    # same port via STARTTLS; not worth second-guessing the user there.)
+    effective_ssl = use_ssl
+    if use_ssl:
+        probe = _probe_usenet_ssl(host, port)
+        if probe is False:
+            # TCP worked, SSL handshake failed → port is plain.
+            warn(f"USENET_SSL=on but {host}:{port} doesn't speak TLS — falling back to plain.")
+            warn(f"  (Provider's SSL port is usually 563/443/9443; plain is 119/23/9xxx.)")
+            warn(f"  Update USENET_SSL=0 in .env to silence this warning on re-runs.")
+            effective_ssl = False
+        elif probe is None:
+            # TCP connect failed altogether. Don't muddy the .env's
+            # SSL flag — let SABnzbd surface the real reachability
+            # error in its UI (host unreachable, port closed, …).
+            warn(f"Couldn't TCP-connect to {host}:{port} — server may be unreachable from this NAS.")
+            warn(f"  Pushing config anyway with USENET_SSL={'on' if use_ssl else 'off'}; check SABnzbd → Status when install finishes.")
+
     # SABnzbd's set_config for the servers section uses a flat query string.
     # Booleans become 0/1; everything else stringified.
     params = {
@@ -979,14 +1048,15 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
         'username': user,
         'password': password,
         'connections': str(connections),
-        'ssl': '1' if use_ssl else '0',
+        'ssl': '1' if effective_ssl else '0',
         'enable': '1',
         'priority': '0',
     }
     result = sab_api(base, key, params)
     if result is not None and result.get('status') is not False:
         masked = host[:max(3, len(host) - 6)] + '***'
-        ok(f"Usenet provider added: {masked}:{port} (user: {user[:3]}***, {connections} conn, SSL={'on' if use_ssl else 'off'})")
+        ssl_label = ('on' if effective_ssl else 'off') + (' (auto-flipped from on)' if (use_ssl and not effective_ssl) else '')
+        ok(f"Usenet provider added: {masked}:{port} (user: {user[:3]}***, {connections} conn, SSL={ssl_label})")
         AUTOMATED['sab_provider'] = True
     else:
         fail(f"Failed to add usenet provider {host}:{port}")
