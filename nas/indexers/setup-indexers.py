@@ -131,6 +131,11 @@ PRIVATE_TORRENT_INDEXERS = [
     # Anime
     ("AnimeTorrents",   "AnimeTorrents",   {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS"}),
     ("AnimeBytes",      "AnimeBytes",      {"username": "ANIMEBYTES_USER",    "password": "ANIMEBYTES_PASS"}),
+    # General-purpose. Cookie-based auth (no username/password) — user
+    # logs in via browser, copies the entire session cookie, pastes it
+    # into IPTORRENTS_COOKIE in .env. Prowlarr's IPTorrents indexer
+    # uses a single `cookie` field; we map our env var to that name.
+    ("IPTorrents",      "IPTorrents",      {"cookie":   "IPTORRENTS_COOKIE"}),
 ]
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────

@@ -10,9 +10,10 @@ export type WizardStep =
   | 'configure'
   | 'run'
   | 'run-update'
+  | 'migrate'
   | 'done'
 
-export type WizardMode = 'install' | 'update'
+export type WizardMode = 'install' | 'update' | 'migrate'
 
 /** Steps that absolutely need a live SSH session — they execute remote
  *  commands as soon as you land on them. App.tsx redirects to 'connect'
@@ -23,7 +24,7 @@ export type WizardMode = 'install' | 'update'
  *  there's no session, and Configure's SSH-dependent features (e.g. the
  *  user/group dropdown) fall back to manual input. */
 export const STEPS_NEEDING_SESSION: WizardStep[] = [
-  'run', 'run-update', 'done',
+  'run', 'run-update', 'migrate', 'done',
 ]
 
 interface WizardState {

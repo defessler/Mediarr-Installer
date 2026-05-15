@@ -106,11 +106,20 @@ export interface EnvFormValues {
   // ── Private torrent trackers
   AVISTAZ_USER?: string
   AVISTAZ_PASS?: string
+  /** AvistaZ "passkey" — find it under Profile → Profile → Passkey on
+   *  the AvistaZ site. Required (Prowlarr's AvistaZ indexer rejects
+   *  the add without it). The old wizard collected user + pass but
+   *  NOT pid, so AvistaZ always silently skipped. */
+  AVISTAZ_PID?: string
   HHD_API_KEY?: string
   ANIMEBYTES_USER?: string
   ANIMEBYTES_PASS?: string
   ANIMETORRENTS_USER?: string
   ANIMETORRENTS_PASS?: string
+  /** IPTorrents — cookie-based auth (paste the entire session cookie
+   *  string from a browser DevTools → Application → Cookies → iptorrents.com).
+   *  Prowlarr's IPTorrents indexer uses cookie auth, not user/pass. */
+  IPTORRENTS_COOKIE?: string
 
   // ── Bazarr subtitle providers
   OPENSUBTITLES_USER?: string
@@ -281,11 +290,13 @@ export function renderEnv(v: EnvFormValues): string {
     '# Private torrent trackers',
     line('AVISTAZ_USER', v.AVISTAZ_USER),
     line('AVISTAZ_PASS', v.AVISTAZ_PASS),
+    line('AVISTAZ_PID',  v.AVISTAZ_PID),
     line('HHD_API_KEY', v.HHD_API_KEY),
     line('ANIMEBYTES_USER', v.ANIMEBYTES_USER),
     line('ANIMEBYTES_PASS', v.ANIMEBYTES_PASS),
     line('ANIMETORRENTS_USER', v.ANIMETORRENTS_USER),
     line('ANIMETORRENTS_PASS', v.ANIMETORRENTS_PASS),
+    line('IPTORRENTS_COOKIE', v.IPTORRENTS_COOKIE),
     '',
     '# Bazarr subtitle providers',
     line('OPENSUBTITLES_USER', v.OPENSUBTITLES_USER),
@@ -376,10 +387,11 @@ export const USENET_INDEXERS: IndexerDef[] = [
 export const PRIVATE_TRACKERS: IndexerDef[] = [
   {
     id: 'AVISTAZ_USER', name: 'AvistaZ', href: 'https://avistaz.to',
-    note: 'Korean/Asian movies and TV.',
+    note: 'Korean/Asian movies and TV. Passkey (PID) is on your AvistaZ Profile page.',
     fields: [
       { key: 'AVISTAZ_USER', label: 'Username' },
       { key: 'AVISTAZ_PASS', label: 'Password', password: true },
+      { key: 'AVISTAZ_PID',  label: 'PID / Passkey' },
     ],
     category: 'tracker-private',
   },
@@ -404,6 +416,14 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
     fields: [
       { key: 'ANIMETORRENTS_USER', label: 'Username' },
       { key: 'ANIMETORRENTS_PASS', label: 'Password', password: true },
+    ],
+    category: 'tracker-private',
+  },
+  {
+    id: 'IPTORRENTS_COOKIE', name: 'IPTorrents', href: 'https://iptorrents.com',
+    note: 'General-purpose private tracker. Cookie-only auth: log in to IPT in your browser, open DevTools → Application → Cookies → iptorrents.com, copy the entire cookie string (uid=...; pass=...; etc).',
+    fields: [
+      { key: 'IPTORRENTS_COOKIE', label: 'Browser cookie string' },
     ],
     category: 'tracker-private',
   },

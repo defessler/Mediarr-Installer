@@ -112,11 +112,13 @@ export const envSchema = z.object({
   // Private trackers
   AVISTAZ_USER: optStr,
   AVISTAZ_PASS: optStr,
+  AVISTAZ_PID:  optStr,
   HHD_API_KEY: optStr,
   ANIMEBYTES_USER: optStr,
   ANIMEBYTES_PASS: optStr,
   ANIMETORRENTS_USER: optStr,
   ANIMETORRENTS_PASS: optStr,
+  IPTORRENTS_COOKIE: optStr,
 
   // Bazarr providers
   OPENSUBTITLES_USER: optStr,

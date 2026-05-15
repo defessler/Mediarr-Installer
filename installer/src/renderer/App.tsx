@@ -9,6 +9,7 @@ import { EnvDetectScreen } from './screens/EnvDetectScreen.js'
 import { ConfigureScreen } from './screens/ConfigureScreen.js'
 import { RunScreen } from './screens/RunScreen.js'
 import { UpdateRunScreen } from './screens/UpdateRunScreen.js'
+import { MigrateScreen } from './screens/MigrateScreen.js'
 import { DoneScreen } from './screens/DoneScreen.js'
 import type { AppInfo } from '../shared/ipc.js'
 
@@ -28,6 +29,13 @@ const UPDATE_STEPS: { id: WizardStep; label: string }[] = [
   { id: 'connect',    label: 'Connect' },
   { id: 'run-update', label: 'Update' },
   { id: 'done',       label: 'Done' },
+]
+
+const MIGRATE_STEPS: { id: WizardStep; label: string }[] = [
+  { id: 'welcome', label: 'Start' },
+  { id: 'connect', label: 'Connect' },
+  { id: 'migrate', label: 'Migrate' },
+  { id: 'done',    label: 'Done' },
 ]
 
 export function App() {
@@ -170,7 +178,10 @@ export function App() {
     return () => { off() }
   }, [])
 
-  const stepList = mode === 'update' ? UPDATE_STEPS : INSTALL_STEPS
+  const stepList =
+    mode === 'update'  ? UPDATE_STEPS
+    : mode === 'migrate' ? MIGRATE_STEPS
+    : INSTALL_STEPS
 
   return (
     <div className="h-full flex flex-col">
@@ -280,6 +291,7 @@ export function App() {
         {step === 'configure'  && <ConfigureScreen />}
         {step === 'run'        && <RunScreen />}
         {step === 'run-update' && <UpdateRunScreen />}
+        {step === 'migrate'    && <MigrateScreen />}
         {step === 'done'       && <DoneScreen />}
       </main>
 

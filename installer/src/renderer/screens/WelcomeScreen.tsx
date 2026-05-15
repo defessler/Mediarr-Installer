@@ -57,7 +57,7 @@ export function WelcomeScreen() {
   }
   useEffect(() => { refresh() }, [])
 
-  async function pickProfile(id: string, target: 'install' | 'update' | 'edit') {
+  async function pickProfile(id: string, target: 'install' | 'update' | 'edit' | 'migrate') {
     setBusy(id)
     try {
       const p = await window.installer.profiles.load(id)
@@ -77,6 +77,9 @@ export function WelcomeScreen() {
         setMode('install')
         setStep('configure')
       } else {
+        // install / update / migrate all route to Connect first; the
+        // ConnectScreen forwards to the right post-connect step based
+        // on mode (detect / run-update / migrate respectively).
         setMode(target)
         setStep('connect')
       }
@@ -265,6 +268,14 @@ export function WelcomeScreen() {
                   className="px-3 py-1.5 text-sm bg-sky-700/60 hover:bg-sky-600 rounded-md disabled:opacity-40"
                 >
                   Update
+                </button>
+                <button
+                  onClick={() => pickProfile(p.id, 'migrate')}
+                  disabled={busy !== null}
+                  className="px-3 py-1.5 text-sm bg-amber-700/60 hover:bg-amber-600 rounded-md disabled:opacity-40"
+                  title="Import Sonarr/Radarr library from another existing instance"
+                >
+                  Migrate
                 </button>
                 <button
                   onClick={() => setExportingFor(p)}

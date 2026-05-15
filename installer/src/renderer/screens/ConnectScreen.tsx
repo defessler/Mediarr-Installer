@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useWizard } from '../store/wizard.js'
+import { useWizard, type WizardStep } from '../store/wizard.js'
 import type { ConnectResult } from '../../shared/ipc.js'
 
 export function ConnectScreen() {
@@ -62,8 +62,14 @@ export function ConnectScreen() {
         window.installer.profiles.touch(activeProfileId).catch(() => {})
       }
       // Install flow probes the environment first; update flow jumps
-      // straight to running docker compose pull.
-      setStep(mode === 'update' ? 'run-update' : 'detect')
+      // straight to running docker compose pull; migrate flow goes
+      // straight to the library-import screen (which reads .env API
+      // keys over the freshly-established SSH session on mount).
+      const next: WizardStep =
+        mode === 'update'  ? 'run-update'
+        : mode === 'migrate' ? 'migrate'
+        : 'detect'
+      setStep(next)
     } catch (e) {
       setResult({ ok: false, error: { kind: 'unknown', message: (e as Error).message } })
     } finally {
