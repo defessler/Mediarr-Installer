@@ -250,7 +250,29 @@ def _post_indexer(base, key, name, schema):
         time.sleep(3)
         result, status, err = POST(base, key, "/api/v1/indexer", schema)
     if result is not None:
-        ok(f"{name}")
+        # Verify the indexer actually persisted. Prowlarr has been
+        # observed returning 200/201 + JSON for POST /indexer where
+        # the indexer never shows up in the UI — most often because
+        # AvistaZ-style trackers reject the cred on their side AFTER
+        # Prowlarr's initial validation passed (e.g. wrong PID
+        # silently rejected during the first scheduled search and
+        # Prowlarr quietly removes the indexer). Re-fetch the list
+        # and confirm. If missing, downgrade to warn() with the
+        # schema's field names so the user can see if a required
+        # field (like AvistaZ's pid/passkey) might be misnamed in
+        # our env-to-schema mapping.
+        verify = GET(base, key, "/api/v1/indexer") or []
+        if any(i.get('name', '').lower() == name.lower() for i in verify):
+            ok(f"{name}")
+        else:
+            schema_fields = [f.get('name', '?') for f in schema.get('fields', [])]
+            populated = [f.get('name', '?') for f in schema.get('fields', [])
+                         if f.get('value') not in (None, '', 0, False, [])]
+            warn(f"{name}: POST returned success but indexer NOT in Prowlarr's list — "
+                 f"likely a silent-reject by the indexer's auth.")
+            info(f"  Schema fields: {', '.join(schema_fields)}")
+            info(f"  Fields we populated: {', '.join(populated) or '(none)'}")
+            info(f"  Manual add via Prowlarr UI will show the actual error.")
         return
     if status == 400 and err:
         err_lower = err.lower()
@@ -391,6 +413,28 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
     display = f"{name} → {resolved_name}" if resolved_name != name else name
     _post_indexer(base, key, display, schema)
 
+def _set_field_case_insensitive(schema, field_name, value):
+    """Find a field in schema['fields'] by case-insensitive name match
+    and set its value. Returns the actual schema field name we matched
+    on (for logging) or None if no match found.
+
+    Why: Prowlarr's indexer schemas have inconsistent field-name casing
+    across implementations — AvistaZ uses `pid` (lowercase), AnimeBytes
+    uses `passkey`, some old indexers use `PassKey` (Pascal). Our
+    PRIVATE_TORRENT_INDEXERS map declares fields as lowercase. Without
+    case-insensitive matching, a `pid` env var would fail to populate
+    a schema field literally named `Pid` — the POST goes through with
+    an empty PID, Prowlarr accepts the indexer schema-validation-wise
+    but the tracker auth fails on first scheduled search, indexer
+    quietly disappears from Prowlarr's UI."""
+    field_name_lower = field_name.lower()
+    for f in schema.get('fields', []):
+        if f.get('name', '').lower() == field_name_lower:
+            f['value'] = value
+            return f.get('name')
+    return None
+
+
 def add_private_indexer(base, key, name, implementation, field_map, schemas, existing_names,
                         flaresolverr_tag_id=None, existing_indexers=None):
     """Add OR re-sync a private torrent tracker.
@@ -421,12 +465,16 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         # Build a {field_name: stored_value} dict for the indexer as it
         # exists in Prowlarr right now. Compare against the requested
         # field_map. If they all match, skip; otherwise PATCH.
-        current_fields = {f.get('name'): f.get('value') for f in current.get('fields', [])}
+        # Case-insensitive field map so AvistaZ-style schemas with
+        # `Pid` (Pascal-case) match our lowercase `pid`. Build a lower-
+        # case key index of stored values to compare against.
+        current_fields_ci = {f.get('name', '').lower(): f.get('value')
+                             for f in current.get('fields', [])}
         changed = []
         for fname, requested_value in field_map.items():
             if requested_value == '':
                 continue    # empty .env value = "don't touch"
-            stored = current_fields.get(fname)
+            stored = current_fields_ci.get(fname.lower())
             # Prowlarr returns password-type fields as empty string when
             # GETing the indexer back (security feature — they don't echo
             # creds). So we can't reliably diff passwords. Apply unless
@@ -436,13 +484,12 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         if not changed:
             skip(f"{name} (already added, creds match)")
             return
-        # Apply the new field values to the existing indexer and PUT.
-        fm = {f['name']: i for i, f in enumerate(current.get('fields', []))}
+        # Apply the new field values to the existing indexer and PUT,
+        # using case-insensitive name matching.
         for fname, fval in field_map.items():
             if fval == '':
                 continue
-            if fname in fm:
-                current['fields'][fm[fname]]['value'] = fval
+            _set_field_case_insensitive(current, fname, fval)
         # Ensure the flaresolverr tag stays attached on resync (covers
         # users on the upgrade path who never had the tag).
         if flaresolverr_tag_id is not None:
@@ -466,10 +513,20 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
     if flaresolverr_tag_id is not None:
         schema['tags'] = list(set(schema.get('tags') or []) | {flaresolverr_tag_id})
 
-    fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
+    # Set each field with case-insensitive name matching. Warn if any
+    # field we tried to set wasn't found in the schema — that's the
+    # subtle "AvistaZ silently rejected because pid wasn't populated"
+    # failure mode. Better to surface it loudly here than wait for
+    # the indexer to vanish from Prowlarr after first scheduled search.
+    missed = []
     for fname, fval in field_map.items():
-        if fname in fm:
-            schema['fields'][fm[fname]]['value'] = fval
+        if _set_field_case_insensitive(schema, fname, fval) is None:
+            missed.append(fname)
+    if missed:
+        schema_field_names = [f.get('name', '?') for f in schema.get('fields', [])]
+        warn(f"{name}: schema doesn't have field(s) {', '.join(missed)} — indexer may fail silently")
+        info(f"  Schema fields: {', '.join(schema_field_names)}")
+        info(f"  This is usually a Prowlarr-side schema change; the env-to-schema mapping needs an update.")
 
     _post_indexer(base, key, name, schema)
 
