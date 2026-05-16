@@ -414,6 +414,11 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
       { kind: 'user', name: 'heoki',          allow: true, perms: 'rwxpdDaARWcCo', inherit: 'fd--' },
       { kind: 'group', name: 'administrators', allow: true, perms: 'rwxpdDaARWc--', inherit: 'fd--' },
     ],
+    // Mock host is healthy on all three platform-readiness probes.
+    // Toggle these to test the warning-banner UI in MOCK mode.
+    tunDevice: true,
+    iptablesLoaded: true,
+    installDirFs: 'btrfs',
     nasFamily: 'synology',
     osVersion: 'DSM 7.2.1-69057',
     dataCandidates: ['/volume1', '/volume2'],

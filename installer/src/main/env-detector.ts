@@ -169,6 +169,35 @@ export async function detectEnv(
     // is up, "no curl reachability" is usually a false negative.
     'echo "===dockerhub_dns==="; getent hosts registry-1.docker.io 2>/dev/null | awk \'{print $1; exit}\' || true',
     'echo "===docker_info==="; docker info --format \'{{.ServerVersion}}\' 2>/dev/null || true',
+    // /dev/net/tun availability — required by gluetun's WireGuard
+    // tunneling. Synology DSM 7 does NOT auto-load the tun module on
+    // boot; gluetun appears to start fine but the tunnel never comes
+    // up and the healthcheck silently fails after 120s, cascading
+    // into "qBittorrent never starts" because of its depends_on:
+    // service_healthy gate. Detect early so the user can be told to
+    // run `sudo insmod /lib/modules/tun.ko` (or set up a DSM
+    // Triggered Task to load it on every boot).
+    'echo "===tun_device==="; [ -c /dev/net/tun ] && echo y || echo n',
+    // iptables kernel modules — DSM minor updates routinely wipe
+    // these out, and any docker container that needs to publish
+    // ports (i.e. all of ours) fails to start with cryptic
+    // "Operation not permitted" / iptables errors. This has been
+    // observed on virtually every DSM 7.x point release.
+    // `lsmod | grep ip_tables` returning non-empty means the
+    // modules are loaded — we just check existence. The fix
+    // (running install_iptables_modules.sh + reboot) is too risky
+    // to auto-apply; surface a clear warning so the user can run
+    // it manually.
+    'echo "===iptables_loaded==="; lsmod 2>/dev/null | grep -qE \'^ip_tables\\b\' && echo y || echo n',
+    // /config dir filesystem type — the wizard puts each arr\'s
+    // config under INSTALL_DIR (typically /volume1/docker/media/<arr>
+    // /config), which on a healthy Synology setup is local ext4/btrfs.
+    // But some users put INSTALL_DIR on an NFS or SMB mount (or
+    // remote share rclone-mounted into /volume1) — and the arrs use
+    // SQLite for their config DB, which corrupts catastrophically on
+    // network filesystems. Surface the FS type so the wizard can
+    // hard-reject before install starts.
+    'echo "===install_dir_fs==="; stat -f -c "%T" ' + tq + ' 2>/dev/null || echo unknown',
     // Data-directory probes — the source of the long-running "Sonarr
     // says root folder doesn\'t exist" trap on Synology, but a generic
     // "does the data tree exist + is it writable as my user" check on
@@ -421,6 +450,32 @@ export async function detectEnv(
     })
   }
 
+  // ── Platform readiness probes (Synology-DSM-specific gotchas) ────────────
+  //
+  // Three "host needs attention" conditions that don't surface during the
+  // install itself but make the stack quietly broken afterwards:
+  //
+  //   - tun device missing: gluetun's tunnel never comes up; WireGuard
+  //     looks healthy briefly then times out. qBittorrent's
+  //     depends_on:service_healthy gate then fails for several minutes
+  //     before the wizard's retry budget gives up. On DSM7, /dev/net/
+  //     tun doesn't auto-create — module needs explicit insmod.
+  //
+  //   - iptables modules unloaded: DSM minor updates wipe these
+  //     periodically; docker can't program NAT and "Operation not
+  //     permitted" errors trip every `docker compose up`. We detect via
+  //     `lsmod | grep ip_tables`; recovery is the community
+  //     install_iptables_modules.sh script + reboot, which is too
+  //     destructive to auto-apply.
+  //
+  //   - install dir on a network filesystem: SQLite (Sonarr/Radarr/etc
+  //     config DBs) corrupts catastrophically on NFS/CIFS/fuse mounts.
+  //     `stat -f -c %T` returns 'nfs', 'cifs', 'fuse.X', etc. when
+  //     non-local. We reject those and force the user to relocate.
+  const tunDevice = section(o, 'tun_device').trim() === 'y'
+  const iptablesLoaded = section(o, 'iptables_loaded').trim() === 'y'
+  const installDirFs = section(o, 'install_dir_fs').trim() || null
+
   return {
     docker: dockerV2OK ? 'v2' : dockerV1OK ? 'v1-legacy' : 'missing',
     volume1: volume1Out.startsWith('ok'),
@@ -445,6 +500,9 @@ export async function detectEnv(
     dataShareExists,
     dataShareWritable,
     dataShareAcl,
+    tunDevice,
+    iptablesLoaded,
+    installDirFs,
     nasFamily,
     osVersion,
     dataCandidates,

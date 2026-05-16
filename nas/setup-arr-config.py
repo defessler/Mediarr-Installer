@@ -688,15 +688,110 @@ def configure_auth(base, key, api, username, password):
         print(f"    Diagnostic — last config read from {api}: "
               f"authenticationMethod={am!r}, authenticationRequired={ar!r}, username={un!r}")
 
-def enable_hardlinks(base, key, api):
+def configure_media_management(base, key, api, recycle_label):
+    """Apply the bundle of Media Management settings that turn an arr's
+    file handling from "OK out of the box" into "won't bite you later."
+    All TRaSH-Guides-recommended baselines:
+
+      - copyUsingHardlinks=True  → atomic moves, no double disk usage.
+        (Useless if /data/downloads and /data/media are on different
+        filesystems INSIDE the container — wizard's setup-folders.sh
+        does a hardlink probe so we know this can work before we set
+        it here.)
+      - setPermissionsLinux=True  → set perms on import, so files the
+        arr writes match the rest of the library instead of inheriting
+        whatever umask the qBit/SAB containers had. Fixes the common
+        "Plex sees old files but not new ones" symptom on Synology.
+      - chmodFolder='775'  → group-writable so the user (in 'users'
+        group) can manually edit / rename files in File Station.
+      - extraFileExtensions='srt,sub,nfo'  → Bazarr drops .srt files
+        next to media; without this the arr ignores them and Plex
+        never sees subtitles. nfo for the small fraction of users
+        using Plex's local-metadata agent.
+      - autoUnmonitorPreviouslyDownloaded*=True  → when a user
+        deletes a file from /data/media (typo / wrong release / etc),
+        the arr stops trying to re-grab it. Without this, deleted
+        files come back from RSS within hours.
+      - recycleBin='/data/.recycle/<arr>' + recycleBinCleanupDays=30
+         → safety net for accidental deletes. Files live in the
+        recycle bin for 30 days before final deletion. Saved real
+        users from real "oh no" moments more than once.
+
+    Idempotent — only PUTs when any setting differs from desired."""
     config = GET(base, key, f"/{api}/config/mediamanagement")
     if config is None:
-        fail("Hardlinks: can't get config"); return
-    if config.get('copyUsingHardlinks'):
-        skip("Hardlinks (already enabled)"); return
-    config['copyUsingHardlinks'] = True
+        fail("Media management: can't get config"); return
+
+    desired = {
+        'copyUsingHardlinks': True,
+        'setPermissionsLinux': True,
+        'chmodFolder': '775',
+        'extraFileExtensions': 'srt,sub,nfo',
+        'recycleBin': f'/data/.recycle/{recycle_label}',
+        'recycleBinCleanupDays': 30,
+    }
+    # Sonarr has 'autoUnmonitorPreviouslyDownloadedEpisodes'; Radarr
+    # has 'autoUnmonitorPreviouslyDownloadedMovies'; Lidarr has none.
+    # Use whichever key exists in the response.
+    for k in ('autoUnmonitorPreviouslyDownloadedEpisodes',
+              'autoUnmonitorPreviouslyDownloadedMovies'):
+        if k in config:
+            desired[k] = True
+
+    changes = {k: v for k, v in desired.items() if config.get(k) != v}
+    if not changes:
+        skip(f"Media management settings (all {len(desired)} already correct)")
+        return
+
+    for k, v in changes.items():
+        config[k] = v
     result = PUT(base, key, f"/{api}/config/mediamanagement", config)
-    ok("Hardlinks enabled") if result else fail("Hardlinks: failed to update")
+    if result:
+        ok(f"Media management: {', '.join(sorted(changes.keys()))}")
+    else:
+        # Per-setting failures here are non-fatal — the user can fix any
+        # one of them in the UI. Surface as warn so the install proceeds.
+        warn(f"Media management: failed to apply {', '.join(sorted(changes.keys()))}")
+
+def configure_bind_address(base, key, api):
+    """Set BindAddress to '*' so sibling Docker containers (Prowlarr,
+    Bazarr, Seerr, Homepage widgets) can reach this arr by its compose
+    service name. Default in some arr versions is '127.0.0.1' which
+    only allows host-network connections — but the arrs run inside the
+    'media' bridge network, so 127.0.0.1 is the arr's own loopback,
+    not the host's. Symptom: 'Test' on Bazarr's Sonarr connection
+    fails; Prowlarr Sync silently doesn't push indexers. Fix is one
+    line in /api/v3/config/host.
+
+    The TRaSH guide flags this as a default-trap on a few image
+    variants; it's a no-op (already '*') on LinuxServer's stock arr
+    images but worth setting explicitly so we don't depend on the
+    image author's default holding."""
+    config = GET(base, key, f"/{api}/config/host")
+    if config is None:
+        fail("Bind address: can't get config"); return
+    if config.get('bindAddress') == '*':
+        skip("Bind address (already '*')"); return
+    config['bindAddress'] = '*'
+    # Same race as configure_auth — changing host config triggers a
+    # session cycle on some arr versions. Fire-and-don't-fret; verify
+    # by re-reading. Reuse the same 30s patience budget.
+    result = PUT(base, key, f"/{api}/config/host", config)
+    if result:
+        ok("Bind address: '*' (sibling containers can reach)")
+        return
+    for _ in range(10):
+        time.sleep(3)
+        verify = GET(base, key, f"/{api}/config/host")
+        if verify and verify.get('bindAddress') == '*':
+            ok("Bind address: '*' (verified after restart)")
+            return
+    warn("Bind address: couldn't auto-apply — set manually in Settings → General → Host → Bind Address = *")
+def enable_hardlinks(base, key, api):
+    """Compatibility shim — calls into the broader media-management
+    configurator. Kept so any external callers (or older entry points)
+    still resolve. Real work happens in configure_media_management."""
+    configure_media_management(base, key, api, recycle_label=api.replace('/', '_'))
 
 def get_quality_profile(base, key, api, preferred='1080p'):
     """Return (id, name) of best matching quality profile."""
@@ -869,9 +964,16 @@ def configure_sabnzbd(base, key, ini_path):
         fail(f"{label}: failed to set {value}")
         return False
 
-    # Host whitelist — all Docker service names must be allowed
+    # Host whitelist — all Docker service names must be allowed.
+    # 'gluetun' is in here even though SAB isn't behind the VPN —
+    # qBittorrent is, and qBit's "Run external program on torrent
+    # completion" callbacks come from gluetun's network namespace.
+    # If we don't whitelist it SAB returns 403 Forbidden silently and
+    # Sonarr/Radarr never see SAB completions. The wizard's previous
+    # symptom: "completed in SAB, never imported" was sometimes this.
     REQUIRED_HOSTS = {'sabnzbd', 'sonarr', 'radarr', 'lidarr',
-                      'bazarr', 'prowlarr', 'localhost', '127.0.0.1'}
+                      'bazarr', 'prowlarr', 'gluetun',
+                      'localhost', '127.0.0.1'}
     cur = sab_api(base, key, {'mode': 'get_config', 'section': 'misc',
                                'keyword': 'host_whitelist'})
     existing_raw = (cur or {}).get('config', {}).get('misc', {}).get('host_whitelist', '')
@@ -971,38 +1073,102 @@ def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
         warn("LAN_IP not set in .env — can't reach Plex API")
         return
     # Plex's REST endpoint for preferences. PUT keys as query string,
-    # auth via X-Plex-Token header (or query string; we use header).
+    # auth via X-Plex-Token header.
     plex_base = f"http://{lan_ip}:32400"
-    params = urlencode({
+
+    def _plex_prefs_put(name, params_dict):
+        """One PUT to /:/prefs with the supplied params. Returns True
+        on 2xx, False on any failure (with a logged warning). Plex's
+        prefs endpoint accepts batches via repeated query-string keys,
+        but in practice setting one preference per call is what its
+        web UI does and what we'll do too — keeps the response
+        attributable when something fails."""
+        try:
+            req = Request(
+                f"{plex_base}/:/prefs?{urlencode(params_dict)}",
+                method='PUT',
+                headers={
+                    'X-Plex-Token': plex_token,
+                    'Accept':       'application/json',
+                    'User-Agent':   'setup-arr-config/1.0',
+                },
+            )
+            with urlopen(req, timeout=10) as resp:
+                resp.read()
+            return True
+        except HTTPError as e:
+            if e.code == 401:
+                warn(f"Plex API rejected our token on {name} — server may not be fully claimed yet")
+                return False
+            warn(f"Plex prefs PUT ({name}) returned HTTP {e.code}")
+            return False
+        except Exception as e:
+            warn(f"Couldn't reach Plex API at {plex_base} ({e}) — skipping {name}")
+            return False
+
+    # 1. Manual Port Mapping — fixes the "Indirect connection" relay
+    # symptom (see top of function for full why).
+    if _plex_prefs_put("Manual port mapping", {
         'ManualPortMappingMode': '1',
         'ManualPortMappingPort': str(public_port),
-    })
-    try:
-        req = Request(
-            f"{plex_base}/:/prefs?{params}",
-            method='PUT',
-            headers={
-                'X-Plex-Token': plex_token,
-                'Accept':       'application/json',
-                'User-Agent':   'setup-arr-config/1.0',
-            },
-        )
-        with urlopen(req, timeout=10) as resp:
-            resp.read()
-        ok(f"Manual port mapping enabled (Plex will advertise [public-ip]:{public_port} to clients)")
-        info("If clients still report 'indirect' after a minute:")
-        info("  1. Settings → Remote Access in Plex web UI → 'Retry'")
-        info("  2. Verify port 32400 is forwarded on your router to this NAS")
-        info("  3. Some ISPs (CGNAT) block inbound — only Plex Relay works in that case")
-    except HTTPError as e:
-        if e.code == 401:
-            warn("Plex API rejected our token — server may not be fully claimed yet")
-            warn("  Re-run setup.sh once Plex has finished its first-run sequence")
-        else:
-            warn(f"Plex prefs PUT returned HTTP {e.code} — set Manual Port Mapping manually in Plex web UI")
-    except Exception as e:
-        warn(f"Couldn't reach Plex API at {plex_base} ({e})")
-        info("  Set Manual Port Mapping manually: Plex → Settings → Remote Access")
+    }):
+        ok(f"Manual port mapping enabled ([public-ip]:{public_port})")
+    info("If clients still report 'indirect' after a minute:")
+    info("  1. Settings → Remote Access in Plex web UI → 'Retry'")
+    info("  2. Verify port 32400 is forwarded on your router to this NAS")
+    info("  3. Some ISPs (CGNAT) block inbound — only Plex Relay works in that case")
+
+    # 2. Quality-of-life preferences that TRaSH Guides + the Plex
+    # community consistently recommend for a NAS-hosted, arr-managed
+    # library. Default Plex behavior burns a LOT of NAS I/O on tasks
+    # that aren't useful in this stack:
+    #
+    #   GenerateBIFBehavior=never
+    #     Plex's video preview thumbnails (the strip you see when
+    #     scrubbing in playback). Generating them re-encodes every
+    #     video in the library — hours/days of 100% CPU + sustained
+    #     disk read on a NAS. Most users don't notice them missing.
+    #     Turn off; users who DO want them can flip it back per-library.
+    #
+    #   EmptyTrashAfterScan=0
+    #     When Plex scans and sees a file is "missing" (e.g. Sonarr
+    #     renamed it mid-scan), it deletes the metadata, history,
+    #     watched state, ratings. With Sonarr/Radarr managing files
+    #     and Plex Connect notifications doing partial scans, the
+    #     "missing" window is constantly happening — and the user's
+    #     watched state evaporates. Source of truth for what's in
+    #     the library = the arrs, not Plex. Disable.
+    #
+    #   ScheduledLibraryUpdatesEnabled=0
+    #     Periodic library scans pound the NAS for no benefit when
+    #     Sonarr/Radarr Connect → Plex notifications already trigger
+    #     partial scans the moment a file lands. Disable scheduled
+    #     scan; rely on the notification.
+    #
+    #   ScanIdleScanTasksEnabled=0
+    #     Idle scan tasks include the BIF thumbnail generation above,
+    #     plus chapter art extraction and various metadata refresh
+    #     loops. None are useful in an arr-managed stack — the arrs
+    #     handle metadata via their own metadata providers.
+    #
+    #   LowPriorityScanner=1
+    #     When a scan DOES run, run it nice'd so it doesn't drag down
+    #     active playback or other NAS workloads.
+    qol = [
+        ('GenerateBIFBehavior',          'never',  'Video preview thumbnails (BIF)'),
+        ('EmptyTrashAfterScan',          '0',      'Empty trash after scan'),
+        ('ScheduledLibraryUpdatesEnabled','0',     'Scheduled library scans'),
+        ('ScanIdleScanTasksEnabled',     '0',      'Idle scan tasks'),
+        ('LowPriorityScanner',           '1',      'Scanner runs at low priority'),
+    ]
+    applied = 0
+    for setting, value, label in qol:
+        if _plex_prefs_put(label, {setting: value}):
+            applied += 1
+    if applied:
+        ok(f"Plex quality-of-life prefs applied ({applied}/{len(qol)} settings — see comments in setup-arr-config.py for why each)")
+    else:
+        info("(Plex QoL prefs skipped — none applied; check the warnings above)")
 
 
 def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
@@ -2283,7 +2449,8 @@ def main():
                                     container="sonarr")
         elif is_enabled(env, 'ENABLE_SABNZBD') and not SABNZBD_KEY:
             warn("SABnzbd key not found — skipping")
-        enable_hardlinks(SONARR, SONARR_KEY, "api/v3")
+        configure_media_management(SONARR, SONARR_KEY, "api/v3", recycle_label="sonarr")
+        configure_bind_address(SONARR, SONARR_KEY, "api/v3")
         if ARR_USER and ARR_PASS:
             configure_auth(SONARR, SONARR_KEY, "api/v3", ARR_USER, ARR_PASS)
 
@@ -2317,7 +2484,8 @@ def main():
                                     container="radarr")
         elif is_enabled(env, 'ENABLE_SABNZBD') and not SABNZBD_KEY:
             warn("SABnzbd key not found — skipping")
-        enable_hardlinks(RADARR, RADARR_KEY, "api/v3")
+        configure_media_management(RADARR, RADARR_KEY, "api/v3", recycle_label="radarr")
+        configure_bind_address(RADARR, RADARR_KEY, "api/v3")
         if ARR_USER and ARR_PASS:
             configure_auth(RADARR, RADARR_KEY, "api/v3", ARR_USER, ARR_PASS)
 
@@ -2391,7 +2559,8 @@ def main():
                                     container="lidarr")
         elif is_enabled(env, 'ENABLE_SABNZBD') and not SABNZBD_KEY:
             warn("SABnzbd key not found — skipping")
-        enable_hardlinks(LIDARR, LIDARR_KEY, "api/v1")
+        configure_media_management(LIDARR, LIDARR_KEY, "api/v1", recycle_label="lidarr")
+        configure_bind_address(LIDARR, LIDARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 
@@ -2414,6 +2583,12 @@ def main():
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Lidarr", "Lidarr",
                              "LidarrSettings", LIDARR_INT, LIDARR_KEY,
                              [3000, 3010, 3030, 3040, 3050])
+        # Prowlarr doesn't have a /config/mediamanagement endpoint
+        # (no media files of its own), but it DOES have the same Bind
+        # Address pitfall as the arrs — Sync Apps tests fail if
+        # bindAddress is 127.0.0.1 because the wizard's verify call
+        # hits the container's loopback, not the host's.
+        configure_bind_address(PROWLARR, PROWLARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(PROWLARR, PROWLARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 

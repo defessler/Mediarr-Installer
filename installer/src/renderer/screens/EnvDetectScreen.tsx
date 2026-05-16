@@ -555,6 +555,69 @@ export function EnvDetectScreen() {
             )}
           </section>
 
+          {/* Platform readiness — three Synology-DSM7-specific conditions
+              that don't surface during install but silently break the
+              stack afterwards. None block Continue: tun module is only
+              needed for VPN; iptables modules are normally loaded;
+              non-local filesystem is rare. Warn-not-block so users can
+              proceed with their eyes open. */}
+          {(r.tunDevice === false || r.iptablesLoaded === false ||
+            (r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs))) && (
+            <section className="rounded-md border border-amber-900/50 bg-amber-950/30 p-4 text-sm">
+              <h2 className="font-medium text-amber-200 mb-2">Platform readiness</h2>
+              {r.tunDevice === false && (
+                <div className="mb-2">
+                  <div className="text-amber-200">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-2 align-middle"/>
+                    <span className="font-mono">/dev/net/tun</span> not present
+                  </div>
+                  <p className="text-amber-200/80 mt-1 ml-5">
+                    Gluetun&apos;s WireGuard tunnel needs this device. On DSM 7 the tun
+                    module isn&apos;t loaded by default — Gluetun starts but the tunnel
+                    silently never connects, cascading into qBittorrent never
+                    starting. Fix once:
+                  </p>
+                  <pre className="ml-5 mt-1 text-xs bg-black/40 rounded p-2 font-mono">
+sudo insmod /lib/modules/tun.ko
+{'\n'}# then in DSM: Control Panel → Task Scheduler → Create
+# Triggered Task → "Boot-up" → User-defined script:
+{'\n'}#   insmod /lib/modules/tun.ko</pre>
+                </div>
+              )}
+              {r.iptablesLoaded === false && (
+                <div className="mb-2">
+                  <div className="text-amber-200">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-2 align-middle"/>
+                    iptables kernel modules not loaded
+                  </div>
+                  <p className="text-amber-200/80 mt-1 ml-5">
+                    DSM minor updates routinely wipe these out, after which Docker
+                    can&apos;t program NAT and every <code className="font-mono">docker compose up</code> fails
+                    with &quot;Operation not permitted.&quot; Recovery script:
+                  </p>
+                  <pre className="ml-5 mt-1 text-xs bg-black/40 rounded p-2 font-mono">
+git clone https://github.com/telnetdoogie/synology-docker.git
+{'\n'}sudo bash synology-docker/install_iptables_modules.sh
+{'\n'}# then reboot the NAS</pre>
+                </div>
+              )}
+              {r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs) && (
+                <div className="mb-2">
+                  <div className="text-rose-200">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-400 mr-2 align-middle"/>
+                    Install dir is on <span className="font-mono">{r.installDirFs}</span> — SQLite will corrupt
+                  </div>
+                  <p className="text-rose-200/80 mt-1 ml-5">
+                    The arrs (Sonarr/Radarr/etc) use SQLite for their config DBs.
+                    SQLite corrupts catastrophically on network filesystems (NFS, CIFS, fuse mounts).
+                    Move <code className="font-mono">INSTALL_DIR</code> to local storage like
+                    <code className="font-mono"> /volume1/docker/media</code>.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Bring-your-own panel — when the NAS already has stack-known
               container names running, let the user opt those services
               out of THIS install with one click each. Use case:

@@ -235,6 +235,43 @@ services:
       - SERVER_COUNTRIES=${VPN_COUNTRIES}
       # Allow LAN to reach the qBittorrent WebUI through the VPN container
       - FIREWALL_INPUT_PORTS=49156
+      # FIREWALL_OUTBOUND_SUBNETS = the LAN subnet(s) + the local
+      # docker bridge subnet, which gluetun explicitly ALLOWS to bypass
+      # the killswitch. Without this, sibling containers reaching qBit
+      # (e.g. Sonarr → qBit's WebUI via gluetun's port mapping) get
+      # blocked because their reply packets try to egress via the VPN
+      # tunnel and Docker NAT loses them. Top-cited gluetun question
+      # (issue #1174, discussion #1744). Auto-defaulted to common LAN
+      # ranges + Docker's default bridge; user can override in .env.
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNETS:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}
+      # HEALTH_VPN_DURATION_INITIAL: how long the healthcheck waits
+      # for the tunnel to come up before declaring "unhealthy".
+      # Default (6s in gluetun) is well below realistic WireGuard
+      # handshake + DNS-warmup time on most home connections.
+      # Containers in `network_mode: service:gluetun` (qBit) refuse
+      # to start until gluetun is healthy, so a too-short initial
+      # window cascades into qBit-never-starts. 120s is generous and
+      # matches gluetun maintainers' recommendation in issues #2848,
+      # #2724.
+      - HEALTH_VPN_DURATION_INITIAL=120s
+      # When gluetun reconnects (handshake reset, port-forward TTL),
+      # qBit's listening port changes underneath it — but qBit caches
+      # the old port and shows as "Firewalled" forever. Gluetun's
+      # VPN_PORT_FORWARDING_UP_COMMAND runs every time the forwarded
+      # port changes, so we use it to push the new port into qBit
+      # via the WebUI API. Requires:
+      #   1. qBit's WebUI is reachable from gluetun's own IP. Since
+      #      qBit is IN gluetun's namespace, http://localhost:49156
+      #      works.
+      #   2. qBit's AuthSubnetWhitelist includes 127.0.0.1 (it does
+      #      via 10.0.0.0/8 which gluetun's interfaces use, BUT we
+      #      also set BypassAuthSubnetWhitelistOnLocalhost via setup-
+      #      folders.sh so localhost auth-bypasses regardless).
+      # Only fires when VPN_PORT_FORWARDING=on (provider supports it).
+      # gluetun ignores the env var when no port forwarding is in
+      # play. Source: gluetun-wiki/setup/advanced/vpn-port-forwarding
+      - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING:-off}
+      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data="json={\"listen_port\":{{PORTS}}}" "http://127.0.0.1:49156/api/v2/app/setPreferences" 2>/dev/null'
     ports:
       - ${LAN_IP}:49156:49156
       - 6881:6881

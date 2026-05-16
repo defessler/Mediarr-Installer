@@ -145,6 +145,28 @@ export interface EnvDetectResult {
     /** Inheritance flags, e.g. "fd--" = file+directory inherit. */
     inherit: string
   }[]
+  /** /dev/net/tun present? Gluetun's WireGuard tunnel requires it.
+   *  Synology DSM 7 doesn't load the tun module on boot — on a fresh
+   *  install, gluetun comes up but the tunnel silently never connects,
+   *  cascading into qBittorrent never starting (depends_on:
+   *  service_healthy gate). Fix is `sudo insmod /lib/modules/tun.ko`
+   *  plus a Triggered Task to do it on every boot. We surface this on
+   *  the Detect screen as a warning when VPN_ENABLED is going to be
+   *  used. */
+  tunDevice: boolean
+  /** iptables kernel modules currently loaded? `lsmod | grep ^ip_tables`
+   *  — DSM minor updates wipe these out periodically and every Docker
+   *  port-publish then fails with "Operation not permitted." Surface as
+   *  a warning; the fix (telnetdoogie's install_iptables_modules.sh +
+   *  reboot) is too disruptive to auto-apply. */
+  iptablesLoaded: boolean
+  /** Filesystem type of the install dir (from `stat -f -c %T`). SQLite
+   *  configs (Sonarr/Radarr/Lidarr/Prowlarr/Bazarr) corrupt
+   *  catastrophically when stored on NFS/CIFS/fuse mounts. We hard-
+   *  reject anything that isn't a local filesystem. Common values:
+   *  'ext2/ext3' (Linux ext4), 'btrfs' (Synology SHR/BTRFS),
+   *  'nfs', 'cifs', 'fuseblk', 'fuse.mergerfs'. */
+  installDirFs: string | null
   /** Detected NAS family. Drives sensible defaults for INSTALL_DIR
    *  and DATA_ROOT, and gates family-specific features (Synology ACL
    *  via synoacltool, QNAP qpkg paths, Unraid /mnt/user, etc.). */

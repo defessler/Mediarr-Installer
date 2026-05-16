@@ -404,6 +404,95 @@ if is_enabled ENABLE_LIDARR; then
     check_media "lidarr" "/data/Media/Music"          "Music"
 fi
 
+# ── Indexer Smoke Test ────────────────────────────────────────────────────────
+#
+# "Containers are running" + "media folders have files in them" is the
+# old completeness bar, and it's why the post-deploy could pass while
+# the user actually had ZERO working indexers (CloudFlare blocks,
+# stale URLs, missing Flaresolverr tags, expired private-tracker creds).
+# This section adds an end-to-end indexer health check.
+#
+# We don't search for a specific guaranteed-available title (that'd
+# need updating as the canary changes); we just ask Prowlarr to TEST
+# each configured indexer (Prowlarr's own indexer-test endpoint does
+# the same connectivity probe its UI does) and report how many pass.
+# 0/N passing is a hard fail — the user has no working source.
+section "Indexer Health"
+PROWLARR_KEY=$(env_val PROWLARR_API_KEY)
+# Prowlarr's key isn't always in .env (auto-discovered from config.xml
+# by setup-arr-config.py). Fall back to extracting from config.xml.
+if [ -z "$PROWLARR_KEY" ] && [ -f "$SCRIPT_DIR/prowlarr/config/config.xml" ]; then
+    PROWLARR_KEY=$(sed -n 's|.*<ApiKey>\([^<]*\)</ApiKey>.*|\1|p' "$SCRIPT_DIR/prowlarr/config/config.xml" 2>/dev/null | head -1)
+fi
+if [ -z "$PROWLARR_KEY" ]; then
+    warn "Prowlarr API key not found — skipping indexer health check"
+elif ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not available — skipping indexer health check"
+else
+    PROWLARR_URL="http://$LAN_IP:49150"
+    # Each indexer needs an explicit test (POST /api/v1/indexer/test
+    # with the indexer config). We list, then test each, then count.
+    # 20s per indexer × 10 indexers = up to 200s worst case; in
+    # practice each test returns in 2-5s.
+    INDEXER_LIST=$(curl -sS -m 10 -H "X-Api-Key: $PROWLARR_KEY" \
+        "$PROWLARR_URL/api/v1/indexer" 2>/dev/null || echo '[]')
+    TOTAL=$(echo "$INDEXER_LIST" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+    if [ "$TOTAL" -eq 0 ]; then
+        fail "Prowlarr has 0 indexers configured — Sonarr/Radarr/Lidarr have nothing to search"
+        echo "    Re-run setup.sh to install the default indexer set, or add some manually:"
+        echo "      Prowlarr → Indexers → Add Indexer"
+    else
+        echo "  Testing $TOTAL indexer(s) — this can take 30-60s..."
+        TEST_RESULTS=$(echo "$INDEXER_LIST" | python3 -c "
+import sys, json, urllib.request, urllib.error
+indexers = json.load(sys.stdin)
+working, failed = 0, []
+for ix in indexers:
+    body = json.dumps(ix).encode()
+    req = urllib.request.Request(
+        '$PROWLARR_URL/api/v1/indexer/test',
+        data=body, method='POST',
+        headers={'X-Api-Key': '$PROWLARR_KEY', 'Content-Type': 'application/json'},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=20)
+        working += 1
+    except Exception as e:
+        msg = ''
+        if isinstance(e, urllib.error.HTTPError):
+            try:
+                err = json.loads(e.read().decode(errors='replace'))
+                if isinstance(err, list) and err:
+                    msg = err[0].get('errorMessage','') or err[0].get('detailedDescription','')
+                elif isinstance(err, dict):
+                    msg = err.get('message','') or err.get('errorMessage','')
+            except Exception:
+                pass
+        failed.append((ix.get('name','?'), msg[:80] if msg else str(e)[:80]))
+print(f'{working}|{len(indexers)}|' + ';'.join(f'{n}:{m}' for n,m in failed))
+" 2>/dev/null || echo "0|0|")
+        WORKING=$(echo "$TEST_RESULTS" | cut -d'|' -f1)
+        FAILED_LIST=$(echo "$TEST_RESULTS" | cut -d'|' -f3)
+        if [ "$WORKING" -eq "$TOTAL" ]; then
+            ok "All $TOTAL indexers responding to test searches"
+        elif [ "$WORKING" -gt 0 ]; then
+            warn "$WORKING of $TOTAL indexers working — Sonarr/Radarr will only see results from those $WORKING"
+            if [ -n "$FAILED_LIST" ]; then
+                echo "    Failed indexers:"
+                echo "$FAILED_LIST" | tr ';' '\n' | sed 's/^/      - /'
+            fi
+        else
+            fail "0 of $TOTAL indexers passed test — search will return no results"
+            if [ -n "$FAILED_LIST" ]; then
+                echo "    Failed indexers:"
+                echo "$FAILED_LIST" | tr ';' '\n' | sed 's/^/      - /'
+            fi
+            echo "    Common causes: CloudFlare block (check Flaresolverr tag), stale indexer URL,"
+            echo "    expired private-tracker credentials. Re-run setup.sh to re-apply Flaresolverr tags."
+        fi
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 echo ""
