@@ -450,14 +450,39 @@ export function RunScreen() {
       const tq = shellQuote(targetDir)
       const prep = await window.installer.ssh.exec({
         sessionId,
+        // Default 60s timeout is too short here: chown -R / chmod -R
+        // on the install dir walks the entire tree, which includes
+        // Plex's config (hundreds of thousands of metadata files +
+        // transcoding cache) and qBit's resume data. On Synology
+        // spinning rust this routinely takes 2-5 minutes, and the
+        // default timeout fires before chown finishes — the wizard
+        // mis-reports it as a sudo-password failure even though sudo
+        // worked fine and chown is just slow. 10 minutes is plenty
+        // for any reasonable home Plex library.
+        timeoutMs: 600_000,
         cmd:
           // use a subshell + set -x for inline diagnostics
           `set -e; ` +
           `mkdir -p ${tq}; ` +
           `OWNER_UID="\${SUDO_UID:-$(id -u)}"; OWNER_GID="\${SUDO_GID:-$(id -g)}"; ` +
           `echo "[prep] target=${targetDir} owner_uid=$OWNER_UID owner_gid=$OWNER_GID effective=$(id -u):$(id -g)"; ` +
-          `chown -R "$OWNER_UID:$OWNER_GID" ${tq}; ` +
-          `chmod -R u+rwX,g+rwX ${tq}; ` +
+          // Skip the recursive walk on re-installs where ownership is
+          // already correct — that's the slow part, and on idempotent
+          // re-runs it's pure waste. We chown the TOP-level dir
+          // unconditionally (cheap) and only recurse when at least
+          // one of the immediate child paths doesn't match. find -mount
+          // confines to the same filesystem (avoids descending into
+          // bind-mounted /data inside the container's config etc).
+          `chown "$OWNER_UID:$OWNER_GID" ${tq}; ` +
+          `chmod u+rwX,g+rwX ${tq}; ` +
+          `MISMATCH=$(find ${tq} -mindepth 1 -maxdepth 2 -mount \\( ! -uid "$OWNER_UID" -o ! -gid "$OWNER_GID" \\) -print -quit 2>/dev/null); ` +
+          `if [ -n "$MISMATCH" ]; then ` +
+          `  echo "[prep] some entries need re-chowning (first mismatch: $MISMATCH) — running recursive chown..."; ` +
+          `  chown -R "$OWNER_UID:$OWNER_GID" ${tq}; ` +
+          `  chmod -R u+rwX,g+rwX ${tq}; ` +
+          `else ` +
+          `  echo "[prep] ownership already correct on all children — skipping recursive chown"; ` +
+          `fi; ` +
           `echo "[prep] now owned by $(stat -c '%u:%g' ${tq}) perms=$(stat -c '%a' ${tq})"; ` +
           // Sanity-test write access AS the original user. If the SSH
           // user genuinely can't write here, fail now with a clear msg

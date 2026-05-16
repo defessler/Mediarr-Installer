@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
+import { TroubleshootingModal } from './components/TroubleshootingModal.js'
 import { useProfileAutosave } from './hooks/useProfileAutosave.js'
 import { WelcomeScreen } from './screens/WelcomeScreen.js'
 import { ConnectScreen } from './screens/ConnectScreen.js'
@@ -48,6 +49,12 @@ export function App() {
   const loadFromProfile = useWizard((s) => s.loadFromProfile)
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [profileHydrated, setProfileHydrated] = useState(false)
+  // Help modal — opens from the footer button. Opens to the full list
+  // of troubleshooting entries, searchable + copy-to-clipboard. Useful
+  // from any screen, hence wired here at App level rather than inside
+  // a specific screen.
+  const [helpOpen, setHelpOpen] = useState(false)
+  const targetDir = useWizard((s) => s.targetDir)
 
   // On launch, the persist middleware restores {step, mode,
   // activeProfileId, activeProfileLabel}, but the connection / config /
@@ -68,6 +75,7 @@ export function App() {
             connection: p.connection,
             config: p.config as Record<string, string>,
             targetDir: p.targetDir,
+            migrate: p.migrate,
           })
         } else {
           // Profile referenced in persisted state was deleted on disk.
@@ -315,6 +323,14 @@ export function App() {
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={() => setHelpOpen(true)}
+              className="px-2 py-0.5 rounded bg-emerald-700/50 hover:bg-emerald-600/60 text-emerald-200 font-medium"
+              title="Common issues + the exact fix for each — searchable, copy-to-clipboard"
+            >
+              ? Help
+            </button>
+            <button
+              type="button"
               onClick={() =>
                 window.installer.app.openLog().then((r) => {
                   if (r.error) {
@@ -364,6 +380,15 @@ export function App() {
       {/* Global toast tray — anything that calls reportError() or pushes
           to useErrors() shows up here, on every screen. */}
       <ToastTray />
+
+      {/* Troubleshooting / help modal — opens from the footer Help
+          button. Renders nothing when closed; no perf cost. */}
+      {helpOpen && (
+        <TroubleshootingModal
+          installDir={targetDir}
+          onClose={() => setHelpOpen(false)}
+        />
+      )}
     </div>
   )
 }

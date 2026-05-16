@@ -257,8 +257,11 @@ function execOnce(
       reject(new Error(
         `Remote command timed out after ${timeoutMs / 1000}s.\n` +
         `Command: ${cmd.length > 200 ? cmd.slice(0, 200) + '…' : cmd}\n` +
-        `If this used sudo, the most likely cause is a wrong sudo password ` +
-        `(or no password supplied for a non-root SSH user).`,
+        `Most common causes:\n` +
+        `  • The command is genuinely slow on this NAS (e.g. recursive ` +
+        `chown over a large Plex config dir — bump the caller's timeoutMs).\n` +
+        `  • Wrong sudo password (or no password supplied for a non-root SSH user).\n` +
+        `  • Docker daemon is wedged (try: docker ps).`,
       ))
     }, timeoutMs)
     const finish = (val: ExecResult | Error) => {
@@ -334,6 +337,11 @@ export async function exec(args: {
    *  to pipe file contents into `cat > remote` instead of cramming them
    *  through argv. */
   stdinBytes?: Buffer
+  /** Override the default 60s exec timeout. Callers can supply this
+   *  for commands that legitimately take longer than 60s on slow NAS
+   *  hardware — typically recursive chown/chmod on huge config trees
+   *  (Plex metadata can be hundreds of thousands of files). */
+  timeoutMs?: number
 }): Promise<ExecResult> {
   const sess = sessions.get(args.sessionId)
   if (!sess) throw new Error(`unknown sessionId ${args.sessionId}`)
@@ -361,6 +369,7 @@ export async function exec(args: {
   return execOnce(sess.client, wrapped, {
     stdinPassword: needsSudoPassword ? (sess.config.sudoPassword ?? '') : undefined,
     stdinBytes: args.stdinBytes,
+    timeoutMs: args.timeoutMs,
   })
 }
 

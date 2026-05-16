@@ -34,7 +34,16 @@ const installer = {
       ipcRenderer.invoke(IPC.sshConnect, cfg),
     disconnect: (sessionId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.sshDisconnect, { sessionId }),
-    exec: (args: { sessionId: string; cmd: string; sudo?: boolean }): Promise<ExecResult> =>
+    exec: (args: {
+      sessionId: string
+      cmd: string
+      sudo?: boolean
+      /** Override the default 60s timeout (in milliseconds). Use for
+       *  commands that legitimately need longer — e.g. recursive
+       *  chown/chmod on a Plex config dir with hundreds of thousands
+       *  of metadata files, or a fresh image pull. */
+      timeoutMs?: number
+    }): Promise<ExecResult> =>
       ipcRenderer.invoke(IPC.sshExec, args),
     execStream: (args: {
       sessionId: string
