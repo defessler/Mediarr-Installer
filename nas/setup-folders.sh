@@ -384,6 +384,15 @@ WebUI\\Username=$QB_USER
 WebUI\\Password_PBKDF2="$HASH"
 WebUI\\AuthSubnetWhitelistEnabled=true
 WebUI\\AuthSubnetWhitelist=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+# HostHeaderValidation guards qBit against DNS-rebinding attacks by
+# rejecting requests whose Host header doesn't match a known-good
+# value. In a NAS install reached from multiple hostnames (LAN IP,
+# .local mDNS, Tailscale name, etc.), the strict default is a
+# silent-401 trap that no error log explains clearly. With the
+# AuthSubnetWhitelist already restricting trust to LAN ranges, this
+# extra layer just causes friction. Turn it off — the whitelist is
+# the actual security boundary.
+WebUI\\HostHeaderValidation=false
 
 [ScanDirs]
 size=1
