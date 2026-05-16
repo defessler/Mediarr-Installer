@@ -264,7 +264,22 @@ def main():
         if missing:
             skip(f"{display} (add {', '.join(missing)} to .env to enable)")
             continue
-        to_add.append((display, provider_id, {settings_key: creds}))
+        # IMPORTANT: pass `creds` directly (the field dict), NOT
+        # `{settings_key: creds}`. enable_providers() merges
+        # provider_settings INTO settings[provider_id]; if we wrap creds
+        # in a {settings_key: ...} dict it gets nested one level too
+        # deep — settings[provider_id][provider_id] = creds instead of
+        # settings[provider_id] = creds. Bazarr's validator then
+        # rejects the malformed structure with HTTP 500 "Internal
+        # Server Error" on the POST that saves all-providers-at-once,
+        # silently undoing every account-provider enable in the batch.
+        # Real install log (commit ae33d38-era): all 3 account
+        # providers reported ✔ then "Failed to save settings" 500.
+        #
+        # In our current data model settings_key always equals
+        # provider_id, so the parameter is redundant — keep it for
+        # future-flexibility but ignore it here.
+        to_add.append((display, provider_id, creds))
 
     if to_add:
         enable_providers(BAZARR, BAZARR_KEY, to_add)
