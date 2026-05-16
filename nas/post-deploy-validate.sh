@@ -87,6 +87,29 @@ for container in "${CONTAINERS[@]}"; do
     fi
 done
 
+# ── Gluetun ↔ qBittorrent coupling ────────────────────────────────────────────
+#
+# When VPN_ENABLED=true qBittorrent is configured with `network_mode:
+# service:gluetun`, which Docker enforces hard: if gluetun is down or
+# its network namespace has been recreated, ANY attempt to start /
+# restart qBittorrent (compose, docker-cli, or Synology Container
+# Manager's "Restart" button) errors out with:
+#
+#   container must join at least one network
+#
+# That state is otherwise silent — the container check above just shows
+# "qbittorrent is not running" without a cause. Catch it here so the
+# user sees the actual fix.
+if is_enabled ENABLE_QBITTORRENT && vpn_on; then
+    GLUETUN_STATE=$(docker inspect -f '{{.State.Status}}' gluetun 2>/dev/null || echo missing)
+    QBIT_STATE=$(docker inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
+    if [ "$GLUETUN_STATE" != "running" ] && [ "$QBIT_STATE" != "running" ]; then
+        warn "qBittorrent can't start — gluetun is $GLUETUN_STATE. Fix:"
+        warn "    bash $SCRIPT_DIR/restart-qbit.sh"
+        warn "  (or check gluetun's VPN credentials:  docker compose logs gluetun --tail 50)"
+    fi
+fi
+
 # ── Dashboard Pages ───────────────────────────────────────────────────────────
 
 section "Dashboard Pages"
@@ -125,6 +148,150 @@ check_url_lenient() {
     fi
 }
 
+# Diagnostic check for qBittorrent. A plain HTTP-000 fail is unhelpful
+# here because qBit can be in three different broken states with three
+# different fixes, and the user shouldn't have to docker-inspect to
+# tell them apart:
+#
+#   (a) Container running, WebUI not bound yet  — give it a minute,
+#       re-run validate. Common right at end-of-install when the LSIO
+#       init scripts haven't finished applying qBittorrent.conf, or
+#       when gluetun's WireGuard handshake is still in flight.
+#   (b) Container running, gluetun unhealthy    — qBit shares
+#       gluetun's network namespace, so when gluetun's VPN tunnel
+#       fails (bad WG key, etc.) qBit's WebUI never becomes
+#       reachable. Fix: restart-qbit.sh after fixing gluetun, OR
+#       check `docker compose logs gluetun --tail 50`.
+#   (c) Container not running                   — install left it
+#       wedged (the install log usually has a "qBittorrent's WebUI
+#       isn't responding after 80s of retries" warning). Recovery is
+#       restart-qbit.sh which does an orderly gluetun→qbit recreate.
+check_qbit() {
+    local url="http://$LAN_IP:49156"
+    local label="qBittorrent"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url")
+    if [[ "$http_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]; then
+        ok "$label ($url) — HTTP $http_code"
+        return
+    fi
+    local qbit_state gluetun_state gluetun_health
+    qbit_state=$(docker inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
+    gluetun_state=$(docker inspect -f '{{.State.Status}}' gluetun 2>/dev/null || echo missing)
+    gluetun_health=$(docker inspect -f '{{.State.Health.Status}}' gluetun 2>/dev/null || echo none)
+    if [ "$qbit_state" = "missing" ]; then
+        fail "$label ($url) — container missing. Run: bash $SCRIPT_DIR/restart-qbit.sh"
+    elif [ "$qbit_state" != "running" ]; then
+        fail "$label ($url) — container is $qbit_state. Run: bash $SCRIPT_DIR/restart-qbit.sh"
+    elif vpn_on && [ "$gluetun_state" != "running" ]; then
+        fail "$label ($url) — gluetun is $gluetun_state (qBit shares its network)."
+        fail "    Run: bash $SCRIPT_DIR/restart-qbit.sh   (or check 'docker compose logs gluetun --tail 50')"
+    elif vpn_on && [ "$gluetun_health" = "unhealthy" ]; then
+        fail "$label ($url) — gluetun is unhealthy (qBit shares its network). VPN credentials may be wrong."
+        fail "    Check:  docker compose logs gluetun --tail 50"
+    else
+        # Container's up, network's healthy, WebUI still doesn't answer.
+        # Could be a "still booting" condition OR an actual crash loop
+        # inside the LSIO init scripts — the only way to tell from here
+        # is to look at the qBittorrent container logs. Dump the last
+        # 30 lines into the validator output so the user doesn't have
+        # to docker-logs separately. Tail filters to lines that usually
+        # diagnose the actual fix (permission errors, port conflicts,
+        # config migration errors, "Address already in use", etc.) to
+        # avoid drowning the validator output in startup chatter.
+        fail "$label ($url) — container is running but WebUI not serving HTTP yet."
+        # The previous version of this dump grep'd for ~10 keywords and
+        # would surface generic LSIO startup chatter (e.g. "migrations
+        # started") that didn't actually diagnose anything. Show the
+        # last 30 lines verbatim instead — that's where the real signal
+        # lives. A separate filtered set highlights the most damning
+        # patterns at the top so the user doesn't have to scan the
+        # whole dump. Patterns trimmed to ACTUAL failure signals (no
+        # generic "migrat" prefix or "webui" hit) — the kind of thing
+        # that points at root cause vs. routine init noise.
+        local logs
+        logs=$(docker logs --tail 40 qbittorrent 2>&1 || true)
+        local relevant
+        relevant=$(echo "$logs" | grep -iE 'error|denied|fatal|cannot|unable to|refused|address already in use|conflict|crash|bad config|invalid|aborted|terminated' | head -10 || true)
+        if [ -n "$relevant" ]; then
+            echo "    qBittorrent log lines that look like the cause:"
+            echo "$relevant" | sed 's/^/      /'
+            echo "    ── Last 30 lines (full context): ───"
+        else
+            echo "    qBittorrent log — last 30 lines (no obvious error keywords):"
+        fi
+        echo "$logs" | tail -30 | sed 's/^/      /'
+        echo "    Recovery options:"
+        echo "      1. Full log:  docker logs qbittorrent --tail 200"
+        echo "      2. Restart:   bash $SCRIPT_DIR/restart-qbit.sh"
+        echo "      3. If qBit is in a config-crash loop, reset its config:"
+        echo "           docker compose stop qbittorrent"
+        echo "           rm /volume1/docker/media/qbittorrent/config/qBittorrent/qBittorrent.conf"
+        echo "           bash $SCRIPT_DIR/setup.sh   (regenerates the conf + restarts qBit)"
+    fi
+}
+
+# Diagnostic check for Tautulli. A bare HTTP-000 here is almost always
+# a "still booting" condition — Tautulli's first-boot writes config.ini,
+# then re-reads it, which takes 30-90s on slower NASes. setup-arr-
+# config.py only does `docker compose stop tautulli` + `docker compose
+# up -d tautulli` (returns once the container is starting, not healthy)
+# so the post-deploy check can fire before Tautulli has bound its port.
+check_tautulli() {
+    local url="http://$LAN_IP:8181"
+    local label="Tautulli"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url")
+    if [[ "$http_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]; then
+        ok "$label ($url) — HTTP $http_code"
+        return
+    fi
+    local state restart_count
+    state=$(docker inspect -f '{{.State.Status}}' tautulli 2>/dev/null || echo missing)
+    restart_count=$(docker inspect -f '{{.RestartCount}}' tautulli 2>/dev/null || echo 0)
+    if [ "$state" = "missing" ]; then
+        fail "$label ($url) — container missing. Run: docker compose up -d tautulli"
+        return
+    elif [ "$state" != "running" ]; then
+        fail "$label ($url) — container is $state. Run: docker compose up -d tautulli"
+        return
+    fi
+    # Container is "running" but WebUI not serving. Two possibilities:
+    #   (a) Still booting — first run takes 60-90s on slow NASes.
+    #   (b) Crash-looping — Tautulli restarted itself N times. Common
+    #       causes: bad config.ini from a half-applied write, can't
+    #       read its sqlite db, permission errors on /config.
+    # Distinguish by RestartCount: >0 in the first few minutes of an
+    # install means the container is failing and being recreated by
+    # `restart: unless-stopped`. >1 = definitely not just "booting".
+    if [ "$restart_count" -gt 1 ]; then
+        fail "$label ($url) — container is crash-looping (RestartCount=$restart_count)."
+        local logs
+        logs=$(docker logs --tail 20 tautulli 2>&1 || true)
+        local relevant
+        relevant=$(echo "$logs" | grep -iE 'error|denied|fatal|fail|cannot|unable|refused|exception|traceback' | head -6 || true)
+        if [ -n "$relevant" ]; then
+            echo "    Recent Tautulli log lines suggesting the cause:"
+            echo "$relevant" | sed 's/^/      /'
+        else
+            echo "    Last 10 lines of Tautulli log:"
+            echo "$logs" | tail -10 | sed 's/^/      /'
+        fi
+        echo "    Recovery:"
+        echo "      1. Full log:  docker logs tautulli --tail 100"
+        echo "      2. Reset config (loses Tautulli-only state, NOT Plex history):"
+        echo "           docker compose stop tautulli"
+        echo "           mv /volume1/docker/media/tautulli/config/config.ini{,.broken-\$(date +%Y%m%d-%H%M%S)}"
+        echo "           bash $SCRIPT_DIR/setup.sh"
+    else
+        # RestartCount is 0 or 1 — could legitimately be still booting.
+        warn "$label ($url) — container is running but not serving HTTP yet."
+        warn "    Tautulli's first boot can take 60-90s on slower NASes. Wait, then re-run:"
+        warn "      bash $SCRIPT_DIR/post-deploy-validate.sh"
+        warn "    Still 000? Check:  docker logs tautulli --tail 50"
+    fi
+}
+
 # Check URL only when the underlying service is enabled — checking a
 # disabled service would return HTTP 000 (nothing listening) and false-
 # fail the post-deploy.
@@ -136,7 +303,14 @@ is_enabled ENABLE_LIDARR      && check_url "Lidarr"       "http://$LAN_IP:49154"
 check_url "Prowlarr"     "http://$LAN_IP:49150"
 is_enabled ENABLE_BAZARR      && check_url "Bazarr"       "http://$LAN_IP:49153"
 is_enabled ENABLE_SABNZBD     && check_url "SABnzbd"      "http://$LAN_IP:49155"
-is_enabled ENABLE_QBITTORRENT && check_url "qBittorrent"  "http://$LAN_IP:49156"
+# qBittorrent often shows HTTP 000 at end-of-install even when the
+# container is running — gluetun's network namespace can be busy with
+# the WireGuard handshake, or LSIO's init scripts haven't finished
+# applying the qBittorrent.conf yet. Use the diagnostic check_qbit
+# below which inspects the container state + emits a specific recovery
+# hint (restart-qbit.sh) instead of a flat fail.
+is_enabled ENABLE_QBITTORRENT && check_qbit
+is_enabled ENABLE_PLEX        && check_tautulli
 # Seerr binds to its port only AFTER the user completes the first-run
 # wizard at http://<NAS>:5056 in a browser. Until then curl gets HTTP
 # 000 (connection refused). Treat that as a warning, not a fail —

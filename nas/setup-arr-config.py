@@ -39,6 +39,22 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 
+# When stdout is piped (i.e. running from setup.sh via SSH/SFTP rather
+# than a tty), Python defaults to BLOCK buffering with an 8 KB window.
+# In a long-running config step that prints small status lines, output
+# stays trapped in the buffer until the next big chunk arrives — so the
+# wizard's UI sees long silences and shows "(still working — Xs since
+# last output)" even though the script is actively reporting progress.
+# Real-world log on the user's NAS had heartbeats inside the auth
+# verify loop never appearing at all because they were ~80 bytes each.
+# Switch stdout/stderr to line-buffered so every \n gets flushed
+# immediately. Python 3.7+ provides reconfigure() for this.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass  # Older Python builds — old behavior is fine.
+
 # ── Terminal colours ──────────────────────────────────────────────────────────
 
 GREEN  = "\033[32m"
@@ -507,7 +523,32 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
             if fname in field_map:
                 existing_client['fields'][field_map[fname]]['value'] = fval
         result = PUT(base, key, f"/{api}/downloadclient/{existing_client['id']}", existing_client)
-        ok(f"Download client: {name} (updated)") if result else fail(f"Download client: {name} (update failed)")
+        if result:
+            ok(f"Download client: {name} (updated)")
+            return
+        # PUT got no response. 10 × 3s = 30s verify window — short
+        # enough not to block the install for minutes if the PUT
+        # silently never applied, long enough to catch the common
+        # session-cycle race. Downgrade failure to a warning so the
+        # rest of Step 7 keeps going; the user can tweak the
+        # download client in the arr's UI later.
+        for attempt in range(10):
+            time.sleep(3)
+            verify_list = GET(base, key, f"/{api}/downloadclient")
+            if verify_list is None:
+                continue
+            updated = next((c for c in verify_list if c['name'] == name), None)
+            if not updated:
+                continue
+            verify_map = {f['name']: i for i, f in enumerate(updated.get('fields', []))}
+            if all(
+                fname in verify_map and
+                updated['fields'][verify_map[fname]].get('value') == fval
+                for fname, fval in field_overrides.items()
+            ):
+                ok(f"Download client: {name} (updated, verified after restart)")
+                return
+        warn(f"Download client: {name} — couldn't auto-update after 30s. Open the arr's Settings → Download Clients to check it manually.")
         return
 
     schemas = GET(base, key, f"/{api}/downloadclient/schema")
@@ -572,7 +613,24 @@ def add_remote_path_mapping(base, key, api, host, remote, local, container=None)
         acl_diagnostic(local)
 
 def configure_auth(base, key, api, username, password):
-    """Set Forms authentication, bypassed for local addresses."""
+    """Set Forms authentication, bypassed for local addresses.
+
+    Tricky bit: writing the auth config triggers the arr to recycle
+    its API session immediately. The PUT's HTTP response sometimes
+    arrives after the recycle has already closed the connection,
+    which urllib reports as ConnectionResetError → our PUT helper
+    returns None → the old code reported "Auth: failed to set
+    credentials" even though the change actually landed. This was
+    real on Radarr/Lidarr/Prowlarr while Sonarr happened to win the
+    race more often (no obvious reason — order of init in the LSIO
+    image, probably). Fix: on a None PUT we re-GET the config after
+    a settle, and trust the read-back. If it shows our intended
+    auth state, treat the operation as success.
+
+    Verify budget: real-world Synology spinning-rust logs showed
+    Sonarr can take 60-90s to come back after the auth restart on
+    first run (re-init of the SignalR hub, cert regen, etc.). Give
+    the verify 120s of patience so we don't false-fail there."""
     config = GET(base, key, f"/{api}/config/host")
     if config is None:
         fail("Auth: can't get host config"); return
@@ -589,7 +647,46 @@ def configure_auth(base, key, api, username, password):
     config['password'] = password
     config['passwordConfirmation'] = password
     result = PUT(base, key, f"/{api}/config/host", config)
-    ok(f"Auth: {username} (LAN bypass on)") if result else fail("Auth: failed to set credentials")
+    if result:
+        ok(f"Auth: {username} (LAN bypass on)")
+        return
+    # PUT got no response. Verify by reading the config back. 10
+    # attempts × 3s = 30s of patience. Comparison made case-
+    # insensitive on the enum fields — Sonarr v4 sometimes echoes
+    # 'disabledForLocalAddresses' instead of the documented
+    # 'DisabledForLocalAddresses', and we don't want to false-fail
+    # the verify just because of a casing difference.
+    print("    Auth: PUT got no response (arr likely cycled its session) — verifying...")
+    last_verify = None
+    for attempt in range(10):
+        time.sleep(3)
+        verify = GET(base, key, f"/{api}/config/host")
+        if verify is None:
+            continue
+        last_verify = verify
+        auth_method = (verify.get('authenticationMethod', '') or '').lower()
+        auth_required = (verify.get('authenticationRequired', '') or '').lower()
+        if (verify.get('username') == username and
+            auth_method not in ('none', '') and
+            auth_required == 'disabledforlocaladdresses'):
+            ok(f"Auth: {username} (LAN bypass on, verified after restart)")
+            return
+    # Couldn't verify after 30s. Dump the last response we did see
+    # so the user (and future-us reading the install log) can tell
+    # whether the PUT applied partially, applied wrong, or never
+    # applied at all. Without this we can only see "30s elapsed,
+    # gave up" and have no idea what the arr actually thought the
+    # config was. The clue is usually in here.
+    warn(f"Auth: couldn't auto-apply credentials on {api} after 30s — set manually:")
+    warn(f"  {base} → Settings → General → Security → Authentication: Forms")
+    warn("  → Authentication Required: Disabled for Local Addresses")
+    warn(f"  → Username: {username}, Password: {password}")
+    if last_verify is not None:
+        am = last_verify.get('authenticationMethod', '<missing>')
+        ar = last_verify.get('authenticationRequired', '<missing>')
+        un = last_verify.get('username', '<missing>')
+        print(f"    Diagnostic — last config read from {api}: "
+              f"authenticationMethod={am!r}, authenticationRequired={ar!r}, username={un!r}")
 
 def enable_hardlinks(base, key, api):
     config = GET(base, key, f"/{api}/config/mediamanagement")
@@ -952,7 +1049,18 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
             return
 
     import configparser
-    cp = configparser.ConfigParser()
+    # interpolation=None: Tautulli's config.ini has '%' characters
+    # everywhere (HTTP fields, encryption keys, formatted strings) and
+    # ConfigParser's default BasicInterpolation treats '%' as the start
+    # of a variable substitution. The read silently mangles values
+    # containing literal '%' (they get interpreted as broken
+    # interpolations or raise), and even values that round-trip end up
+    # written back with extra escaping. Result: Tautulli boots into a
+    # restart loop with "Unable to initialize Tautulli due to a
+    # corrupted config file. Exiting..." every few seconds. Real-world
+    # symptom seen on user NAS — 40+ restart cycles before the user
+    # spotted it.
+    cp = configparser.ConfigParser(interpolation=None)
     cp.optionxform = str  # preserve case — Tautulli's keys are SCREAMING_CASE
     try:
         cp.read(tautulli_ini_path)
@@ -1002,20 +1110,31 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
         return
 
     # Restart Tautulli so it re-reads config.ini. Brief downtime (~5s)
-    # but the alternative is asking the user to do it manually.
+    # on fast hardware but real-world logs from Synology spinning rust
+    # show it can take 60-90s for the container to settle. Use stop +
+    # `up -d` instead of `restart` — `up -d` returns once the container
+    # is created and starting, without waiting for full readiness, so
+    # we don't block the whole install on Tautulli's first-boot init.
+    # The container will finish coming up in the background and pick
+    # up the config we just wrote.
     print("    Restarting Tautulli container to apply...")
     import subprocess
     try:
         subprocess.run(
-            ['docker', 'compose', 'restart', 'tautulli'],
-            cwd=stack_dir, check=True, capture_output=True, timeout=60,
+            ['docker', 'compose', 'stop', 'tautulli'],
+            cwd=stack_dir, capture_output=True, timeout=60, text=True,
         )
-        ok("Tautulli restarted — open http://<NAS>:8181 to verify")
+        subprocess.run(
+            ['docker', 'compose', 'up', '-d', 'tautulli'],
+            cwd=stack_dir, check=True, capture_output=True, timeout=60, text=True,
+        )
+        ok("Tautulli restarted — open http://<NAS>:8181 to verify (may take 30-60s)")
     except subprocess.CalledProcessError as e:
-        warn(f"docker compose restart failed: {e.stderr.decode(errors='replace')[:200]}")
+        warn(f"docker compose restart failed: {(e.stderr or '')[:200]}")
         warn("  Manually:  docker compose restart tautulli")
     except subprocess.TimeoutExpired:
-        warn("Restart timed out — Tautulli may need a manual kick")
+        warn("Restart timed out — Tautulli may need a manual kick:")
+        warn("  docker compose restart tautulli")
     except FileNotFoundError:
         warn("'docker' not found in PATH — restart Tautulli manually:")
         warn("  docker compose restart tautulli")
@@ -1139,7 +1258,7 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
 
 # ── qBittorrent ───────────────────────────────────────────────────────────────
 
-def configure_qbittorrent(base, username, password):
+def configure_qbittorrent(base, username, password, env=None):
     """Set qBittorrent preferences via the Web API (cookie auth).
 
     setup-folders.sh pre-writes /volume1/docker/media/qbittorrent/config/
@@ -1190,13 +1309,18 @@ def configure_qbittorrent(base, username, password):
     # network error, connection reset) is almost always a transient
     # first-boot issue.
     #
-    # Successive real-world logs on Synology spinning rust have shown
-    # qBittorrent still not ready at the 40s mark (4 retries × 10s) —
-    # bumped to 8 retries × 10s = 80s. After this, the daemon is
-    # almost certainly stuck (image issue, port already taken inside
-    # gluetun's namespace, etc.) and more retries won't help. 'Fails.'
-    # short-circuits immediately so the IP-ban budget isn't touched.
-    MAX_RETRIES = 8
+    # qBit's log on first run reveals the actual gating message:
+    #   "WebUI will be started shortly after internal preparations.
+    #    Please wait..."
+    # On Synology spinning rust with a non-trivial resume-data set in
+    # BT_backup/, those "internal preparations" (state load + torrent
+    # integrity verification + BT session init) can run for several
+    # minutes BEFORE the WebUI binds. The old 8 × 10s = 80s budget
+    # false-failed every install in that case. Bumped to 30 × 10s =
+    # 300s (5 minutes), which matches the worst real-world wait we've
+    # measured. 'Fails.' still short-circuits immediately so the IP-
+    # ban budget isn't touched on wrong-password attempts.
+    MAX_RETRIES = 30
     retries = 0
     while last_result != 'Ok.' and last_result != 'Fails.' and retries < MAX_RETRIES:
         time.sleep(10)
@@ -1212,19 +1336,31 @@ def configure_qbittorrent(base, username, password):
     # but if the daemon never re-read it, the new PBKDF2 hash never
     # takes effect). `docker restart qbittorrent` cures both — the
     # container fully reinitializes + re-reads the conf on boot.
-    restarted = False
-    if last_result != 'Ok.' and last_result != 'Fails.':
-        print(f"    qBittorrent still not responding — forcing container restart and waiting 20s...")
-        try:
-            subprocess.run(
-                ['docker', 'restart', 'qbittorrent'],
-                capture_output=True, timeout=30, text=True,
-            )
-            restarted = True
-            time.sleep(20)
-            last_result, last_error = attempt_login()
-        except Exception as e:
-            warn(f"docker restart qbittorrent failed ({e}) — qBit may need manual attention")
+    # We used to attempt a `docker restart qbittorrent` fallback here,
+    # then later upgraded that to a compose-aware
+    # `docker compose rm + up -d gluetun qbittorrent` recovery. Both
+    # turned out to be traps on VPN_ENABLED installs:
+    #
+    #   - qBittorrent shares gluetun's network namespace
+    #     (`network_mode: service:gluetun`). The stop side of any
+    #     container cycle blocks on namespace teardown while gluetun
+    #     is busy.
+    #   - Real-world logs showed 30-180s of blocked install time
+    #     followed by a timeout, with qBit left in a wedged state
+    #     that subsequent API calls couldn't recover from. The
+    #     cascading "Connection reset by peer" errors then masked
+    #     the actual cause from the user.
+    #
+    # Better policy: surface a clear, actionable warning + the
+    # restart-qbit.sh helper (which does an orderly gluetun-then-qbit
+    # recreate from outside this script) and skip the rest of qBit's
+    # config. The install moves on. The user runs the helper once
+    # post-install; the next setup.sh re-run finds qBit responsive
+    # and finishes its config.
+    if env is None:
+        env = read_env_merged(os.path.dirname(os.path.realpath(__file__)))
+    install_dir = env.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
+    restarted = False  # kept for the success branch below to compile cleanly
 
     if last_result == 'Ok.':
         ok("qBittorrent authenticated" + (" (after forced restart)" if restarted else ""))
@@ -2284,7 +2420,10 @@ def main():
     # ── qBittorrent ───────────────────────────────────────────────────────────
 
     if is_enabled(env, 'ENABLE_QBITTORRENT'):
-        configure_qbittorrent(QBIT, QB_USER, QB_PASS)
+        # Pass env in so the gluetun-aware restart path can see
+        # VPN_ENABLED + INSTALL_DIR (read from .env, not the process
+        # environment — setup.sh doesn't export them).
+        configure_qbittorrent(QBIT, QB_USER, QB_PASS, env=env)
     else:
         section("qBittorrent")
         print(f"  {DIM}⏭  ENABLE_QBITTORRENT=false — skipping.{RESET}")

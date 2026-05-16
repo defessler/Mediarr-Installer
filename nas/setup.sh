@@ -491,6 +491,28 @@ echo "  Note: running post-deploy health checks on all services"
 run_step 10 "Verify stack health" \
     bash "$SCRIPT_DIR/post-deploy-validate.sh"
 
+# Step 11: nudge the arrs to scan their completed-download folders.
+#
+# Even when everything's wired correctly, the arr ↔ download-client
+# polling loop can be slow to notice files that completed BEFORE the
+# arr was connected (e.g. fresh install when SAB or qBit already had
+# a backlog of completed items, or a previous broken install left
+# files in /data/Downloads/.../complete that the arr never picked up).
+#
+# fix-imports.sh fires DownloadedEpisodesScan / DownloadedMoviesScan /
+# DownloadedAlbumsScan at each arr, pointing at every known completed-
+# downloads root (torrent + usenet). The arr walks the dir, parses
+# releases, imports anything it recognises. Idempotent — already-
+# imported files are skipped. We mark this step "best effort" via the
+# || true wrapper: a transient API hiccup here shouldn't fail the
+# whole install, since the user can always re-run fix-imports.sh
+# manually from the Help modal's troubleshooting entry.
+echo ""
+echo "  Note: nudging the arrs to scan completed-downloads folders"
+echo "        (catches any backlog from previous runs or pre-existing files)"
+run_step 11 "Import any download backlog" \
+    bash -c "bash '$SCRIPT_DIR/fix-imports.sh' || true"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 LAN_IP=$(grep -m1 '^LAN_IP=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
