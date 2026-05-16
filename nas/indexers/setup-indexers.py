@@ -176,6 +176,21 @@ def _prowlarr_error(body):
     except Exception:
         return (body or '')[:120]
 
+def _is_db_locked(body):
+    """Detect Prowlarr's SQLite-busy error so we know to retry. Real
+    install log:
+      'AvistaZ: credential update failed (HTTP 400) — Unable to
+       connect to indexer, check the log above the ValidationFailure
+       for more details. database is locked
+       database is locked'
+    The phrase 'database is locked' shows up in Prowlarr's response
+    body when SQLite hits write contention — usually during simultaneous
+    Sync Apps + indexer-test pairs or post-deploy validator's parallel
+    indexer/test calls. The right response is to wait + retry, not
+    surface as a hard error. Treat ANY error body containing this
+    string (anywhere) as retryable."""
+    return body and 'database is locked' in body.lower()
+
 def GET(base, key, path):
     result, _, _ = _request(f"{base}{path}", _headers(key))
     return result
@@ -495,8 +510,19 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         if flaresolverr_tag_id is not None:
             current['tags'] = list(set(current.get('tags') or []) | {flaresolverr_tag_id})
         result, status, err = PUT_with_status(base, key, f"/api/v1/indexer/{current['id']}", current)
+        # Retry on SQLite-busy: Prowlarr serializes writes through a
+        # single SQLite handle, so concurrent Sync Apps + indexer test
+        # calls + our PUT compete and one loses with "database is
+        # locked". Up to 8 retries × 5s = 40s of patience. Each retry
+        # re-PUTs the same body; idempotent.
+        retries = 0
+        while result is None and _is_db_locked(err) and retries < 8:
+            retries += 1
+            time.sleep(5)
+            result, status, err = PUT_with_status(base, key, f"/api/v1/indexer/{current['id']}", current)
         if result is not None:
-            ok(f"{name}: credentials updated ({', '.join(changed)})")
+            suffix = f" (after {retries} retry/retries on DB lock)" if retries else ""
+            ok(f"{name}: credentials updated ({', '.join(changed)}){suffix}")
         else:
             warn(f"{name}: credential update failed (HTTP {status}) — {_prowlarr_error(err or '')}")
         return
@@ -608,8 +634,19 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
             if fname in fm:
                 current['fields'][fm[fname]]['value'] = fval
         result, status, err = PUT_with_status(base, key, f"/api/v1/indexer/{current['id']}", current)
+        # Retry on SQLite-busy: Prowlarr serializes writes through a
+        # single SQLite handle, so concurrent Sync Apps + indexer test
+        # calls + our PUT compete and one loses with "database is
+        # locked". Up to 8 retries × 5s = 40s of patience. Each retry
+        # re-PUTs the same body; idempotent.
+        retries = 0
+        while result is None and _is_db_locked(err) and retries < 8:
+            retries += 1
+            time.sleep(5)
+            result, status, err = PUT_with_status(base, key, f"/api/v1/indexer/{current['id']}", current)
         if result is not None:
-            ok(f"{name}: credentials updated ({', '.join(changed)})")
+            suffix = f" (after {retries} retry/retries on DB lock)" if retries else ""
+            ok(f"{name}: credentials updated ({', '.join(changed)}){suffix}")
         else:
             warn(f"{name}: credential update failed (HTTP {status}) — {_prowlarr_error(err or '')}")
         return

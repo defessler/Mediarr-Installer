@@ -748,10 +748,24 @@ def configure_media_management(base, key, api, recycle_label):
     result = PUT(base, key, f"/{api}/config/mediamanagement", config)
     if result:
         ok(f"Media management: {', '.join(sorted(changes.keys()))}")
-    else:
-        # Per-setting failures here are non-fatal — the user can fix any
-        # one of them in the UI. Surface as warn so the install proceeds.
-        warn(f"Media management: failed to apply {', '.join(sorted(changes.keys()))}")
+        return
+    # Same session-cycle race as configure_auth — Lidarr in particular
+    # restarts its API session on Media Management changes, and the
+    # response packet sometimes loses to the cycle. urllib reports
+    # ConnectionResetError; our PUT helper returns None. Verify by
+    # re-GETting and comparing the fields we tried to set. 30s budget.
+    print("    Media management: PUT got no response (arr likely cycled its session) — verifying...")
+    for _ in range(10):
+        time.sleep(3)
+        verify = GET(base, key, f"/{api}/config/mediamanagement")
+        if verify is None:
+            continue
+        if all(verify.get(k) == v for k, v in changes.items()):
+            ok(f"Media management: {', '.join(sorted(changes.keys()))} (verified after restart)")
+            return
+    # Per-setting failures here are non-fatal — the user can fix any
+    # one of them in the UI. Surface as warn so the install proceeds.
+    warn(f"Media management: failed to apply {', '.join(sorted(changes.keys()))}")
 
 def configure_bind_address(base, key, api):
     """Set BindAddress to '*' so sibling Docker containers (Prowlarr,
@@ -1129,11 +1143,14 @@ def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
         return False
 
     # 1. Manual Port Mapping — fixes the "Indirect connection" relay
-    # symptom (see top of function for full why).
+    # symptom (see top of function for full why). FIRST pref call
+    # eats the brunt of Plex's first-boot DB load latency — bump
+    # retries here from 6 → 18 (180s budget). Subsequent pref calls
+    # benefit from the warmed-up state and use the default budget.
     if _plex_prefs_put("Manual port mapping", {
         'ManualPortMappingMode': '1',
         'ManualPortMappingPort': str(public_port),
-    }):
+    }, retries=18):
         ok(f"Manual port mapping enabled ([public-ip]:{public_port})")
     info("If clients still report 'indirect' after a minute:")
     info("  1. Settings → Remote Access in Plex web UI → 'Retry'")
@@ -1152,36 +1169,29 @@ def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
     #     disk read on a NAS. Most users don't notice them missing.
     #     Turn off; users who DO want them can flip it back per-library.
     #
-    #   EmptyTrashAfterScan=0
-    #     When Plex scans and sees a file is "missing" (e.g. Sonarr
-    #     renamed it mid-scan), it deletes the metadata, history,
-    #     watched state, ratings. With Sonarr/Radarr managing files
-    #     and Plex Connect notifications doing partial scans, the
-    #     "missing" window is constantly happening — and the user's
-    #     watched state evaporates. Source of truth for what's in
-    #     the library = the arrs, not Plex. Disable.
-    #
     #   ScheduledLibraryUpdatesEnabled=0
     #     Periodic library scans pound the NAS for no benefit when
     #     Sonarr/Radarr Connect → Plex notifications already trigger
     #     partial scans the moment a file lands. Disable scheduled
     #     scan; rely on the notification.
     #
-    #   ScanIdleScanTasksEnabled=0
-    #     Idle scan tasks include the BIF thumbnail generation above,
-    #     plus chapter art extraction and various metadata refresh
-    #     loops. None are useful in an arr-managed stack — the arrs
-    #     handle metadata via their own metadata providers.
-    #
-    #   LowPriorityScanner=1
-    #     When a scan DOES run, run it nice'd so it doesn't drag down
-    #     active playback or other NAS workloads.
+    # NOTE: removed three pref names that Plex's API rejects with
+    # HTTP 400 ("not a valid setting name"):
+    #   - EmptyTrashAfterScan
+    #   - ScanIdleScanTasksEnabled
+    #   - LowPriorityScanner
+    # These appear in some community guides but aren't actually valid
+    # Plex preference keys (Plex's settings names have evolved and
+    # some doc sources are stale). Each was reliably 400'ing real
+    # installs. Equivalent behavior for "don't trash files on
+    # missing-file scan" / "scan at low priority" is now achieved
+    # via Plex Web UI → Settings → Library → Empty trash automatically
+    # after every scan (toggle OFF) and the implicit low-priority
+    # behavior of disabling scheduled scans entirely. Users who want
+    # these manually flipped are pointed at the UI in the Help modal.
     qol = [
-        ('GenerateBIFBehavior',          'never',  'Video preview thumbnails (BIF)'),
-        ('EmptyTrashAfterScan',          '0',      'Empty trash after scan'),
-        ('ScheduledLibraryUpdatesEnabled','0',     'Scheduled library scans'),
-        ('ScanIdleScanTasksEnabled',     '0',      'Idle scan tasks'),
-        ('LowPriorityScanner',           '1',      'Scanner runs at low priority'),
+        ('GenerateBIFBehavior',           'never',  'Video preview thumbnails (BIF)'),
+        ('ScheduledLibraryUpdatesEnabled','0',      'Scheduled library scans'),
     ]
     applied = 0
     for setting, value, label in qol:
