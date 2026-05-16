@@ -68,6 +68,7 @@ export function WelcomeScreen() {
         connection: p.connection,
         config: p.config as Record<string, string>,
         targetDir: p.targetDir,
+        migrate: p.migrate,
       })
       if (target === 'edit') {
         // "Edit settings" — drop the user straight into Configure.
@@ -107,6 +108,7 @@ export function WelcomeScreen() {
         connection: p.connection,
         targetDir: p.targetDir,
         config: p.config as Record<string, string>,
+        migrate: p.migrate,
       })
       // Keep the header label in sync if we renamed the active profile.
       if (id === activeProfileId) setActiveProfileLabel(label)

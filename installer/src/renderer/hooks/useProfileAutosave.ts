@@ -13,6 +13,7 @@ export function useProfileAutosave() {
   const connection = useWizard((s) => s.connection)
   const config = useWizard((s) => s.config)
   const targetDir = useWizard((s) => s.targetDir)
+  const migrate = useWizard((s) => s.migrate)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const firstRunRef = useRef(true)
 
@@ -55,6 +56,12 @@ export function useProfileAutosave() {
               ([k, v]) => v !== undefined && v !== null && k !== 'PLEX_CLAIM',
             ),
           ) as Record<string, string>,
+          // MigrateScreen form state — source arr/qBit URLs + creds.
+          // Drop undefined entries so a partially-typed migrate form
+          // round-trips cleanly instead of saving "undefined" strings.
+          migrate: Object.fromEntries(
+            Object.entries(migrate ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+          ),
         })
       } catch (e) {
         reportError('Auto-save profile', e)
@@ -63,7 +70,7 @@ export function useProfileAutosave() {
     return () => {
       if (timer.current) clearTimeout(timer.current)
     }
-  }, [activeProfileId, activeProfileLabel, connection, config, targetDir])
+  }, [activeProfileId, activeProfileLabel, connection, config, targetDir, migrate])
 
   // When the active profile changes (user picks a different one), reset
   // the first-run guard so the autosave skips the load.

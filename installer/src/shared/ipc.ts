@@ -270,6 +270,46 @@ export interface SavedProfile {
   lastUsedAt: number
 }
 
+/** Form state for the MigrateScreen — source URLs / credentials for
+ *  pulling a library across from an EXISTING arr install. Lives on the
+ *  profile so the user doesn't have to re-type four URLs + four
+ *  credentials every time they re-open the wizard. Encrypted at rest
+ *  with the rest of the profile body (DPAPI on Windows, Keychain on
+ *  macOS, libsecret on Linux). Fields are all optional — the
+ *  MigrateScreen lets the user populate either arr, qBit, or both.
+ *  Empty / undefined fields just leave the input blank. */
+export interface MigrateState {
+  sourceSonarrUrl?: string
+  sourceSonarrKey?: string
+  sourceRadarrUrl?: string
+  sourceRadarrKey?: string
+  sourceQbitUrl?: string
+  sourceQbitUser?: string
+  sourceQbitPass?: string
+  /** Path-prefix remap for qBit save-paths. e.g. /downloads → /data/Downloads */
+  qbitRemapFrom?: string
+  qbitRemapTo?: string
+  /** Destination overrides. The MigrateScreen normally auto-discovers
+   *  the local arr URLs (from LAN_IP + the stack's standard ports) and
+   *  the API keys / qBit creds (from the NAS .env). These fields let
+   *  the user override any of those — useful when:
+   *    - the install is partial and .env doesn't have keys yet
+   *    - qBit's WebUI password drifted from .env's QBITTORRENT_PASS
+   *    - the user is migrating to an arr that's behind a reverse proxy
+   *      on a non-standard port / URL base
+   *    - the user wants to migrate into an existing arr stack the wizard
+   *      didn't install
+   *  When set, these override the auto-discovered values.
+   */
+  destSonarrUrl?: string
+  destSonarrKey?: string
+  destRadarrUrl?: string
+  destRadarrKey?: string
+  destQbitUrl?: string
+  destQbitUser?: string
+  destQbitPass?: string
+}
+
 /** The fully-decrypted profile sent to the renderer when the user
  *  selects one. Includes secrets and the saved form state. */
 export interface LoadedProfile {
@@ -280,6 +320,10 @@ export interface LoadedProfile {
   /** Full EnvFormValues-shaped config. Stored as a record so the IPC
    *  type doesn't depend on the renderer's form types. */
   config: Record<string, string>
+  /** Optional saved state from the MigrateScreen — source connection
+   *  info the user previously entered. Missing on profiles created
+   *  before this field existed. */
+  migrate?: MigrateState
   lastUsedAt: number
 }
 
@@ -290,6 +334,8 @@ export interface SaveProfileInput {
   connection: ProfileConnection
   targetDir: string
   config: Record<string, string>
+  /** Optional MigrateScreen form state. Round-trips encrypted. */
+  migrate?: MigrateState
 }
 
 /** Passphrase-protected portable envelope produced by profile-crypto.

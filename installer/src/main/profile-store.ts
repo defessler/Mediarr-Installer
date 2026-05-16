@@ -75,6 +75,12 @@ interface ProfileBody {
   connection: ProfileConnection
   targetDir: string
   config: Record<string, string>
+  /** Optional MigrateScreen state — source arr/qBit URLs + creds the
+   *  user pasted last time so they don't have to re-enter them. v2
+   *  profiles written before this field existed simply omit it.
+   *  Lives inside the encrypted blob since it contains source-side
+   *  API keys / WebUI passwords. */
+  migrate?: import('../shared/ipc.js').MigrateState
 }
 
 const DEFAULT_TARGET = '/volume1/docker/media'
@@ -221,6 +227,7 @@ export async function loadProfile(id: string): Promise<LoadedProfile | null> {
     connection: body.connection,
     targetDir: body.targetDir || DEFAULT_TARGET,
     config: body.config || {},
+    migrate: body.migrate,
     lastUsedAt: p.lastUsedAt,
   }
 }
@@ -232,6 +239,7 @@ export async function saveProfile(input: SaveProfileInput): Promise<SavedProfile
     connection: input.connection,
     targetDir: input.targetDir,
     config: input.config,
+    migrate: input.migrate,
   }
   const next: OnDiskProfile = {
     id,
@@ -299,6 +307,7 @@ export async function exportProfile(id: string, passphrase: string): Promise<Pro
     connection: p.connection,
     targetDir: p.targetDir,
     config: p.config,
+    migrate: p.migrate,
   }
   return encryptExport({ payload, passphrase, label: p.label })
 }
@@ -330,6 +339,7 @@ export async function importProfile(args: {
     connection?: ProfileConnection
     targetDir?: string
     config?: Record<string, string>
+    migrate?: import('../shared/ipc.js').MigrateState
   }
   try {
     parsed = JSON.parse(plaintext)
@@ -363,6 +373,7 @@ export async function importProfile(args: {
     connection: parsed.connection,
     targetDir: parsed.targetDir || DEFAULT_TARGET,
     config: cleanConfig,
+    migrate: parsed.migrate,
   })
   return saved
 }

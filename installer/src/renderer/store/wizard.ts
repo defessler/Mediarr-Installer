@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { ConnectionConfig } from '../../shared/ipc.js'
+import type { ConnectionConfig, MigrateState } from '../../shared/ipc.js'
 import type { EnvFormValues } from '../../shared/env-render.js'
 
 export type WizardStep =
@@ -67,6 +67,13 @@ interface WizardState {
   targetDir: string
   setTargetDir: (d: string) => void
 
+  /** MigrateScreen form state — source arr/qBit URLs + creds the user
+   *  pasted. Persisted via the active profile (encrypted blob), NOT
+   *  localStorage, so credentials don't sit in plaintext. The hook
+   *  `useProfileAutosave` writes back when this changes. */
+  migrate: MigrateState
+  setMigrate: (m: Partial<MigrateState>) => void
+
   /** Per-profile snapshot of the most recent install run. Persisted so
    *  Welcome can surface "last install failed at step N" on the relevant
    *  profile card after the user closes and re-opens the app — turning a
@@ -92,6 +99,7 @@ interface WizardState {
     connection: Partial<ConnectionConfig>
     config: Partial<EnvFormValues>
     targetDir: string
+    migrate?: MigrateState
   }) => void
 
   reset: () => void
@@ -180,6 +188,9 @@ export const useWizard = create<WizardState>()(
       targetDir: DEFAULT_TARGET,
       setTargetDir: (targetDir) => set({ targetDir }),
 
+      migrate: {},
+      setMigrate: (m) => set((s) => ({ migrate: { ...s.migrate, ...m } })),
+
       lastRuns: {},
       recordRunResult: (profileId, result) =>
         set((s) => ({
@@ -226,6 +237,7 @@ export const useWizard = create<WizardState>()(
           config: { ...defaultConfig, ...incomingConfig, PLEX_CLAIM: undefined },
           plexClaimSetAt: null,
           targetDir: p.targetDir || DEFAULT_TARGET,
+          migrate: p.migrate ?? {},
           sessionId: null,    // any prior session is dead now
         })
       },
@@ -241,6 +253,7 @@ export const useWizard = create<WizardState>()(
           config: defaultConfig,
           plexClaimSetAt: null,
           targetDir: DEFAULT_TARGET,
+          migrate: {},
         }),
     }),
     {
