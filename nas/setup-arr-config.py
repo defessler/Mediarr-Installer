@@ -1076,35 +1076,57 @@ def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
     # auth via X-Plex-Token header.
     plex_base = f"http://{lan_ip}:32400"
 
-    def _plex_prefs_put(name, params_dict):
+    def _plex_prefs_put(name, params_dict, retries=6):
         """One PUT to /:/prefs with the supplied params. Returns True
-        on 2xx, False on any failure (with a logged warning). Plex's
-        prefs endpoint accepts batches via repeated query-string keys,
-        but in practice setting one preference per call is what its
-        web UI does and what we'll do too — keeps the response
-        attributable when something fails."""
-        try:
-            req = Request(
-                f"{plex_base}/:/prefs?{urlencode(params_dict)}",
-                method='PUT',
-                headers={
-                    'X-Plex-Token': plex_token,
-                    'Accept':       'application/json',
-                    'User-Agent':   'setup-arr-config/1.0',
-                },
-            )
-            with urlopen(req, timeout=10) as resp:
-                resp.read()
-            return True
-        except HTTPError as e:
-            if e.code == 401:
-                warn(f"Plex API rejected our token on {name} — server may not be fully claimed yet")
+        on 2xx, False after exhausting retries. Plex's prefs endpoint
+        accepts batches via repeated query-string keys, but in practice
+        setting one preference per call is what its web UI does — and
+        we follow suit so per-pref failures are attributable.
+
+        503 retry: Plex returns 503 Service Unavailable while it's
+        still loading its library DB on first boot. That's "wait a
+        minute" not "permanent failure." Retry up to `retries` times
+        with 10s spacing between attempts (default 6 = 60s budget per
+        pref). Real install log: every Plex prefs PUT returned 503
+        for the entire Step 7 window because Plex hadn't finished
+        loading its DB yet; without 503 retry, EVERY pref applied
+        zero settings.
+
+        401 (bad token) and 5xx-other / 4xx don't retry — those are
+        terminal."""
+        for attempt in range(retries):
+            try:
+                req = Request(
+                    f"{plex_base}/:/prefs?{urlencode(params_dict)}",
+                    method='PUT',
+                    headers={
+                        'X-Plex-Token': plex_token,
+                        'Accept':       'application/json',
+                        'User-Agent':   'setup-arr-config/1.0',
+                    },
+                )
+                with urlopen(req, timeout=10) as resp:
+                    resp.read()
+                return True
+            except HTTPError as e:
+                if e.code == 401:
+                    warn(f"Plex API rejected our token on {name} — server may not be fully claimed yet")
+                    return False
+                if e.code == 503 and attempt < retries - 1:
+                    # Plex still warming up. Heartbeat once per ~20s.
+                    if attempt == 0 or attempt % 2 == 1:
+                        print(f"    Plex returned 503 on {name} — still loading library DB; waiting...")
+                    time.sleep(10)
+                    continue
+                warn(f"Plex prefs PUT ({name}) returned HTTP {e.code} after {attempt + 1} attempt(s)")
                 return False
-            warn(f"Plex prefs PUT ({name}) returned HTTP {e.code}")
-            return False
-        except Exception as e:
-            warn(f"Couldn't reach Plex API at {plex_base} ({e}) — skipping {name}")
-            return False
+            except Exception as e:
+                if attempt < retries - 1:
+                    time.sleep(10)
+                    continue
+                warn(f"Couldn't reach Plex API at {plex_base} ({e}) — skipping {name}")
+                return False
+        return False
 
     # 1. Manual Port Mapping — fixes the "Indirect connection" relay
     # symptom (see top of function for full why).
@@ -1549,17 +1571,38 @@ def configure_qbittorrent(base, username, password, env=None):
         warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
         return
     else:
-        # Empty body or network error — qBittorrent's WebUI is up but
-        # auth handler didn't speak to us. Common right after a fresh
-        # container start.
+        # qBittorrent's WebUI didn't bind in 5 minutes. Real symptom:
+        # qBit's own startup log says "WebUI will be started shortly
+        # after internal preparations. Please wait..." — those
+        # preparations (BT_backup load + torrent integrity check + BT
+        # session init) take 3-10+ minutes on Synology spinning rust
+        # with non-trivial resume data, or after a container reset
+        # that wiped the BT_backup dir.
+        #
+        # This is NOT a fatal install error — qBit is healthy, just
+        # slow. The wizard's correct response: skip qBit-specific
+        # config (watch folder, seed-limit hints), surface a clear
+        # next-step recipe, and let the install proceed to Step 8+.
+        # The user runs restart-qbit.sh once after install completes
+        # AND/OR re-runs setup.sh once qBit has fully booted.
         install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
+        warn("qBittorrent's WebUI hasn't bound to port 49156 after 5 minutes of retries.")
+        warn("This is usually SLOW not BROKEN — qBit's first-boot 'internal preparations'")
+        warn("(loading BT_backup + verifying torrent integrity + initializing the BT session)")
+        warn("can run 3-10+ minutes on Synology spinning rust. Recovery, in order:")
+        warn("")
+        warn(f"  1. Wait 5 more minutes, then check:")
+        warn(f"       curl -sf http://$LAN_IP:49156 || echo 'still not bound'")
+        warn(f"")
+        warn(f"  2. If still not bound, force a clean restart:")
+        warn(f"       bash {install_dir}/restart-qbit.sh")
+        warn(f"")
+        warn(f"  3. Once qBit's WebUI responds, re-run setup.sh — Step 7 will")
+        warn(f"     finish qBit's watch-folder + Lidarr's download-client config")
+        warn(f"     (idempotent — Sonarr/Radarr already configured will be skipped).")
         if last_error is not None:
-            warn(f"qBittorrent not reachable: {last_error} — skipping watch folder setup")
-        else:
-            warn(f"qBittorrent login returned empty response — daemon may still be starting.")
-            warn(f"Re-run sudo bash {install_dir}/setup.sh in a minute or two; if it")
-            warn("keeps happening, check 'docker logs qbittorrent' for startup errors.")
-        warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
+            warn(f"")
+            warn(f"  (Last error from qBit: {last_error})")
         return
 
     # Get current scan_dirs

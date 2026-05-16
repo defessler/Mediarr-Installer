@@ -76,6 +76,18 @@ DATA_DIRS=(
     "$DATA_ROOT/Downloads/Usenet/complete/tv"
     "$DATA_ROOT/Downloads/Usenet/complete/movies"
     "$DATA_ROOT/Downloads/Usenet/complete/music"
+    # Recycle bin dirs for each arr — referenced by Media Management
+    # config (configure_media_management() in setup-arr-config.py).
+    # MUST exist with PUID:PGID ownership BEFORE the arr's
+    # /config/mediamanagement PUT, because the arrs validate the
+    # recycleBin path is writable by their abc user (PUID-mapped)
+    # and reject the whole PUT with HTTP 400 if not. Real symptom:
+    # "Folder '/data/.recycle/sonarr' is not writable by user 'abc'"
+    # cascading into every Media Management setting failing to apply
+    # (not just the recycle bin field).
+    "$DATA_ROOT/.recycle/sonarr"
+    "$DATA_ROOT/.recycle/radarr"
+    "$DATA_ROOT/.recycle/lidarr"
 )
 
 # ── Create and chown ───────────────────────────────────────────────────────────
