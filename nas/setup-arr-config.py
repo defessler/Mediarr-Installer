@@ -3243,13 +3243,18 @@ def homepage_only_main():
     (<1s vs 60-120s for full main()) and side-effect-free against
     the running arrs.
 
-    Force-deletes the existing files first so even an older
-    setup-arr-config.py on disk (one that still uses the skip-if-
-    exists write helper) can't leave a stale services.yaml in place
-    when this is called via the wrapper script. The current overwrite_
-    config_file path makes the rm redundant but cheap; older payloads
-    SFTP'd by users who haven't run the rebuilt wizard yet would
-    silently no-op without it.
+    Uses overwrite_config_file (open(w) truncates + writes in one
+    syscall) so the file is never observably-absent — earlier versions
+    did an rm + overwrite, which opened a window where Homepage's file
+    watcher could see services.yaml gone and trigger its own "no
+    services configured → write a default sample" fallback BEFORE
+    Python finished rewriting. Result was the user staring at a
+    Homepage default template that had clobbered our content.
+
+    After writing, restart the Homepage container so it definitely
+    picks up the new layout — its hot-reload watcher is flaky on
+    Synology bind mounts. The restart is best-effort; if docker isn't
+    available we just emit a hint and exit cleanly.
 
     widgets.yaml stays whatever the user set it to — that file is for
     the datetime + search widgets and isn't generated from .env.
@@ -3269,21 +3274,40 @@ def homepage_only_main():
     services_yml = f"{homepage_cfg}/services.yaml"
     settings_yml = f"{homepage_cfg}/settings.yaml"
 
-    # Force-delete so even an older setup-arr-config.py with skip-if-
-    # exists semantics writes fresh content. See docstring.
-    for p in (services_yml, settings_yml):
-        try:
-            os.remove(p)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            warn(f"Couldn't remove {p}: {e}")
+    # Render first, then write — fails loud if rendering itself errors.
+    # No rm step (see docstring): overwrite_config_file's open(w) +
+    # write is atomic enough that Homepage's watcher doesn't see an
+    # absent file in between.
+    services_body = render_homepage_services(env, LAN_IP)
+    settings_body = render_homepage_settings(env)
+    print(f"    services.yaml: {len(services_body)} bytes, "
+          f"{services_body.count(chr(10)) + 1} lines")
+    print(f"    settings.yaml: {len(settings_body)} bytes")
+    overwrite_config_file("Homepage services", services_yml, services_body)
+    overwrite_config_file("Homepage settings", settings_yml, settings_body)
 
-    overwrite_config_file("Homepage services", services_yml,
-                          render_homepage_services(env, LAN_IP))
-    overwrite_config_file("Homepage settings", settings_yml,
-                          render_homepage_settings(env))
-    ok("Dashboard regenerated — refresh http://<NAS>:3000 to see the new tiles.")
+    # Restart Homepage so it definitely picks up the new layout —
+    # its hot-reload watcher is unreliable on Synology bind mounts.
+    # Best-effort: if docker isn't on PATH or the container isn't
+    # named 'homepage', we skip with a hint rather than failing.
+    print("    Restarting homepage container to pick up new layout...")
+    import subprocess
+    try:
+        r = subprocess.run(
+            ['docker', 'restart', 'homepage'],
+            capture_output=True, timeout=30, text=True,
+        )
+        if r.returncode == 0:
+            ok("Homepage restarted — refresh http://<NAS>:3000 to see the new tiles.")
+        else:
+            warn(f"docker restart homepage failed: {(r.stderr or '').strip()[:200]}")
+            warn("  Refresh manually:  docker restart homepage")
+    except FileNotFoundError:
+        warn("docker not in PATH — restart Homepage manually:")
+        warn("  docker restart homepage")
+    except subprocess.TimeoutExpired:
+        warn("Homepage restart timed out after 30s — try manually:")
+        warn("  docker restart homepage")
 
 
 if __name__ == '__main__':
