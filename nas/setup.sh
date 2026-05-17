@@ -577,8 +577,9 @@ fi
 if is_enabled ENABLE_RECYCLARR; then
     n=$((n + 1))
     echo "  $n. Recyclarr TRaSH Guide sync (already ran once at install):"
+    echo "     http://${IP}:8889                         # one-click Sync Now button"
     echo "     bash $SCRIPT_DIR/recyclarr-sync.sh        # manual re-run with logging"
-    echo "     docker exec recyclarr recyclarr sync      # quick one-off"
+    echo "     docker exec recyclarr recyclarr sync      # quick one-off (no log file)"
     echo ""
     echo "     To schedule weekly via Synology Task Scheduler:"
     echo "       Control Panel → Task Scheduler → Create → Scheduled Task →"

@@ -354,6 +354,43 @@ services:
       - ${INSTALL_DIR}/recyclarr/config:/config
     restart: unless-stopped
 
+  # Web-UI for Recyclarr. Recyclarr itself is a CLI tool with no web
+  # interface — this sidecar exposes a single status page with a
+  # "Sync Now" button so the user can trigger a sync from the
+  # Homepage dashboard tile rather than having to SSH in. See
+  # recyclarr-trigger.py for the full justification + endpoints.
+  recyclarr-trigger:
+    image: python:3-alpine
+    container_name: recyclarr-trigger
+    profiles: ["recyclarr"]
+    networks: [media]
+    depends_on: [recyclarr]
+    ports:
+      - ${LAN_IP}:8889:8888
+    volumes:
+      # docker.sock — needed to `docker exec recyclarr recyclarr sync`
+      # from inside this container. The trigger has no other privileged
+      # access; the lock + 180s timeout in recyclarr-trigger.py cap
+      # abuse to "trigger a no-op sync occasionally."
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The recyclarr container's /config dir — read-only — so the
+      # trigger can read the .last-sync stamp to display freshness.
+      - ${INSTALL_DIR}/recyclarr/config:/recyclarr-config:ro
+      # The Python webhook itself — single file, mounted in. Keeps
+      # the image vanilla (just python:3-alpine + docker-cli at
+      # boot via apk) so updates to the script don't require rebuilds.
+      - ${INSTALL_DIR}/recyclarr-trigger.py:/app/server.py:ro
+    environment:
+      - TZ=${TZ}
+    # apk-add docker-cli at container start (5s overhead, no Dockerfile
+    # needed). The exec at the end keeps signal handling clean —
+    # SIGTERM during `docker compose down` propagates to Python instead
+    # of being trapped by the wrapper sh.
+    command: >-
+      sh -c "apk add --no-cache docker-cli >/dev/null 2>&1 &&
+             exec python3 /app/server.py"
+    restart: unless-stopped
+
   unpackerr:
     image: golift/unpackerr:latest
     container_name: unpackerr

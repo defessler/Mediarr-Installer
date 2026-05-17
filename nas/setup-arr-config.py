@@ -2423,14 +2423,20 @@ def render_homepage_services(env, ip):
         rp = env.get('TRASH_RADARR_PROFILE', 'hd-bluray-web').strip() or 'hd-bluray-web'
         sp_name = SONARR_PROFILE_NAMES.get(sp, sp)
         rp_name = RADARR_PROFILE_NAMES.get(rp, rp)
-        # No siteMonitor / ping — Recyclarr has no HTTP endpoint and
-        # Homepage's ICMP ping needs CAP_NET_RAW which we don't grant.
-        # Status dot would always be red; better to render no dot.
+        # Recyclarr itself is a CLI tool with no web UI, but the
+        # recyclarr-trigger sidecar (defined in docker-compose.yml)
+        # exposes a single-page web UI with a "Sync Now" button on
+        # port 8889. Tile href points there — clicking the tile opens
+        # the trigger UI in the user's browser. siteMonitor uses the
+        # same URL so the dashboard's status dot reflects whether the
+        # trigger container is up + serving (not whether the LAST sync
+        # succeeded — that's surfaced inside the trigger UI itself).
         maintenance.append(
             f"    - Recyclarr:\n"
-            f"        href: https://trash-guides.info\n"
+            f"        href: http://{ip}:8889/\n"
             f"        description: 'TRaSH sync · Sonarr={sp_name}, Radarr={rp_name}'\n"
-            f"        icon: recyclarr.svg"
+            f"        icon: recyclarr.svg\n"
+            f"        siteMonitor: http://{ip}:8889/"
         )
     if maintenance:
         out.append("- Maintenance:")

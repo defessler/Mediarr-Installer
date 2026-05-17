@@ -72,7 +72,8 @@ the cheat sheet, sorted by which ones you'll actually open:
 | **Gluetun** | The VPN wrapper | Acts as a sealed envelope around qBittorrent. All torrent traffic exits through your VPN provider. If the VPN drops, qBit can't reach anything — no IP leaks. You only see this container if you enabled VPN in the wizard. |
 | **SABnzbd** | The usenet downloader | Pulls files from Usenet — faster + more reliable than torrents, but requires a paid provider (Eweka, Newshosting, etc.). Optional. |
 | **Tautulli** | The watch-stats dashboard | Pretty graphs of what's been watched, by whom, for how long. Sends optional notifications. Talks only to Plex. |
-| **Recyclarr** | The quality-rules keeper | The TRaSH Guides community publishes "use these rules for the best 1080p / 4K experience." Recyclarr automatically pushes those rules into Sonarr / Radarr so you get the right quality without having to copy-paste hundreds of settings. |
+| **Recyclarr** | The quality-rules keeper | The TRaSH Guides community publishes "use these rules for the best 1080p / 4K experience." Recyclarr automatically pushes those rules into Sonarr / Radarr so you get the right quality without having to copy-paste hundreds of settings. Has no UI of its own — the sidecar below provides one. |
+| **recyclarr-trigger** | The "Sync Now" button | Tiny web page (one button) at `http://<NAS>:8889` so you can manually trigger Recyclarr to re-fetch the latest TRaSH rules. Click the Recyclarr tile on Homepage to get there. |
 | **Unpackerr** | The auto-unzipper | Some downloads arrive as `.rar` archives split into 50 files. Unpackerr extracts them in place so Sonarr / Radarr can see the actual video file. |
 | **Flaresolverr** | The CloudFlare lock-picker | Some indexer sites (e.g. 1337x) hide behind a "are you human?" CloudFlare challenge. Flaresolverr solves the challenge so Prowlarr can still talk to them. Set-and-forget background service. |
 

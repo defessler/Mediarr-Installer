@@ -73,7 +73,7 @@ is_enabled ENABLE_QBITTORRENT && CONTAINERS+=(qbittorrent)
 is_enabled ENABLE_QBITTORRENT && vpn_on && CONTAINERS+=(gluetun)
 is_enabled ENABLE_SABNZBD     && CONTAINERS+=(sabnzbd)
 is_enabled ENABLE_HOMEPAGE    && CONTAINERS+=(homepage)
-is_enabled ENABLE_RECYCLARR   && CONTAINERS+=(recyclarr)
+is_enabled ENABLE_RECYCLARR   && CONTAINERS+=(recyclarr recyclarr-trigger)
 is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 
 for container in "${CONTAINERS[@]}"; do
@@ -327,6 +327,11 @@ is_enabled ENABLE_PLEX        && check_url_lenient "Seerr" "http://$LAN_IP:5056"
 # (container-state aware: distinguishes booting vs crash-loop). Don't duplicate
 # it here.
 check_url "Flaresolverr" "http://$LAN_IP:8191"
+# Recyclarr trigger webhook — port 8889 serves the "Sync Now" tile UI.
+# Apk-installs docker-cli at first start (5s) so HTTP isn't reachable
+# the instant the container exists; check_url has a 30s retry budget
+# which covers the slow boot just fine.
+is_enabled ENABLE_RECYCLARR   && check_url "Recyclarr trigger" "http://$LAN_IP:8889"
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 

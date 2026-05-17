@@ -417,12 +417,16 @@ Radarr → Movies tab → ✎ Edit (or "X selected" toolbar)
     cause:
       'The wizard only runs `recyclarr sync` once at install time. TRaSH publishes Custom Format updates roughly weekly; to pick them up you need to re-run the sync.',
     fix:
-      'Use the bundled recyclarr-sync.sh helper (writes a .last-sync stamp + appends to sync.log for auditing). Schedule it weekly via Synology Task Scheduler.',
+      'Three options, in order of friendliness: (1) click the Recyclarr tile on the Homepage dashboard — opens a one-page UI with a "Sync Now" button. (2) Use the bundled recyclarr-sync.sh helper from SSH (writes a .last-sync stamp + appends sync.log). (3) Schedule (2) weekly via Synology Task Scheduler so you don\'t have to remember.',
     command:
-      `# Manual re-run with logging:
+      `# Option 1 — browser button (easiest):
+#   Open http://<NAS>:8889 (or click the Recyclarr tile on Homepage)
+#   → "Sync Now" → done
+
+# Option 2 — SSH one-liner with logging:
 bash <INSTALL_DIR>/recyclarr-sync.sh
 
-# Schedule weekly (Synology):
+# Option 3 — schedule weekly (Synology):
 #   Control Panel → Task Scheduler → Create → Scheduled Task →
 #   User-defined script  (run as root)
 #   Run command:  bash <INSTALL_DIR>/recyclarr-sync.sh
