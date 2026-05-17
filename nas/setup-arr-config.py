@@ -3157,10 +3157,23 @@ def main():
         # because Homepage couldn't reach the containers (they weren't
         # in the active compose profile set). Now: only enabled
         # services appear; only the matching layout sections exist.
-        write_config_file("Homepage services",
+        # services.yaml + settings.yaml are FULLY generated from the
+        # user's ENABLE_* picks every run. Use overwrite_config_file —
+        # the older code used write_config_file (skip-if-exists), which
+        # meant any change to ENABLE_* / TRASH_* flags after the first
+        # install never reflected on the dashboard. Real-world symptom:
+        # users enabling Recyclarr after a prior install never saw the
+        # Maintenance tile because the older services.yaml didn't have
+        # the Maintenance section to begin with, and the write got
+        # silently skipped on the re-run.
+        #
+        # widgets.yaml is static (just a datetime + search widget) so
+        # write_config_file (skip-if-exists) is still correct there —
+        # the user may have customised it and we don't want to clobber.
+        overwrite_config_file("Homepage services",
             f"{homepage_cfg}/services.yaml",
             render_homepage_services(env, LAN_IP))
-        write_config_file("Homepage settings",
+        overwrite_config_file("Homepage settings",
             f"{homepage_cfg}/settings.yaml",
             render_homepage_settings(env))
         write_config_file("Homepage widgets",
