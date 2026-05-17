@@ -392,13 +392,21 @@ services:
       # reports (covers DSM 6 with ~1.39 + future DSM updates).
       - DOCKER_API_VERSION=1.43
     # apk-add docker-cli at container start (5s overhead, no Dockerfile
-    # needed). The exec at the end keeps signal handling clean —
-    # SIGTERM during `docker compose down` propagates to Python instead
-    # of being trapped by the wrapper sh.
+    # needed). Surface apk errors to docker logs rather than swallowing
+    # them — earlier version had `>/dev/null 2>&1` which made apk
+    # failures (e.g., no DNS during a NAS reboot) silent + crash-loop
+    # invisibly. Quote-passing of the sleep keeps the apk retry from
+    # hammering the package mirror if it fails the first try.
     command: >-
-      sh -c "apk add --no-cache docker-cli >/dev/null 2>&1 &&
+      sh -c "apk add --no-cache docker-cli ||
+             { echo 'apk add docker-cli failed; sleeping 60s before exit so we don'\\''t hammer the mirror'; sleep 60; exit 1; };
              exec python3 /app/server.py"
-    restart: unless-stopped
+    # restart: on-failure:5 instead of unless-stopped so a persistent
+    # boot failure (apk network out, Python syntax error, etc.) can't
+    # crash-loop forever and pin the docker daemon. After 5 failures
+    # the container stays stopped; user re-enables via the wizard or
+    # docker compose up -d recyclarr-trigger.
+    restart: on-failure:5
 
   unpackerr:
     image: golift/unpackerr:latest
