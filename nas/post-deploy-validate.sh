@@ -323,7 +323,9 @@ is_enabled ENABLE_PLEX        && check_tautulli
 # this validator passes on re-run.
 is_enabled ENABLE_PLEX        && check_url_lenient "Seerr" "http://$LAN_IP:5056" \
     "Complete the first-run wizard at http://$LAN_IP:5056 to bind its port."
-is_enabled ENABLE_PLEX        && check_url "Tautulli"     "http://$LAN_IP:8181"
+# Tautulli is checked via check_tautulli above — it has a richer diagnostic
+# (container-state aware: distinguishes booting vs crash-loop). Don't duplicate
+# it here.
 check_url "Flaresolverr" "http://$LAN_IP:8191"
 
 # ── Plex External Access ──────────────────────────────────────────────────────
