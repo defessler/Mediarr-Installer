@@ -36,7 +36,10 @@ to the internet.
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import html
+import http.client
+import json
 import os
+import socket
 import subprocess
 import threading
 
@@ -253,7 +256,78 @@ class Handler(BaseHTTPRequestHandler):
         self._send_html(render(banner_kind=kind, banner_text=msg, output=out), code=code)
 
 
+def detect_daemon_api_version():
+    """Query the docker daemon's /version endpoint over its UNIX socket
+    and return the highest API version IT supports. Used at startup to
+    pin docker-cli to a version the daemon speaks.
+
+    Why this is necessary: `apk add docker-cli` pulls the latest CLI
+    (currently API 1.50+) which by default tries to negotiate using
+    its own version. Synology's bundled Docker daemon on DSM 7 caps
+    at API 1.43 — without pinning, every `docker exec` call inside
+    this container fails with:
+
+      "client version 1.52 is too new. Maximum supported API version
+       is 1.43"
+
+    By probing the daemon FIRST + setting DOCKER_API_VERSION in the
+    environment we inherit through subprocess, every subsequent CLI
+    call automatically uses a version the daemon accepts. Works on
+    DSM 6 (API ~1.39), DSM 7 (1.43), and anything more recent.
+
+    Falls back to whatever DOCKER_API_VERSION is already set in env
+    (compose passes 1.43 as the safe static default) if the probe
+    fails — that way a broken docker.sock mount still gives a usable
+    starting point rather than crashing the trigger at boot.
+    """
+    class UnixHTTPConn(http.client.HTTPConnection):
+        # Tiny adapter to make http.client speak UNIX sockets — Docker's
+        # API IS HTTP, just over /var/run/docker.sock instead of a TCP
+        # port. Means we avoid pulling in `requests` or the `docker`
+        # SDK (both would add wheel-building delays to apk init).
+        def __init__(self):
+            super().__init__('localhost')
+        def connect(self):
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.settimeout(self.timeout)
+            self.sock.connect('/var/run/docker.sock')
+
+    try:
+        conn = UnixHTTPConn()
+        conn.timeout = 5
+        conn.request('GET', '/version')
+        resp = conn.getresponse()
+        if resp.status != 200:
+            return None
+        data = json.loads(resp.read().decode('utf-8'))
+        # /version returns the daemon's MAX supported API version in
+        # ApiVersion. There's also MinAPIVersion for the floor; we
+        # want the max for forward-compat.
+        return data.get('ApiVersion')
+    except Exception as e:
+        print(f'[trigger] Could not probe daemon API version ({e}); '
+              f'falling back to DOCKER_API_VERSION env or CLI default',
+              flush=True)
+        return None
+
+
 def main():
+    # Pin docker-cli to a daemon-accepted API version BEFORE we bind
+    # the HTTP server (so the first sync click never errors). The
+    # docker-compose env block sets a static fallback of 1.43; if the
+    # runtime probe succeeds it overrides with the actual daemon-
+    # reported max.
+    detected = detect_daemon_api_version()
+    if detected:
+        old = os.environ.get('DOCKER_API_VERSION', '<unset>')
+        os.environ['DOCKER_API_VERSION'] = detected
+        print(f'[trigger] Pinned DOCKER_API_VERSION={detected} '
+              f'(was {old}) from daemon /version probe', flush=True)
+    else:
+        existing = os.environ.get('DOCKER_API_VERSION', '<unset>')
+        print(f'[trigger] Daemon probe failed; sticking with '
+              f'DOCKER_API_VERSION={existing}', flush=True)
+
     addr = ('0.0.0.0', 8888)
     print(f'Recyclarr trigger webhook listening on http://{addr[0]}:{addr[1]}/', flush=True)
     HTTPServer(addr, Handler).serve_forever()

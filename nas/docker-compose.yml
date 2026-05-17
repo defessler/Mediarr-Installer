@@ -382,6 +382,15 @@ services:
       - ${INSTALL_DIR}/recyclarr-trigger.py:/app/server.py:ro
     environment:
       - TZ=${TZ}
+      # Pin docker-cli to the API version Synology DSM 7's bundled
+      # Docker daemon speaks (caps at 1.43). Without this the apk-
+      # installed latest CLI (currently API 1.50+) errors with
+      # "client version is too new. Maximum supported API version is
+      # 1.43" on every docker exec call. This is the STATIC fallback;
+      # recyclarr-trigger.py also probes the daemon at startup and
+      # overrides DOCKER_API_VERSION with whatever the daemon actually
+      # reports (covers DSM 6 with ~1.39 + future DSM updates).
+      - DOCKER_API_VERSION=1.43
     # apk-add docker-cli at container start (5s overhead, no Dockerfile
     # needed). The exec at the end keeps signal handling clean —
     # SIGTERM during `docker compose down` propagates to Python instead
