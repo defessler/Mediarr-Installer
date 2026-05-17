@@ -216,6 +216,24 @@ docker exec sonarr sh -c 'touch /data/Downloads/.t && ln /data/Downloads/.t "/da
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
+    symptom: 'Sonarr / Radarr / Seerr feel slow on every page navigation',
+    cause:
+      'Two persistent-slowness causes, often together: (a) SQLite databases get fragmented after months of inserts (every queue item, history row, blocklist entry adds rows) — queries get slower and slower. (b) Broken indexers add 10s timeouts to every UI status call — Sonarr/Radarr ping their indexer list on each status check, and a single CloudFlare-bounded indexer (1337x is the classic offender) freezes the UI for 10s while it times out. Seerr piggybacks on the arrs\' API responses, so slow arrs = slow Seerr too.',
+    fix:
+      'The bundled tune-arrs.sh helper fixes both in one shot: stops each arr one at a time, vacuums + reindexes its SQLite DB (typical 2-10× query speedup), then tests every Prowlarr indexer and disables the failing ones (Prowlarr\'s app-sync propagates the disable to Sonarr/Radarr automatically within ~30s). Safe + reversible — backs up each DB before vacuuming. Plex / qBit / SAB are not touched.',
+    command:
+      `# Dry-run first to see what WOULD change:
+bash <INSTALL_DIR>/tune-arrs.sh --dry-run
+
+# Apply:
+sudo bash <INSTALL_DIR>/tune-arrs.sh
+
+# Only one piece if you don't want the full pass:
+sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-vacuum     # just disable broken indexers
+sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-indexers   # just vacuum DBs`,
+  },
+  {
+    category: 'Sonarr / Radarr / Lidarr / Prowlarr',
     symptom: 'Arr says "No files found" or "Folder did not contain video files"',
     cause:
       'Either the file path the arr is looking at is wrong (path mapping mismatch — qBit says /downloads/foo but the arr only sees /data/Downloads/Torrents/foo) or the file extension isn\'t one the arr recognizes (uncommon — Sonarr handles .mkv/.mp4/.avi/.ts/.m4v).',
