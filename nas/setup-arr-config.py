@@ -1307,35 +1307,63 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
         fail(f"Could not write Tautulli config: {e}")
         return
 
-    # Restart Tautulli so it re-reads config.ini. Brief downtime (~5s)
-    # on fast hardware but real-world logs from Synology spinning rust
-    # show it can take 60-90s for the container to settle. Use stop +
-    # `up -d` instead of `restart` — `up -d` returns once the container
-    # is created and starting, without waiting for full readiness, so
-    # we don't block the whole install on Tautulli's first-boot init.
-    # The container will finish coming up in the background and pick
-    # up the config we just wrote.
+    # Restart Tautulli so it re-reads config.ini. Use `docker compose
+    # restart` rather than stop+up — stop+up creates a fresh container
+    # instance which retriggers LSIO's first-boot path (where Tautulli's
+    # known boot-races live), and `compose stop` marks the container as
+    # user-stopped which interferes with `restart: unless-stopped` after
+    # the container exits during init on slow hardware. Real-world
+    # symptom seen on user NAS: container ended up in `exited` state
+    # post-install and needed a manual `docker start` to recover.
+    # `compose restart` sends SIGTERM to the running container (Tautulli
+    # shuts down cleanly), then starts it back up — same container ID,
+    # restart policy intact, no first-boot path re-run.
     print("    Restarting Tautulli container to apply...")
     import subprocess
     try:
         subprocess.run(
-            ['docker', 'compose', 'stop', 'tautulli'],
-            cwd=stack_dir, capture_output=True, timeout=60, text=True,
+            ['docker', 'compose', 'restart', '-t', '15', 'tautulli'],
+            cwd=stack_dir, check=True, capture_output=True, timeout=90, text=True,
         )
-        subprocess.run(
-            ['docker', 'compose', 'up', '-d', 'tautulli'],
-            cwd=stack_dir, check=True, capture_output=True, timeout=60, text=True,
-        )
-        ok("Tautulli restarted — open http://<NAS>:8181 to verify (may take 30-60s)")
     except subprocess.CalledProcessError as e:
         warn(f"docker compose restart failed: {(e.stderr or '')[:200]}")
         warn("  Manually:  docker compose restart tautulli")
+        return
     except subprocess.TimeoutExpired:
         warn("Restart timed out — Tautulli may need a manual kick:")
         warn("  docker compose restart tautulli")
+        return
     except FileNotFoundError:
         warn("'docker' not found in PATH — restart Tautulli manually:")
         warn("  docker compose restart tautulli")
+        return
+
+    # Verify Tautulli actually came back up. The `restart` command
+    # returns once the container is started, not once Tautulli is ready
+    # to serve HTTP — that takes 10-60s depending on disk speed. Poll
+    # docker for container state up to 30s so we catch a fast crash-loop
+    # before the user moves on. We don't wait for HTTP-200 here because
+    # the wizard isn't blocked on it — post-deploy-validate.sh has the
+    # richer HTTP check.
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            r = subprocess.run(
+                ['docker', 'inspect', '-f', '{{.State.Status}}', 'tautulli'],
+                capture_output=True, timeout=5, text=True,
+            )
+            state = (r.stdout or '').strip()
+            if state == 'running':
+                ok("Tautulli restarted — open http://<NAS>:8181 to verify (may take 30-60s)")
+                return
+            if state == 'exited':
+                warn("Tautulli exited after restart — check 'docker logs tautulli'")
+                warn("  Quick fix:  docker start tautulli")
+                return
+        except (subprocess.SubprocessError, FileNotFoundError):
+            break
+    warn("Tautulli didn't reach 'running' state within 30s — check 'docker ps'")
 
 
 def _probe_usenet_ssl(host, port, timeout=5):
