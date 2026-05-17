@@ -52,6 +52,32 @@ network — one for each "service" — plus a dashboard that links to all of the
 You request something in **Seerr**, it gets downloaded, sorted, and shows up in
 **Plex** automatically a few minutes (or hours) later.
 
+### What each container does (in plain English)
+
+The stack is made up of a dozen-ish small services ("containers"). You almost
+never touch them directly — they talk to each other behind the scenes. Here's
+the cheat sheet, sorted by which ones you'll actually open:
+
+| Container | What it is | What it does, plainly |
+|-----------|------------|----------------------|
+| **Plex** | The TV | What you actually watch on. Open it on your phone / smart TV / laptop / browser. Streams everything your library has. |
+| **Seerr** | The Netflix-style request page | What you (and family/friends) browse to ask for a new movie or show. Click "request" and the rest of the stack figures out how to get it. |
+| **Homepage** | The home page | One web page that links to every other service so you don't have to remember any of these URLs. Bookmark this. |
+| **Sonarr** | The TV-show librarian | You add a show once ("I want all of Breaking Bad"). Sonarr remembers every episode, watches for new ones as they release, finds them, hands them off to a downloader, and files them away when they arrive. |
+| **Radarr** | Same, but for movies | Identical pattern: pick a movie, Radarr handles the rest. |
+| **Lidarr** | Same, but for music | Pick an artist or album, Lidarr keeps the discography current. |
+| **Bazarr** | The subtitle hunter | After Sonarr / Radarr brings in a video, Bazarr goes looking for matching subtitles (in your language) so you don't have to search yourself. |
+| **Prowlarr** | The indexer phonebook | Sonarr / Radarr / Lidarr don't know where to *search* for releases — Prowlarr is the central list of "search engines for releases." You add a new indexer in Prowlarr and every arr picks it up automatically. |
+| **qBittorrent** | The torrent downloader | Pulls files from a peer-to-peer network. Always runs *inside* Gluetun's network so your home IP is never exposed. The wizard wires this up; you just set a password. |
+| **Gluetun** | The VPN wrapper | Acts as a sealed envelope around qBittorrent. All torrent traffic exits through your VPN provider. If the VPN drops, qBit can't reach anything — no IP leaks. You only see this container if you enabled VPN in the wizard. |
+| **SABnzbd** | The usenet downloader | Pulls files from Usenet — faster + more reliable than torrents, but requires a paid provider (Eweka, Newshosting, etc.). Optional. |
+| **Tautulli** | The watch-stats dashboard | Pretty graphs of what's been watched, by whom, for how long. Sends optional notifications. Talks only to Plex. |
+| **Recyclarr** | The quality-rules keeper | The TRaSH Guides community publishes "use these rules for the best 1080p / 4K experience." Recyclarr automatically pushes those rules into Sonarr / Radarr so you get the right quality without having to copy-paste hundreds of settings. |
+| **Unpackerr** | The auto-unzipper | Some downloads arrive as `.rar` archives split into 50 files. Unpackerr extracts them in place so Sonarr / Radarr can see the actual video file. |
+| **Flaresolverr** | The CloudFlare lock-picker | Some indexer sites (e.g. 1337x) hide behind a "are you human?" CloudFlare challenge. Flaresolverr solves the challenge so Prowlarr can still talk to them. Set-and-forget background service. |
+
+**The shortest version of the whole stack:** *Seerr* takes requests → *Sonarr / Radarr / Lidarr* watch for what you want → *Prowlarr* tells them where to look → *qBittorrent + Gluetun* and *SABnzbd* download it → *Unpackerr* unpacks it if needed → *Bazarr* fetches subtitles → *Plex* plays it. *Homepage* is the dashboard linking to everything; *Tautulli* shows watch stats; *Recyclarr* keeps quality settings sane.
+
 ---
 
 ## 2. Before you start — the checklist
