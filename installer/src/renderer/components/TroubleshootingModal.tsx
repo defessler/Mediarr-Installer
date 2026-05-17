@@ -371,6 +371,20 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
   -d '{"name": "DownloadedAlbumsScan", "path": "/data/Downloads/Usenet/complete/music"}'`,
   },
 
+  // ── Homepage ────────────────────────────────────────────────────────
+  {
+    category: 'Homepage dashboard',
+    symptom: 'Service tile is missing from the Homepage dashboard',
+    cause:
+      'Older wizard builds used a skip-if-exists writer for services.yaml, so once the file existed from a prior install, the dashboard layout was frozen — enabling a service later, or upgrading the wizard to add a new section (like Recyclarr Maintenance), wouldn\'t reflect on the dashboard. Fixed in the current build, which overwrites services.yaml every install, but a NAS upgraded from the old build needs a one-time refresh.',
+    fix:
+      'Easiest: open the installer → "Update existing stack" → "Refresh dashboard." That syncs the latest setup-arr-config.py and regenerates services.yaml + settings.yaml in <1s, no container restart needed. Or run the equivalent manually on the NAS:',
+    command:
+      `cd <INSTALL_DIR>
+sudo rm -f homepage/config/services.yaml homepage/config/settings.yaml
+sudo python3 setup-arr-config.py --homepage-only`,
+  },
+
   // ── Recyclarr ───────────────────────────────────────────────────────
   {
     category: 'Recyclarr',
@@ -464,6 +478,7 @@ const CATEGORIES = [
   'VPN (gluetun)',
   'Migration screen',
   'SABnzbd',
+  'Homepage dashboard',
   'Recyclarr',
 ]
 

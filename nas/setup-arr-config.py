@@ -3236,5 +3236,60 @@ def main():
     sys.exit(0 if errors == 0 else 1)
 
 
+def homepage_only_main():
+    """Regenerate Homepage's services.yaml + settings.yaml from .env
+    without re-running every arr's API configuration. Used by the
+    installer's Update screen "Refresh dashboard" action — fast
+    (<1s vs 60-120s for full main()) and side-effect-free against
+    the running arrs.
+
+    Force-deletes the existing files first so even an older
+    setup-arr-config.py on disk (one that still uses the skip-if-
+    exists write helper) can't leave a stale services.yaml in place
+    when this is called via the wrapper script. The current overwrite_
+    config_file path makes the rm redundant but cheap; older payloads
+    SFTP'd by users who haven't run the rebuilt wizard yet would
+    silently no-op without it.
+
+    widgets.yaml stays whatever the user set it to — that file is for
+    the datetime + search widgets and isn't generated from .env.
+    """
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    env        = read_env_merged(script_dir)
+    LAN_IP     = env.get('LAN_IP', '')
+    if not LAN_IP:
+        print("Error: LAN_IP not set in .env")
+        sys.exit(1)
+    if not is_enabled(env, 'ENABLE_HOMEPAGE'):
+        print("ENABLE_HOMEPAGE=false in .env — nothing to regenerate.")
+        sys.exit(0)
+
+    section("Homepage refresh")
+    homepage_cfg = f"{script_dir}/homepage/config"
+    services_yml = f"{homepage_cfg}/services.yaml"
+    settings_yml = f"{homepage_cfg}/settings.yaml"
+
+    # Force-delete so even an older setup-arr-config.py with skip-if-
+    # exists semantics writes fresh content. See docstring.
+    for p in (services_yml, settings_yml):
+        try:
+            os.remove(p)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            warn(f"Couldn't remove {p}: {e}")
+
+    overwrite_config_file("Homepage services", services_yml,
+                          render_homepage_services(env, LAN_IP))
+    overwrite_config_file("Homepage settings", settings_yml,
+                          render_homepage_settings(env))
+    ok("Dashboard regenerated — refresh http://<NAS>:3000 to see the new tiles.")
+
+
 if __name__ == '__main__':
-    main()
+    # Tiny CLI dispatch — no argparse needed for one flag. Anything
+    # else falls through to the full main().
+    if '--homepage-only' in sys.argv:
+        homepage_only_main()
+    else:
+        main()

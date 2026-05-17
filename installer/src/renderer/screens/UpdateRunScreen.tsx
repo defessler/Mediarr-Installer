@@ -34,7 +34,7 @@ import { SETUP_STEPS } from '../components/StepperRail.js'
 const CHANNEL_ID = 'compose-update'
 
 type Phase = 'idle' | 'running' | 'done' | 'failed'
-type Action = 'pull' | 'sync' | `step-${number}` | null
+type Action = 'pull' | 'sync' | 'homepage' | `step-${number}` | null
 
 export function UpdateRunScreen() {
   const { sessionId, targetDir, setStep } = useWizard()
@@ -219,6 +219,55 @@ docker compose $FILES --progress plain --ansi never up -d`
     }
   }
 
+  /** Sync payload + regenerate Homepage's services.yaml + settings.yaml
+   *  from the user's current .env. Targeted fix for "I enabled a
+   *  service but its tile isn't on the dashboard" and "I re-ran the
+   *  wizard but the dashboard layout didn't change" — both of which
+   *  trace back to a stale services.yaml left behind by older builds
+   *  whose generator was skip-if-exists.
+   *
+   *  Uses setup-arr-config.py's --homepage-only CLI flag which:
+   *    1. Force-deletes services.yaml + settings.yaml
+   *    2. Re-renders both from .env (with the current ENABLE_* + TRASH_*
+   *       picks reflected in the new section / tile content)
+   *    3. Skips every per-service API call main() makes — fast (<1s)
+   *       and can't accidentally cycle a running arr.
+   *
+   *  Homepage watches its config dir for changes, so the user just
+   *  refreshes their browser to see the new tiles — no container
+   *  restart needed. */
+  async function refreshDashboard() {
+    if (!sessionId || phase === 'running') return
+    reset()
+    setLastAction('homepage')
+    setPhase('running')
+
+    // Sync first so the --homepage-only flag (added in a later
+    // wizard version) is present on the NAS. Users on a pre-flag
+    // payload would otherwise get "unrecognised argument" and the
+    // run would fail. syncPayload sets phase=failed + reports on
+    // its own; bail without further work if it returns false.
+    const synced = await syncPayload()
+    if (!synced) return
+
+    wlog('Regenerating Homepage services.yaml + settings.yaml from .env...')
+    try {
+      await window.installer.ssh.execStream({
+        sessionId,
+        cmd:
+          PATH_PREFIX +
+          `cd ${shellQuote(targetDir)} && ` +
+          `python3 setup-arr-config.py --homepage-only`,
+        sudo: true,
+        channelId: CHANNEL_ID,
+      })
+    } catch (e) {
+      setErrorMsg((e as Error).message)
+      setPhase('failed')
+      reportError('Refresh dashboard', e)
+    }
+  }
+
   /** Sync payload + run one of setup.sh's 10 step-rerun commands.
    *  Auto-syncs first so the step exec'd is always the latest version
    *  from the bundled payload — important when the user is updating
@@ -292,6 +341,7 @@ docker compose $FILES --progress plain --ansi never up -d`
   const lastActionLabel =
     lastAction === 'pull' ? 'Pull + recreate containers'
     : lastAction === 'sync' ? 'Sync wizard scripts'
+    : lastAction === 'homepage' ? 'Refresh dashboard'
     : lastAction && lastAction.startsWith('step-')
       ? `Re-run step ${lastAction.slice(5)}`
       : null
@@ -325,11 +375,12 @@ docker compose $FILES --progress plain --ansi never up -d`
         </div>
       </header>
 
-      {/* Action picker — three cards laid out horizontally. Disabled
-          while one is running so the user can't kick off a second
-          action mid-flight (they'd race against the same stream
-          channel). */}
-      <section className="grid grid-cols-3 gap-3 shrink-0">
+      {/* Action picker — four cards in a 2x2 grid. Disabled while one
+          is running so the user can't kick off a second action mid-
+          flight (they'd race against the same stream channel). 2x2
+          gives each card enough width for descriptive text without
+          truncation; 1280px window splits cleanly into ~600px columns. */}
+      <section className="grid grid-cols-2 gap-3 shrink-0">
         <ActionCard
           title="Pull + recreate containers"
           subtitle="Fetch newer images and recreate any container whose image changed."
@@ -347,6 +398,15 @@ docker compose $FILES --progress plain --ansi never up -d`
           onClick={syncOnly}
           disabled={running}
           accent="slate"
+        />
+        <ActionCard
+          title="Refresh dashboard"
+          subtitle="Regenerate Homepage's services.yaml + settings.yaml from your current .env (.env's ENABLE_* / TRASH_* picks)."
+          when="When you enabled a service after the first install and its tile isn't on the Homepage dashboard. Fast (<1s) and won't restart any container."
+          buttonLabel={running && lastAction === 'homepage' ? 'Refreshing…' : 'Refresh dashboard'}
+          onClick={refreshDashboard}
+          disabled={running}
+          accent="emerald"
         />
         <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 space-y-2 flex flex-col">
           <h3 className="font-medium text-sm">Re-run a step</h3>
@@ -436,12 +496,13 @@ function ActionCard({
   buttonLabel: string
   onClick: () => void
   disabled: boolean
-  accent: 'sky' | 'slate'
+  accent: 'sky' | 'slate' | 'emerald'
 }) {
   // Class strings hardcoded so Tailwind's purge keeps them; dynamic
   // `bg-${accent}-...` would get stripped at build.
-  const btnCls = accent === 'sky'
-    ? 'bg-sky-700/80 hover:bg-sky-600'
+  const btnCls =
+    accent === 'sky'     ? 'bg-sky-700/80 hover:bg-sky-600'
+    : accent === 'emerald' ? 'bg-emerald-700/80 hover:bg-emerald-600'
     : 'bg-slate-700 hover:bg-slate-600'
   return (
     <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 space-y-2 flex flex-col">
