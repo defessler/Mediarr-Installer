@@ -33,6 +33,19 @@ interface TItem {
 // Order chosen so the most common / most painful issues come first.
 // Each entry was a real bug we hit during the install hardening passes.
 const ITEMS: TItem[] = [
+  // ── Walkthrough pointer ─────────────────────────────────────────────
+  // First entry shows up as the very top of the modal when no search is
+  // active. Mirrors the green-banner pointer in the header so a beginner
+  // who scans the entry list still finds the tutorial.
+  {
+    category: 'New to this? Start here',
+    symptom: 'I\'ve never installed Docker / SSH\'d into a NAS / used the command line',
+    cause:
+      'You don\'t need to — the wizard handles all of that. There\'s a full beginner\'s walkthrough in INSTALL.md on GitHub that covers everything from enabling SSH on your NAS through adding your first show in Sonarr/Radarr.',
+    fix:
+      'Open https://github.com/defessler/NAS-Arr-Stack/blob/master/INSTALL.md in your browser. It walks through the whole install with ASCII mockups of each wizard screen, what to type in each field, and what to do once each service is running.',
+  },
+
   // ── Install failures ────────────────────────────────────────────────
   {
     category: 'Install failed or timed out',
@@ -113,7 +126,7 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
     category: 'qBittorrent',
     symptom: '"container must join at least one network" on restart',
     cause:
-      'When VPN_ENABLED=true, qBittorrent shares gluetun\'s network namespace (network_mode: service:gluetun). Docker enforces this hard: if gluetun is down or its network namespace has been recreated, restarting qBittorrent fails with this exact error.',
+      'When VPN_ENABLED=true, qBittorrent shares gluetun\'s network namespace (network_mode: container:gluetun, switched from service:gluetun in the latest build to dodge a startup race where qBit booted before gluetun had finished setting up its namespace). Docker enforces this hard either way: if gluetun is down or its namespace has been recreated, restarting qBit fails with this exact error.',
     fix:
       'Use the bundled helper script — it brings gluetun up first, waits for its healthcheck, then recreates qBit against the live namespace.',
     command: `bash <INSTALL_DIR>/restart-qbit.sh`,
@@ -159,9 +172,10 @@ sudo bash setup.sh`,
     category: 'Tautulli',
     symptom: 'Tautulli container is exited (status=exited, exit=0)',
     cause:
-      'The wizard\'s configure_tautulli step ran "docker compose stop tautulli" successfully, but the subsequent "up -d" timed out. Tautulli got stopped cleanly but never restarted.',
-    fix: 'Just bring it back up.',
-    command: `docker compose up -d tautulli`,
+      'Old wizard builds ran "docker compose stop tautulli" + "up -d" which created a fresh container instance and retriggered LSIO\'s first-boot init path — the container would sometimes exit during slow-disk init and the unless-stopped policy got confused by the prior user-stop and didn\'t bring it back. Latest build uses "docker compose restart" + a 30s readiness poll so this should no longer recur; if it does, restart manually.',
+    fix:
+      'Just bring it back up. The wizard auto-detects this on its next run and surfaces a specific recovery hint.',
+    command: `docker start tautulli`,
   },
 
   // ── Arr auth ────────────────────────────────────────────────────────
@@ -230,8 +244,9 @@ docker exec sonarr sh -c 'touch /data/Downloads/.t && ln /data/Downloads/.t "/da
     category: 'Plex',
     symptom: 'Plex prefs PUT returned HTTP 503',
     cause:
-      'Plex was still initializing when the wizard tried to set Manual Port Mapping. Plex returns 503 (service unavailable) for a few seconds on first boot.',
-    fix: 'Set Manual Port Mapping manually in the Plex Web UI (see above), or re-run setup.sh after Plex has been running for a minute.',
+      'Plex was still initializing when the wizard tried to set Manual Port Mapping. Plex returns 503 (service unavailable) for the first 30-180 seconds of boot. Latest build retries on 503 with a 180s budget for the first call (configure_plex_remote_access), so this should only surface on truly stuck Plex instances.',
+    fix:
+      'If the wizard finished and the warning still appeared in the log, set Manual Port Mapping manually in the Plex Web UI → Settings → Remote Access → Manually specify public port = 32400. Re-running setup.sh also works once Plex is fully up.',
   },
 
   // ── Seerr ───────────────────────────────────────────────────────────
@@ -437,6 +452,7 @@ sudo bash <INSTALL_DIR>/setup.sh`,
 ]
 
 const CATEGORIES = [
+  'New to this? Start here',
   'Install failed or timed out',
   'qBittorrent',
   'Tautulli',
@@ -528,6 +544,30 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
             install dir ({installDir || 'set on the Configure screen'}) —
             copy with the button next to each block.
           </p>
+          {/* Beginner-friendly walkthrough — split out from the
+              issue/cause/fix entries below because it's narrative,
+              not a troubleshooting lookup. The setWindowOpenHandler
+              registered in main/index.ts routes target="_blank" through
+              shell.openExternal so this opens in the user's browser
+              rather than navigating the wizard window. */}
+          <div className="mt-2 rounded-md border border-emerald-700/40 bg-emerald-900/15 px-3 py-2 text-xs">
+            <span className="font-semibold text-emerald-300">New to this?</span>{' '}
+            <span className="text-slate-300">
+              Step-by-step beginner&apos;s walkthrough →{' '}
+            </span>
+            <a
+              className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2"
+              href="https://github.com/defessler/NAS-Arr-Stack/blob/master/INSTALL.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              INSTALL.md on GitHub
+            </a>
+            <span className="text-slate-400">
+              {' '}— covers everything from enabling SSH on your NAS to adding your
+              first show.
+            </span>
+          </div>
           <input
             type="search"
             value={query}

@@ -2,6 +2,10 @@
 
 A self-hosted media automation stack running on a Synology DS1522+. Tell it what you want to watch — it finds, downloads, organises, and serves it to Plex automatically.
 
+> **New to this?** There's a step-by-step beginner's tutorial that uses the GUI
+> installer (no command line required): **[INSTALL.md](./INSTALL.md)**.
+> This page is the technical / power-user docs for the manual install path.
+
 ---
 
 ## Table of Contents
