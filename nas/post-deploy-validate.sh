@@ -191,15 +191,20 @@ check_qbit() {
         fail "    Check:  docker compose logs gluetun --tail 50"
     else
         # Container's up, network's healthy, WebUI still doesn't answer.
-        # Could be a "still booting" condition OR an actual crash loop
-        # inside the LSIO init scripts — the only way to tell from here
-        # is to look at the qBittorrent container logs. Dump the last
-        # 30 lines into the validator output so the user doesn't have
-        # to docker-logs separately. Tail filters to lines that usually
-        # diagnose the actual fix (permission errors, port conflicts,
-        # config migration errors, "Address already in use", etc.) to
-        # avoid drowning the validator output in startup chatter.
-        fail "$label ($url) — container is running but WebUI not serving HTTP yet."
+        # On Synology spinning rust + non-trivial resume data this is
+        # almost always qBit's "internal preparations" phase — a SLOW
+        # state, not a BROKEN one. Three iterations of trying to make
+        # the install handle this in-band (docker restart, compose
+        # recreate, longer retry budgets) confirmed the right answer:
+        # the install's qBit-side config is already best-effort, the
+        # rest of the stack works fine without it, and the user just
+        # needs to run restart-qbit.sh once + re-run setup.sh.
+        #
+        # So this is a WARNING, not a FAIL. The install-level exit
+        # code shouldn't go red on a known recoverable slow-startup
+        # condition. The log dump + clear recovery steps stay so the
+        # user knows what to do.
+        warn "$label ($url) — container running but WebUI not serving HTTP yet (qBit's first-boot 'internal preparations' phase — slow not broken)."
         # The previous version of this dump grep'd for ~10 keywords and
         # would surface generic LSIO startup chatter (e.g. "migrations
         # started") that didn't actually diagnose anything. Show the

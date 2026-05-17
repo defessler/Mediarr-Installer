@@ -288,10 +288,27 @@ services:
     image: linuxserver/qbittorrent:latest
     container_name: qbittorrent
     profiles: ["torrenting"]
-    network_mode: "service:gluetun"
+    # network_mode: "container:gluetun"  attaches qBit to gluetun's
+    # already-running network namespace. The alternative
+    # `service:gluetun` form looks equivalent on paper but real
+    # installs (issue #36 / gluetun maintainer guidance) show it
+    # breaks qBit-inside-namespace bind on certain gluetun + DSM
+    # combinations: qbittorrent-nox starts and runs (process visible)
+    # but never binds the WebUI port (netstat inside the namespace
+    # shows ONLY gluetun's ports, not 49156). The same image in bare
+    # bridge mode binds correctly within 30s — proving qBit is fine
+    # and the breakage is specifically the service: variant of
+    # namespace sharing.
+    #
+    # container: form requires gluetun's container_name to be stable
+    # (it is — set explicitly above), and we lose compose's
+    # depends_on:service_healthy magic since `container:` ties us
+    # to a literal container name, not a compose service.
+    # Workaround for the ordering: a host-side healthcheck wait in
+    # setup.sh's wait_for_services() already handles this.
+    network_mode: "container:gluetun"
     depends_on:
-      gluetun:
-        condition: service_healthy
+      - gluetun
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
