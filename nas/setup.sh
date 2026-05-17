@@ -576,9 +576,17 @@ if is_enabled ENABLE_SABNZBD; then
 fi
 if is_enabled ENABLE_RECYCLARR; then
     n=$((n + 1))
-    echo "  $n. Recyclarr quality profiles:"
-    echo "     docker exec recyclarr recyclarr sync"
-    echo "     (customise $SCRIPT_DIR/recyclarr/config/recyclarr.yml first)"
+    echo "  $n. Recyclarr TRaSH Guide sync (already ran once at install):"
+    echo "     bash $SCRIPT_DIR/recyclarr-sync.sh        # manual re-run with logging"
+    echo "     docker exec recyclarr recyclarr sync      # quick one-off"
+    echo ""
+    echo "     To schedule weekly via Synology Task Scheduler:"
+    echo "       Control Panel → Task Scheduler → Create → Scheduled Task →"
+    echo "       User-defined script → run as root:"
+    echo "         bash $SCRIPT_DIR/recyclarr-sync.sh"
+    echo ""
+    echo "     To change profiles: edit TRASH_SONARR_PROFILE / TRASH_RADARR_PROFILE"
+    echo "     in .env and re-run setup.sh (recyclarr.yml gets regenerated)."
     echo ""
 fi
 echo "  ── Updates ────────────────────────────────────"

@@ -172,6 +172,132 @@ function ServicesSection({
   )
 }
 
+// ── TRaSH Guide profile section ─────────────────────────────────────────────
+//
+// Recyclarr syncs TRaSH Guide quality profiles + custom-format bundles
+// into Sonarr / Radarr. The wizard auto-runs `recyclarr sync` after
+// install; this section lets the user pick WHICH profile bundle to
+// apply. setup-arr-config.py reads TRASH_SONARR_PROFILE +
+// TRASH_RADARR_PROFILE from .env and renders the matching
+// `include:` block in recyclarr.yml.
+//
+// Surfaced ONLY when ENABLE_RECYCLARR is on (and its parent arr is on).
+// Hidden otherwise so the screen doesn't get cluttered with options the
+// user has opted out of. Mirrors how the VPN section only renders when
+// VPN_ENABLED + ENABLE_QBITTORRENT are both on.
+
+// Profile catalogue — keys match setup-arr-config.py's SONARR_PROFILE_
+// RECIPES / RADARR_PROFILE_RECIPES dicts. If you add a new TRaSH profile
+// here, ALSO add the matching entry on the Python side or the install
+// will fall back to the default. Keep the labels human-readable —
+// these go straight into the dropdown.
+const SONARR_TRASH_PROFILES: Array<{ value: string; label: string; hint: string }> = [
+  { value: 'web-1080p',    label: 'WEB-1080p',    hint: 'Most users — 1080p web releases (default)' },
+  { value: 'web-2160p',    label: 'WEB-2160p',    hint: '4K web releases (HDR / DV scored)' },
+  { value: 'bluray-1080p', label: 'Bluray-1080p', hint: '1080p Bluray rips (better than WEB)' },
+  { value: 'bluray-2160p', label: 'Bluray-2160p', hint: '4K Bluray + REMUX (largest files)' },
+  { value: 'anime',        label: 'Anime',        hint: 'Anime-specific scoring (sub groups, encoders)' },
+]
+const RADARR_TRASH_PROFILES: Array<{ value: string; label: string; hint: string }> = [
+  { value: 'hd-bluray-web',    label: 'HD Bluray + WEB',     hint: '1080p Bluray + web (default — most users)' },
+  { value: 'uhd-bluray-web',   label: 'UHD Bluray + WEB',    hint: '4K Bluray + web (HDR / DV scored)' },
+  { value: 'remux-web-2160p',  label: 'Remux + WEB 2160p',   hint: 'Top-tier 4K REMUX (largest files)' },
+  { value: 'anime',            label: 'Anime',               hint: 'Anime-specific scoring' },
+]
+
+function TrashProfilesSection({
+  config, update,
+}: {
+  config: Partial<EnvFormValues>
+  update: <K extends keyof EnvFormValues>(k: K, v: EnvFormValues[K] | undefined) => void
+}) {
+  const recyclarrOn = isEnabled(config.ENABLE_RECYCLARR)
+  const sonarrOn    = isEnabled(config.ENABLE_SONARR)
+  const radarrOn    = isEnabled(config.ENABLE_RADARR)
+  // Hide entire section when Recyclarr isn't selected — no point showing
+  // profile pickers that won't be used. Also hide when BOTH Sonarr and
+  // Radarr are off (Recyclarr has nothing to sync into).
+  if (!recyclarrOn || (!sonarrOn && !radarrOn)) return null
+
+  const sonarrValue = config.TRASH_SONARR_PROFILE || 'web-1080p'
+  const radarrValue = config.TRASH_RADARR_PROFILE || 'hd-bluray-web'
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        TRaSH Guide profiles
+        <span className="text-xs font-normal text-slate-500">
+          (which quality bundle Recyclarr applies)
+        </span>
+      </h2>
+      <p className="text-xs text-slate-400">
+        After install, Recyclarr will push the selected TRaSH Guide quality
+        profile + custom-format scoring rules into Sonarr / Radarr. Pick the
+        bundle that matches your library size + bandwidth. Power users can
+        hand-edit{' '}
+        <code className="font-mono">recyclarr.yml</code>{' '}
+        afterwards — the wizard preserves edits unless your picks change.
+        Re-run weekly to pick up guide updates via{' '}
+        <code className="font-mono">recyclarr-sync.sh</code>.
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        {sonarrOn && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Sonarr profile</label>
+            <select
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              value={sonarrValue}
+              onChange={(e) => update('TRASH_SONARR_PROFILE', e.target.value)}
+            >
+              {SONARR_TRASH_PROFILES.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <div className="text-xs text-slate-400 mt-1">
+              {SONARR_TRASH_PROFILES.find((p) => p.value === sonarrValue)?.hint}
+            </div>
+          </div>
+        )}
+        {radarrOn && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Radarr profile</label>
+            <select
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              value={radarrValue}
+              onChange={(e) => update('TRASH_RADARR_PROFILE', e.target.value)}
+            >
+              {RADARR_TRASH_PROFILES.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <div className="text-xs text-slate-400 mt-1">
+              {RADARR_TRASH_PROFILES.find((p) => p.value === radarrValue)?.hint}
+            </div>
+          </div>
+        )}
+      </div>
+      {/* Lidarr note — Recyclarr doesn't support Lidarr (no Custom
+          Format ecosystem for music arrs). Surfacing the note inline so
+          users with ENABLE_LIDARR=true don't wonder why there's no
+          Lidarr dropdown here. */}
+      {isEnabled(config.ENABLE_LIDARR) && (
+        <p className="text-xs text-slate-500 italic">
+          Lidarr isn&apos;t supported by Recyclarr — for music quality definitions
+          see{' '}
+          <a
+            className="text-emerald-400 underline"
+            href="https://trash-guides.info/Lidarr/lidarr-setup-quality-profiles/"
+            target="_blank" rel="noreferrer"
+          >
+            TRaSH&apos;s Lidarr page
+          </a>
+          {' '}and set the size limits by hand in Lidarr&apos;s Settings → Profiles.
+        </p>
+      )}
+    </section>
+  )
+}
+
 // ── VPN section ─────────────────────────────────────────────────────────────
 //
 // Provider-aware UI driven by the shared `VPN_PROVIDERS` registry. The
@@ -554,6 +680,8 @@ export function ConfigureScreen() {
       </section>
 
       <ServicesSection config={config} update={update} />
+
+      <TrashProfilesSection config={config} update={update} />
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Identity</h2>

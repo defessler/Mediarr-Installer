@@ -368,6 +368,72 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
       `rm <INSTALL_DIR>/recyclarr/config/recyclarr.yml
 sudo bash <INSTALL_DIR>/setup.sh`,
   },
+  {
+    category: 'Recyclarr',
+    symptom: 'I picked a TRaSH profile but my existing library still uses the old quality profile',
+    cause:
+      'Recyclarr creates / updates the quality profile in Sonarr / Radarr, but does NOT reassign existing series / movies to use it. The new profile is sitting unused next to your old one until you tell the arr to use it.',
+    fix:
+      'In Sonarr / Radarr, mass-edit your library to switch every series / movie to the new profile, then trigger a search if you want upgrades.',
+    command:
+      `Sonarr → Series tab → top-left ✎ Mass Edit
+  → select all → Quality Profile dropdown → pick the new profile → Apply
+
+Radarr → Movies tab → ✎ Edit (or "X selected" toolbar)
+  → Quality Profile → new profile → Apply`,
+  },
+  {
+    category: 'Recyclarr',
+    symptom: 'How do I re-run Recyclarr after TRaSH publishes guide updates?',
+    cause:
+      'The wizard only runs `recyclarr sync` once at install time. TRaSH publishes Custom Format updates roughly weekly; to pick them up you need to re-run the sync.',
+    fix:
+      'Use the bundled recyclarr-sync.sh helper (writes a .last-sync stamp + appends to sync.log for auditing). Schedule it weekly via Synology Task Scheduler.',
+    command:
+      `# Manual re-run with logging:
+bash <INSTALL_DIR>/recyclarr-sync.sh
+
+# Schedule weekly (Synology):
+#   Control Panel → Task Scheduler → Create → Scheduled Task →
+#   User-defined script  (run as root)
+#   Run command:  bash <INSTALL_DIR>/recyclarr-sync.sh
+#   Schedule: Weekly, Sunday 04:00`,
+  },
+  {
+    category: 'Recyclarr',
+    symptom: 'How do I change which TRaSH profile is applied?',
+    cause:
+      'The wizard\'s Configure screen sets TRASH_SONARR_PROFILE / TRASH_RADARR_PROFILE in .env. setup-arr-config.py reads those to render recyclarr.yml. Changing the picks AFTER install needs a re-run so the YAML gets regenerated.',
+    fix:
+      'Re-run the wizard, change the picks on Configure, finish. The recyclarr.yml will be regenerated and the next sync applies the new profile. (You can also hand-edit recyclarr.yml directly — the wizard preserves hand-edits unless your picks have changed.)',
+    command:
+      `# Or edit .env directly and re-run setup.sh (skips the wizard):
+sed -i 's/TRASH_SONARR_PROFILE=.*/TRASH_SONARR_PROFILE=bluray-1080p/' <INSTALL_DIR>/.env
+sudo bash <INSTALL_DIR>/setup.sh`,
+  },
+  {
+    category: 'Recyclarr',
+    symptom: 'Recyclarr container won\'t start — "depends_on: sonarr radarr — no such service"',
+    cause:
+      'Recyclarr\'s compose entry depends on sonarr + radarr. If you disabled ENABLE_SONARR or ENABLE_RADARR (so they\'re not in COMPOSE_PROFILES) but left ENABLE_RECYCLARR=true, compose can\'t resolve the dependency.',
+    fix:
+      'Either enable both arrs, OR disable Recyclarr — it has nothing to sync into without Sonarr and Radarr running. The Configure screen surfaces this with a "needs Sonarr or Radarr" hint.',
+    command:
+      `# Disable recyclarr in .env if you really don't want the arrs:
+sed -i 's/ENABLE_RECYCLARR=true/ENABLE_RECYCLARR=false/' <INSTALL_DIR>/.env
+sudo bash <INSTALL_DIR>/setup.sh`,
+  },
+  {
+    category: 'Recyclarr',
+    symptom: 'Lidarr quality profiles — does Recyclarr support Lidarr?',
+    cause:
+      'No. Recyclarr supports only Sonarr and Radarr. Music arrs (Lidarr, Readarr) don\'t have the same Custom Format release-scoring ecosystem as the video arrs, so there\'s no TRaSH Guide Custom Format bundle to sync.',
+    fix:
+      'For Lidarr, set the quality definitions by hand using TRaSH\'s published per-quality size ranges. Open Lidarr → Settings → Profiles → Quality Definitions and enter the megabytes-per-minute min/max from the TRaSH Lidarr page.',
+    command:
+      `# Reference page (open in a browser):
+# https://trash-guides.info/Lidarr/lidarr-setup-quality-profiles/`,
+  },
 ]
 
 const CATEGORIES = [

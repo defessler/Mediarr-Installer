@@ -35,6 +35,16 @@ export const envSchema = z.object({
   ENABLE_RECYCLARR: optStr,
   ENABLE_UNPACKERR: optStr,
 
+  // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
+  // generate recyclarr.yml's `include:` blocks). Defaults to the most
+  // common TRaSH choices: WEB-1080p for Sonarr, HD Bluray + WEB for
+  // Radarr. Validated against the small enum of profiles we ship
+  // dropdowns for — accept anything else as free-form so power users
+  // who hand-edit recyclarr.yml don't get blocked, but the wizard
+  // itself only ever writes one of these.
+  TRASH_SONARR_PROFILE: optStr,
+  TRASH_RADARR_PROFILE: optStr,
+
   // Identity
   PUID: numericString,
   PGID: numericString,

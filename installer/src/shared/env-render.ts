@@ -27,6 +27,25 @@ export interface EnvFormValues {
   ENABLE_RECYCLARR?: string     // Quality-profile sync for sonarr/radarr
   ENABLE_UNPACKERR?: string     // Auto-extract archives in downloads
 
+  // ── TRaSH Guide profile selection
+  /** Which Sonarr quality profile Recyclarr should sync from TRaSH
+   *  Guides. setup-arr-config.py's render_recyclarr_config() reads this
+   *  to pick the right `include:` template list. Recognised values:
+   *    'web-1080p'        (default — most users)
+   *    'web-2160p'        (4K web releases)
+   *    'bluray-1080p'     (1080p Bluray)
+   *    'bluray-2160p'     (4K REMUX + Bluray)
+   *    'anime'            (anime-specific scoring)
+   *  Power users can hand-edit recyclarr.yml — these picks just seed
+   *  it. Missing = default. */
+  TRASH_SONARR_PROFILE?: string
+  /** Which Radarr quality profile Recyclarr should sync. Recognised:
+   *    'hd-bluray-web'    (default — 1080p HD Bluray + WEB)
+   *    'uhd-bluray-web'   (4K Bluray + WEB)
+   *    'remux-web-2160p'  (top-tier 4K REMUX)
+   *    'anime'            (anime-specific scoring) */
+  TRASH_RADARR_PROFILE?: string
+
   // ── Identity
   PUID: string
   PGID: string
@@ -226,6 +245,12 @@ export function renderEnv(v: EnvFormValues): string {
     line('ENABLE_HOMEPAGE',    isEnabled(v.ENABLE_HOMEPAGE)    ? 'true' : 'false'),
     line('ENABLE_RECYCLARR',   isEnabled(v.ENABLE_RECYCLARR)   ? 'true' : 'false'),
     line('ENABLE_UNPACKERR',   isEnabled(v.ENABLE_UNPACKERR)   ? 'true' : 'false'),
+    '',
+    '# TRaSH Guide profile picks — consumed by setup-arr-config.py to',
+    '# generate recyclarr.yml. Defaults seed the most common TRaSH',
+    '# choices. Power users can hand-edit recyclarr.yml afterwards.',
+    line('TRASH_SONARR_PROFILE', v.TRASH_SONARR_PROFILE || 'web-1080p'),
+    line('TRASH_RADARR_PROFILE', v.TRASH_RADARR_PROFILE || 'hd-bluray-web'),
     '',
     '# Identity',
     line('PUID', v.PUID),
