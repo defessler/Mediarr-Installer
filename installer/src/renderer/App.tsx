@@ -320,10 +320,12 @@ export function App() {
           const isCurrent = state === 'current'
           return (
             <div key={s.id} className="flex items-center gap-2">
-              <button
+              <motion.button
                 type="button"
                 disabled={disabled}
                 onClick={() => setStep(s.id)}
+                whileTap={disabled ? {} : { scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
                 className={
                   // Bumped to py-2 + px-4 so the touch target is ≥40px tall
                   // (was 28px). Children + reduced-motor-precision users
@@ -332,7 +334,7 @@ export function App() {
                   // the horizontal compactness of the rail on smaller
                   // window widths.
                   `flex items-center gap-2 px-4 py-2 rounded-full text-sm transition-all ` +
-                  `duration-200 ${cls} ` +
+                  `duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${cls} ` +
                   // The current step gets a subtle pulse-ring so the
                   // eye instantly finds it without having to compare
                   // text colors. Pulse pauses for reduced-motion users
@@ -351,7 +353,7 @@ export function App() {
               >
                 <span className="font-mono text-xs">{i + 1}</span>
                 <span>{s.label}</span>
-              </button>
+              </motion.button>
               {/* Connector chevron transitions to green/blue as steps
                   complete behind it — gives a clear "we got past here"
                   cue without an explicit progress bar. Lucide
