@@ -228,16 +228,21 @@ export function App() {
       )}
 
       {/* Active profile pill — visible from every screen so the user
-          always knows which NAS they're configuring. Click to bounce
-          back to Welcome and switch. */}
+          always knows which NAS they're configuring. Click the
+          "switch" link to bounce back to Welcome. Subtle gradient
+          + monogram avatar make it feel like an identity, not a
+          forgettable text strip. */}
       {activeProfileLabel && step !== 'welcome' && (
         <div className="flex items-center justify-center gap-2 border-b border-slate-900 px-4 py-1.5 bg-slate-950 text-xs">
+          <div className="inline-flex items-center justify-center w-5 h-5 rounded bg-emerald-600/20 border border-emerald-600/30 text-emerald-200 text-[10px] font-bold uppercase">
+            {activeProfileLabel.slice(0, 2)}
+          </div>
           <span className="text-slate-500">Profile:</span>
-          <span className="font-medium text-slate-200">{activeProfileLabel}</span>
+          <span className="font-semibold text-slate-200">{activeProfileLabel}</span>
           <button
             type="button"
             onClick={() => setStep('welcome')}
-            className="ml-2 text-emerald-400 hover:underline"
+            className="ml-2 text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
           >
             switch
           </button>
