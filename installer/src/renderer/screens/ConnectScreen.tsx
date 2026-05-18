@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2, Lock, KeyRound } from 'lucide-react'
+import {
+  ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2,
+  Lock, KeyRound, Users,
+} from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
 import { PasswordInput } from '../components/PasswordInput.js'
@@ -136,8 +139,9 @@ export function ConnectScreen() {
           </span>
           <button
             onClick={() => setStep('welcome')}
-            className="text-emerald-400 hover:underline"
+            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors"
           >
+            <Users size={11} />
             Switch profile
           </button>
         </div>
