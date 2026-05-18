@@ -1,5 +1,9 @@
 import { motion, useReducedMotion } from 'motion/react'
-import { ArrowRightLeft } from 'lucide-react'
+import {
+  ArrowRightLeft, ArrowLeft, ArrowRight, Download, RefreshCw,
+  CheckCircle2, XCircle,
+} from 'lucide-react'
+import { BigButton } from '../components/BigButton.js'
 
 /** Animated hero header for the Migrate screen. Module-level so it
  *  doesn't remount per keystroke. */
@@ -86,6 +90,7 @@ interface FetchedSet {
 type ImportResult = { title: string; status: 'ok' | 'updated' | 'fail'; message?: string }
 
 export function MigrateScreen() {
+  const reduced = useReducedMotion()
   const { sessionId, targetDir, setStep } = useWizard()
   // Source connection info persists on the active profile (encrypted),
   // so closing the wizard or switching screens doesn't make the user
@@ -403,22 +408,30 @@ export function MigrateScreen() {
           />
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
+        <div className="flex items-center gap-3 flex-wrap">
+          <BigButton
+            size="md"
+            variant="primary"
+            icon={!fetching ? (totalFetched > 0 ? <RefreshCw size={14} /> : <Download size={14} />) : undefined}
             onClick={fetchSource}
             disabled={fetching || importing}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm disabled:opacity-40"
+            loading={fetching}
           >
             {fetching
               ? 'Fetching…'
               : totalFetched > 0
-                ? `✔ Re-fetch source lists (${totalFetched} cached)`
+                ? `Re-fetch source lists (${totalFetched} cached)`
                 : 'Fetch lists from source'}
-          </button>
-          {fetchError && <span className="text-rose-300 text-sm">✘ {fetchError}</span>}
+          </BigButton>
+          {fetchError && (
+            <span className="text-rose-300 text-sm inline-flex items-center gap-1.5">
+              <XCircle size={14} /> {fetchError}
+            </span>
+          )}
           {totalFetched > 0 && !fetching && (
-            <span className="text-emerald-300 text-sm">
-              ✔ Got {totalFetched} title{totalFetched === 1 ? '' : 's'}. Scroll down to import →
+            <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              Got {totalFetched} title{totalFetched === 1 ? '' : 's'}. Scroll down to import →
             </span>
           )}
         </div>
@@ -511,22 +524,22 @@ export function MigrateScreen() {
             if (fetched.radarr && !destRadarrKey) missing.push('Radarr API key')
             return (
               <div className="border-t border-slate-800 pt-3">
-                <button
+                <BigButton
+                  size="lg"
+                  variant="primary"
+                  className={`w-full ${canImport && !importing && !reduced ? 'ring-2 ring-emerald-400/30 animate-pulse' : ''}`}
+                  icon={!importing ? <ArrowRight size={18} /> : undefined}
                   onClick={importAll}
                   disabled={importing || fetching || !canImport}
+                  loading={importing}
                   title={canImport ? 'Start importing' : `Missing: ${missing.join(', ')}`}
-                  className={`w-full px-6 py-3 rounded-md text-base font-semibold disabled:opacity-40 ${
-                    canImport && !importing
-                      ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/30 animate-pulse'
-                      : 'bg-emerald-600'
-                  }`}
                 >
                   {importing
                     ? `Importing ${results.length}/${totalFetched}…`
                     : canImport
-                      ? `→ Import ${totalFetched} title${totalFetched === 1 ? '' : 's'} into destination arrs`
+                      ? `Import ${totalFetched} title${totalFetched === 1 ? '' : 's'} into destination arrs`
                       : `Fill destination credentials above to import ${totalFetched} title${totalFetched === 1 ? '' : 's'}`}
-                </button>
+                </BigButton>
                 {!canImport && missing.length > 0 && !importing && (
                   <p className="mt-2 text-xs text-amber-300">
                     Missing: {missing.join(', ')}. Fill those in the &ldquo;Destination credentials&rdquo; box above.
@@ -629,22 +642,30 @@ export function MigrateScreen() {
           />
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
+        <div className="flex items-center gap-3 flex-wrap">
+          <BigButton
+            size="md"
+            variant="primary"
+            icon={!qbitFetching ? (qbitTorrents && qbitTorrents.length > 0 ? <RefreshCw size={14} /> : <Download size={14} />) : undefined}
             onClick={fetchQbit}
             disabled={qbitFetching || qbitImporting}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm disabled:opacity-40"
+            loading={qbitFetching}
           >
             {qbitFetching
               ? 'Fetching…'
               : qbitTorrents && qbitTorrents.length > 0
-                ? `✔ Re-fetch torrent list (${qbitTorrents.length} cached)`
+                ? `Re-fetch torrent list (${qbitTorrents.length} cached)`
                 : 'Fetch torrent list'}
-          </button>
-          {qbitFetchError && <span className="text-rose-300 text-sm">✘ {qbitFetchError}</span>}
+          </BigButton>
+          {qbitFetchError && (
+            <span className="text-rose-300 text-sm inline-flex items-center gap-1.5">
+              <XCircle size={14} /> {qbitFetchError}
+            </span>
+          )}
           {qbitTorrents && qbitTorrents.length > 0 && !qbitFetching && (
-            <span className="text-emerald-300 text-sm">
-              ✔ Got {qbitTorrents.length} torrent{qbitTorrents.length === 1 ? '' : 's'}. Scroll down to migrate →
+            <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              Got {qbitTorrents.length} torrent{qbitTorrents.length === 1 ? '' : 's'}. Scroll down to migrate →
             </span>
           )}
         </div>
@@ -754,22 +775,22 @@ export function MigrateScreen() {
               if (!destQbitUser) missing.push('Dest username')
               return (
                 <div className="border-t border-slate-800 pt-3">
-                  <button
+                  <BigButton
+                    size="lg"
+                    variant="primary"
+                    className={`w-full ${canMigrate && !qbitImporting && !reduced ? 'ring-2 ring-emerald-400/30 animate-pulse' : ''}`}
+                    icon={!qbitImporting ? <ArrowRight size={18} /> : undefined}
                     onClick={importQbit}
                     disabled={qbitImporting || qbitFetching || !canMigrate}
+                    loading={qbitImporting}
                     title={canMigrate ? 'Migrate torrents' : `Missing: ${missing.join(', ')}`}
-                    className={`w-full px-6 py-3 rounded-md text-base font-semibold disabled:opacity-40 ${
-                      canMigrate && !qbitImporting
-                        ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/30 animate-pulse'
-                        : 'bg-emerald-600'
-                    }`}
                   >
                     {qbitImporting
                       ? `Migrating ${qbitResults.length}/${qbitTorrents.length}…`
                       : canMigrate
-                        ? `→ Migrate ${qbitTorrents.length} torrent${qbitTorrents.length === 1 ? '' : 's'} into destination qBit`
+                        ? `Migrate ${qbitTorrents.length} torrent${qbitTorrents.length === 1 ? '' : 's'} into destination qBit`
                         : `Fill destination credentials above to migrate ${qbitTorrents.length} torrent${qbitTorrents.length === 1 ? '' : 's'}`}
-                  </button>
+                  </BigButton>
                   {!canMigrate && missing.length > 0 && !qbitImporting && (
                     <p className="mt-2 text-xs text-amber-300">
                       Missing: {missing.join(', ')}. Fill those in the &ldquo;Destination qBittorrent&rdquo; box above.
@@ -827,20 +848,24 @@ export function MigrateScreen() {
       </section>
 
       <div className="mt-auto flex justify-between gap-3">
-        <button
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<ArrowLeft size={16} />}
           onClick={() => setStep('welcome')}
           disabled={fetching || importing}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm disabled:opacity-40"
         >
           Back to start
-        </button>
-        <button
+        </BigButton>
+        <BigButton
+          size="md"
+          variant={results.length > 0 ? 'primary' : 'secondary'}
+          trailingIcon={<ArrowRight size={16} />}
           onClick={() => setStep('done')}
           disabled={fetching || importing}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm disabled:opacity-40"
         >
           {results.length > 0 ? 'Done — go to dashboard' : 'Skip — go to dashboard'}
-        </button>
+        </BigButton>
       </div>
     </div>
   )
