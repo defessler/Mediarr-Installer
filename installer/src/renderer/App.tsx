@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
+import { HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
@@ -354,7 +355,7 @@ export function App() {
 
       {/* Footer with build info — handy for support */}
       {info && (
-        <footer className="text-xs text-slate-600 px-4 py-1.5 border-t border-slate-900 flex justify-between items-center gap-3">
+        <footer className="text-xs text-slate-500 px-4 py-1.5 border-t border-slate-900 flex justify-between items-center gap-3">
           <div className="flex items-center gap-2">
             <span>v{info.version}</span>
             {info.updateAvailable && (
@@ -362,21 +363,23 @@ export function App() {
                 href={info.updateAvailable.url}
                 target="_blank"
                 rel="noreferrer"
-                className="px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-200 hover:bg-emerald-600/60 font-medium"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors"
                 title={`Click to open the v${info.updateAvailable.latest} release page on GitHub`}
               >
-                ↑ v{info.updateAvailable.latest} available
+                <ArrowUpCircle size={11} />
+                v{info.updateAvailable.latest} available
               </a>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setHelpOpen(true)}
-              className="px-2 py-0.5 rounded bg-emerald-700/50 hover:bg-emerald-600/60 text-emerald-200 font-medium"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-700/50 hover:bg-emerald-600/60 text-emerald-100 font-medium transition-colors"
               title="Common issues + the exact fix for each — searchable, copy-to-clipboard"
             >
-              ? Help
+              <HelpCircle size={12} />
+              Help
             </button>
             <button
               type="button"
@@ -392,9 +395,10 @@ export function App() {
                   }
                 }).catch((e) => reportError('Open log', e))
               }
-              className="hover:text-slate-300 underline"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors"
               title={info.logPath}
             >
+              <FileText size={12} />
               Open log
             </button>
             <button
@@ -403,10 +407,11 @@ export function App() {
                 window.installer.app.showLogInFolder()
                   .catch((e) => reportError('Reveal log', e))
               }
-              className="hover:text-slate-300 underline"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors"
               title="Show the log file in your file manager"
             >
-              Reveal in folder
+              <FolderOpen size={12} />
+              Reveal
             </button>
             <button
               type="button"
@@ -414,12 +419,13 @@ export function App() {
                 window.installer.app.openDevTools()
                   .catch((e) => reportError('Open DevTools', e))
               }
-              className="hover:text-slate-300 underline"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors"
               title="Toggle Chromium DevTools — only needed for debugging"
             >
+              <Wrench size={12} />
               DevTools
             </button>
-            <span className="font-mono">
+            <span className="font-mono opacity-60">
               payload: {info.payloadSha?.slice(0, 8) ?? 'dev'}
             </span>
           </div>

@@ -1,4 +1,9 @@
+// Inline action bar for the streaming install log — copy/save buttons
+// with confirmation flashes. Sits at the top of the log panel.
+
 import { useState } from 'react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import { Clipboard, ClipboardCheck, Save } from 'lucide-react'
 import { stripAnsi } from './LogPanel.js'
 
 interface Props {
@@ -13,6 +18,7 @@ interface Props {
 export function LogActions({ lines, defaultName, header }: Props) {
   const [copied, setCopied] = useState(false)
   const [savedPath, setSavedPath] = useState<string | null>(null)
+  const reduced = useReducedMotion()
 
   function buildContent(): string {
     const ts = new Date().toISOString()
@@ -50,19 +56,60 @@ export function LogActions({ lines, defaultName, header }: Props) {
     <div className="flex gap-2 items-center text-sm">
       <button
         onClick={copy}
-        className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+        title="Copy log contents to clipboard"
       >
-        {copied ? 'Copied' : 'Copy log'}
+        {/* Swap icon between Clipboard / ClipboardCheck with a fade —
+            confirms the copy action took effect without the button
+            visually shifting size. */}
+        <AnimatePresence mode="wait" initial={false}>
+          {copied ? (
+            <motion.span
+              key="check"
+              initial={reduced ? { opacity: 1 } : { opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.12 }}
+              className="text-emerald-400 inline-flex items-center"
+            >
+              <ClipboardCheck size={13} />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="clip"
+              initial={reduced ? { opacity: 1 } : { opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.12 }}
+              className="inline-flex items-center"
+            >
+              <Clipboard size={13} />
+            </motion.span>
+          )}
+        </AnimatePresence>
+        {copied ? 'Copied!' : 'Copy log'}
       </button>
       <button
         onClick={save}
-        className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+        title="Save log to a file"
       >
-        Save log...
+        <Save size={13} />
+        Save log…
       </button>
-      {savedPath && (
-        <span className="text-xs text-emerald-400 truncate">Saved to {savedPath}</span>
-      )}
+      <AnimatePresence>
+        {savedPath && (
+          <motion.span
+            initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            className="text-xs text-emerald-400 truncate"
+            title={savedPath}
+          >
+            ✓ Saved to {savedPath}
+          </motion.span>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
