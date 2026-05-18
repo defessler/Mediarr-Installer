@@ -1,3 +1,31 @@
+import { motion, useReducedMotion } from 'motion/react'
+import { ArrowRightLeft } from 'lucide-react'
+
+/** Animated hero header for the Migrate screen. Module-level so it
+ *  doesn't remount per keystroke. */
+function MigrateHeader() {
+  const reduced = useReducedMotion()
+  return (
+    <motion.header
+      initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      className="flex items-center gap-3"
+    >
+      <div className="shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/30 border border-amber-500/30 flex items-center justify-center">
+        <ArrowRightLeft size={22} className="text-amber-300" strokeWidth={2} />
+      </div>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Migrate library</h1>
+        <p className="text-sm text-slate-400 mt-0.5">
+          Pull a series + movie library from another Sonarr/Radarr instance
+          and re-add it here.
+        </p>
+      </div>
+    </motion.header>
+  )
+}
+
 // MigrateScreen — bring a library across from an EXISTING Sonarr / Radarr
 // instance (e.g., the user's previous NAS) into the freshly-installed
 // stack. Reads series/movies from the source via API, posts them to the
@@ -327,14 +355,7 @@ export function MigrateScreen() {
 
   return (
     <div className="h-full flex flex-col p-6 gap-4 overflow-y-auto">
-      <header>
-        <h1 className="text-2xl font-semibold">Migrate library</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Pull a series + movie library from an EXISTING Sonarr / Radarr
-          instance (your previous NAS, a Linux server, a friend&apos;s
-          install) and re-add everything to this stack&apos;s local arrs.
-        </p>
-      </header>
+      <MigrateHeader />
 
       {keysError && (
         <div className="bg-amber-900/40 border border-amber-700/50 text-amber-200 rounded-md p-3 text-sm">

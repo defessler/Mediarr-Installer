@@ -24,6 +24,8 @@
 // one's in flight.
 
 import { useEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { RefreshCw } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
@@ -346,17 +348,30 @@ docker compose $FILES --progress plain --ansi never up -d`
       ? `Re-run step ${lastAction.slice(5)}`
       : null
 
+  const reduced = useReducedMotion()
   return (
     <div className="h-full flex flex-col p-6 gap-4">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Update existing stack</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Three flavours of update against
-            <code className="font-mono bg-slate-800 px-1 rounded mx-1">{targetDir}</code>.
-            Your <code className="font-mono bg-slate-800 px-1 rounded">.env</code> and
-            container config volumes are untouched throughout.
-          </p>
+      <motion.header
+        initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="flex items-center justify-between gap-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500/20 to-sky-700/30 border border-sky-500/30 flex items-center justify-center">
+            <RefreshCw
+              size={22}
+              className={`text-sky-300 ${phase === 'running' && !reduced ? 'animate-spin' : ''}`}
+              strokeWidth={2}
+            />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Update your stack</h1>
+            <p className="text-sm text-slate-400 mt-0.5">
+              Pick what to refresh — your <code className="font-mono bg-slate-800 px-1 rounded">.env</code>
+              {' '}and container data are untouched.
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {linesRef.current.length > 0 && (
@@ -373,7 +388,7 @@ docker compose $FILES --progress plain --ansi never up -d`
             {phase === 'failed' && (errorMsg ? `Failed: ${errorMsg.slice(0, 80)}` : `${lastActionLabel} exited ${exitCode}`)}
           </div>
         </div>
-      </header>
+      </motion.header>
 
       {/* Action picker — four cards in a 2x2 grid. Disabled while one
           is running so the user can't kick off a second action mid-
