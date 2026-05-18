@@ -25,6 +25,15 @@ x-logging: &logging
 x-security: &security
   - no-new-privileges:true
 
+# Note on UMASK: every linuxserver.io ("lsio") image in this stack
+# (plex/tautulli/prowlarr/sonarr/radarr/bazarr/lidarr/qbittorrent/
+# sabnzbd) accepts UMASK=002 which the s6-overlay entrypoint honors
+# at startup. 002 = group-writable new files, which lets Bazarr drop
+# .srt files alongside Sonarr-imported videos, lets File Station
+# users hand-edit imports, and matches the 775 dir mode the wizard
+# already applies to /data. Each lsio service below sets it explicitly
+# in its environment block.
+
 services:
 
   # ── Media Server ──────────────────────────────────────────
@@ -34,10 +43,12 @@ services:
     container_name: plex
     profiles: ["plex"]
     networks: [media]
+    security_opt: *security
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
       - VERSION=docker
       - PLEX_CLAIM=${PLEX_CLAIM}
     ports:
@@ -72,11 +83,13 @@ services:
     container_name: tautulli
     profiles: ["plex"]
     networks: [media]
+    security_opt: *security
     depends_on: [plex]
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
     ports:
       - ${LAN_IP}:8181:8181
     volumes:
@@ -91,6 +104,7 @@ services:
     init: true
     user: "${PUID}:${PGID}"
     networks: [media]
+    security_opt: *security
     depends_on: [plex]
     environment:
       - TZ=${TZ}
@@ -114,6 +128,7 @@ services:
     container_name: homepage
     profiles: ["homepage"]
     networks: [media]
+    security_opt: *security
     environment:
       - TZ=${TZ}
       # Restrict Host headers Homepage accepts. Default `*` accepts any
@@ -136,10 +151,12 @@ services:
     image: linuxserver/prowlarr:latest
     container_name: prowlarr
     networks: [media]
+    security_opt: *security
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
     ports:
       - ${LAN_IP}:49150:9696
     volumes:
@@ -163,6 +180,7 @@ services:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     networks: [media]
+    security_opt: *security
     environment:
       - LOG_LEVEL=info
       - LOG_HTML=false
@@ -184,11 +202,13 @@ services:
     container_name: sonarr
     profiles: ["sonarr"]
     networks: [media]
+    security_opt: *security
     depends_on: [prowlarr]
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
     ports:
       - ${LAN_IP}:49152:8989
     volumes:
@@ -208,11 +228,13 @@ services:
     container_name: radarr
     profiles: ["radarr"]
     networks: [media]
+    security_opt: *security
     depends_on: [prowlarr]
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
     ports:
       - ${LAN_IP}:49151:7878
     volumes:
@@ -232,11 +254,13 @@ services:
     container_name: bazarr
     profiles: ["bazarr"]
     networks: [media]
+    security_opt: *security
     depends_on: [sonarr, radarr]
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
     ports:
       - ${LAN_IP}:49153:6767
     volumes:
@@ -261,11 +285,13 @@ services:
     container_name: lidarr
     profiles: ["lidarr"]
     networks: [media]
+    security_opt: *security
     depends_on: [prowlarr]
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
     ports:
       - ${LAN_IP}:49154:8686
     volumes:
@@ -360,8 +386,13 @@ services:
       - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data="json={\"listen_port\":{{PORT}}}" "http://127.0.0.1:49156/api/v2/app/setPreferences" 2>/dev/null'
     ports:
       - ${LAN_IP}:49156:49156
-      - 6881:6881
-      - 6881:6881/udp
+      # NOTE: 6881 is NOT published here. With VPN_ENABLED=true the
+      # incoming BT peer traffic enters via the VPN tunnel + gluetun's
+      # FIREWALL_INPUT_PORTS (49156 only in this stack) — publishing
+      # 6881 on the host was a dead mapping because gluetun's own
+      # iptables drop it. If you want to seed without a VPN, set
+      # VPN_ENABLED=false; the no-vpn override publishes 6881 directly
+      # on the bridge network.
     healthcheck:
       test: /gluetun-entrypoint healthcheck
       interval: 10s
@@ -400,6 +431,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
       - WEBUI_PORT=49156
       - WEBUI_USERNAME=${QBITTORRENT_USER:-admin}
       - WEBUI_PASSWORD=${QBITTORRENT_PASS}
@@ -415,10 +447,12 @@ services:
     container_name: sabnzbd
     profiles: ["usenet"]
     networks: [media]
+    security_opt: *security
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK=002
       # Disable IPv6 in SABnzbd by default. On Synology hosts without
       # IPv6 routing, SAB auto-detects v6 from the container's link-
       # local address and binds to ::1, but outbound v6 traffic to
@@ -444,6 +478,7 @@ services:
     profiles: ["recyclarr"]
     user: "${PUID}:${PGID}"
     networks: [media]
+    security_opt: *security
     depends_on: [sonarr, radarr]
     environment:
       - TZ=${TZ}
@@ -516,6 +551,7 @@ services:
     container_name: unpackerr
     profiles: ["unpackerr"]
     networks: [media]
+    security_opt: *security
     depends_on: [sonarr, radarr]
     environment:
       - PUID=${PUID}
@@ -534,3 +570,10 @@ services:
 networks:
   media:
     driver: bridge
+    # Name the bridge interface `br-media` instead of the autogenerated
+    # `br-<hash>`. Makes `iptables -L`, `tcpdump -i`, and Synology's
+    # Resource Monitor network panels actually readable when debugging
+    # — and confirms which bridge belongs to this stack vs Synology's
+    # other Docker projects.
+    driver_opts:
+      com.docker.network.bridge.name: br-media

@@ -152,7 +152,7 @@ def read_stamp():
     if not os.path.exists(STAMP_FILE):
         return ('never (sync has not run yet)', 'unknown', 'unknown')
     try:
-        with open(STAMP_FILE) as f:
+        with open(STAMP_FILE, encoding='utf-8') as f:
             lines = [ln.strip() for ln in f.read().splitlines() if ln.strip()]
         ts = lines[0] if lines else 'unknown'
         sp = 'unknown'

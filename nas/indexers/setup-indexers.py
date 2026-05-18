@@ -673,7 +673,7 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
 def read_env(path):
     env = {}
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#') or '=' not in line:

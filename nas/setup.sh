@@ -91,6 +91,14 @@ export COMPOSE_ANSI=never
 export DOCKER_CLI_HINTS=false
 COMPOSE_QUIET_FLAGS="--progress plain --ansi never"
 
+# Skip creating __pycache__/*.pyc files next to our Python helpers.
+# Otherwise the bytecode files end up owned by whoever ran setup.sh
+# (root, via sudo), and the next non-sudo run can't overwrite them
+# — manifests as Permission denied during re-invocation. Costs us a
+# few hundred ms of parse time on each invocation but py_compile
+# isn't the bottleneck.
+export PYTHONDONTWRITEBYTECODE=1
+
 PASS=0
 FAIL=0
 

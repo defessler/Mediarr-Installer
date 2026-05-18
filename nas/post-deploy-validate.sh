@@ -340,7 +340,10 @@ is_enabled ENABLE_RECYCLARR   && check_url "Recyclarr trigger" "http://$LAN_IP:8
 PUBLIC_IP=""
 if is_enabled ENABLE_PLEX || { is_enabled ENABLE_QBITTORRENT && vpn_on; }; then
     echo "  Fetching public IP..."
-    PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org)
+    # 3 retries with 2s spacing covers transient DNS / network hiccups
+    # during install — public IP lookup is non-critical so we tolerate
+    # noise. Max wall time: 5s × 4 attempts + 2s × 3 backoffs = ~26s.
+    PUBLIC_IP=$(curl -sf --max-time 5 --retry 3 --retry-delay 2 https://api.ipify.org)
 fi
 
 if is_enabled ENABLE_PLEX; then

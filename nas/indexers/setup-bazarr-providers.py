@@ -176,7 +176,7 @@ def enable_providers(base, key, to_add):
 def read_env(path):
     env = {}
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#') or '=' not in line:
@@ -201,7 +201,7 @@ def read_bazarr_key(config_dir):
         for filename in ('config.yaml', 'config.ini', 'config'):
             path = os.path.join(d, filename)
             try:
-                with open(path) as f:
+                with open(path, encoding='utf-8') as f:
                     content = f.read()
                 m = re.search(r'^\s*apikey\s*[=:]\s*[\'"]?([^\s\'"]+)',
                               content, re.MULTILINE)
