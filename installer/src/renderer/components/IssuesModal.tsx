@@ -20,6 +20,8 @@
 //     want to know about
 
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { X as XIcon, XCircle, AlertTriangle, Info } from 'lucide-react'
 
 export type Issue = {
   severity: 'fail' | 'warn' | 'note'
@@ -62,34 +64,40 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
                 : fails.length > 0 ? 'fail'
                 : 'action'
 
+  const reduced = useReducedMotion()
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+    <motion.div
+      initial={reduced ? { opacity: 1 } : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="issues-modal-title"
       onClick={(e) => {
-        // Click outside the dialog (i.e. on the backdrop) closes —
-        // standard modal interaction. Don't close when click lands on
-        // the inner card (stopped by the inner div's onClick handler).
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-xl shadow-black/40"
+      <motion.div
+        initial={reduced ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+        className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/60"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-5 pt-4 pb-3 border-b border-slate-800">
           <div className="flex items-center justify-between">
-            <h2 id="issues-modal-title" className="text-lg font-semibold">
+            <h2 id="issues-modal-title" className="text-lg font-bold tracking-tight">
               Install issues
             </h2>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-200 text-xl leading-none"
+              className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors"
               aria-label="Close"
             >
-              ×
+              <XIcon size={18} />
             </button>
           </div>
           <p className="text-xs text-slate-400 mt-1">
@@ -104,13 +112,13 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
         <footer className="px-5 py-3 border-t border-slate-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm font-medium transition-colors"
           >
             Close
           </button>
         </footer>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -150,16 +158,20 @@ function TabbedBody({
           <ul className="space-y-2 text-sm font-mono">
             {visible.map((it, i) => {
               const cls =
-                it.severity === 'fail' ? 'text-rose-300'
+                it.severity === 'fail' ? 'text-rose-200'
+                : it.severity === 'warn' ? 'text-amber-200'
+                : 'text-sky-200'
+              const iconColor =
+                it.severity === 'fail' ? 'text-rose-400'
                 : it.severity === 'warn' ? 'text-amber-300'
-                : 'text-sky-300'
-              const glyph =
-                it.severity === 'fail' ? '✘'
-                : it.severity === 'warn' ? '⚠'
-                : '!'
+                : 'text-sky-400'
+              const Icon =
+                it.severity === 'fail' ? XCircle
+                : it.severity === 'warn' ? AlertTriangle
+                : Info
               return (
-                <li key={i} className={`flex gap-2 ${cls}`}>
-                  <span className="shrink-0 select-none">{glyph}</span>
+                <li key={i} className={`flex gap-2 items-start ${cls}`}>
+                  <Icon size={14} className={`shrink-0 mt-0.5 ${iconColor}`} />
                   <span className="break-words">{it.text}</span>
                 </li>
               )
