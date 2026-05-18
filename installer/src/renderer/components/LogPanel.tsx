@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { Terminal, ChevronDown } from 'lucide-react'
 import { parseAnsi, COLOR_CLASS } from './ansi.js'
 
 interface Props {
@@ -16,6 +18,7 @@ export const stripAnsi = (s: string) => s.replace(ANSI_RE, '')
 
 export function LogPanel({ lines, follow = true }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const reduced = useReducedMotion()
   /** True when the user has scrolled up to read history. While stuck,
    *  we stop auto-scrolling so we don't yank them away from what
    *  they're reading. The moment they scroll back to the bottom (or
@@ -99,7 +102,28 @@ export function LogPanel({ lines, follow = true }: Props) {
         className="log-panel h-full overflow-y-auto bg-black/60 border border-slate-800 rounded-md p-3 text-slate-300 focus:outline-none"
       >
         {lines.length === 0 ? (
-          <span className="text-slate-500 italic">Waiting for output...</span>
+          <div className="flex items-center gap-2 text-slate-500">
+            <Terminal size={14} className="text-slate-600" />
+            <span className="italic">Waiting for output</span>
+            {/* Three dots that pulse one-by-one — gives a clear
+                "I'm alive, just waiting on the shell" signal without
+                being noisy. Suppressed under reduced-motion. */}
+            <span aria-hidden className="inline-flex gap-0.5 ml-0.5">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  className="inline-block w-1 h-1 rounded-full bg-slate-500"
+                  animate={reduced ? {} : { opacity: [0.2, 1, 0.2] }}
+                  transition={{
+                    duration: 1.2,
+                    repeat: Infinity,
+                    delay: i * 0.18,
+                    ease: 'easeInOut',
+                  }}
+                />
+              ))}
+            </span>
+          </div>
         ) : (
           lines.map((l, i) => {
             const segs = parseAnsi(l)
@@ -117,16 +141,25 @@ export function LogPanel({ lines, follow = true }: Props) {
           })
         )}
       </div>
-      {stuck && (
-        <button
-          type="button"
-          onClick={jumpToBottom}
-          className="absolute bottom-3 right-3 px-3 py-1.5 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 flex items-center gap-1.5"
-          title="Resume following the log (Esc / End also works)"
-        >
-          Jump to bottom <span>↓</span>
-        </button>
-      )}
+      <AnimatePresence>
+        {stuck && (
+          <motion.button
+            type="button"
+            onClick={jumpToBottom}
+            initial={reduced ? { opacity: 1 } : { opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+            whileHover={reduced ? {} : { y: -1 }}
+            whileTap={reduced ? {} : { scale: 0.97 }}
+            className="absolute bottom-3 right-3 px-3 py-1.5 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            title="Resume following the log (Esc / End also works)"
+          >
+            Jump to bottom
+            <ChevronDown size={14} />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
