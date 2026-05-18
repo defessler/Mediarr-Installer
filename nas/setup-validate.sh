@@ -274,10 +274,75 @@ fi
 
 section "Network"
 
-if curl -sf --max-time 5 https://api.nordvpn.com/v1/servers/countries &>/dev/null; then
-    ok "NordVPN API is reachable"
+# NordVPN API check only runs when the user actually picked NordVPN.
+# Other providers (ProtonVPN, Mullvad, AirVPN, Surfshark, custom) don't
+# use the api.nordvpn.com endpoint — checking it unconditionally false-
+# fails install for everyone else. Skip cleanly + leave provider-specific
+# reachability to gluetun's own health check post-deploy.
+VPN_PROVIDER_LC=$(env_val "VPN_PROVIDER" | tr '[:upper:]' '[:lower:]' | xargs)
+if [ "$VPN_ENABLED_LC" = "true" ] || [ "$VPN_ENABLED_LC" = "1" ] || [ "$VPN_ENABLED_LC" = "yes" ] || [ "$VPN_ENABLED_LC" = "on" ]; then
+    if [ "$VPN_PROVIDER_LC" = "nordvpn" ] || [ -z "$VPN_PROVIDER_LC" ]; then
+        if curl -sf --max-time 5 https://api.nordvpn.com/v1/servers/countries &>/dev/null; then
+            ok "NordVPN API is reachable"
+        else
+            fail "NordVPN API is not reachable — check internet connectivity"
+        fi
+    else
+        ok "VPN_PROVIDER=$VPN_PROVIDER_LC — skipping NordVPN-specific reachability check"
+    fi
 else
-    fail "NordVPN API is not reachable — check internet connectivity"
+    ok "VPN disabled — skipping VPN-provider reachability check"
+fi
+
+# ── Hardlinks (filesystem capability probe) ──────────────────────────────────
+#
+# The single biggest silent-fail on Synology DSM is putting Downloads
+# and Media in SEPARATE Synology shared folders. Each shared folder is
+# its own btrfs subvolume; hardlinks across subvolumes return EXDEV
+# (cross-device link). Sonarr/Radarr fall back to copy + delete, which
+# doubles disk usage and breaks seeding.
+#
+# This probe creates a sentinel file in a Downloads dir and tries to
+# hardlink it into a Media dir under the same DATA_ROOT. If EXDEV, we
+# fail loudly with the "single shared folder" remediation. Probe runs
+# from the HOST (not from inside a container) since we want to verify
+# the underlying filesystem semantics, not the container's view.
+section "Filesystem (hardlinks)"
+
+# Best-effort: skip the probe when DATA_ROOT doesn't exist yet
+# (run before setup-folders.sh — re-run validate after first install).
+PROBE_SRC_DIR="$DATA_ROOT/Downloads/Torrents/Completed"
+PROBE_DST_DIR="$DATA_ROOT/Media/Movies"
+if [ ! -d "$PROBE_SRC_DIR" ] || [ ! -d "$PROBE_DST_DIR" ]; then
+    warn "Hardlink probe skipped — DATA_ROOT subdirs not created yet (run setup-folders.sh first)"
+else
+    PROBE_SRC="$PROBE_SRC_DIR/.mediarr-hardlink-probe"
+    PROBE_DST="$PROBE_DST_DIR/.mediarr-hardlink-probe"
+    # Clean up any old probe files first (best-effort)
+    rm -f "$PROBE_SRC" "$PROBE_DST" 2>/dev/null
+    # Write a tiny source file, attempt hardlink. Linux `ln` returns
+    # EXDEV (rc=1) when crossing filesystems / btrfs subvolumes.
+    if echo "probe" > "$PROBE_SRC" 2>/dev/null && ln "$PROBE_SRC" "$PROBE_DST" 2>/tmp/hardlink-err; then
+        ok "Hardlinks work between Downloads and Media (same filesystem/subvolume)"
+        rm -f "$PROBE_SRC" "$PROBE_DST" 2>/dev/null
+    else
+        err_msg=$(cat /tmp/hardlink-err 2>/dev/null | head -1)
+        rm -f "$PROBE_SRC" "$PROBE_DST" /tmp/hardlink-err 2>/dev/null
+        fail "Hardlink probe FAILED: $err_msg"
+        echo "    Downloads ($PROBE_SRC_DIR)"
+        echo "    Media     ($PROBE_DST_DIR)"
+        echo "    appear to be on different filesystems / btrfs subvolumes."
+        echo ""
+        echo "    On Synology DSM: each shared folder is its own btrfs subvolume,"
+        echo "    and hardlinks across subvolumes return EXDEV. Without hardlinks,"
+        echo "    Sonarr/Radarr will COPY files into Media (doubling disk use) and"
+        echo "    qBittorrent's seeding files will be separate from your library."
+        echo ""
+        echo "    Fix: put BOTH Downloads/ and Media/ under a SINGLE Synology"
+        echo "    shared folder (e.g., /volume1/Data/{Downloads,Media}). Move"
+        echo "    existing data with: mv /volume1/Media/* /volume1/Data/Media/"
+        echo "    then re-run setup.sh."
+    fi
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

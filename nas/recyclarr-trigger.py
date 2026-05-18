@@ -245,9 +245,33 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_html(render())
 
+    def _check_csrf(self):
+        """Minimal DNS-rebinding protection. The browser sends `Host:` and
+        `Origin:` headers; we accept the request only when either is
+        absent (curl / Homepage's tile click) or matches the same Host
+        we see ourselves. Defeats malicious-tab-on-public-internet
+        attacks that try to POST /sync via a victim's LAN browser. Not
+        a hard auth boundary (anyone on LAN can still curl us) but
+        closes the cross-origin browser vector at zero UX cost."""
+        origin = self.headers.get('Origin', '')
+        host = self.headers.get('Host', '')
+        if not origin:
+            return True
+        # Allow when Origin's host matches our Host header. Empty Host
+        # would make this fail-closed, which is what we want.
+        try:
+            from urllib.parse import urlparse
+            origin_host = urlparse(origin).netloc
+        except Exception:
+            return False
+        return origin_host == host
+
     def do_POST(self):
         if self.path != '/sync':
             self.send_error(404)
+            return
+        if not self._check_csrf():
+            self.send_error(403, "Cross-origin POST rejected (CSRF protection)")
             return
         kind, msg, out = run_sync()
         # HTTP status mirrors the sync outcome — useful if anyone scripts

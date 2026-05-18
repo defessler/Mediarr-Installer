@@ -1,10 +1,25 @@
+# Set INSTALL_DIR to wherever your stack lives (defaults below):
+#   Synology: /volume1/docker/media
+#   Unraid:   /mnt/user/appdata/mediarr
+#   QNAP:     /share/Container/mediarr
+#   Generic:  /opt/mediarr
+INSTALL_DIR="/volume1/docker/media"
+
+# Source path is Synology's native Plex package data dir. On other NAS
+# families, locate Preferences.xml first with:
+#   find / -maxdepth 6 -name 'Preferences.xml' -path '*Plex*' 2>/dev/null
+PLEX_SOURCE="/volume1/PlexMediaServer/AppData/Plex Media Server"
+
 # Create the target directory structure
-mkdir -p "/volume1/docker/media/plex/config/Library/Application Support/"
+mkdir -p "$INSTALL_DIR/plex/config/Library/Application Support/"
 
-# Copy everything (replace source path if yours differs)
-cp -a "/volume1/PlexMediaServer/AppData/Plex Media Server" \
-      "/volume1/docker/media/plex/config/Library/Application Support/"
+# Copy everything
+cp -a "$PLEX_SOURCE" \
+      "$INSTALL_DIR/plex/config/Library/Application Support/"
 
-PUID=$(grep -m1 '^PUID=' /volume1/Data/Scripts/.env | cut -d'=' -f2-)
-PGID=$(grep -m1 '^PGID=' /volume1/Data/Scripts/.env | cut -d'=' -f2-)
-chown -R ${PUID}:${PGID} /volume1/docker/media/plex/config/
+# Read PUID/PGID from the install dir's .env (where the stack itself
+# stores its config). Earlier versions of this doc pointed at
+# /volume1/Data/Scripts/.env which was never the canonical location.
+PUID=$(grep -m1 '^PUID=' "$INSTALL_DIR/.env" | cut -d'=' -f2-)
+PGID=$(grep -m1 '^PGID=' "$INSTALL_DIR/.env" | cut -d'=' -f2-)
+chown -R ${PUID}:${PGID} "$INSTALL_DIR/plex/config/"

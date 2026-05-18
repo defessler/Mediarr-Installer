@@ -821,6 +821,75 @@ def get_language_profile(base, key):
     profiles = GET(base, key, "/api/v3/languageprofile") or []
     return profiles[0]['id'] if profiles else 1
 
+def configure_plex_notification(base, key, api, plex_token, on_episode_file=False):
+    """Wire Sonarr/Radarr's Connect → Plex notification so library scans
+    fire the moment a file is imported. Without this, Plex relies on
+    its own scheduled-scan timer (which configure_plex_remote_access
+    disables for I/O reasons), OR on inotify against the bind-mounted
+    /media tree. Inotify across Docker bind mounts on Synology btrfs
+    is documented unreliable (events from another container's writes
+    sometimes don't propagate to Plex's watcher), so the safest
+    pattern is BOTH: keep inotify enabled in Plex AND register the
+    Connect notification here.
+
+    Plex's API endpoint for the partial-scan webhook is built into the
+    arr's PlexServer notification implementation — we just need to
+    provide host=plex, port=32400, authToken=<plex token from
+    Preferences.xml>, and toggle the onImport / onUpgrade event flags.
+    Idempotent: skips when a PlexServer notification with our name
+    already exists.
+
+    on_episode_file=True is Sonarr's event flag name; Radarr uses
+    onMovieFileImport. The caller picks the right one — we pass it
+    through verbatim.
+    """
+    if not plex_token:
+        skip(f"{api} → Plex notification (Plex token not available yet — re-run after Plex claim)")
+        return
+    name = "Plex Media Server"
+    existing = GET(base, key, f"/{api}/notification")
+    if existing is None:
+        fail(f"{api} → Plex notification: can't reach API"); return
+    if any(n.get('name') == name for n in existing):
+        skip(f"{api} → Plex notification (already configured)"); return
+
+    schemas = GET(base, key, f"/{api}/notification/schema") or []
+    schema = next((s for s in schemas if s.get('implementation') == 'PlexServer'), None)
+    if schema is None:
+        warn(f"{api} → Plex notification: PlexServer schema not found in this arr version"); return
+
+    schema = json.loads(json.dumps(schema))  # deep copy
+    schema['name'] = name
+    schema['onGrab'] = False
+    schema['onDownload'] = True            # Radarr's "on import"
+    schema['onUpgrade'] = True
+    schema['onRename'] = True
+    schema['onMovieAdded'] = False         # only Radarr — ignored on Sonarr
+    if on_episode_file:
+        schema['onEpisodeFileDelete'] = False
+        schema['onSeriesDelete'] = False
+    schema['supportsOnGrab'] = schema.get('supportsOnGrab', False)
+    fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
+    for fname, fval in {
+        'host':         'plex',
+        'port':         32400,
+        'useSsl':       False,
+        'authToken':    plex_token,
+        'updateLibrary': True,
+    }.items():
+        if fname in fm:
+            schema['fields'][fm[fname]]['value'] = fval
+
+    result = POST(base, key, f"/{api}/notification", schema)
+    if result:
+        ok(f"{api} → Plex notification: configured (partial-scan on import/upgrade)")
+    else:
+        # Don't fail the install — the user can wire this up by hand in
+        # Settings → Connect → Add → Plex Media Server. Warn so they
+        # know it didn't auto-apply.
+        warn(f"{api} → Plex notification: POST rejected — add manually at "
+             f"Settings → Connect → Add → Plex Media Server (host=plex port=32400)")
+
 # ── Prowlarr ──────────────────────────────────────────────────────────────────
 
 def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
@@ -1320,10 +1389,18 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
     # restart policy intact, no first-boot path re-run.
     print("    Restarting Tautulli container to apply...")
     import subprocess
+    # Use `docker restart` (Docker CLI, not compose) — this is namespace-
+    # neutral and doesn't need the compose project's `-f` flag set. The
+    # alternative `docker compose restart` would resolve which compose
+    # files belong to the project from the cwd, and on a `VPN_ENABLED=
+    # false` install with the no-vpn override active, plain `compose
+    # restart` from the canonical dir works fine (Tautulli isn't part
+    # of the override). Keep `docker restart` so we never depend on
+    # which override files are active.
     try:
         subprocess.run(
-            ['docker', 'compose', 'restart', '-t', '15', 'tautulli'],
-            cwd=stack_dir, check=True, capture_output=True, timeout=90, text=True,
+            ['docker', 'restart', '-t', '15', 'tautulli'],
+            check=True, capture_output=True, timeout=90, text=True,
         )
     except subprocess.CalledProcessError as e:
         warn(f"docker compose restart failed: {(e.stderr or '')[:200]}")
@@ -1751,9 +1828,12 @@ def configure_bazarr(base, key, sonarr_key, radarr_key, config_path,
     else:
         skip("Bazarr → Radarr (already set)" if radarr_key else "Bazarr → Radarr (no Radarr key)")
 
-    # Web UI credentials
+    # Web UI credentials. Use `form` (cookie session) instead of `basic`
+    # (HTTP Basic) so logout works and browsers don't cache credentials
+    # in-band on every request — matches the auth pattern Sonarr/Radarr
+    # use (Forms with DisabledForLocalAddresses).
     if username and password and auth.get('username') != username:
-        form_data['settings-auth-type']          = 'basic'
+        form_data['settings-auth-type']          = 'form'
         form_data['settings-auth-username']      = username
         form_data['settings-auth-password']      = password
         form_data['settings-general-use_auth']   = 'true'
@@ -1997,17 +2077,27 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
 UNPACKERR_CONF = """\
 # Unpackerr Configuration — generated by setup-arr-config.py
 # https://github.com/Unpackerr/unpackerr/wiki/Configuration
+#
+# Timing notes:
+# - interval=5m: arr download-client poll is every 60s by default, so a
+#   5-minute scan window gives the arr two polls to claim a completed
+#   archive before unpackerr tries to extract it.
+# - delete_delay=10m: post-extract, the arr needs time to discover the
+#   extracted file, import it (which may hardlink, copy, or symlink),
+#   and release the source handle. 10m is the safe lower bound on
+#   spinning rust — earlier values cause unpackerr to delete the
+#   archive while the arr's still copying, leaving orphaned partials.
 
 debug        = false
 quiet        = false
-interval     = "2m"
+interval     = "5m"
 start_delay  = "1m"
 retry_delay  = "5m"
 max_retries  = 3
 parallel     = 1
 file_mode    = "0644"
 dir_mode     = "0755"
-delete_delay = "5m"
+delete_delay = "10m"
 delete_orig  = false
 
 [[sonarr]]
@@ -2024,12 +2114,20 @@ delete_orig  = false
   protocols = "torrent,usenet"
   timeout   = "10s"
 
+{lidarr_block}
+"""
+
+# Lidarr-specific unpackerr block — rendered only when a real Lidarr
+# API key is available. Without this gate, unpackerr.conf included a
+# stub [[lidarr]] block with `REPLACE_WITH_LIDARR_KEY` and the
+# container 401-spammed every interval cycle.
+UNPACKERR_LIDARR_BLOCK = """\
 [[lidarr]]
   url       = "http://lidarr:8686"
   api_key   = "{lidarr_key}"
   paths     = ["/data/Downloads/Torrents/Completed", "/data/Downloads/Usenet/complete"]
   protocols = "torrent,usenet"
-  timeout   = "10s"
+  timeout   = "10s"\
 """
 
 # Recyclarr include-template recipes, keyed by the wizard's profile-pick
@@ -2531,10 +2629,13 @@ def main():
     # actually trips on). Stash in module globals so helpers see them
     # without per-call plumbing.
     global CONTAINER_UID, CONTAINER_GID
+    # Catch ValueError/TypeError specifically — bare `except:` would
+    # swallow KeyboardInterrupt and SystemExit, so a Ctrl-C here would
+    # silently install with default UIDs instead of stopping.
     try:    CONTAINER_UID = int(env.get('PUID') or 1026)
-    except: CONTAINER_UID = 1026
+    except (ValueError, TypeError): CONTAINER_UID = 1026
     try:    CONTAINER_GID = int(env.get('PGID') or 100)
-    except: CONTAINER_GID = 100
+    except (ValueError, TypeError): CONTAINER_GID = 100
 
     if not LAN_IP:  print("Error: LAN_IP not set in .env");           sys.exit(1)
     # QBITTORRENT_PASS is only required when qBittorrent is in the stack.
@@ -2751,6 +2852,12 @@ def main():
             warn("SABnzbd key not found — skipping")
         configure_media_management(SONARR, SONARR_KEY, "api/v3", recycle_label="sonarr")
         configure_bind_address(SONARR, SONARR_KEY, "api/v3")
+        # Plex Connect notification — fires partial-scans the moment a
+        # file is imported. Combined with configure_plex_remote_access's
+        # ScheduledLibraryUpdatesEnabled=0 this means Plex sees new
+        # content fast without scheduled-scan I/O.
+        if is_enabled(env, 'ENABLE_PLEX'):
+            configure_plex_notification(SONARR, SONARR_KEY, "api/v3", plex_token, on_episode_file=True)
         if ARR_USER and ARR_PASS:
             configure_auth(SONARR, SONARR_KEY, "api/v3", ARR_USER, ARR_PASS)
 
@@ -2786,6 +2893,9 @@ def main():
             warn("SABnzbd key not found — skipping")
         configure_media_management(RADARR, RADARR_KEY, "api/v3", recycle_label="radarr")
         configure_bind_address(RADARR, RADARR_KEY, "api/v3")
+        # Plex Connect notification — same rationale as Sonarr block above.
+        if is_enabled(env, 'ENABLE_PLEX'):
+            configure_plex_notification(RADARR, RADARR_KEY, "api/v3", plex_token, on_episode_file=False)
         if ARR_USER and ARR_PASS:
             configure_auth(RADARR, RADARR_KEY, "api/v3", ARR_USER, ARR_PASS)
 
@@ -2941,12 +3051,17 @@ def main():
         # actually lands.
         conf_path = f"{B}/unpackerr/config/unpackerr.conf"
         before_mtime = os.path.getmtime(conf_path) if os.path.exists(conf_path) else 0
+        # Lidarr block included only when we actually have a real key
+        # AND Lidarr is enabled — avoids the 401-spam from a stub.
+        lidarr_block = ''
+        if LIDARR_KEY and is_enabled(env, 'ENABLE_LIDARR'):
+            lidarr_block = UNPACKERR_LIDARR_BLOCK.format(lidarr_key=LIDARR_KEY)
         write_config_file("Unpackerr",
             conf_path,
             UNPACKERR_CONF.format(
                 sonarr_key=SONARR_KEY or 'REPLACE_WITH_SONARR_KEY',
                 radarr_key=RADARR_KEY or 'REPLACE_WITH_RADARR_KEY',
-                lidarr_key=LIDARR_KEY or 'REPLACE_WITH_LIDARR_KEY',
+                lidarr_block=lidarr_block,
             ))
         after_mtime = os.path.getmtime(conf_path) if os.path.exists(conf_path) else 0
         if (SONARR_KEY or RADARR_KEY) and after_mtime > before_mtime:

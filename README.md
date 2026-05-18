@@ -168,7 +168,7 @@ VPN_COUNTRIES=                # e.g. United States, Netherlands
 2. Go to **NordVPN → Manual configuration → Access Tokens**
 3. Generate a new token and copy it into `NORDVPN_ACCESS_TOKEN`
 
-`setup-nordvpn.sh` (called by `setup.sh`) uses this token to fetch the WireGuard private key automatically and writes it into `.env.local`.
+`setup-nordvpn.sh` (called by `setup.sh`) uses this token to fetch the WireGuard private key automatically and writes it into `.env`.
 
 ---
 
@@ -452,7 +452,7 @@ python3 /volume1/docker/media/migration/fix-plex-paths.py
 python3 /volume1/docker/media/migration/fix-plex-paths.py --apply
 ```
 
-> When migrating from the native package, `PLEX_CLAIM` in `.env.local` can be left blank — the existing `Preferences.xml` already has your Plex account token.
+> When migrating from the native package, `PLEX_CLAIM` in `.env` can be left blank — the existing `Preferences.xml` already has your Plex account token.
 
 **Step 6 — Reassign existing media to the new root folders**
 

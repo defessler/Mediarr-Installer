@@ -59,24 +59,30 @@ FREE_PROVIDERS = [
     ("YIFY Subtitles",  "yifysubtitles"),
     ("Podnapisi",       "podnapisi"),
     ("TVSubtitles",     "tvsubtitles"),
-    ("Subscene",        "subscene"),
-    ("Subf2m",          "subf2m"),         # Subscene mirror/replacement
+    # Subscene shut down in mid-2024. Adding it to Bazarr's enabled list
+    # either errors or no-ops and breaks the all-providers POST that
+    # saves the rest of the batch. Subf2m is the community successor.
+    ("Subf2m",          "subf2m"),
     ("Gestdown",        "gestdown"),       # Addic7ed mirror, no account needed
     ("SuperSubtitles",  "supersubtitles"),
 ]
 
 ACCOUNT_PROVIDERS = [
-    (
-        "OpenSubtitles.org",
-        "opensubtitles",
-        "opensubtitles",
-        {"username": "OPENSUBTITLES_USER", "password": "OPENSUBTITLES_PASS"},
-    ),
+    # OpenSubtitles.com is the modern API (v2); .org's legacy XMLRPC is
+    # being phased out by Bazarr upstream and accounts are NOT shared
+    # between the two sites. Prefer .com — only register .org as a
+    # fallback for users who still have legacy creds.
     (
         "OpenSubtitles.com",
         "opensubtitlescom",
         "opensubtitlescom",
         {"username": "OPENSUBTITLESCOM_USER", "password": "OPENSUBTITLESCOM_PASS"},
+    ),
+    (
+        "OpenSubtitles.org (legacy)",
+        "opensubtitles",
+        "opensubtitles",
+        {"username": "OPENSUBTITLES_USER", "password": "OPENSUBTITLES_PASS"},
     ),
     (
         "Addic7ed",

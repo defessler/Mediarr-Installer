@@ -138,14 +138,19 @@ vacuum_arr() {
     # REINDEX rebuilds all indexes (helps with stale statistics).
     # Both can fail if the DB is corrupted — surface that loudly
     # rather than silently leaving a broken DB.
-    if ! sh -c "$SQLITE_CMD '$full_path' 'VACUUM; REINDEX;'" 2>/tmp/sqlite-err; then
+    # Unique error file per invocation so parallel runs (cron + manual)
+    # don't trample each other's stderr.
+    ERR_FILE=$(mktemp -t sqlite-err.XXXXXX 2>/dev/null || echo "/tmp/sqlite-err.$$")
+    if ! sh -c "$SQLITE_CMD '$full_path' 'VACUUM; REINDEX;'" 2>"$ERR_FILE"; then
         echo "    ✘ Vacuum/reindex FAILED:"
-        sed 's/^/      /' /tmp/sqlite-err
+        sed 's/^/      /' "$ERR_FILE"
+        rm -f "$ERR_FILE"
         echo "    Restoring backup..."
         cp "$bak" "$full_path"
         docker start "$name" >/dev/null 2>&1
         return 1
     fi
+    rm -f "$ERR_FILE"
 
     local size_after
     size_after=$(du -h "$full_path" 2>/dev/null | cut -f1)

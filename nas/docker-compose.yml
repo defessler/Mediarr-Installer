@@ -1,3 +1,30 @@
+# Project name pinned so users running compose from a non-canonical
+# directory still get the same container set (otherwise the default
+# project name is `basename($PWD)` and you end up with `media_sonarr_1`
+# and `mediarr_sonarr_1` as separate containers depending on cwd).
+name: media
+
+# YAML anchor for the shared logging driver. Each service references it
+# as `logging: *logging`. Caps log size so /var/lib/docker doesn't fill
+# up on a long-running NAS — 10MB × 3 = 30MB per container is plenty
+# for postmortem debugging; older noise rolls out automatically.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Shared security hardening flags. Applied to every non-VPN service via
+# `security_opt: *security`. Defense-in-depth — `no-new-privileges`
+# blocks setuid escalation inside the container; combined with the
+# default capabilities Docker grants (CHOWN, NET_BIND_SERVICE, etc.)
+# this still lets the arr daemons + Plex run normally without giving
+# them paths to root-escape if any of them ever has a binary-level
+# vulnerability. NOT applied to gluetun — it needs NET_ADMIN and
+# inheriting no-new-privileges would block its WireGuard tunnel setup.
+x-security: &security
+  - no-new-privileges:true
+
 services:
 
   # ── Media Server ──────────────────────────────────────────
@@ -18,9 +45,26 @@ services:
     volumes:
       - ${INSTALL_DIR}/plex/config:/config
       - ${DATA_ROOT}/Media:/media
-    # Uncomment for Intel Arc / NVIDIA GPU transcoding:
+    # Hardware-transcoding hint:
+    # • Synology DS1522+ uses an AMD Ryzen R1600 — NO integrated GPU,
+    #   no QuickSync, /dev/dri doesn't exist on the host. HW transcoding
+    #   is impossible on that model regardless of this line.
+    # • Synology x86 models with Intel CPUs (DS920+, DS923+, DS1621xs+,
+    #   etc.) DO have /dev/dri and can transcode via QuickSync.
+    # Uncomment for Intel QuickSync transcoding on supported models:
     # devices:
     #   - /dev/dri:/dev/dri
+    healthcheck:
+      # Plex's /identity endpoint serves the unauthenticated server-info
+      # XML — fast and reliable for liveness checks. 60s start_period
+      # because first-boot DB load on a large library can stall the
+      # webserver bind for ~30-45s.
+      test: curl -sf http://localhost:32400/identity > /dev/null || exit 1
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
     restart: unless-stopped
 
   tautulli:
@@ -37,6 +81,7 @@ services:
       - ${LAN_IP}:8181:8181
     volumes:
       - ${INSTALL_DIR}/tautulli/config:/config
+    logging: *logging
     restart: unless-stopped
 
   seerr:
@@ -59,6 +104,7 @@ services:
       timeout: 3s
       interval: 15s
       retries: 3
+    logging: *logging
     restart: unless-stopped
 
   # ── Dashboard ─────────────────────────────────────────────
@@ -70,12 +116,18 @@ services:
     networks: [media]
     environment:
       - TZ=${TZ}
-      - HOMEPAGE_ALLOWED_HOSTS=*
+      # Restrict Host headers Homepage accepts. Default `*` accepts any
+      # Host (including DNS-rebinding attacks). Allow LAN_IP + the
+      # common mDNS / hostname patterns. Override via .env to add more
+      # (e.g. when fronting with a reverse proxy: HOMEPAGE_ALLOWED_HOSTS=
+      # nas.local,${LAN_IP},dashboard.home).
+      - HOMEPAGE_ALLOWED_HOSTS=${HOMEPAGE_ALLOWED_HOSTS:-${LAN_IP},localhost,127.0.0.1,nas.local}
     ports:
       - ${LAN_IP}:3000:3000
     volumes:
       - ${INSTALL_DIR}/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    logging: *logging
     restart: unless-stopped
 
   # ── Indexer / Management ──────────────────────────────────
@@ -93,11 +145,18 @@ services:
     volumes:
       - ${INSTALL_DIR}/prowlarr/config:/config
     healthcheck:
-      test: curl -sf http://localhost:9696/api/v1/system/status?apikey=none > /dev/null || exit 0
+      # Prowlarr returns 401 with apikey=none — that's "service alive,
+      # auth refused" which is exactly the healthy state we want. Treat
+      # 2xx/3xx/401 as healthy; everything else (including connection
+      # refused, 5xx, timeouts) as unhealthy. Previous version used
+      # `|| exit 0` which always returned healthy regardless of the
+      # actual probe result — a silent no-op healthcheck.
+      test: curl -sf -o /dev/null -w "%{http_code}" http://localhost:9696/api/v1/system/status?apikey=none | grep -qE '^(2|3|401)' || exit 1
       start_period: 30s
       interval: 30s
       timeout: 5s
       retries: 3
+    logging: *logging
     restart: unless-stopped
 
   flaresolverr:
@@ -117,6 +176,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging: *logging
     restart: unless-stopped
 
   sonarr:
@@ -140,6 +200,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging: *logging
     restart: unless-stopped
 
   radarr:
@@ -163,6 +224,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging: *logging
     restart: unless-stopped
 
   bazarr:
@@ -180,6 +242,18 @@ services:
     volumes:
       - ${INSTALL_DIR}/bazarr/config:/config
       - ${DATA_ROOT}:/data
+    healthcheck:
+      # Bazarr's /api/system/health endpoint requires an apikey query
+      # param — but /api/system/ping returns 200 unauthenticated and is
+      # what its own UI uses for the connection indicator. 90s start
+      # period because Bazarr's first boot writes config.ini + scans
+      # the libraries it inherits from Sonarr/Radarr.
+      test: curl -sf http://localhost:6767/api/system/ping > /dev/null || exit 1
+      start_period: 90s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
     restart: unless-stopped
 
   lidarr:
@@ -203,6 +277,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging: *logging
     restart: unless-stopped
 
   # ── Download Clients ──────────────────────────────────────
@@ -263,15 +338,26 @@ services:
       #   1. qBit's WebUI is reachable from gluetun's own IP. Since
       #      qBit is IN gluetun's namespace, http://localhost:49156
       #      works.
-      #   2. qBit's AuthSubnetWhitelist includes 127.0.0.1 (it does
-      #      via 10.0.0.0/8 which gluetun's interfaces use, BUT we
-      #      also set BypassAuthSubnetWhitelistOnLocalhost via setup-
-      #      folders.sh so localhost auth-bypasses regardless).
+      #   2. qBit's AuthSubnetWhitelist includes 127.0.0.0/8 — set in
+      #      setup-folders.sh's qBittorrent.conf template (search for
+      #      `AuthSubnetWhitelist=127.0.0.0/8` to verify). Earlier
+      #      versions omitted loopback from the whitelist and the
+      #      up-command silently 403'd every time gluetun reconnected;
+      #      the comment here used to claim a `BypassAuthSubnetWhitelist
+      #      OnLocalhost` preference handled it, but no such pref was
+      #      ever written.
+      # Template var: {{PORT}} is the FIRST forwarded port (a single
+      # integer). {{PORTS}} expands to ALL forwarded ports comma-
+      # separated — which would produce malformed JSON for qBit's
+      # listen_port setting if a provider ever returned more than one.
+      # Use {{PORT}}.
       # Only fires when VPN_PORT_FORWARDING=on (provider supports it).
-      # gluetun ignores the env var when no port forwarding is in
-      # play. Source: gluetun-wiki/setup/advanced/vpn-port-forwarding
+      # NOTE: NordVPN does NOT expose a port-forwarding API to third
+      # parties — gluetun silently no-ops when VPN_PROVIDER=nordvpn
+      # regardless of this setting. Switch to ProtonVPN/PIA/PrivateVPN
+      # if you want PF working. Source: gluetun-wiki/setup/providers.
       - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING:-off}
-      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data="json={\"listen_port\":{{PORTS}}}" "http://127.0.0.1:49156/api/v2/app/setPreferences" 2>/dev/null'
+      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data="json={\"listen_port\":{{PORT}}}" "http://127.0.0.1:49156/api/v2/app/setPreferences" 2>/dev/null'
     ports:
       - ${LAN_IP}:49156:49156
       - 6881:6881
@@ -282,6 +368,7 @@ services:
       retries: 6
       start_period: 30s
       timeout: 5s
+    logging: *logging
     restart: unless-stopped
 
   qbittorrent:
@@ -320,6 +407,7 @@ services:
       - ${INSTALL_DIR}/qbittorrent/config:/config
       - ${INSTALL_DIR}/qbittorrent/custom-cont-init.d:/custom-cont-init.d:ro
       - ${DATA_ROOT}/Downloads/Torrents:/downloads
+    logging: *logging
     restart: unless-stopped
 
   sabnzbd:
@@ -331,17 +419,27 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      # Disable IPv6 in SABnzbd by default. On Synology hosts without
+      # IPv6 routing, SAB auto-detects v6 from the container's link-
+      # local address and binds to ::1, but outbound v6 traffic to
+      # usenet providers stalls silently. Users who actually have v6
+      # working can override this to "true" in their .env.
+      - HAS_IPV6=${HAS_IPV6:-false}
     ports:
       - ${LAN_IP}:49155:8080
     volumes:
       - ${INSTALL_DIR}/sabnzbd/config:/config
       - ${DATA_ROOT}/Downloads/Usenet:/data
+    logging: *logging
     restart: unless-stopped
 
   # ── Maintenance ───────────────────────────────────────────
 
   recyclarr:
-    image: ghcr.io/recyclarr/recyclarr:latest
+    # Recyclarr dropped publishing the `:latest` tag in v8+; pin to a
+    # major version tag so `docker compose pull` keeps working. Bump
+    # the major after testing config compatibility with new releases.
+    image: ghcr.io/recyclarr/recyclarr:8
     container_name: recyclarr
     profiles: ["recyclarr"]
     user: "${PUID}:${PGID}"
@@ -352,6 +450,7 @@ services:
       - RECYCLARR_CREATE_CONFIG=true
     volumes:
       - ${INSTALL_DIR}/recyclarr/config:/config
+    logging: *logging
     restart: unless-stopped
 
   # Web-UI for Recyclarr. Recyclarr itself is a CLI tool with no web
@@ -360,7 +459,10 @@ services:
   # Homepage dashboard tile rather than having to SSH in. See
   # recyclarr-trigger.py for the full justification + endpoints.
   recyclarr-trigger:
-    image: python:3-alpine
+    # Pin Python minor so a future 3.x release doesn't break http.server
+    # or http.cookiejar (both used in recyclarr-trigger.py). Bump after
+    # smoke-testing the trigger against the new minor.
+    image: python:3.12-alpine
     container_name: recyclarr-trigger
     profiles: ["recyclarr"]
     networks: [media]
@@ -401,6 +503,7 @@ services:
       sh -c "apk add --no-cache docker-cli ||
              { echo 'apk add docker-cli failed; sleeping 60s before exit so we don'\\''t hammer the mirror'; sleep 60; exit 1; };
              exec python3 /app/server.py"
+    logging: *logging
     # restart: on-failure:5 instead of unless-stopped so a persistent
     # boot failure (apk network out, Python syntax error, etc.) can't
     # crash-loop forever and pin the docker daemon. After 5 failures
@@ -425,6 +528,7 @@ services:
     volumes:
       - ${INSTALL_DIR}/unpackerr/config:/config
       - ${DATA_ROOT}:/data
+    logging: *logging
     restart: unless-stopped
 
 networks:

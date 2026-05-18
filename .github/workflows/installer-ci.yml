@@ -57,3 +57,34 @@ jobs:
           name: vite-build-output
           path: installer/out/
           retention-days: 3
+
+  # Lint shell + Python in nas-payload — the bash/python scripts ship
+  # unchanged into nas-payload/ so a syntax typo would break installs
+  # without the TS build catching it. Run alongside the typecheck job.
+  lint-nas-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: shellcheck nas/*.sh
+        # SC2086 (unquoted vars) and SC2155 (declare+assign on same line)
+        # are intentional in many places; suppress them stack-wide so
+        # the real issues stand out.
+        run: shellcheck -e SC2086,SC2155 nas/*.sh nas/migration/*.sh
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: py_compile nas/**/*.py
+        # Compile-only — catches syntax errors without importing (so
+        # we don't need to install deps). The runtime imports
+        # (urllib, xml.etree, configparser) are all stdlib.
+        run: |
+          set -e
+          for f in nas/*.py nas/indexers/*.py nas/migration/*.py; do
+            python -m py_compile "$f"
+          done

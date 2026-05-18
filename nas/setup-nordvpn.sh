@@ -104,7 +104,36 @@ fi
 
 echo ""
 echo "  Fetching private key from NordVPN API..."
-PRIVATE_KEY=$(curl -s -u "token:$ACCESS_TOKEN" https://api.nordvpn.com/v1/users/services/credentials | grep -o '"nordlynx_private_key":"[^"]*"' | cut -d'"' -f4)
+# Parse JSON properly via python3 (already required by the rest of the
+# stack) instead of grep | cut. The old regex broke silently when
+# NordVPN's response changed whitespace / field ordering, leaving an
+# empty PRIVATE_KEY with no diagnostic. Python parses + raises if the
+# expected key is absent so we surface the actual API response.
+RAW=$(curl -s -u "token:$ACCESS_TOKEN" https://api.nordvpn.com/v1/users/services/credentials)
+if [ -z "$RAW" ]; then
+    echo "  ✘ NordVPN API returned an empty body — check internet connectivity."
+    exit 1
+fi
+PYTHON_OUT=$(printf '%s' "$RAW" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception as e:
+    print(f"ERROR: not valid JSON: {e}")
+    sys.exit(0)
+key = data.get("nordlynx_private_key", "")
+if not key:
+    msg = data.get("message") or data.get("error") or "no nordlynx_private_key in response"
+    print(f"ERROR: {msg}")
+    sys.exit(0)
+print(key)
+' 2>&1)
+if [[ "$PYTHON_OUT" == ERROR:* ]]; then
+    echo "  ✘ Failed to parse NordVPN API response:"
+    echo "      $PYTHON_OUT"
+    exit 1
+fi
+PRIVATE_KEY="$PYTHON_OUT"
 
 if [ -z "$PRIVATE_KEY" ]; then
     echo "  ✘ Failed to fetch private key. Check your access token and try again."

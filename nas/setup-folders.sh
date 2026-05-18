@@ -71,6 +71,10 @@ DATA_DIRS=(
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"
     "$DATA_ROOT/Downloads/Torrents/Completed/radarr"
+    # Lidarr's torrent download category. fix-imports.sh and setup-arr-
+    # config.py both reference this path; without it the first Lidarr
+    # download lands in a missing dir and imports never trigger.
+    "$DATA_ROOT/Downloads/Torrents/Completed/lidarr"
     "$DATA_ROOT/Downloads/Usenet/incomplete"
     "$DATA_ROOT/Downloads/Usenet/complete"
     "$DATA_ROOT/Downloads/Usenet/complete/tv"
@@ -342,7 +346,13 @@ echo "Writing qBittorrent config (with WebUI credentials)..."
 # won't. Re-write in that case so the user's QBITTORRENT_PASS actually
 # takes effect. Trust the user's manual UI edits when our signature is
 # present — re-running setup.sh shouldn't clobber custom settings.
-QB_SIGNATURE="WebUI\\\\AuthSubnetWhitelist=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+# Bump the signature string when expanding the whitelist so existing
+# installs detect the older whitelist and get refreshed. Loopback
+# (127.0.0.0/8) is REQUIRED for gluetun's VPN_PORT_FORWARDING_UP_COMMAND
+# — that wget hits http://127.0.0.1:49156 from inside gluetun's
+# namespace (which qBit shares), and without 127.0.0.0/8 in the
+# whitelist it gets 403'd on every reconnect.
+QB_SIGNATURE="WebUI\\\\AuthSubnetWhitelist=127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
 WROTE_CONF=false
 
 if [ -z "$QB_PASS" ]; then
@@ -395,7 +405,14 @@ Downloads\\TempPathEnabled=true
 WebUI\\Username=$QB_USER
 WebUI\\Password_PBKDF2="$HASH"
 WebUI\\AuthSubnetWhitelistEnabled=true
-WebUI\\AuthSubnetWhitelist=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+# 127.0.0.0/8 is REQUIRED for gluetun's VPN_PORT_FORWARDING_UP_COMMAND
+# — the wget runs from inside gluetun's namespace (which qBit shares)
+# and hits http://127.0.0.1:49156, so loopback must bypass auth or
+# every VPN reconnect would 403 and the listen-port update would
+# silently fail. RFC1918 ranges allow any LAN device to reach qBit's
+# WebUI without auth (typical home-server convenience tradeoff —
+# narrow to your actual LAN subnet for stricter access).
+WebUI\\AuthSubnetWhitelist=127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
 # HostHeaderValidation guards qBit against DNS-rebinding attacks by
 # rejecting requests whose Host header doesn't match a known-good
 # value. In a NAS install reached from multiple hostnames (LAN IP,

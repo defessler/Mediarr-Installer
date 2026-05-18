@@ -9,6 +9,37 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Mutex against concurrent runs (installer wizard + manual SSH session,
+# or two SSH sessions racing). The lock is a flock on a fixed file in
+# the install dir; if flock isn't available (busybox-only systems) we
+# fall back to PID-file detection. Best-effort: a stale PID after a
+# crashed setup.sh is detected via `kill -0` and reaped.
+LOCK_FILE="$SCRIPT_DIR/.setup.lock"
+if command -v flock >/dev/null 2>&1; then
+    # Open FD 200 onto the lock file and try a non-blocking exclusive
+    # lock. The lock auto-releases when this shell exits, no trap
+    # needed.
+    exec 200>"$LOCK_FILE"
+    if ! flock -n 200; then
+        echo "✘ Another setup.sh is already running (lock held on $LOCK_FILE)."
+        echo "  Wait for the other run to finish, or check if a previous run is wedged:"
+        echo "    cat $LOCK_FILE"
+        exit 1
+    fi
+    echo $$ >&200
+else
+    if [ -f "$LOCK_FILE" ]; then
+        OLD_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            echo "✘ Another setup.sh is already running (PID $OLD_PID, lock at $LOCK_FILE)."
+            exit 1
+        fi
+        # Stale lock from a crashed run — overwrite and continue.
+    fi
+    echo "$$" > "$LOCK_FILE"
+    trap "rm -f '$LOCK_FILE'" EXIT
+fi
+
 # ── Required .env vars ───────────────────────────────────────────────────────
 # Belt-and-suspenders: docker compose substitutes empty for any unset
 # variable in docker-compose.yml. With ${INSTALL_DIR}/plex/config and
