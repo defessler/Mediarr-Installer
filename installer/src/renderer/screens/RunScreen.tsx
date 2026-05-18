@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Rocket, ArrowLeft, ArrowRight, AlertCircle, RotateCw, CheckCircle2 } from 'lucide-react'
+import {
+  Rocket, ArrowLeft, ArrowRight, AlertCircle, RotateCw, CheckCircle2,
+  XCircle, AlertTriangle,
+} from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
@@ -991,20 +994,28 @@ export function RunScreen() {
         return (
           <div className="flex items-center gap-2 shrink-0">
             {failCount > 0 && (
-              <button
+              <motion.button
                 onClick={() => setIssuesModal('fail')}
-                className="px-3 py-1.5 text-sm bg-rose-900/30 hover:bg-rose-800/40 border border-rose-700/50 rounded-md text-rose-200"
+                whileHover={reduced ? {} : { y: -1 }}
+                whileTap={reduced ? {} : { scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-rose-900/30 hover:bg-rose-800/40 border border-rose-700/50 rounded-md text-rose-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50"
               >
-                ✘ {failCount} failed
-              </button>
+                <XCircle size={14} />
+                <span className="font-semibold">{failCount}</span> failed
+              </motion.button>
             )}
             {actionCount > 0 && (
-              <button
+              <motion.button
                 onClick={() => setIssuesModal('action')}
-                className="px-3 py-1.5 text-sm bg-amber-900/20 hover:bg-amber-800/30 border border-amber-700/40 rounded-md text-amber-200"
+                whileHover={reduced ? {} : { y: -1 }}
+                whileTap={reduced ? {} : { scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-900/20 hover:bg-amber-800/30 border border-amber-700/40 rounded-md text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
               >
-                ! {actionCount} need{actionCount === 1 ? 's' : ''} action
-              </button>
+                <AlertTriangle size={14} />
+                <span className="font-semibold">{actionCount}</span> need{actionCount === 1 ? 's' : ''} action
+              </motion.button>
             )}
             <span className="text-xs text-slate-500 ml-1">
               click to view details
