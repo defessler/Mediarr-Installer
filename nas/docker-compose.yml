@@ -102,6 +102,14 @@ services:
     container_name: seerr
     profiles: ["plex"]
     init: true
+    # The Seerr image runs as user `node` (UID 1000) by default. Forcing
+    # PUID:PGID via the `user:` directive bypasses the image's
+    # entrypoint chown so /app/config needs to ALREADY be owned by
+    # PUID:PGID before first start — which setup-folders.sh handles
+    # for us via the chown -R on every INSTALL_DIR subdir. On other
+    # platforms or hand-edited installs, if Seerr can't write to its
+    # config dir, comment out this line to let the image use its
+    # default UID 1000 and chown the host-side seerr/config to 1000:1000.
     user: "${PUID}:${PGID}"
     networks: [media]
     security_opt: *security

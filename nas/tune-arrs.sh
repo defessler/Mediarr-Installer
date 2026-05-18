@@ -122,10 +122,13 @@ vacuum_arr() {
     # alpine container if the host doesn't have it. The container
     # path is hermetic — doesn't depend on the user's PATH.
     if command -v sqlite3 >/dev/null 2>&1; then
-        SQLITE_CMD="sqlite3"
+        # Run the host's sqlite3 directly. No subshell, no string-
+        # interpolation gymnastics — argv[1] gets the literal db path
+        # (handles spaces, single quotes, every other special char).
+        SQLITE_MODE=host
     else
         echo "    sqlite3 not on PATH — using alpine container..."
-        SQLITE_CMD="docker run --rm -v $SCRIPT_DIR:/wd -w /wd alpine:latest sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3'"
+        SQLITE_MODE=alpine
     fi
 
     # Backup first. If vacuum corrupts the DB (it shouldn't, but
@@ -141,7 +144,25 @@ vacuum_arr() {
     # Unique error file per invocation so parallel runs (cron + manual)
     # don't trample each other's stderr.
     ERR_FILE=$(mktemp -t sqlite-err.XXXXXX 2>/dev/null || echo "/tmp/sqlite-err.$$")
-    if ! sh -c "$SQLITE_CMD '$full_path' 'VACUUM; REINDEX;'" 2>"$ERR_FILE"; then
+    if [ "$SQLITE_MODE" = host ]; then
+        # Direct invocation — sqlite3 gets the db path + SQL as separate
+        # argv positions. No shell injection vector regardless of what's
+        # in $full_path (spaces, quotes, etc.).
+        sqlite3_result=0
+        sqlite3 "$full_path" 'VACUUM; REINDEX;' 2>"$ERR_FILE" || sqlite3_result=$?
+    else
+        # Alpine container — mount the install dir, run sqlite3 on the
+        # path relative to /wd. -v takes "host:container" so $SCRIPT_DIR
+        # needs to be a real path with no spaces (true in our standard
+        # NAS install dirs). The DB path passed to sqlite3 is the
+        # container-side relative path, computed below.
+        rel_db="${full_path#$SCRIPT_DIR/}"
+        sqlite3_result=0
+        docker run --rm -v "$SCRIPT_DIR:/wd" -w /wd alpine:latest \
+            sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 "$1" "VACUUM; REINDEX;"' \
+            -- "/wd/$rel_db" 2>"$ERR_FILE" || sqlite3_result=$?
+    fi
+    if [ "$sqlite3_result" -ne 0 ]; then
         echo "    ✘ Vacuum/reindex FAILED:"
         sed 's/^/      /' "$ERR_FILE"
         rm -f "$ERR_FILE"
