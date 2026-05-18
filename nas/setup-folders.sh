@@ -346,13 +346,32 @@ echo "Writing qBittorrent config (with WebUI credentials)..."
 # won't. Re-write in that case so the user's QBITTORRENT_PASS actually
 # takes effect. Trust the user's manual UI edits when our signature is
 # present — re-running setup.sh shouldn't clobber custom settings.
-# Bump the signature string when expanding the whitelist so existing
-# installs detect the older whitelist and get refreshed. Loopback
-# (127.0.0.0/8) is REQUIRED for gluetun's VPN_PORT_FORWARDING_UP_COMMAND
-# — that wget hits http://127.0.0.1:49156 from inside gluetun's
-# namespace (which qBit shares), and without 127.0.0.0/8 in the
-# whitelist it gets 403'd on every reconnect.
-QB_SIGNATURE="WebUI\\\\AuthSubnetWhitelist=127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+# Compute the qBit AuthSubnetWhitelist. Two pieces:
+#   1. 127.0.0.0/8 — REQUIRED for gluetun's VPN_PORT_FORWARDING_UP_COMMAND.
+#      That wget hits http://127.0.0.1:49156 from inside gluetun's
+#      namespace (which qBit shares); without 127.0.0.0/8 it 403s on
+#      every reconnect.
+#   2. The LAN subnet — derived from LAN_IP in .env so only the user's
+#      actual home network bypasses auth, not the union of all RFC1918
+#      ranges. Narrows attack surface against compromised IoT devices
+#      on the same LAN. Falls back to all-RFC1918 (legacy behavior) when
+#      LAN_IP isn't readable.
+LAN_IP_VAL=$(env_val LAN_IP)
+LAN_SUBNET_VAL=$(env_val LAN_SUBNET)
+if [ -n "$LAN_SUBNET_VAL" ]; then
+    QB_LAN="$LAN_SUBNET_VAL"
+elif [[ "$LAN_IP_VAL" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
+    QB_LAN="${BASH_REMATCH[1]}.0/24"
+else
+    # No LAN info — fall back to all-RFC1918 (matches pre-v0.3 default).
+    QB_LAN="192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+fi
+QB_WHITELIST="127.0.0.0/8,$QB_LAN"
+
+# Signature is the full whitelist string — bump means re-write existing
+# configs whose whitelist no longer matches. Trips on subnet change too,
+# so users renumbering their LAN get the new value next install.
+QB_SIGNATURE="WebUI\\\\AuthSubnetWhitelist=$QB_WHITELIST"
 WROTE_CONF=false
 
 if [ -z "$QB_PASS" ]; then
@@ -405,14 +424,11 @@ Downloads\\TempPathEnabled=true
 WebUI\\Username=$QB_USER
 WebUI\\Password_PBKDF2="$HASH"
 WebUI\\AuthSubnetWhitelistEnabled=true
-# 127.0.0.0/8 is REQUIRED for gluetun's VPN_PORT_FORWARDING_UP_COMMAND
-# — the wget runs from inside gluetun's namespace (which qBit shares)
-# and hits http://127.0.0.1:49156, so loopback must bypass auth or
-# every VPN reconnect would 403 and the listen-port update would
-# silently fail. RFC1918 ranges allow any LAN device to reach qBit's
-# WebUI without auth (typical home-server convenience tradeoff —
-# narrow to your actual LAN subnet for stricter access).
-WebUI\\AuthSubnetWhitelist=127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+# 127.0.0.0/8 is REQUIRED for gluetun's VPN_PORT_FORWARDING_UP_COMMAND.
+# The LAN subnet is derived from LAN_IP / LAN_SUBNET in .env above —
+# only YOUR home subnet bypasses auth, not all of RFC1918. Set
+# LAN_SUBNET in .env to override (e.g. for /16 networks).
+WebUI\\AuthSubnetWhitelist=$QB_WHITELIST
 # HostHeaderValidation guards qBit against DNS-rebinding attacks by
 # rejecting requests whose Host header doesn't match a known-good
 # value. In a NAS install reached from multiple hostnames (LAN IP,

@@ -48,7 +48,14 @@ export const envSchema = z.object({
   // Identity
   PUID: numericString,
   PGID: numericString,
-  TZ: z.string().regex(/^[A-Z][a-zA-Z_]+\/[A-Za-z_+-]+$/, 'expected Area/City'),
+  // IANA timezone format. Most zones are `Region/City` (America/Chicago)
+  // but a handful are `Region/Subregion/City` (America/Argentina/Buenos_Aires,
+  // America/Indiana/Indianapolis). The old single-slash regex rejected
+  // those — and accept short forms like `UTC` / `GMT` / `Etc/GMT+5` too.
+  TZ: z.string().regex(
+    /^(UTC|GMT|[A-Za-z][a-zA-Z_]+(\/[A-Za-z_+\-0-9]+){1,3})$/,
+    'expected an IANA timezone like America/Chicago or America/Argentina/Buenos_Aires',
+  ),
   LAN_IP: ipv4,
 
   // Paths (NAS-family-portable). Absolute paths only — relative paths

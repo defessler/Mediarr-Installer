@@ -45,8 +45,20 @@ function buildConnectConfig(cfg: ConnectionConfig): ConnectConfig {
     host: cfg.host,
     port: cfg.port,
     username: cfg.user,
-    readyTimeout: 15_000,
+    // 30s SSH handshake budget. DSM 7's sshd is fast on a healthy NAS
+    // (~1s) but the first connection of a session occasionally takes
+    // longer when DSM's auth backend is paging in user data or the NAS
+    // is busy with another DSM process (Snapshot Replication, Hyper
+    // Backup, etc). 15s was tight; 30s covers every real-world case
+    // without making the user wait too long on a truly unreachable host.
+    readyTimeout: 30_000,
+    // Keepalive: ping every 30s, allow 6 missed before disconnect.
+    // Default is 3 missed = 90s tolerance, which fires during long-
+    // running setup.sh on flaky WiFi. 6 × 30s = 3min tolerance covers
+    // most home network blips without leaving the connection wedged
+    // forever on a genuinely-disconnected host.
     keepaliveInterval: 30_000,
+    keepaliveCountMax: 6,
   }
   if (cfg.authMethod === 'password') {
     base.password = cfg.password
