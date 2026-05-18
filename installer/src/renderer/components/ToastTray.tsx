@@ -71,7 +71,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
               <button
                 type="button"
                 onClick={() => setShowDetail((s) => !s)}
-                className="hover:opacity-100 underline"
+                className="hover:opacity-100 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
               >
                 {showDetail ? 'Hide details' : 'Show details'}
               </button>
@@ -83,7 +83,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                   reportError('Open log', e),
                 )
               }
-              className="inline-flex items-center gap-1 hover:opacity-100 underline"
+              className="inline-flex items-center gap-1 hover:opacity-100 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
             >
               <FileText size={12} />
               Open log
@@ -106,7 +106,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         <button
           type="button"
           onClick={onDismiss}
-          className="shrink-0 opacity-60 hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+          className="shrink-0 opacity-60 hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:opacity-100"
           aria-label="Dismiss"
         >
           <X size={14} />
