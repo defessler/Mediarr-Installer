@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
-  Check, Loader2,
+  Check, Loader2, FlaskConical,
 } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
@@ -225,9 +225,12 @@ export function App() {
       </div>
 
       {info?.mock && (
-        <div className="bg-amber-500/15 text-amber-200 border-b border-amber-500/30 text-xs px-4 py-1.5 text-center font-medium">
-          MOCK MODE — SSH, SFTP, env detection, and NordVPN API are stubbed.
-          No real NAS is contacted.
+        <div className="bg-amber-500/15 text-amber-200 border-b border-amber-500/30 text-xs px-4 py-1.5 text-center font-medium inline-flex items-center justify-center gap-2">
+          <FlaskConical size={12} className="text-amber-300" strokeWidth={2} />
+          <span className="font-bold tracking-wide">MOCK MODE</span>
+          <span className="font-normal text-amber-200/80">
+            — SSH, SFTP, env detection, and NordVPN API are stubbed. No real NAS is contacted.
+          </span>
         </div>
       )}
 
