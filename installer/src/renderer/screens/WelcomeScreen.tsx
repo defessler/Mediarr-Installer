@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Plus, Download, Upload, Play, RefreshCw, ArrowRightLeft, Settings,
   Trash2, Edit3, AlertTriangle, Server, CheckCircle2,
+  Terminal, Boxes, UserCircle,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { reportError, useErrors } from '../store/errors.js'
@@ -457,15 +458,41 @@ export function WelcomeScreen() {
           </motion.section>
         )}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-2 text-sm">
+        <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-3 text-sm">
           <h2 className="font-semibold flex items-center gap-2">
             <CheckCircle2 size={16} className="text-emerald-400" />
             Before you begin
           </h2>
-          <ul className="space-y-1.5 text-slate-300 list-disc list-inside pl-1">
-            <li>SSH is enabled on the NAS (Control Panel &rarr; Terminal &amp; SNMP).</li>
-            <li>Docker (Container Manager) is installed via Synology Package Center.</li>
-            <li>For fresh installs that include Plex: an account at plex.tv.</li>
+          {/* Icon-prefixed checklist. Each item has its own Lucide
+              glyph so the list reads as "three concrete things" — much
+              easier to skim than a bullet block when you're new to NAS
+              setup. Icons sit in a tinted square so they feel like
+              little tags rather than decoration. */}
+          <ul className="space-y-2 text-slate-300">
+            <li className="flex items-start gap-3">
+              <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-slate-800/80 border border-slate-700/60">
+                <Terminal size={14} className="text-slate-300" strokeWidth={1.75} />
+              </span>
+              <span>
+                SSH is enabled on the NAS (Control Panel &rarr; Terminal &amp; SNMP).
+              </span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-sky-900/30 border border-sky-700/40">
+                <Boxes size={14} className="text-sky-300" strokeWidth={1.75} />
+              </span>
+              <span>
+                Docker (Container Manager) is installed via Synology Package Center.
+              </span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-emerald-900/30 border border-emerald-700/40">
+                <UserCircle size={14} className="text-emerald-300" strokeWidth={1.75} />
+              </span>
+              <span>
+                For fresh installs that include Plex: an account at plex.tv.
+              </span>
+            </li>
           </ul>
         </section>
       </div>
