@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Sparkles, Download, ExternalLink } from 'lucide-react'
 import type { AppInfo } from '../../shared/ipc.js'
 import { useErrors, reportError } from '../store/errors.js'
 
@@ -180,43 +181,52 @@ export function WhatsNew({ info, onChanged }: Props) {
   }
 
   return (
-    <section className="rounded-md border border-emerald-700/40 bg-emerald-900/15 p-4 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="font-semibold text-emerald-200">
-            Update available — v{u.latest}
-          </h2>
-          <p className="text-xs text-emerald-300/80 mt-0.5">
-            You're on v{info.version}. Notification only — your existing
-            install keeps working until you swap the folder.
-          </p>
+    <section className="rounded-xl border border-emerald-700/40 bg-gradient-to-b from-emerald-950/30 to-slate-900/30 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="shrink-0 w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+            <Sparkles size={18} className="text-emerald-300" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="font-semibold text-emerald-100 flex items-center gap-2 flex-wrap">
+              <span>New version</span>
+              <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-200 border border-emerald-500/30">
+                v{u.latest}
+              </span>
+            </h2>
+            <p className="text-xs text-emerald-200/70 mt-0.5">
+              You're on v{info.version}. Your current install keeps working
+              until you swap the folder.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {u.zipUrl && (
             <button
               type="button"
               onClick={download}
               disabled={busy !== null}
-              className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 font-medium"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 font-medium transition-colors"
               title="Download the win-unpacked zip to your Downloads folder"
             >
-              {busy === 'download' ? 'Downloading…' : 'Download zip'}
+              <Download size={14} />
+              {busy === 'download' ? 'Downloading…' : 'Download'}
             </button>
           )}
           <a
             href={u.url}
             target="_blank"
             rel="noreferrer"
-            className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md transition-colors"
             title="Open the release page on GitHub"
           >
-            Release page
+            Release page <ExternalLink size={12} />
           </a>
           <button
             type="button"
             onClick={skip}
             disabled={busy !== null}
-            className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40"
+            className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-colors"
             title={`Don't remind me about v${u.latest} again`}
           >
             Skip
@@ -225,7 +235,7 @@ export function WhatsNew({ info, onChanged }: Props) {
       </div>
 
       <details className="rounded-md bg-slate-900/40 text-sm">
-        <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium">
+        <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors">
           What's new in v{u.latest}
         </summary>
         <div className="px-3 pb-3 pt-1 space-y-1 text-sm">
