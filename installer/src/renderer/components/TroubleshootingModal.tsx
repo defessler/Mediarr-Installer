@@ -133,6 +133,41 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
   },
   {
     category: 'qBittorrent',
+    symptom: 'qBit broken every time the NAS reboots (must run restart-qbit.sh manually)',
+    cause:
+      'On NAS reboot, Docker auto-restarts containers in arbitrary order. qBit (network_mode: container:gluetun) often tries to start BEFORE gluetun\'s namespace exists, fails with "must join at least one network," then enters Docker\'s exponential restart backoff (100ms → 200ms → 400ms → ... → minutes between retries). Even after gluetun is up, qBit can stay stuck for 10+ min before its backoff timer elapses. `depends_on` in compose doesn\'t help here because the docker daemon\'s restart-policy path doesn\'t honor compose semantics — only `docker compose up` does.',
+    fix:
+      'Wire boot-orchestrator.sh as a Synology Task Scheduler triggered task. It waits for the Docker daemon, then runs `docker compose up -d` with the right profile flags — compose respects depends_on, so gluetun starts first and qBit comes up cleanly. Set this once; future reboots are hands-off.',
+    command:
+      `# Synology DSM:
+#   Control Panel → Task Scheduler → Create → Triggered Task →
+#     User-defined script (run as root)
+#   Task name:  Mediarr stack — boot orchestrator
+#   Event:      Boot-up
+#   Run command:
+#     bash <INSTALL_DIR>/boot-orchestrator.sh
+
+# Verify it works without rebooting:
+sudo bash <INSTALL_DIR>/boot-orchestrator.sh
+tail -20 <INSTALL_DIR>/boot-orchestrator.log`,
+  },
+  {
+    category: 'Sonarr / Radarr / Lidarr / Prowlarr',
+    symptom: 'Lots of [Warn] entries in Sonarr/Radarr/Lidarr logs about Torznab / HTTP errors',
+    cause:
+      'Most "warning" entries in the arrs\' logs are normal indexer background noise — public indexers rate-limit aggressively ("API Request Limit reached for Knaben — Disabled for 00:01:00"), occasionally go down ("Knaben server is currently unavailable"), or have RSS sync gaps ("rss sync didn\'t cover the period between..."). The arrs log these at Warn but they auto-recover; nothing is actually broken. Not actionable from the wizard.',
+    fix:
+      'Filter the noise — three actually-actionable patterns: (1) "API Request Limit reached for AvistaZ — Disabled for 01:00:00" = creds wrong or quota exhausted (verify AVISTAZ_USER/PASS/PID in .env). (2) "Indexer X disabled due to failures" persistent = run tune-arrs.sh which auto-disables broken indexers. (3) "rss sync didn\'t cover the period" = your RSS interval is shorter than indexer rate limits allow — bump Sonarr → Settings → General → RSS Sync Interval from 15 → 30 min.',
+    command:
+      `# Auto-disable broken indexers (handles cause #2):
+sudo bash <INSTALL_DIR>/tune-arrs.sh
+
+# Verify AvistaZ creds (cause #1) — if these are blank or invalid, drop
+# them from .env so the wizard stops trying to add the indexer:
+grep -E '^AVISTAZ_(USER|PASS|PID)=' <INSTALL_DIR>/.env`,
+  },
+  {
+    category: 'qBittorrent',
     symptom: 'qBittorrent login rejected (qBit replied "Fails.")',
     cause:
       'The WebUI password in your .env doesn\'t match qBit\'s qBittorrent.conf. Usually happens when you changed the password manually in the qBit UI after a previous install.',
