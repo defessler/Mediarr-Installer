@@ -25,7 +25,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Play } from 'lucide-react'
+import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
@@ -404,6 +405,7 @@ docker compose $FILES --progress plain --ansi never up -d`
           onClick={pullAndRecreate}
           disabled={running}
           accent="sky"
+          running={running && lastAction === 'pull'}
         />
         <ActionCard
           title="Sync wizard scripts"
@@ -413,6 +415,7 @@ docker compose $FILES --progress plain --ansi never up -d`
           onClick={syncOnly}
           disabled={running}
           accent="slate"
+          running={running && lastAction === 'sync'}
         />
         <ActionCard
           title="Refresh dashboard"
@@ -422,6 +425,7 @@ docker compose $FILES --progress plain --ansi never up -d`
           onClick={refreshDashboard}
           disabled={running}
           accent="emerald"
+          running={running && lastAction === 'homepage'}
         />
         <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 space-y-2 flex flex-col">
           <h3 className="font-medium text-sm">Re-run a step</h3>
@@ -438,7 +442,7 @@ docker compose $FILES --progress plain --ansi never up -d`
               value={stepToRerun}
               onChange={(e) => setStepToRerun(Number(e.target.value))}
               disabled={running}
-              className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-xs disabled:opacity-50"
+              className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-xs disabled:opacity-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             >
               {SETUP_STEPS.map((s) => (
                 <option key={s.number} value={s.number}>
@@ -446,13 +450,16 @@ docker compose $FILES --progress plain --ansi never up -d`
                 </option>
               ))}
             </select>
-            <button
+            <BigButton
+              size="sm"
+              variant="danger"
+              icon={!(running && lastAction === `step-${stepToRerun}`) ? <Play size={11} fill="currentColor" /> : undefined}
               onClick={() => rerunStep(stepToRerun)}
               disabled={running}
-              className="px-3 py-1.5 bg-amber-700/70 hover:bg-amber-600 disabled:opacity-40 rounded-md text-xs font-medium"
+              loading={running && lastAction === `step-${stepToRerun}`}
             >
-              {running && lastAction === `step-${stepToRerun}` ? 'Running…' : 'Run step'}
-            </button>
+              Run step
+            </BigButton>
           </div>
         </div>
       </section>
@@ -465,7 +472,10 @@ docker compose $FILES --progress plain --ansi never up -d`
           success — Continue stays gated on done so user only advances
           once SOMETHING completed cleanly. */}
       <div className="flex justify-between items-center gap-3">
-        <button
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<ArrowLeft size={16} />}
           onClick={() => setStep('welcome')}
           disabled={running}
           title={
@@ -473,37 +483,46 @@ docker compose $FILES --progress plain --ansi never up -d`
               ? 'Wait for the in-flight action to finish before going back'
               : 'Return to the welcome screen'
           }
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
         >
           Back to start
-        </button>
+        </BigButton>
         <div className="flex-1 text-sm text-center text-slate-400">
           {phase === 'idle' && 'Pick an action above'}
           {phase === 'running' && `${lastActionLabel} in progress…`}
-          {phase === 'done' && `✓ ${lastActionLabel} complete`}
-          {phase === 'failed' && `✘ ${lastActionLabel} failed — see log`}
+          {phase === 'done' && (
+            <span className="inline-flex items-center gap-1.5 text-emerald-300">
+              <CheckCircle2 size={14} /> {lastActionLabel} complete
+            </span>
+          )}
+          {phase === 'failed' && (
+            <span className="inline-flex items-center gap-1.5 text-amber-200/90">
+              <AlertCircle size={14} /> {lastActionLabel} paused — see log
+            </span>
+          )}
         </div>
-        <button
+        <BigButton
+          size="md"
+          variant={phase === 'done' ? 'primary' : 'secondary'}
+          trailingIcon={<ArrowRight size={16} />}
           onClick={() => setStep('done')}
           disabled={phase !== 'done'}
           title={
             phase === 'done'
               ? 'Continue to the post-update dashboard'
               : phase === 'failed'
-                ? 'Action failed — retry first'
+                ? 'Action paused — try again first'
                 : 'Available once an action completes'
           }
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue
-        </button>
+        </BigButton>
       </div>
     </div>
   )
 }
 
 function ActionCard({
-  title, subtitle, when, buttonLabel, onClick, disabled, accent,
+  title, subtitle, when, buttonLabel, onClick, disabled, accent, running,
 }: {
   title: string
   subtitle: string
@@ -512,25 +531,32 @@ function ActionCard({
   onClick: () => void
   disabled: boolean
   accent: 'sky' | 'slate' | 'emerald'
+  running?: boolean
 }) {
-  // Class strings hardcoded so Tailwind's purge keeps them; dynamic
-  // `bg-${accent}-...` would get stripped at build.
-  const btnCls =
-    accent === 'sky'     ? 'bg-sky-700/80 hover:bg-sky-600'
-    : accent === 'emerald' ? 'bg-emerald-700/80 hover:bg-emerald-600'
-    : 'bg-slate-700 hover:bg-slate-600'
+  // Accent maps to the BigButton variant family. Hard-coded so Tailwind
+  // purge keeps the right classes — dynamic `bg-${accent}-…` would be
+  // stripped at build time.
+  const variant: 'primary' | 'secondary' =
+    accent === 'emerald' || accent === 'sky' ? 'primary' : 'secondary'
+  const borderCls =
+    accent === 'sky'     ? 'border-sky-700/40 hover:border-sky-600/50'
+    : accent === 'emerald' ? 'border-emerald-700/40 hover:border-emerald-600/50'
+    : 'border-slate-700 hover:border-slate-600'
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 space-y-2 flex flex-col">
+    <div className={`rounded-lg border ${borderCls} bg-slate-900/40 p-3 space-y-2 flex flex-col transition-colors`}>
       <h3 className="font-medium text-sm">{title}</h3>
       <p className="text-xs text-slate-400">{subtitle}</p>
       <p className="text-xs text-slate-500 italic mt-auto">{when}</p>
-      <button
+      <BigButton
+        size="sm"
+        variant={variant}
         onClick={onClick}
         disabled={disabled}
-        className={`${btnCls} disabled:opacity-40 rounded-md text-xs font-medium px-3 py-1.5`}
+        loading={running}
+        icon={!running ? <Play size={11} fill="currentColor" /> : undefined}
       >
         {buttonLabel}
-      </button>
+      </BigButton>
     </div>
   )
 }
