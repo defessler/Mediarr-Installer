@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Rocket, ArrowLeft, AlertCircle } from 'lucide-react'
+import { Rocket, ArrowLeft, ArrowRight, AlertCircle, RotateCw, CheckCircle2 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
@@ -1093,7 +1093,9 @@ export function RunScreen() {
           the user is never wondering "what does this app want from me
           right now?" */}
       <div className="flex justify-between items-center gap-3">
-        <button
+        <BigButton
+          variant="secondary"
+          size="md"
           onClick={() => setStep('configure')}
           disabled={phase === 'uploading' || phase === 'running-setup'}
           title={
@@ -1101,50 +1103,61 @@ export function RunScreen() {
               ? 'Wait until the install finishes before going back'
               : 'Return to the configure screen'
           }
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
+          icon={<ArrowLeft size={16} />}
         >
           Back
-        </button>
+        </BigButton>
         <div className="flex-1 text-sm text-center text-slate-400">
           {phase === 'uploading'  && `Uploading files... ${progress?.pct ?? 0}%`}
           {phase === 'writing-env' && 'Writing .env'}
           {phase === 'running-setup' && 'Running setup.sh — see log'}
-          {phase === 'done'   && '✓ Install complete — click Continue'}
+          {phase === 'done'   && (
+            <span className="inline-flex items-center gap-1.5 text-emerald-300">
+              <CheckCircle2 size={14} /> Install complete — click Continue
+            </span>
+          )}
           {phase === 'failed' && (
-            <span>
-              ✘ Install failed — <span className="text-slate-300">Retry</span> to re-run as-is,
-              or <span className="text-slate-300">Back</span> to fix a config field first
+            <span className="inline-flex items-start gap-1.5 text-amber-200/90">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                Install paused — tap <span className="text-slate-200 font-medium">Retry</span> to run it again,
+                or <span className="text-slate-200 font-medium">Back</span> to tweak a setting first.
+              </span>
             </span>
           )}
         </div>
-        <button
+        <BigButton
+          variant={phase === 'failed' ? 'primary' : 'secondary'}
+          size="md"
           onClick={go}
           disabled={phase !== 'failed'}
           title={
             phase === 'failed'
-              ? 'Re-run the install from scratch'
+              ? 'Run the install again from the top — your config is already saved'
               : phase === 'done'
                 ? 'Install already finished successfully'
-                : 'Available once the install has failed'
+                : 'Available once the install has paused'
           }
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
+          icon={<RotateCw size={16} />}
         >
           Retry
-        </button>
-        <button
+        </BigButton>
+        <BigButton
+          variant={phase === 'done' ? 'primary' : 'secondary'}
+          size="md"
           onClick={() => setStep('done')}
           disabled={phase !== 'done'}
           title={
             phase === 'done'
               ? 'Continue to the post-install dashboard'
               : phase === 'failed'
-                ? 'Install failed — Retry first'
+                ? 'Install paused — try Retry first'
                 : 'Available once the install completes'
           }
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
+          trailingIcon={<ArrowRight size={16} />}
         >
           Continue
-        </button>
+        </BigButton>
       </div>
     </div>
   )
