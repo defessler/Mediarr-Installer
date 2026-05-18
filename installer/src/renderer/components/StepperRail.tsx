@@ -1,6 +1,22 @@
 // Vertical stepper for the install run. Reflects the 10 numbered steps
 // emitted by nas/setup.sh. Status is driven by parsing the live log
 // stream — see applyStepMarkers in RunScreen.
+//
+// Visual design notes:
+// - Status icons replace coloured dots. A check / spinner / X glyph
+//   carries more information at smaller sizes than a plain dot, and
+//   children read meaning into shapes much faster than colour cues
+//   (also helps colour-blind users).
+// - Running step gets a subtle background highlight to anchor the eye
+//   without making the surrounding pending steps feel "wrong" by
+//   contrast (which a brighter pulse would).
+// - Status changes animate via Motion's layout animation: when a
+//   pending step becomes running, the highlight expands into place
+//   rather than appearing instantly — small motion that matches the
+//   user's progress feeling.
+
+import { motion, useReducedMotion } from 'motion/react'
+import { Check, X, Loader2, Circle, RotateCw } from 'lucide-react'
 
 export type StepStatus = 'pending' | 'running' | 'ok' | 'fail'
 
@@ -37,48 +53,79 @@ interface Props {
   rerunningStep?: number | null
 }
 
+interface StatusIconProps {
+  status: StepStatus
+  size?: number
+}
+
+function StatusIcon({ status, size = 16 }: StatusIconProps) {
+  if (status === 'ok') {
+    return <Check size={size} className="text-emerald-400" strokeWidth={3} />
+  }
+  if (status === 'fail') {
+    return <X size={size} className="text-rose-400" strokeWidth={3} />
+  }
+  if (status === 'running') {
+    return <Loader2 size={size} className="text-amber-300 animate-spin" strokeWidth={2.5} />
+  }
+  return <Circle size={size} className="text-slate-700" strokeWidth={2} fill="currentColor" />
+}
+
 export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
+  const reduced = useReducedMotion()
   return (
-    <ol className="space-y-1.5">
+    <ol className="space-y-1">
       {steps.map((s) => {
-        const dot =
-          s.status === 'ok' ? 'bg-emerald-400'
-          : s.status === 'fail' ? 'bg-rose-400'
-          : s.status === 'running' ? 'bg-amber-400 animate-pulse'
-          : 'bg-slate-700'
         const text =
           s.status === 'ok' ? 'text-slate-300'
           : s.status === 'fail' ? 'text-rose-300'
-          : s.status === 'running' ? 'text-slate-100 font-medium'
+          : s.status === 'running' ? 'text-slate-50 font-semibold'
           : 'text-slate-500'
         const showRerun = onRerun && (s.status === 'ok' || s.status === 'fail') && s.rerun
         const isRerunning = rerunningStep === s.number
         return (
-          <li key={s.number} className={`flex items-center gap-2 text-sm group ${text}`}>
-            <span
-              className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dot}`}
-              aria-hidden
-            />
-            <span className="font-mono text-xs w-5 text-right text-slate-500 shrink-0">
-              {s.number}
-            </span>
-            <span className="truncate flex-1">{s.label}</span>
-            {showRerun && (
-              <button
-                type="button"
-                onClick={() => onRerun!(s.number)}
-                disabled={!!rerunningStep}
-                title={`Re-run step ${s.number}: ${s.rerun}`}
-                className={
-                  'shrink-0 text-xs px-1.5 py-0.5 rounded transition-opacity ' +
-                  (isRerunning
-                    ? 'bg-amber-700/50 text-amber-200 opacity-100'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-300 opacity-0 group-hover:opacity-100 disabled:opacity-30')
-                }
-              >
-                {isRerunning ? '...' : '↻'}
-              </button>
+          <li key={s.number} className={`relative group ${text}`}>
+            {/* Running-step background highlight. layoutId tells Motion
+                to share a single highlight DOM element across rows so
+                it slides between steps as they progress — a cheap but
+                very satisfying touch that gives the impression of
+                "progress moving through the list." */}
+            {s.status === 'running' && (
+              <motion.div
+                layoutId={reduced ? undefined : 'stepper-highlight'}
+                className="absolute inset-0 rounded-md bg-amber-500/10 border border-amber-500/30"
+                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+              />
             )}
+            <div className="relative flex items-center gap-3 px-2 py-2 text-sm">
+              <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                <StatusIcon status={s.status} />
+              </div>
+              <span className="font-mono text-xs w-5 text-right text-slate-500 shrink-0 tabular-nums">
+                {s.number}
+              </span>
+              <span className="truncate flex-1">{s.label}</span>
+              {showRerun && (
+                <button
+                  type="button"
+                  onClick={() => onRerun!(s.number)}
+                  disabled={!!rerunningStep}
+                  title={`Re-run step ${s.number}: ${s.rerun}`}
+                  className={
+                    'shrink-0 inline-flex items-center justify-center h-6 w-6 rounded transition-all ' +
+                    (isRerunning
+                      ? 'bg-amber-700/50 text-amber-200 opacity-100'
+                      : 'bg-slate-700/70 hover:bg-slate-600 text-slate-300 opacity-0 group-hover:opacity-100 disabled:opacity-30 disabled:hover:bg-slate-700/70')
+                  }
+                >
+                  <RotateCw
+                    size={12}
+                    className={isRerunning ? 'animate-spin' : ''}
+                    strokeWidth={2.5}
+                  />
+                </button>
+              )}
+            </div>
           </li>
         )
       })}

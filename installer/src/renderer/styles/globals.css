@@ -63,6 +63,18 @@ h1, h2, h3 {
   }
 }
 
+/* Shimmer keyframe — moving sheen on progress bars + skeleton loaders.
+   Subtle (25% opacity) so it reads as "still alive" rather than
+   "loading bar that's broken". Travels right-to-left over the bar's
+   trailing edge; speed (1.8s) tuned so it's noticeable in periphery
+   without being distracting if the user is looking elsewhere. */
+@keyframes shimmer {
+  0%   { transform: translateX(100%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(-300%); opacity: 0; }
+}
+
 /* Streaming log panel — terminal aesthetic */
 .log-panel {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

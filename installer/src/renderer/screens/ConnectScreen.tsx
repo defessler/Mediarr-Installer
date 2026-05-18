@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import { ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
+import { BigButton } from '../components/BigButton.js'
 import type { ConnectResult } from '../../shared/ipc.js'
 
 export function ConnectScreen() {
@@ -94,32 +97,31 @@ export function ConnectScreen() {
     setConnection(patch)
   }
 
+  const reduced = useReducedMotion()
   return (
     <div className="h-full flex flex-col">
     <div className="flex-1 min-h-0 overflow-y-auto">
-    <div className="max-w-2xl mx-auto p-8 space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            Connect to your NAS
-            {mode === 'update' && (
-              <span className="ml-2 text-sm text-sky-400 align-middle">(update mode)</span>
-            )}
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            On Synology: Control Panel &rarr; Terminal &rarr; enable SSH first.
-            Logging in as your admin user (with a sudo password below) is the
-            easiest path — DSM7 disables root SSH by default and you&apos;d
-            need to re-enable it manually.
-          </p>
+    <div className="max-w-2xl mx-auto px-8 py-10 space-y-7">
+      <motion.header
+        initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="text-center"
+      >
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500/20 to-sky-700/30 border border-sky-500/30 mb-4">
+          <Plug size={32} className="text-sky-300" strokeWidth={1.5} />
         </div>
-        <button
-          onClick={() => setStep('welcome')}
-          className="text-sm text-slate-400 hover:text-slate-200 shrink-0"
-        >
-          ← Back to start
-        </button>
-      </div>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Connect to your NAS
+          {mode === 'update' && (
+            <span className="ml-2 text-base text-sky-400 align-middle font-medium">(update mode)</span>
+          )}
+        </h1>
+        <p className="text-slate-400 mt-2 text-base max-w-lg mx-auto">
+          On Synology: <span className="text-slate-300">Control Panel → Terminal → enable SSH</span> first.
+          Use your admin user — DSM 7 disables root login by default.
+        </p>
+      </motion.header>
 
       {/* Active profile reminder — picker now lives on Welcome.
           (Note: the App-level header pill also shows this — kept here
@@ -145,7 +147,7 @@ export function ConnectScreen() {
           <label className="block text-sm font-medium mb-1">Host</label>
           <input
             type="text" placeholder="192.168.1.10  (NOT your DSM URL — that's port 5000)"
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             value={connection.host ?? ''}
             onChange={(e) => onHostChange(e.target.value)}
           />
@@ -157,7 +159,7 @@ export function ConnectScreen() {
           </label>
           <input
             type="number"
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             value={connection.port ?? 22}
             onChange={(e) => setConnection({ port: Number(e.target.value) || 22 })}
           />
@@ -196,20 +198,20 @@ export function ConnectScreen() {
         {connection.authMethod === 'password' ? (
           <input
             type="password" placeholder="SSH password"
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             value={password} onChange={(e) => setPassword(e.target.value)}
           />
         ) : (
           <div className="space-y-2">
             <input
               type="text" placeholder="C:\Users\you\.ssh\id_ed25519"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={connection.privateKeyPath ?? ''}
               onChange={(e) => setConnection({ privateKeyPath: e.target.value })}
             />
             <input
               type="password" placeholder="Passphrase (if encrypted)"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={passphrase} onChange={(e) => setPassphrase(e.target.value)}
             />
           </div>
@@ -233,7 +235,7 @@ export function ConnectScreen() {
             placeholder={connection.authMethod === 'password'
               ? 'Leave blank to reuse the SSH password'
               : 'Required for non-root key auth'}
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             value={sudoPassword} onChange={(e) => setSudoPassword(e.target.value)}
           />
           <p className="text-xs text-slate-400">
@@ -247,40 +249,76 @@ export function ConnectScreen() {
           the active profile. Switch profiles via the link above or
           the Welcome step.) */}
 
-      {/* Full multi-line error stays in the scroll body — long messages
-          (sudo hints, DSM7 advice) need room. The footer below shows a
-          compact one-line summary so the buttons can stay pinned. */}
-      {result && !result.ok && (
-        <div className="rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono bg-rose-900/40 text-rose-200">
-          {result.error?.kind}: {result.error?.message}
-        </div>
-      )}
+      {/* Animated test-result banner. Two states (success / error)
+          slide in from the bottom and stay until the form changes. */}
+      <AnimatePresence>
+        {result && (
+          <motion.div
+            key={result.ok ? 'ok' : 'err'}
+            initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className={
+              `rounded-lg px-4 py-3 text-sm flex items-start gap-3 border ` +
+              (result.ok
+                ? 'bg-emerald-950/40 border-emerald-700/50 text-emerald-100'
+                : 'bg-rose-950/40 border-rose-700/50 text-rose-100')
+            }
+          >
+            {result.ok ? (
+              <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 min-w-0">
+              {result.ok ? (
+                <>
+                  <div className="font-semibold">Connection successful</div>
+                  <div className="text-emerald-200/70 text-xs mt-0.5">
+                    Click Continue to open the SSH session.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-semibold flex items-center gap-2">
+                    Couldn't connect
+                    <span className="text-xs text-rose-300/70 font-mono">{result.error?.kind}</span>
+                  </div>
+                  <div className="text-rose-200/80 text-xs mt-0.5 whitespace-pre-wrap font-mono">
+                    {result.error?.message}
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
     </div>
 
-    {/* Sticky footer: Back / inline status / Test / Continue are always
-        visible regardless of how far the form has been scrolled. */}
+    {/* Sticky footer: Back / status / Test / Continue. Two-stage CTA —
+        Test verifies, Continue (highlighted only after Test passes)
+        opens the persistent session. Mistake-proof: a child can't
+        accidentally proceed without confirming the credentials. */}
     <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
       <div className="max-w-2xl mx-auto flex items-center gap-3">
-        <button
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<ArrowLeft size={16} />}
           onClick={() => setStep('welcome')}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Back
-        </button>
-        <div className="flex-1 text-sm text-center">
-          {busy ? (
-            <span className="text-slate-400">Working...</span>
-          ) : result?.ok ? (
-            <span className="text-emerald-300">✓ Connection successful</span>
-          ) : result && !result.ok ? (
-            <span className="text-rose-300">
-              ✘ {result.error?.kind} — see details above
-            </span>
-          ) : null}
-        </div>
-        <button
-          onClick={test} disabled={busy || !connection.host}
+        </BigButton>
+        <div className="flex-1" />
+        <BigButton
+          size="md"
+          variant={testOk ? 'secondary' : 'primary'}
+          icon={<ShieldCheck size={16} />}
+          loading={busy && !testOk}
+          disabled={busy || !connection.host}
+          onClick={test}
           title={
             busy
               ? 'Already testing — wait for the result'
@@ -288,23 +326,24 @@ export function ConnectScreen() {
                 ? 'Enter a host (e.g. 192.168.1.10) first'
                 : 'Try the SSH credentials without persisting a session'
           }
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40 text-sm"
         >
-          {busy ? 'Testing...' : 'Test connection'}
-        </button>
-        <button
-          onClick={connectAndContinue} disabled={busy || !testOk}
+          {busy && !testOk ? 'Testing...' : testOk ? 'Re-test' : 'Test connection'}
+        </BigButton>
+        <BigButton
+          size="md"
+          variant="primary"
+          trailingIcon={<ArrowRight size={16} />}
+          loading={busy && testOk}
+          disabled={busy || !testOk}
+          onClick={connectAndContinue}
           title={
-            busy
-              ? 'Working — please wait'
-              : !testOk
-                ? 'Run "Test connection" first and confirm it succeeds'
-                : 'Open the SSH session and advance to the next step'
+            !testOk
+              ? 'Run "Test connection" first and confirm it succeeds'
+              : 'Open the SSH session and advance to the next step'
           }
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue
-        </button>
+        </BigButton>
       </div>
     </div>
     </div>

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { Rocket, ArrowLeft, AlertCircle } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
 import { PlexClaimRefresh } from '../components/PlexClaimRefresh.js'
 import { IssuesModal } from '../components/IssuesModal.js'
+import { BigButton } from '../components/BigButton.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
 import { renderEnv, isEnabled, type EnvFormValues } from '../../shared/env-render.js'
@@ -757,20 +760,28 @@ export function RunScreen() {
   // Pre-install screen: just the Plex claim widget and a big Start CTA.
   // Showing the empty stepper + empty log here was confusing — users
   // thought the install was running and stuck.
+  const reduced = useReducedMotion()
   if (phase === 'idle') {
     return (
       <div className="h-full flex flex-col">
         <div className="flex-1 min-h-0 overflow-y-auto">
-          <div className="max-w-2xl mx-auto p-8 space-y-6">
-            <header>
-              <h1 className="text-2xl font-semibold">Ready to install</h1>
-              <p className="text-slate-400 text-sm mt-1">
-                The wizard will upload <code className="bg-slate-800 px-1 rounded">{targetDir}</code>{' '}
-                to your NAS, write the <code className="bg-slate-800 px-1 rounded">.env</code>,
-                and run <code className="bg-slate-800 px-1 rounded">setup.sh</code>{' '}
-                with live output.
+          <div className="max-w-2xl mx-auto px-8 py-10 space-y-7">
+            <motion.header
+              initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="text-center"
+            >
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4">
+                <Rocket size={32} className="text-emerald-300" strokeWidth={1.5} />
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight">Ready to launch</h1>
+              <p className="text-slate-400 mt-3 text-base max-w-md mx-auto">
+                Click <span className="text-emerald-400 font-semibold">Start install</span> below
+                and the wizard handles everything — upload, config, services. Sit back; first
+                install takes about 5–15 minutes.
               </p>
-            </header>
+            </motion.header>
 
             {/* Plex claim collection — only relevant when the user actually
                 installs Plex. Hidden when ENABLE_PLEX=false so the user
@@ -786,42 +797,51 @@ export function RunScreen() {
             )}
 
             {errorMsg && (
-              <div className="bg-rose-900/40 text-rose-200 rounded-md px-3 py-2 text-sm whitespace-pre-wrap font-mono">
-                {errorMsg}
-              </div>
+              <motion.div
+                initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22 }}
+                className="bg-rose-950/40 border border-rose-700/50 text-rose-100 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
+              >
+                <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                <div className="font-mono whitespace-pre-wrap">{errorMsg}</div>
+              </motion.div>
             )}
           </div>
         </div>
 
-        {/* Sticky footer: Back / status / Start install. Stays visible
-            no matter how far the claim-token instructions are scrolled. */}
+        {/* Sticky footer: Back / status / Start install. */}
         <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
           <div className="max-w-2xl mx-auto flex items-center gap-3">
-            <button
+            <BigButton
+              size="md"
+              variant="secondary"
+              icon={<ArrowLeft size={16} />}
               onClick={() => setStep('configure')}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
             >
               Back
-            </button>
+            </BigButton>
             <div className="flex-1 text-sm text-center">
               {errorMsg ? (
                 <span className="text-rose-300">✘ {errorMsg.split('\n')[0]}</span>
               ) : !isEnabled(config.ENABLE_PLEX as string | undefined) ? (
-                <span className="text-slate-400">Ready to install (Plex not in stack)</span>
+                <span className="text-slate-400">Ready to install · Plex not in stack</span>
               ) : (
                 <span className="text-slate-400">
                   {config.PLEX_CLAIM
-                    ? '✓ Plex claim ready — click to install'
-                    : 'No Plex claim — install will still work, Plex will need manual setup'}
+                    ? '✓ Plex claim ready'
+                    : 'No Plex claim — install will still work, Plex needs manual setup later'}
                 </span>
               )}
             </div>
-            <button
+            <BigButton
+              size="md"
+              variant="primary"
+              icon={<Rocket size={16} />}
               onClick={go}
-              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium shadow-lg shadow-emerald-900/30"
             >
-              Start install →
-            </button>
+              Start install
+            </BigButton>
           </div>
         </div>
       </div>
@@ -847,15 +867,44 @@ export function RunScreen() {
   const currentStep = steps.find((s) => s.status === 'running')
   const lastDoneStep = [...steps].reverse().find((s) => s.status === 'ok')
 
+  // Friendly status string for the big headline above the bar.
+  const statusHeadline =
+    phase === 'uploading' ? 'Uploading files to your NAS…'
+    : phase === 'writing-env' ? 'Writing config…'
+    : phase === 'running-setup' && currentStep ? currentStep.label
+    : phase === 'running-setup' ? 'Working on the next step…'
+    : phase === 'done' ? 'All done — moving on'
+    : phase === 'failed' ? 'Something needs attention'
+    : 'Starting…'
+
   return (
     <div className="h-full flex flex-col p-6 gap-4">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Installing the stack</h1>
-        <div className="flex items-center gap-3">
+      <header className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
+            {phase === 'failed' ? 'Install paused' : phase === 'done' ? 'Done' : 'Installing the stack'}
+          </div>
+          {/* Animated status headline — re-mounts on each phase change so
+              the user sees motion when work progresses, even while the
+              progress bar is mid-fill. */}
+          <motion.h1
+            key={statusHeadline}
+            initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className={
+              `text-2xl font-bold truncate mt-1 ` +
+              (phase === 'failed' ? 'text-rose-200' : phase === 'done' ? 'text-emerald-200' : 'text-slate-100')
+            }
+          >
+            {statusHeadline}
+          </motion.h1>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           {installLogPath && (
             <button
               onClick={() => window.installer.installLog.reveal()}
-              className="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded border border-slate-700"
+              className="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-slate-300"
               title={installLogPath}
             >
               Open log file
@@ -868,43 +917,53 @@ export function RunScreen() {
               header={`exit=${exitCode ?? 'pending'} phase=${phase}`}
             />
           )}
-          <div className="text-sm text-slate-400">
-            {phase === 'uploading' && `Uploading files... ${progress?.pct ?? 0}%`}
-            {phase === 'writing-env' && 'Writing .env'}
-            {phase === 'running-setup' && 'Running setup.sh'}
-            {phase === 'done' && 'Setup complete'}
-            {phase === 'failed' && (errorMsg ? `Failed: ${errorMsg}` : `Setup exited ${exitCode}`)}
-          </div>
         </div>
       </header>
 
-      {/* Single unified progress bar covering the whole install run:
-          upload pct contributes the first ~10%, the 10 setup.sh steps
-          carry the remaining 90%. The label below the bar describes
-          what's happening right now. */}
-      <div className="space-y-1">
-        <div className="w-full bg-slate-800 rounded h-2 overflow-hidden">
-          <div
+      {/* Animated progress bar with a soft sheen on the leading edge so
+          the eye is reassured "still moving" even when the percentage
+          updates infrequently between steps. */}
+      <div className="space-y-1.5">
+        <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+          <motion.div
+            initial={false}
+            animate={{ width: `${progressPct}%` }}
+            transition={{ type: 'spring', stiffness: 90, damping: 22 }}
             className={
-              'h-2 transition-all duration-300 ' +
-              (phase === 'failed' ? 'bg-rose-500' : 'bg-emerald-500')
+              `h-3 rounded-full relative ` +
+              (phase === 'failed'
+                ? 'bg-gradient-to-r from-rose-600 to-rose-500'
+                : 'bg-gradient-to-r from-emerald-600 to-emerald-400')
             }
-            style={{ width: `${progressPct}%` }}
-          />
+          >
+            {/* Animated shimmer on the bar's leading edge — moving
+                stripe says "still alive" even when % is stuck for a
+                long step (e.g. docker image pulls). Off in reduced-
+                motion mode. */}
+            {!reduced && phase !== 'failed' && phase !== 'done' && (
+              <div
+                className="absolute inset-y-0 right-0 w-12"
+                style={{
+                  background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.25), transparent)',
+                  animation: 'shimmer 1.8s ease-in-out infinite',
+                }}
+              />
+            )}
+          </motion.div>
         </div>
         <div className="text-xs text-slate-400 font-mono truncate flex items-center justify-between gap-3">
           <span className="truncate">
             {phase === 'uploading' && `Uploading ${progress?.file ?? 'payload'} (${progress?.pct ?? 0}%)`}
             {phase === 'writing-env' && 'Writing .env'}
             {phase === 'running-setup' && currentStep
-              ? `Step ${currentStep.number}/${steps.length} — ${currentStep.label}`
+              ? `Step ${currentStep.number} of ${steps.length}`
               : phase === 'running-setup' && lastDoneStep
-                ? `Step ${lastDoneStep.number}/${steps.length} done — waiting for next…`
+                ? `Step ${lastDoneStep.number} of ${steps.length} done — waiting for next…`
                 : null}
             {phase === 'done' && '✓ All steps complete'}
             {phase === 'failed' && (currentStep
-              ? `Failed at step ${currentStep.number}: ${currentStep.label}`
-              : 'Install failed — see log')}
+              ? `Paused at step ${currentStep.number}: ${currentStep.label}`
+              : 'Install paused — see log')}
           </span>
           <span className="shrink-0 tabular-nums text-slate-500">
             {progressPct}%
