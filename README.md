@@ -144,6 +144,9 @@ PUID=1034
 PGID=100
 TZ=America/New_York           # your timezone
 LAN_IP=192.168.1.242          # your NAS LAN IP
+LAN_SUBNET=                   # optional — auto-derived from LAN_IP as /24
+                              #   override only if your LAN isn't a /24
+                              #   (e.g. LAN_SUBNET=10.0.0.0/16)
 
 PLEX_CLAIM=                   # from https://plex.tv/claim (expires in 4 min — fill in right before Step 4)
 
@@ -157,10 +160,12 @@ ARR_USERNAME=                 # optional — sets login on Sonarr/Radarr/Lidarr/
 ARR_PASSWORD=                 # leave blank to skip auth setup
 
 NORDVPN_ACCESS_TOKEN=         # from my.nordaccount.com → NordVPN → Access Tokens
-VPN_PROVIDER=nordvpn
+VPN_PROVIDER=nordvpn          # nordvpn | protonvpn | mullvad | airvpn | surfshark | custom
 VPN_TYPE=wireguard
 NORDVPN_PRIVATE_KEY=          # leave blank — setup-nordvpn.sh fills this in
 VPN_COUNTRIES=                # e.g. United States, Netherlands
+VPN_PORT_FORWARDING=off       # set to "on" for ProtonVPN/PIA/PrivateVPN
+                              # — NOT supported on NordVPN (silently no-ops)
 ```
 
 **Getting your NordVPN access token:**
@@ -304,11 +309,18 @@ The server wasn't claimed on first boot. Access it directly at `http://192.168.1
 Access Plex via direct IP (`http://192.168.1.242:32400/web`) rather than through `app.plex.tv`, or set Settings → Network → Secure connections to `Preferred`.
 
 **Sonarr/Radarr says "copied" instead of "hardlinked"**
-- Enable "Use Hardlinks instead of Copy" in Settings → Media Management
+- Enable "Use Hardlinks instead of Copy" in Settings → Media Management (`setup-arr-config.py` does this for you)
 - Verify both downloads and media are under the single `/data` mount
+- **Synology-specific:** put Downloads/ and Media/ under the SAME shared folder. Each Synology shared folder is its own btrfs subvolume, and hardlinks across subvolumes fail with `EXDEV`. `setup-validate.sh` includes a hardlink probe that catches this.
 
 **Sonarr/Radarr gets 403 from SABnzbd**
 Re-run `setup-arr-config.py` — it merges the required Docker hostnames into SABnzbd's `host_whitelist` which blocks inter-container connections by default.
+
+**Plex doesn't update when new content is imported**
+Sonarr/Radarr send a Plex Connect notification on every import (auto-configured by `setup-arr-config.py`). If the connection failed at install time, add it manually:
+- Plex Web UI → Settings → Network → ensure "Update my library automatically" is on
+- Sonarr → Settings → Connect → Add → Plex Media Server (host=plex, port=32400, your Plex token)
+- Same for Radarr
 
 **qBittorrent can't connect / all torrents stalled**
 Gluetun is likely not connected:
@@ -325,6 +337,17 @@ Always restart the full stack with `down && up`, not `restart`:
 docker-compose down && docker-compose up -d
 ```
 `restart` brings everything up simultaneously without respecting dependency order — qBittorrent tries to join Gluetun's network before Gluetun is ready.
+
+**qBittorrent stays "Firewalled" — port forwarding doesn't work**
+- **NordVPN doesn't support port forwarding via Gluetun** — switch to ProtonVPN/PIA/PrivateVPN if you need PF for seeding ratio.
+- For supported providers, set `VPN_PORT_FORWARDING=on` in `.env`. The Gluetun up-command pushes the new port into qBittorrent's listen_port via the WebUI API on every reconnect.
+
+**"Another setup.sh is already running" error**
+`setup.sh` holds a `flock` on `.setup.lock` to prevent two parallel installs racing on `.env` writes (installer wizard + manual SSH session is the common trigger). Stale locks from a crashed run are auto-detected via PID check. If the message is wrong, remove `.setup.lock` manually:
+```bash
+cat /volume1/docker/media/.setup.lock   # shows holding PID
+rm /volume1/docker/media/.setup.lock
+```
 
 ---
 

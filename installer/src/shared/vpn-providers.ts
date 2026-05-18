@@ -87,14 +87,14 @@ const NORDVPN: VpnProvider = {
   id: 'nordvpn',
   label: 'NordVPN',
   helpUrl: 'https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/',
-  blurb: 'WireGuard key fetched automatically via API.',
+  blurb: 'WireGuard key fetched automatically via API. Note: no port-forwarding support.',
   vpnType: 'wireguard',
   fields: [
     {
       envKey: 'NORDVPN_ACCESS_TOKEN',
       label: 'NordVPN access token',
       type: 'password',
-      helpHint: 'Generate at nordaccount.com → Tokens. We exchange it for a WireGuard key and never store the token unencrypted.',
+      helpHint: 'Generate at nordaccount.com → Tokens. We exchange it for a WireGuard key and never store the token unencrypted. Heads up: NordVPN doesn\'t expose port forwarding to third parties — your qBittorrent seeding ratio will be limited. Switch to ProtonVPN/PIA if seeding matters.',
     },
     {
       envKey: 'WIREGUARD_PRIVATE_KEY',
@@ -128,7 +128,7 @@ const PROTONVPN: VpnProvider = {
   id: 'protonvpn',
   label: 'Proton VPN',
   helpUrl: 'https://account.protonvpn.com/downloads#wireguard-configuration',
-  blurb: 'WireGuard config from Proton dashboard.',
+  blurb: 'WireGuard config from Proton dashboard. Port forwarding supported.',
   vpnType: 'wireguard',
   fields: [
     {

@@ -1,13 +1,14 @@
-# Mediarr Installer (Phase 1 — walking skeleton)
+# Mediarr Installer
 
 Electron desktop wizard that installs the Arr media stack onto a Synology NAS
 over SSH. Wraps the bash + Python automation in `../nas/`.
 
 ## Status
 
-**Phase 1 (MVP)** — connect, one combined config form, upload, run `setup.sh`
-with live log, show service URLs. See [`PLAN.md`](./PLAN.md) for the
-architecture and roadmap (Phase 2 = full wizard, Phase 3 = niceties).
+**Shipping** (current: `v0.2.0`). Multi-screen wizard with auto-detection,
+profile save/restore, migration from existing arrs, full ANSI-colored live
+log, and per-service health-dot output on Done. See [`PLAN.md`](./PLAN.md)
+for architecture.
 
 ## Develop
 
@@ -68,12 +69,17 @@ Two GitHub Actions workflows under `.github/workflows/`:
 Cutting a release:
 
 ```bash
-git tag installer-v0.1.0
-git push origin installer-v0.1.0
+# Bump version in installer/package.json and commit
+git tag -a installer-v<X.Y.Z> -m "release notes here..."
+git push origin master installer-v<X.Y.Z>
 ```
 
 The workflow runs three platform jobs in parallel, then a final job
 gathers their artifacts into a draft release for review.
+
+A third workflow job — **lint-nas-scripts** — runs `shellcheck` on every
+shell script in `../nas/` and `python -m py_compile` on every Python file.
+Catches typos in nas-payload scripts before they ship.
 
 > **GitHub gotcha**: `workflow_dispatch` (manual trigger) and the
 > `gh workflow list` command both require the workflow file to be on
@@ -129,12 +135,12 @@ Renderer is `contextIsolation: true`, `nodeIntegration: false`. The only API
 surface it sees is `window.installer.*`, defined in `src/preload/index.ts`.
 Renderer never imports `ssh2`, `fs`, `child_process`, or any other Node API.
 
-## Phase 1 limitations (deliberate)
+## Known limitations
 
-- One combined config form rather than per-step wizard screens — Phase 2
-  splits these out with auto-detection (PUID/LAN_IP) and a NordVPN key
-  fetcher.
-- ANSI colors are stripped from the live log (Phase 2 renders them).
-- No connection profile saving (Phase 3).
-- Windows-only installer build (macOS + Linux in Phase 3).
-- No code signing — Windows SmartScreen will warn.
+- No code signing — Windows SmartScreen and macOS Gatekeeper will warn on
+  first launch. Click "More info → Run anyway" on Windows; on macOS,
+  open via right-click + Open the first time.
+- macOS builds ship as separate arm64 and x64 dmgs (no universal binary).
+- The hardlink probe in `setup-validate.sh` is the safety net for the
+  Synology btrfs subvolume trap, but it can't auto-fix the underlying
+  layout — see the in-app Help → Hardlinks section for the remediation.

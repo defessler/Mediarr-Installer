@@ -545,6 +545,10 @@ seeing.
 | Plex shows a hash code instead of your server name | Claim token expired before Plex started | Open `http://<nas-ip>:32400/web`, sign in, claim it manually |
 | Seerr shows "Port 5056 connection refused" | First-run wizard not yet completed | Open Seerr in a browser; finish its setup wizard |
 | A movie/show I requested never downloads | Indexer coverage gap, or it's not available on free indexers | Add a paid indexer in Prowlarr |
+| `post-deploy-validate.sh` reports "Hardlink probe FAILED" | Downloads and Media are in separate Synology shared folders | Move both under a single shared folder (e.g. `/volume1/Data/{Downloads,Media}`) and update `DATA_ROOT` in `.env` to point at the parent |
+| qBittorrent shows "Firewalled" / port forwarding doesn't work | Using NordVPN — gluetun doesn't support PF on NordVPN | Either accept reduced seed ratio, or switch `VPN_PROVIDER` to `protonvpn` / `pia` / `privatevpn` |
+| "Another setup.sh is already running" but no install is in flight | Stale `.setup.lock` from a crashed previous run | `rm /volume1/docker/media/.setup.lock` and retry |
+| Plex doesn't show new files within a minute of import | Plex Connect notification missing | The wizard configures this automatically; if missing, add manually in Sonarr/Radarr → Settings → Connect → Plex Media Server (host=plex, port=32400) |
 
 ### Diagnostic commands
 

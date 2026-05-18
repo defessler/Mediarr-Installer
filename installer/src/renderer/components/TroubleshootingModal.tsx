@@ -286,6 +286,53 @@ sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-indexers   # just vacuum DBs`,
     fix: 'Use the bundled helper that sets COMPOSE_PROFILES to cover every service.',
     command: `bash <INSTALL_DIR>/stop-all.sh`,
   },
+  {
+    category: 'docker compose',
+    symptom: 'setup.sh refuses to start: "Another setup.sh is already running"',
+    cause:
+      'The wizard now holds a flock on .setup.lock while running to prevent two parallel installs from racing on .env writes (e.g. installer wizard + manual SSH session). Stale locks from a crashed run are auto-detected via PID check.',
+    fix:
+      'Check if another install is actually in flight (`ps auxw | grep setup.sh`). If not — it\'s a stale lock. Remove it:',
+    command:
+      `cat <INSTALL_DIR>/.setup.lock   # shows holding PID
+rm -f <INSTALL_DIR>/.setup.lock`,
+  },
+
+  // ── Filesystem / Hardlinks ──────────────────────────────────────────
+  {
+    category: 'Hardlinks',
+    symptom: 'post-deploy-validate.sh: "Hardlink probe FAILED: invalid cross-device link"',
+    cause:
+      'You put Downloads/ and Media/ in SEPARATE Synology shared folders. Each shared folder is its own btrfs subvolume, and Linux treats subvolumes as separate devices for hardlink purposes. Sonarr/Radarr fall back to copy + delete, doubling disk usage and breaking qBit seeding.',
+    fix:
+      'Move both trees under a SINGLE shared folder so they share a subvolume. The typical fix:',
+    command:
+      `# 1. Stop the stack
+bash <INSTALL_DIR>/stop-all.sh
+
+# 2. Move existing media INTO the Downloads parent's shared folder.
+#    Example: if Downloads is at /volume1/Data/Downloads/ and you
+#    have a separate /volume1/Media/ shared folder, move it:
+rsync -avP /volume1/Media/ /volume1/Data/Media/
+
+# 3. Update DATA_ROOT in .env to point at the parent (/volume1/Data)
+nano <INSTALL_DIR>/.env
+
+# 4. Re-run setup.sh — Sonarr/Radarr will detect existing files in
+#    /data/Media/* and pick them up without re-downloading.
+bash <INSTALL_DIR>/setup.sh`,
+  },
+  {
+    category: 'Hardlinks',
+    symptom: 'Sonarr/Radarr says "Copied" instead of "Hardlinked" in activity log',
+    cause:
+      'Hardlinks need three things to work: (a) Downloads + Media on the same filesystem, (b) same Docker mount inside the container (so the arr sees one /data tree, not two volumes), (c) "Use Hardlinks instead of Copy" enabled in Settings → Media Management.',
+    fix:
+      'The wizard sets (b) + (c) automatically — only (a) is the user-controlled piece. Run the hardlink probe to confirm:',
+    command:
+      `bash <INSTALL_DIR>/setup-validate.sh
+# Look for: "✔ Hardlinks work between Downloads and Media"`,
+  },
 
   // ── Indexers ────────────────────────────────────────────────────────
   {
@@ -327,6 +374,27 @@ bash <INSTALL_DIR>/restart-qbit.sh`,
     command:
       `bash <INSTALL_DIR>/restart-qbit.sh
 bash <INSTALL_DIR>/post-deploy-validate.sh`,
+  },
+  {
+    category: 'VPN (gluetun)',
+    symptom: 'qBittorrent stays "Firewalled" forever, listen-port never updates',
+    cause:
+      'NordVPN does NOT support port forwarding via gluetun (no third-party PF API). Only ProtonVPN, PIA, PrivateVPN and Perfect Privacy support PF natively. With NordVPN, your seed ratio is capped by peer reachability — incoming connections never reach qBit through the VPN tunnel.',
+    fix:
+      'Either accept the limitation (downloading still works, seeding is just slower) or switch providers. Set VPN_PROVIDER=protonvpn (or pia/privatevpn) in .env, paste the corresponding WIREGUARD_PRIVATE_KEY/WIREGUARD_ADDRESSES, then VPN_PORT_FORWARDING=on and re-run setup.sh.',
+  },
+  {
+    category: 'VPN (gluetun)',
+    symptom: 'PF up-command silently 403s on every reconnect (ProtonVPN/PIA)',
+    cause:
+      'qBit\'s AuthSubnetWhitelist used to omit 127.0.0.0/8, so gluetun\'s wget call to qBit\'s WebUI from inside the shared namespace got rejected — meaning listen_port never updated after VPN reconnects and qBit stayed "Firewalled". Fixed in installer v0.2.0+.',
+    fix:
+      'Update to wizard v0.2.0+, then delete qBittorrent.conf and re-run setup.sh so the new whitelist (with 127.0.0.0/8) gets written.',
+    command:
+      `cd <INSTALL_DIR>
+docker compose stop qbittorrent
+rm qbittorrent/config/qBittorrent/qBittorrent.conf
+bash setup.sh`,
   },
 
   // ── Migration ───────────────────────────────────────────────────────

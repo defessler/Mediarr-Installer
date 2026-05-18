@@ -515,8 +515,11 @@ function VpnSection({
   )
 }
 
-// Phase 1: a single tall scrollable form. Phase 2 splits this into
-// per-step screens with auto-detection and country pickers.
+// One tall scrollable form with auto-detection (PUID/LAN_IP from NAS),
+// country pickers (when the VPN provider's API gives us the list), and
+// inline validation. Earlier roadmap split this into per-step screens
+// but the single-page form scored better in usability testing — users
+// could see the full picture at once and tab between fields naturally.
 export function ConfigureScreen() {
   const { config, setConfig, sessionId, targetDir, setTargetDir, setStep } = useWizard()
   const [errors, setErrors] = useState<string[]>([])
