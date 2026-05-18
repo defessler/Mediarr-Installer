@@ -821,6 +821,53 @@ def get_language_profile(base, key):
     profiles = GET(base, key, "/api/v3/languageprofile") or []
     return profiles[0]['id'] if profiles else 1
 
+def configure_backup_schedule(base, key, api):
+    """Tune the arr's built-in backup schedule.
+
+    Sonarr/Radarr/Lidarr/Prowlarr each maintain a `/config/Backups`
+    directory inside the container with periodic dumps of their SQLite
+    DB + config.xml. Default schedule (7 days interval, 28 days
+    retention) is sensible. But the BACKUP FOLDER defaults to
+    `Backups/` (relative — resolves under /config/). On Synology
+    that puts backups on the same volume as the DB itself, so a
+    volume failure loses both copies at once.
+
+    We can't move the backup folder OUTSIDE the container's /config
+    mount via the API (the path validator rejects anything outside
+    the container's writable area). Best we can do is keep the
+    default location + push the user toward a separate scheduled
+    rsync of /config/<arr>/Backups/ to a different drive. That
+    recommendation lives in INSTALL.md's "Where things live" section.
+
+    What this function DOES change:
+    - backupInterval = 7 (days). Already default but pinned so a
+      future arr release that changes the default doesn't surprise.
+    - backupRetention = 28 (days). 4 weekly backups = enough to
+      roll back through a bad import without consuming much disk
+      (each backup is ~5-50MB depending on library size).
+
+    Idempotent — only PUTs when values differ.
+    """
+    config = GET(base, key, f"/{api}/config/host")
+    if config is None:
+        return  # Auth/host config check upstream already fail-reported
+    desired = {
+        'backupInterval':  7,
+        'backupRetention': 28,
+    }
+    changes = {k: v for k, v in desired.items() if config.get(k) != v}
+    if not changes:
+        skip(f"{api} backup schedule (already at 7d / 28d retention)"); return
+    for k, v in changes.items():
+        config[k] = v
+    result = PUT(base, key, f"/{api}/config/host", config)
+    if result:
+        ok(f"{api} backup schedule: {', '.join(sorted(changes.keys()))}")
+    # PUT might cycle the session (same race as configure_auth). Not
+    # worth the verify dance for a non-critical setting — silent failure
+    # leaves the arr at its current backup config, which is fine.
+
+
 def configure_plex_notification(base, key, api, plex_token, on_episode_file=False):
     """Wire Sonarr/Radarr's Connect → Plex notification so library scans
     fire the moment a file is imported. Without this, Plex relies on
@@ -2830,6 +2877,7 @@ def main():
             warn("SABnzbd key not found — skipping")
         configure_media_management(SONARR, SONARR_KEY, "api/v3", recycle_label="sonarr")
         configure_bind_address(SONARR, SONARR_KEY, "api/v3")
+        configure_backup_schedule(SONARR, SONARR_KEY, "api/v3")
         # Plex Connect notification — fires partial-scans the moment a
         # file is imported. Combined with configure_plex_remote_access's
         # ScheduledLibraryUpdatesEnabled=0 this means Plex sees new
@@ -2871,6 +2919,7 @@ def main():
             warn("SABnzbd key not found — skipping")
         configure_media_management(RADARR, RADARR_KEY, "api/v3", recycle_label="radarr")
         configure_bind_address(RADARR, RADARR_KEY, "api/v3")
+        configure_backup_schedule(RADARR, RADARR_KEY, "api/v3")
         # Plex Connect notification — same rationale as Sonarr block above.
         if is_enabled(env, 'ENABLE_PLEX'):
             configure_plex_notification(RADARR, RADARR_KEY, "api/v3", plex_token, on_episode_file=False)
@@ -2949,6 +2998,7 @@ def main():
             warn("SABnzbd key not found — skipping")
         configure_media_management(LIDARR, LIDARR_KEY, "api/v1", recycle_label="lidarr")
         configure_bind_address(LIDARR, LIDARR_KEY, "api/v1")
+        configure_backup_schedule(LIDARR, LIDARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 
@@ -2977,6 +3027,7 @@ def main():
         # bindAddress is 127.0.0.1 because the wizard's verify call
         # hits the container's loopback, not the host's.
         configure_bind_address(PROWLARR, PROWLARR_KEY, "api/v1")
+        configure_backup_schedule(PROWLARR, PROWLARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(PROWLARR, PROWLARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 

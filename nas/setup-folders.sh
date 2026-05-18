@@ -453,6 +453,30 @@ fi
 
 fi    # end: if is_enabled ENABLE_QBITTORRENT
 
+# ── inotify watch limits (Plex library auto-detect) ──────────────────────
+#
+# Plex watches every library folder via inotify for "Update my library
+# automatically". The kernel's per-process inotify watch limit caps how
+# many directories it can monitor — once exhausted, Plex silently stops
+# noticing new files (manifests as "added a movie to /data/Media but
+# Plex won't pick it up until a scheduled scan"). Synology DSM 7 ships
+# with `fs.inotify.max_user_watches=8192` which is fine for ~5000 files
+# but tight for serious libraries.
+#
+# We don't auto-tune the kernel sysctl from here (touching /etc/sysctl
+# from a setup script is invasive). Just probe + warn loudly. The
+# upgrade path is a one-line Task Scheduler boot-up entry the user
+# can paste.
+INOTIFY_LIMIT=$(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null || echo 0)
+if [ "$INOTIFY_LIMIT" -gt 0 ] && [ "$INOTIFY_LIMIT" -lt 524288 ]; then
+    echo ""
+    echo "ℹ Kernel inotify watch limit is $INOTIFY_LIMIT (Plex may stop"
+    echo "  auto-detecting new files in libraries >${INOTIFY_LIMIT} dirs)."
+    echo "  To raise it permanently (Synology Task Scheduler → Triggered"
+    echo "  Task → Boot-up → run as root):"
+    echo "    sysctl -w fs.inotify.max_user_watches=524288"
+fi
+
 # Best-effort cleanup of the old custom-cont-init.d stub from previous
 # wizard versions — it tried to do the same PBKDF2 work INSIDE the
 # container and silently no-op'd because the linuxserver image has no

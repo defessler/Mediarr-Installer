@@ -1,0 +1,151 @@
+#!/bin/bash
+# ── boot-orchestrator.sh — bring the stack up cleanly on NAS reboot ──
+#
+# Why this exists:
+#
+# qBittorrent uses `network_mode: container:gluetun` so all torrent
+# traffic exits through the VPN. Docker enforces this hard at container-
+# create time: if gluetun's network namespace doesn't exist yet, qBit's
+# create errors with:
+#
+#   container must join at least one network
+#
+# On NAS reboot the docker daemon restarts every `unless-stopped`
+# container in arbitrary order — qBittorrent often tries to start
+# BEFORE gluetun's namespace is ready, hits the error, then enters
+# Docker's exponential restart backoff (100ms → 200ms → 400ms → ...
+# → several MINUTES between retries). Even after gluetun is healthy,
+# qBit can stay stuck for 10+ minutes before its backoff timer elapses
+# and the next restart attempt actually fires.
+#
+# `depends_on` in docker-compose.yml DOESN'T help at NAS boot because
+# Docker's daemon doesn't honor compose semantics on its restart-policy
+# path — only `docker compose up` does. So we need a script that runs
+# at boot, waits for Docker to be ready, then invokes compose with the
+# user's profile set. Compose then brings everything up respecting
+# depends_on ordering.
+#
+# Wire it as a Synology Task Scheduler triggered task:
+#
+#   Control Panel → Task Scheduler → Create → Triggered Task →
+#     User-defined script (run as root)
+#     Event: Boot-up
+#     Run command:
+#       bash /volume1/docker/media/boot-orchestrator.sh
+#
+# After that, NAS reboots bring up the whole stack cleanly with no
+# manual restart-qbit.sh required.
+#
+# Safe to re-run any time; idempotent because `compose up -d` only
+# restarts containers whose config changed.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+LOG="$SCRIPT_DIR/boot-orchestrator.log"
+log() { echo "[$(date -Is)] $*" | tee -a "$LOG"; }
+
+log "════ boot-orchestrator starting ════"
+
+if [ ! -f .env ]; then
+    log "✘ .env not found at $SCRIPT_DIR/.env — aborting"
+    exit 1
+fi
+
+# Wait for Docker daemon. On a Synology cold-boot, Synology's own
+# services start before Docker's; if we run too early, `docker info`
+# errors with "Cannot connect to the Docker daemon" and our compose
+# up errors with the same.
+#
+# Poll up to 5 minutes — typical Synology boot to Docker-ready is
+# 60-120 seconds; allow generous headroom for spinning rust + lots of
+# DSM packages restoring state.
+log "Waiting for Docker daemon..."
+deadline=$(($(date +%s) + 300))
+until docker info >/dev/null 2>&1; do
+    if [ "$(date +%s)" -gt "$deadline" ]; then
+        log "✘ Docker daemon didn't become ready within 5min — aborting"
+        log "  Check:  systemctl status pkgctl-Docker  (or DSM Package Center)"
+        exit 1
+    fi
+    sleep 5
+done
+log "✔ Docker daemon ready"
+
+# Pull values from .env the same way setup.sh does. Don't `source`
+# the file — values containing spaces / special chars would execute
+# as bash expressions and either break or pose a security risk.
+env_val() {
+    grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+}
+is_enabled() {
+    local v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$v" in false|0|no|off) return 1 ;; *) return 0 ;; esac
+}
+
+# Compose binary detection — match setup.sh's preference (v2 plugin
+# first, legacy v1 script second). Synology DSM 7 ships the plugin
+# but some older installs still have the legacy `docker-compose`.
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+else
+    log "✘ Neither 'docker compose' nor 'docker-compose' available"
+    exit 1
+fi
+
+# Compose file selection: when VPN is disabled, the no-vpn override
+# replaces qBit's gluetun network_mode with the standard bridge.
+# Same logic as setup.sh + the installer's UpdateRunScreen.
+FILES="-f docker-compose.yml"
+VPN="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')"
+if [ "$VPN" != "true" ] && [ "$VPN" != "1" ] && [ "$VPN" != "yes" ] && [ "$VPN" != "on" ]; then
+    FILES="$FILES -f docker-compose.no-vpn.yml"
+fi
+
+# Build COMPOSE_PROFILES from the user's ENABLE_* picks. Without this,
+# `compose up -d` only starts the no-profile services (Prowlarr +
+# Flaresolverr); profile-gated services like Plex / qBittorrent /
+# gluetun never come back up after a NAS boot.
+PROFILES=()
+is_enabled ENABLE_PLEX        && PROFILES+=("plex")
+is_enabled ENABLE_SONARR      && PROFILES+=("sonarr")
+is_enabled ENABLE_RADARR      && PROFILES+=("radarr")
+is_enabled ENABLE_LIDARR      && PROFILES+=("lidarr")
+is_enabled ENABLE_BAZARR      && PROFILES+=("bazarr")
+is_enabled ENABLE_SABNZBD     && PROFILES+=("usenet")
+is_enabled ENABLE_HOMEPAGE    && PROFILES+=("homepage")
+is_enabled ENABLE_RECYCLARR   && PROFILES+=("recyclarr")
+is_enabled ENABLE_UNPACKERR   && PROFILES+=("unpackerr")
+if is_enabled ENABLE_QBITTORRENT; then
+    PROFILES+=("torrenting")
+    case "$VPN" in true|1|yes|on) PROFILES+=("vpn") ;; esac
+fi
+
+if [ "${#PROFILES[@]}" -gt 0 ]; then
+    export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
+    log "COMPOSE_PROFILES=$COMPOSE_PROFILES"
+fi
+
+log "Running: $COMPOSE $FILES up -d"
+
+# `up -d` respects depends_on ordering inside the project — gluetun
+# starts BEFORE qbittorrent because of qBit's depends_on entry. That's
+# the whole reason this script exists vs. relying on Docker's restart-
+# policy: docker daemon doesn't read depends_on, but `compose up` does.
+#
+# Plain ANSI/progress output goes to the log; the redirect captures
+# both stdout + stderr so failure modes (e.g. malformed compose YAML
+# after an unattended pkg update) show up here for debugging.
+export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
+if $COMPOSE $FILES up -d 2>&1 | tee -a "$LOG"; then
+    log "✔ Stack brought up cleanly"
+    exit 0
+else
+    rc=${PIPESTATUS[0]}
+    log "✘ compose up -d exited rc=$rc — see log above"
+    exit "$rc"
+fi
