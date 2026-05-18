@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Radar, AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react'
+import {
+  Radar, AlertCircle, ArrowLeft, ArrowRight,
+  CheckCircle2, XCircle, AlertTriangle, Info, RefreshCw,
+} from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import type { EnvDetectResult } from '../../shared/ipc.js'
@@ -757,14 +760,16 @@ git clone https://github.com/telnetdoogie/synology-docker.git
                   })}
                 </div>
                 {!allSkipped && (
-                  <div className="flex gap-2">
-                    <button
+                  <div className="flex gap-2 items-center">
+                    <BigButton
+                      size="sm"
+                      variant="secondary"
                       onClick={skipAll}
-                      className="px-3 py-1.5 text-xs bg-amber-700/60 hover:bg-amber-600 rounded-md"
+                      className="bg-amber-700/60 hover:bg-amber-600 border-amber-600/30"
                     >
                       Skip all detected ({detectedKeys.length})
-                    </button>
-                    <span className="text-xs text-slate-500 self-center">
+                    </BigButton>
+                    <span className="text-xs text-slate-500">
                       Equivalent to ticking every Skip box above
                     </span>
                   </div>
@@ -797,14 +802,17 @@ git clone https://github.com/telnetdoogie/synology-docker.git
                   </li>
                 )}
               </ul>
-              <div className="flex gap-2">
-                <button
+              <div className="flex gap-2 items-center">
+                <BigButton
+                  size="sm"
+                  variant="primary"
+                  icon={<RefreshCw size={12} />}
+                  className="bg-gradient-to-b from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 shadow-lg shadow-sky-900/40 border-sky-400/30"
                   onClick={() => { setMode('update'); setStep('run-update') }}
-                  className="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-500 rounded-md"
                 >
                   Switch to Update mode
-                </button>
-                <span className="text-xs text-slate-400 self-center">
+                </BigButton>
+                <span className="text-xs text-slate-400">
                   or continue and overwrite the install (.env preserved)
                 </span>
               </div>
