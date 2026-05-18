@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowRightLeft, ArrowLeft, ArrowRight, Download, RefreshCw,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, Cloud, Eye, ListChecks,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 
@@ -369,7 +369,10 @@ export function MigrateScreen() {
       )}
 
       <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
-        <h2 className="font-medium">Source arr connection</h2>
+        <h2 className="font-medium inline-flex items-center gap-2">
+          <Cloud size={16} className="text-sky-400" strokeWidth={1.75} />
+          Source arr connection
+        </h2>
         <p className="text-xs text-slate-400">
           Provide the URL + API key for at least one of Sonarr / Radarr.
           Skip the one you don&apos;t need. API keys live under
@@ -439,7 +442,10 @@ export function MigrateScreen() {
 
       {totalFetched > 0 && (
         <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
-          <h2 className="font-medium">Preview</h2>
+          <h2 className="font-medium inline-flex items-center gap-2">
+            <Eye size={16} className="text-emerald-400" strokeWidth={1.75} />
+            Preview
+          </h2>
           {counts.sonarr > 0 && (
             <PreviewList kind="sonarr" items={fetched.sonarr!} />
           )}
@@ -563,13 +569,22 @@ export function MigrateScreen() {
       {results.length > 0 && (
         <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="font-medium">Import results</h2>
-            <span className="text-xs text-slate-400">
-              <span className="text-emerald-300">✔ added {counts_results.ok}</span>
-              <span className="mx-2">·</span>
-              <span className="text-sky-300">↻ updated {counts_results.updated}</span>
-              <span className="mx-2">·</span>
-              <span className="text-rose-300">✘ {counts_results.fail}</span>
+            <h2 className="font-medium inline-flex items-center gap-2">
+              <ListChecks size={16} className="text-emerald-400" strokeWidth={1.75} />
+              Import results
+            </h2>
+            <span className="text-xs text-slate-400 inline-flex items-center gap-2">
+              <span className="text-emerald-300 inline-flex items-center gap-1">
+                <CheckCircle2 size={12} /> added {counts_results.ok}
+              </span>
+              <span>·</span>
+              <span className="text-sky-300 inline-flex items-center gap-1">
+                <RefreshCw size={12} /> updated {counts_results.updated}
+              </span>
+              <span>·</span>
+              <span className="text-rose-300 inline-flex items-center gap-1">
+                <XCircle size={12} /> {counts_results.fail}
+              </span>
             </span>
           </div>
           <div className="relative">
@@ -605,7 +620,10 @@ export function MigrateScreen() {
 
       {/* ── qBittorrent migration ─────────────────────────────────────── */}
       <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
-        <h2 className="font-medium">qBittorrent torrents</h2>
+        <h2 className="font-medium inline-flex items-center gap-2">
+          <Download size={16} className="text-amber-400" strokeWidth={1.75} />
+          qBittorrent torrents
+        </h2>
         <p className="text-xs text-slate-400">
           Move active torrents from an existing qBittorrent (your previous
           NAS, a Linux box, etc.) to this stack&apos;s qBit so they keep
@@ -812,11 +830,18 @@ export function MigrateScreen() {
         {qbitResults.length > 0 && (
           <div className="border-t border-slate-800 pt-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Migration results</h3>
-              <span className="text-xs text-slate-400">
-                <span className="text-emerald-300">✔ {qbitResults.filter((r) => r.status === 'ok').length}</span>
-                <span className="mx-2">·</span>
-                <span className="text-rose-300">✘ {qbitResults.filter((r) => r.status === 'fail').length}</span>
+              <h3 className="text-sm font-medium inline-flex items-center gap-2">
+                <ListChecks size={14} className="text-emerald-400" strokeWidth={1.75} />
+                Migration results
+              </h3>
+              <span className="text-xs text-slate-400 inline-flex items-center gap-2">
+                <span className="text-emerald-300 inline-flex items-center gap-1">
+                  <CheckCircle2 size={12} /> {qbitResults.filter((r) => r.status === 'ok').length}
+                </span>
+                <span>·</span>
+                <span className="text-rose-300 inline-flex items-center gap-1">
+                  <XCircle size={12} /> {qbitResults.filter((r) => r.status === 'fail').length}
+                </span>
               </span>
             </div>
             <div className="relative mt-1">
