@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2, Lock, KeyRound } from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
 import type { ConnectResult } from '../../shared/ipc.js'
@@ -183,17 +183,47 @@ export function ConnectScreen() {
 
       <div>
         <label className="block text-sm font-medium mb-2">Authentication</label>
-        <div className="flex gap-4 mb-3">
-          <label className="flex items-center gap-2">
-            <input type="radio" checked={connection.authMethod === 'password'}
-              onChange={() => setConnection({ authMethod: 'password' })} />
-            Password
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="radio" checked={connection.authMethod === 'privateKey'}
-              onChange={() => setConnection({ authMethod: 'privateKey' })} />
-            Private key
-          </label>
+        {/* Segmented control. Bare <input type="radio"> here was hard
+            to hit (tiny dot, no hover feedback) and visually inert.
+            Two big pills with icons read as "tap one of these" in a
+            way radios never do, and Motion's layoutId slides the
+            selected highlight between them when the choice changes. */}
+        <div
+          role="radiogroup"
+          aria-label="Authentication method"
+          className="relative inline-flex p-1 bg-slate-900 border border-slate-800 rounded-lg mb-3 gap-1"
+        >
+          {([
+            { value: 'password',   label: 'Password',    Icon: Lock },
+            { value: 'privateKey', label: 'Private key', Icon: KeyRound },
+          ] as const).map(({ value, label, Icon }) => {
+            const selected = connection.authMethod === value
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setConnection({ authMethod: value })}
+                className={
+                  'relative z-10 inline-flex items-center gap-2 px-4 h-9 rounded-md text-sm font-medium ' +
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ' +
+                  'focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 transition-colors ' +
+                  (selected ? 'text-white' : 'text-slate-400 hover:text-slate-200')
+                }
+              >
+                {selected && (
+                  <motion.span
+                    layoutId="connect-auth-pill"
+                    className="absolute inset-0 bg-emerald-600 rounded-md shadow-md shadow-emerald-900/40 border border-emerald-400/30 -z-10"
+                    transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                  />
+                )}
+                <Icon size={14} />
+                {label}
+              </button>
+            )
+          })}
         </div>
         {connection.authMethod === 'password' ? (
           <input
