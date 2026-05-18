@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { Clock, ExternalLink, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 
 interface Props {
@@ -49,51 +51,72 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
   const mm = Math.floor(remaining / 60_000)
   const ss = Math.floor((remaining % 60_000) / 1000).toString().padStart(2, '0')
 
+  const reduced = useReducedMotion()
   return (
-    <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3 space-y-2">
+    <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 space-y-3">
       <div className="flex items-center gap-2 text-sm">
-        <span className="font-medium">Plex claim token</span>
+        <Clock size={16} className="text-emerald-400 shrink-0" />
+        <span className="font-semibold">Plex claim token</span>
         <span className="text-slate-500 text-xs">
-          (4-minute expiry; refresh just before clicking Start)
+          · expires 4 minutes after you generate it
         </span>
         <a
           href="https://plex.tv/claim"
           target="_blank"
           rel="noreferrer"
-          className="ml-auto text-xs text-emerald-400 hover:underline"
+          className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
         >
-          Get fresh token →
+          Get fresh token <ExternalLink size={11} />
         </a>
       </div>
       <input
         type="text"
         placeholder="claim-xxxxxxxxxxxxxxxxxxxx"
         className={
-          'w-full px-3 py-1.5 text-sm bg-slate-800 border rounded-md font-mono ' +
-          (expired ? 'border-rose-600 text-rose-200'
-            : stale ? 'border-amber-600 text-amber-200'
-            : 'border-slate-700')
+          'w-full px-3 py-2 text-sm bg-slate-800 border rounded-md font-mono transition-colors focus:outline-none focus:ring-1 ' +
+          (expired
+            ? 'border-rose-600 text-rose-200 focus:ring-rose-400'
+            : stale
+              ? 'border-amber-600 text-amber-200 focus:ring-amber-400'
+              : value
+                ? 'border-emerald-700 text-emerald-100 focus:ring-emerald-400 focus:border-emerald-500'
+                : 'border-slate-700 focus:ring-emerald-400 focus:border-emerald-500')
         }
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value || undefined)}
       />
       {value && (
-        <div className="text-xs">
+        <motion.div
+          key={expired ? 'exp' : stale ? 'stale' : 'fresh'}
+          initial={reduced ? { opacity: 1, x: 0 } : { opacity: 0, x: -4 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.15 }}
+          className="text-xs flex items-center gap-1.5"
+        >
           {expired ? (
-            <span className="text-rose-300">
-              Expired — open plex.tv/claim and paste a fresh token.
-            </span>
+            <>
+              <XCircle size={14} className="text-rose-400 shrink-0" />
+              <span className="text-rose-300">
+                Expired — open plex.tv/claim and paste a fresh token.
+              </span>
+            </>
           ) : stale ? (
-            <span className="text-amber-300">
-              Will expire in {mm}:{ss} — paste a fresh token if you'll wait
-              before starting.
-            </span>
+            <>
+              <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+              <span className="text-amber-300">
+                Expires in <span className="font-mono tabular-nums">{mm}:{ss}</span> —
+                refresh if you'll wait before clicking install.
+              </span>
+            </>
           ) : (
-            <span className="text-emerald-400">
-              Fresh ({mm}:{ss} remaining)
-            </span>
+            <>
+              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              <span className="text-emerald-300">
+                Fresh · <span className="font-mono tabular-nums">{mm}:{ss}</span> remaining
+              </span>
+            </>
           )}
-        </div>
+        </motion.div>
       )}
       {!value && (
         <div className="text-xs text-slate-500">
