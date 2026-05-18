@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "electron-log": "^5.2.0",
+    "lucide-react": "^1.16.0",
+    "motion": "^12.39.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.0",

@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import {
+  Plus, Download, Upload, Play, RefreshCw, ArrowRightLeft, Settings,
+  Trash2, Edit3, AlertTriangle, Server, CheckCircle2,
+} from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { reportError, useErrors } from '../store/errors.js'
 import type { AppInfo, SavedProfile } from '../../shared/ipc.js'
 import { ExportProfileDialog } from '../components/ExportProfileDialog.js'
 import { ImportProfileDialog } from '../components/ImportProfileDialog.js'
 import { WhatsNew } from '../components/WhatsNew.js'
+import { BigButton } from '../components/BigButton.js'
 
 /** Friendly "5 min ago" / "2 hours ago" / "3 days ago". Cheap +
  *  good-enough for last-run timestamps on the Welcome screen; no
@@ -35,6 +41,11 @@ export function WelcomeScreen() {
   const [importing, setImporting] = useState(false)
   /** App version + update info for the WhatsNew banner. */
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  /** Which profile-card has its actions overflow open (overflow holds
+   *  the secondary actions — Update / Migrate / Edit — so the primary
+   *  Install action is the visually-dominant one on each row). */
+  const [overflowOpenId, setOverflowOpenId] = useState<string | null>(null)
+  const reduced = useReducedMotion()
 
   async function refreshAppInfo() {
     try {
@@ -71,16 +82,9 @@ export function WelcomeScreen() {
         migrate: p.migrate,
       })
       if (target === 'edit') {
-        // "Edit settings" — drop the user straight into Configure.
-        // No SSH session is needed; the screen renders all fields with
-        // the existing profile values and auto-saves on edit. Mode
-        // stays 'install' so the stepper rail looks normal.
         setMode('install')
         setStep('configure')
       } else {
-        // install / update / migrate all route to Connect first; the
-        // ConnectScreen forwards to the right post-connect step based
-        // on mode (detect / run-update / migrate respectively).
         setMode(target)
         setStep('connect')
       }
@@ -99,7 +103,6 @@ export function WelcomeScreen() {
       return
     }
     try {
-      // Load the full profile, save back with the new label only.
       const p = await window.installer.profiles.load(id)
       if (!p) throw new Error('Profile not found')
       await window.installer.profiles.save({
@@ -110,7 +113,6 @@ export function WelcomeScreen() {
         config: p.config as Record<string, string>,
         migrate: p.migrate,
       })
-      // Keep the header label in sync if we renamed the active profile.
       if (id === activeProfileId) setActiveProfileLabel(label)
       setEditingLabelId(null)
       setEditingLabelText('')
@@ -152,11 +154,6 @@ export function WelcomeScreen() {
     if (!window.confirm(`Delete profile "${label}"?`)) return
     try {
       await window.installer.profiles.delete(id)
-      // Drop the lastRuns entry for this profile too — otherwise it
-      // becomes an orphan in the persisted wizard state (small, but it
-      // would linger forever and the user might re-create a profile
-      // with the same id and inherit a stale "last install failed"
-      // pill that doesn't reflect reality).
       clearRunResult(id)
       await refresh()
     } catch (e) {
@@ -166,215 +163,259 @@ export function WelcomeScreen() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-8 space-y-6">
-        <header>
-          <h1 className="text-3xl font-semibold">Mediarr Installer</h1>
-          <p className="text-slate-400 mt-2">
-            Pick a saved profile to continue, or create a new one. Each
-            profile holds the SSH connection, install path, and every
-            field you fill in — so you can install onto multiple NASes
-            and switch between them without re-typing.
+      <div className="max-w-3xl mx-auto px-8 py-10 space-y-8">
+        {/* Hero header with a server icon — gives the screen a
+            recognisable visual anchor without a custom illustration.
+            Lucide's Server icon stands in for "the NAS we're going to
+            set up." Bouncy entrance to feel welcoming, not corporate. */}
+        <header className="text-center">
+          <motion.div
+            initial={reduced ? { scale: 1, opacity: 1 } : { scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.05 }}
+            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4"
+          >
+            <Server size={40} className="text-emerald-300" strokeWidth={1.5} />
+          </motion.div>
+          <h1 className="text-4xl font-bold tracking-tight">Welcome back</h1>
+          <p className="text-slate-400 mt-3 text-base">
+            Pick a NAS to set up — or start fresh.
           </p>
         </header>
 
         {appInfo && <WhatsNew info={appInfo} onChanged={refreshAppInfo} />}
 
         {profiles === null ? (
-          <div className="text-slate-400 text-sm">Loading profiles...</div>
+          <ProfilesLoading />
         ) : profiles.length === 0 ? (
-          <section className="rounded-md border border-slate-800 bg-slate-900/40 p-6 text-center space-y-3">
-            <div className="text-slate-300">No profiles yet.</div>
-            <button
-              onClick={() => setCreating(true)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md"
-            >
-              Create your first profile
-            </button>
-          </section>
+          <EmptyState onCreate={() => setCreating(true)} onImport={() => setImporting(true)} />
         ) : (
-          <section className="space-y-2">
-            <h2 className="text-sm uppercase tracking-wide text-slate-400">
-              Saved profiles
-            </h2>
-            {profiles.map((p) => (
-              <div
-                key={p.id}
-                className="rounded-md border border-slate-700 bg-slate-800/40 hover:bg-slate-800/70 p-3 flex items-center gap-3"
-              >
-                <div className="flex-1 min-w-0">
-                  {editingLabelId === p.id ? (
-                    <input
-                      autoFocus
-                      type="text"
-                      className="w-full px-2 py-1 text-sm bg-slate-900 border border-slate-600 rounded font-medium"
-                      value={editingLabelText}
-                      onChange={(e) => setEditingLabelText(e.target.value)}
-                      onBlur={() => commitLabel(p.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitLabel(p.id)
-                        if (e.key === 'Escape') {
-                          setEditingLabelId(null); setEditingLabelText('')
-                        }
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingLabelId(p.id)
-                        setEditingLabelText(p.label)
-                      }}
-                      className="font-medium truncate text-left hover:text-emerald-300"
-                      title="Click to rename"
-                    >
-                      {p.label}
-                    </button>
-                  )}
-                  <div className="text-xs text-slate-400 truncate">
-                    {p.connection.user}@{p.connection.host || '<no host>'}:{p.connection.port}
-                    {p.hasConfig && <span className="text-emerald-500/80 ml-2">· config saved</span>}
-                    {p.hasSecret && <span className="text-emerald-500/80 ml-2">· secrets saved</span>}
-                  </div>
-                  {/* "Last run failed" indicator — surfaced when the user
-                      closed the app after a failed install and is now
-                      coming back. Tiny amber pill so it stands out from
-                      the normal status line but doesn't crowd the card. */}
-                  {lastRuns[p.id]?.phase === 'failed' && (
-                    <div className="text-xs text-amber-300/90 truncate mt-0.5">
-                      ✘ Last install failed
-                      {lastRuns[p.id].failedStep != null && (
-                        <span> at step {lastRuns[p.id].failedStep}</span>
-                      )}
-                      <span className="text-slate-500 ml-1">· {timeAgo(lastRuns[p.id].finishedAt)}</span>
-                    </div>
-                  )}
-                </div>
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                Your NAS profiles
+              </h2>
+              <div className="flex items-center gap-3 text-sm">
                 <button
-                  onClick={() => pickProfile(p.id, 'edit')}
-                  disabled={busy !== null}
-                  className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
-                  title="Edit all settings without connecting"
+                  onClick={() => setCreating(true)}
+                  className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors"
                 >
-                  Edit
+                  <Plus size={16} strokeWidth={2.5} />
+                  New profile
                 </button>
+                <span className="text-slate-700">·</span>
                 <button
-                  onClick={() => pickProfile(p.id, 'install')}
-                  disabled={busy !== null}
-                  className="px-3 py-1.5 text-sm bg-emerald-700/60 hover:bg-emerald-600 rounded-md disabled:opacity-40"
+                  onClick={() => setImporting(true)}
+                  className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors"
+                  title="Import a passphrase-protected .mediarr-profile.json file"
                 >
-                  Install
-                </button>
-                <button
-                  onClick={() => pickProfile(p.id, 'update')}
-                  disabled={busy !== null}
-                  className="px-3 py-1.5 text-sm bg-sky-700/60 hover:bg-sky-600 rounded-md disabled:opacity-40"
-                >
-                  Update
-                </button>
-                <button
-                  onClick={() => pickProfile(p.id, 'migrate')}
-                  disabled={busy !== null}
-                  className="px-3 py-1.5 text-sm bg-amber-700/60 hover:bg-amber-600 rounded-md disabled:opacity-40"
-                  title="Import Sonarr/Radarr library from another existing instance"
-                >
-                  Migrate
-                </button>
-                <button
-                  onClick={() => setExportingFor(p)}
-                  disabled={busy !== null}
-                  className="px-2 py-1.5 text-sm text-slate-400 hover:text-slate-200 disabled:opacity-40"
-                  title="Export this profile to a file (passphrase-protected)"
-                >
-                  ↗
-                </button>
-                <button
-                  onClick={() => deleteProfile(p.id, p.label)}
-                  disabled={busy !== null}
-                  className="px-2 py-1.5 text-sm text-rose-400 hover:text-rose-300 disabled:opacity-40"
-                  title="Delete profile"
-                >
-                  ✕
+                  <Download size={16} strokeWidth={2.5} />
+                  Import
                 </button>
               </div>
-            ))}
-            <div className="pt-2 flex items-center gap-4">
-              <button
-                onClick={() => setCreating(true)}
-                className="text-sm text-emerald-400 hover:underline"
-              >
-                + New profile
-              </button>
-              <button
-                onClick={() => setImporting(true)}
-                className="text-sm text-slate-400 hover:text-slate-200"
-                title="Import a passphrase-protected .mediarr-profile.json file"
-              >
-                ↘ Import from file
-              </button>
             </div>
-          </section>
-        )}
+            <ul className="space-y-3">
+              {profiles.map((p, i) => (
+                <motion.li
+                  key={p.id}
+                  initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.04 * i, duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="group rounded-xl border border-slate-700/80 bg-slate-800/40 hover:bg-slate-800/70 hover:border-slate-600 transition-all p-4"
+                >
+                  <div className="flex items-center gap-4">
+                    {/* Avatar with first-letter monogram. Reads as a
+                        "profile" the same way contact lists do. */}
+                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600/20 to-emerald-800/30 border border-emerald-600/30 flex items-center justify-center text-emerald-200 text-lg font-bold uppercase">
+                      {p.label.slice(0, 2)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {editingLabelId === p.id ? (
+                        <input
+                          autoFocus
+                          type="text"
+                          className="w-full px-2 py-1 text-base bg-slate-900 border border-slate-600 rounded font-semibold"
+                          value={editingLabelText}
+                          onChange={(e) => setEditingLabelText(e.target.value)}
+                          onBlur={() => commitLabel(p.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitLabel(p.id)
+                            if (e.key === 'Escape') {
+                              setEditingLabelId(null); setEditingLabelText('')
+                            }
+                          }}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingLabelId(p.id)
+                            setEditingLabelText(p.label)
+                          }}
+                          className="font-semibold text-base truncate text-left hover:text-emerald-300 transition-colors"
+                          title="Click to rename"
+                        >
+                          {p.label}
+                        </button>
+                      )}
+                      <div className="text-xs text-slate-400 truncate font-mono mt-0.5">
+                        {p.connection.user}@{p.connection.host || '<not set>'}:{p.connection.port}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs">
+                        {p.hasConfig && (
+                          <span className="inline-flex items-center gap-1 text-emerald-400/90">
+                            <CheckCircle2 size={12} /> config saved
+                          </span>
+                        )}
+                        {p.hasSecret && (
+                          <span className="inline-flex items-center gap-1 text-emerald-400/90">
+                            <CheckCircle2 size={12} /> secrets saved
+                          </span>
+                        )}
+                        {lastRuns[p.id]?.phase === 'failed' && (
+                          <span className="inline-flex items-center gap-1 text-amber-300/90">
+                            <AlertTriangle size={12} /> last install failed
+                            {lastRuns[p.id].failedStep != null && <span> at step {lastRuns[p.id].failedStep}</span>}
+                            <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-        {/* The empty-state fallback: when there are zero profiles, show
-            BOTH "New profile" and "Import from file" so a user migrating
-            from another machine has an obvious path. */}
-        {profiles && profiles.length === 0 && !creating && (
-          <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3 text-sm">
-            <h2 className="font-medium">Get started</h2>
-            <p className="text-slate-400">
-              No profiles yet. Create a new one for a fresh NAS, or import a profile
-              file you exported from another machine.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCreating(true)}
-                className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md"
-              >
-                + New profile
-              </button>
-              <button
-                onClick={() => setImporting(true)}
-                className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md"
-              >
-                ↘ Import from file
-              </button>
-            </div>
+                    {/* Primary action — Install. Always the biggest, most
+                        prominent button on the row. "Install" is the
+                        verb a child understands; everything else
+                        (Update / Migrate / Edit) goes in the overflow
+                        menu so it doesn't compete for attention. */}
+                    <div className="flex items-center gap-2">
+                      <BigButton
+                        size="md"
+                        variant="primary"
+                        icon={<Play size={16} fill="currentColor" />}
+                        loading={busy === p.id}
+                        disabled={busy !== null}
+                        onClick={() => pickProfile(p.id, 'install')}
+                      >
+                        Install
+                      </BigButton>
+                      <button
+                        onClick={() => setOverflowOpenId(overflowOpenId === p.id ? null : p.id)}
+                        disabled={busy !== null}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-40"
+                        title="More actions"
+                      >
+                        <Settings size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Overflow menu — slides down when the gear icon is
+                      clicked. Houses the secondary actions that aren't
+                      part of the "happy path" for a first-time user. */}
+                  <AnimatePresence>
+                    {overflowOpenId === p.id && (
+                      <motion.div
+                        initial={reduced ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-700/60">
+                          <BigButton
+                            size="sm" variant="ghost"
+                            icon={<Edit3 size={14} />}
+                            disabled={busy !== null}
+                            onClick={() => pickProfile(p.id, 'edit')}
+                          >
+                            Edit
+                          </BigButton>
+                          <BigButton
+                            size="sm" variant="ghost"
+                            icon={<RefreshCw size={14} />}
+                            disabled={busy !== null}
+                            onClick={() => pickProfile(p.id, 'update')}
+                          >
+                            Update
+                          </BigButton>
+                          <BigButton
+                            size="sm" variant="ghost"
+                            icon={<ArrowRightLeft size={14} />}
+                            disabled={busy !== null}
+                            onClick={() => pickProfile(p.id, 'migrate')}
+                          >
+                            Migrate
+                          </BigButton>
+                          <BigButton
+                            size="sm" variant="ghost"
+                            icon={<Upload size={14} />}
+                            disabled={busy !== null}
+                            onClick={() => setExportingFor(p)}
+                          >
+                            Export
+                          </BigButton>
+                          <button
+                            onClick={() => deleteProfile(p.id, p.label)}
+                            disabled={busy !== null}
+                            className="col-span-2 sm:col-span-4 mt-1 inline-flex items-center justify-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 disabled:opacity-40 transition-colors"
+                          >
+                            <Trash2 size={12} />
+                            Delete this profile
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.li>
+              ))}
+            </ul>
           </section>
         )}
 
         {creating && (
-          <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
-            <h2 className="font-medium">New profile</h2>
+          <motion.section
+            initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-5 space-y-3"
+          >
+            <h2 className="font-semibold text-lg flex items-center gap-2">
+              <Plus size={18} className="text-emerald-400" strokeWidth={2.5} />
+              New profile
+            </h2>
             <input
               type="text"
-              placeholder="Profile name (e.g. DS1522+, Home, Office)"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              placeholder="Name it — e.g. DS1522+, Home NAS, Office"
+              className="w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-md text-base focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') createProfile() }}
               autoFocus
             />
             <div className="flex justify-end gap-2">
-              <button
+              <BigButton
+                size="md" variant="secondary"
                 onClick={() => { setCreating(false); setNewLabel('') }}
-                className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md"
               >
                 Cancel
-              </button>
-              <button
+              </BigButton>
+              <BigButton
+                size="md" variant="primary"
+                loading={busy === 'new'}
                 onClick={createProfile}
-                disabled={busy === 'new'}
-                className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40"
               >
-                {busy === 'new' ? 'Creating...' : 'Create and continue'}
-              </button>
+                Create and continue
+              </BigButton>
             </div>
-          </section>
+          </motion.section>
         )}
 
-        <section className="rounded-md border border-slate-800 bg-slate-900/40 p-4 space-y-2 text-sm">
-          <h2 className="font-medium">Before you begin</h2>
-          <ul className="space-y-1.5 text-slate-300 list-disc list-inside">
+        <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-2 text-sm">
+          <h2 className="font-semibold flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-emerald-400" />
+            Before you begin
+          </h2>
+          <ul className="space-y-1.5 text-slate-300 list-disc list-inside pl-1">
             <li>SSH is enabled on the NAS (Control Panel &rarr; Terminal &amp; SNMP).</li>
             <li>Docker (Container Manager) is installed via Synology Package Center.</li>
             <li>For fresh installs that include Plex: an account at plex.tv.</li>
@@ -393,9 +434,6 @@ export function WelcomeScreen() {
         <ImportProfileDialog
           onClose={() => setImporting(false)}
           onImported={(p) => {
-            // Refresh the picker so the new profile shows up; also flash
-            // a toast so the user sees the success without parsing the
-            // list themselves.
             refresh()
             useErrors.getState().pushInfo(
               'Profile imported',
@@ -405,5 +443,66 @@ export function WelcomeScreen() {
         />
       )}
     </div>
+  )
+}
+
+// ── Helper subcomponents ─────────────────────────────────────────────
+
+/** Loading skeleton for the profile list. Three placeholder rows that
+ *  shimmer until profiles load. Better than a "Loading..." string for
+ *  perceived speed — the user sees the right LAYOUT immediately. */
+function ProfilesLoading() {
+  return (
+    <div className="space-y-3">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 flex items-center gap-4 animate-pulse"
+        >
+          <div className="w-12 h-12 rounded-xl bg-slate-800" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-32 bg-slate-800 rounded" />
+            <div className="h-3 w-48 bg-slate-800/60 rounded" />
+          </div>
+          <div className="h-9 w-24 bg-slate-800 rounded-md" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Empty state — what new users see on their first launch. Big
+ *  friendly hero with two equal-weight options (create vs. import). */
+function EmptyState({ onCreate, onImport }: { onCreate: () => void; onImport: () => void }) {
+  const reduced = useReducedMotion()
+  return (
+    <motion.section
+      initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/60 to-slate-950/60 p-8 text-center space-y-5"
+    >
+      <div className="text-slate-200 text-xl font-semibold">Let's set up your first NAS</div>
+      <p className="text-slate-400 text-sm max-w-md mx-auto">
+        A profile remembers your NAS connection and every setting so you don't
+        re-type them next time. You can have one for each NAS.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+        <BigButton
+          variant="primary"
+          icon={<Plus size={20} strokeWidth={2.5} />}
+          onClick={onCreate}
+        >
+          Create your first profile
+        </BigButton>
+        <BigButton
+          variant="secondary"
+          icon={<Download size={20} strokeWidth={2.5} />}
+          onClick={onImport}
+        >
+          Import from file
+        </BigButton>
+      </div>
+    </motion.section>
   )
 }

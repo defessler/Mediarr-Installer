@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence } from 'motion/react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
 import { TroubleshootingModal } from './components/TroubleshootingModal.js'
+import { ScreenTransition } from './components/ScreenTransition.js'
 import { useProfileAutosave } from './hooks/useProfileAutosave.js'
 import { WelcomeScreen } from './screens/WelcomeScreen.js'
 import { ConnectScreen } from './screens/ConnectScreen.js'
@@ -270,13 +272,26 @@ export function App() {
               : disabled
               ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
               : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+          const isCurrent = state === 'current'
           return (
             <div key={s.id} className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={disabled}
                 onClick={() => setStep(s.id)}
-                className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm transition-colors ${cls}`}
+                className={
+                  `flex items-center gap-2 px-3 py-1 rounded-full text-sm transition-all ` +
+                  `duration-200 ${cls} ` +
+                  // The current step gets a subtle pulse-ring so the
+                  // eye instantly finds it without having to compare
+                  // text colors. Pulse pauses for reduced-motion users
+                  // (Tailwind's animate-pulse uses opacity which the OS
+                  // reduced-motion setting doesn't actually disable on
+                  // its own, but a brief 1s pulse stop at scale-1.03 is
+                  // mild enough that we leave it on as a focus aid).
+                  (isCurrent ? 'ring-2 ring-offset-2 ring-offset-slate-950 ' +
+                    (mode === 'update' ? 'ring-sky-400/60' : 'ring-emerald-400/60') : '')
+                }
                 title={disabled
                   ? (s.id !== 'welcome' && !activeProfileId
                     ? 'Select a profile first'
@@ -286,21 +301,44 @@ export function App() {
                 <span className="font-mono text-xs">{i + 1}</span>
                 <span>{s.label}</span>
               </button>
-              {i < stepList.length - 1 && <span className="text-slate-700">›</span>}
+              {/* Connector chevron transitions to green/blue as steps
+                  complete behind it — gives a clear "we got past here"
+                  cue without an explicit progress bar. */}
+              {i < stepList.length - 1 && (
+                <span
+                  className={
+                    `transition-colors duration-300 ` +
+                    (state === 'done'
+                      ? (mode === 'update' ? 'text-sky-400' : 'text-emerald-400')
+                      : 'text-slate-700')
+                  }
+                >
+                  ›
+                </span>
+              )}
             </div>
           )
         })}
       </nav>
 
       <main className="flex-1 min-h-0 overflow-hidden">
-        {step === 'welcome'    && <WelcomeScreen />}
-        {step === 'connect'    && <ConnectScreen />}
-        {step === 'detect'     && <EnvDetectScreen />}
-        {step === 'configure'  && <ConfigureScreen />}
-        {step === 'run'        && <RunScreen />}
-        {step === 'run-update' && <UpdateRunScreen />}
-        {step === 'migrate'    && <MigrateScreen />}
-        {step === 'done'       && <DoneScreen />}
+        {/* AnimatePresence + ScreenTransition give every step change a
+            consistent fade-up entrance. mode="wait" means the leaving
+            screen finishes its exit before the new one starts — keeps
+            the layout stable and avoids two screens overlapping during
+            the transition. */}
+        <AnimatePresence mode="wait">
+          <ScreenTransition screenKey={step}>
+            {step === 'welcome'    && <WelcomeScreen />}
+            {step === 'connect'    && <ConnectScreen />}
+            {step === 'detect'     && <EnvDetectScreen />}
+            {step === 'configure'  && <ConfigureScreen />}
+            {step === 'run'        && <RunScreen />}
+            {step === 'run-update' && <UpdateRunScreen />}
+            {step === 'migrate'    && <MigrateScreen />}
+            {step === 'done'       && <DoneScreen />}
+          </ScreenTransition>
+        </AnimatePresence>
       </main>
 
       {/* Footer with build info — handy for support */}

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
+import { AnimatedCheck } from '../components/AnimatedCheck.js'
+import { BigButton } from '../components/BigButton.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
 
@@ -122,50 +126,91 @@ export function DoneScreen() {
   const okCount = healthEntries.filter(([, h]) => h === 'ok').length
   const failCount = healthEntries.filter(([, h]) => h === 'fail').length
 
+  const reduced = useReducedMotion()
+  const installSucceeded = exit === 0 || (failCount === 0 && okCount > 0)
+
   return (
     <div className="h-full flex flex-col">
     <div className="flex-1 min-h-0 overflow-y-auto">
-    <div className="max-w-3xl mx-auto p-8 space-y-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Setup complete</h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            Click any service to open it. Health checks run automatically;
-            green = reachable, red = not reachable, grey = unknown.
-          </p>
+    <div className="max-w-3xl mx-auto px-8 py-10 space-y-8">
+      {/* Big celebratory hero with animated checkmark draws in over ~1s.
+          Single payoff moment — keeps the install feeling like an
+          accomplishment, not a chore. */}
+      <motion.header
+        initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="text-center"
+      >
+        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-emerald-500/15 border border-emerald-500/30 mb-5">
+          <AnimatedCheck size={64} className="text-emerald-400" />
         </div>
-        <button
-          onClick={runValidate}
-          disabled={running}
-          className="px-3 py-2 text-sm bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
-        >
-          {running ? 'Checking...' : 'Re-check'}
-        </button>
-      </header>
+        <h1 className="text-4xl font-bold tracking-tight">
+          {installSucceeded ? 'You did it!' : 'Setup complete'}
+        </h1>
+        <p className="text-slate-400 mt-3 text-base max-w-md mx-auto">
+          {installSucceeded
+            ? 'Your media stack is live. Click any service below to open it.'
+            : 'Some services need a closer look — the grid below shows what\'s up.'}
+        </p>
+        <div className="mt-5 flex items-center justify-center gap-3">
+          <BigButton
+            size="md"
+            variant="secondary"
+            icon={<RefreshCw size={16} />}
+            loading={running}
+            onClick={runValidate}
+          >
+            {running ? 'Checking...' : 'Re-check health'}
+          </BigButton>
+        </div>
+      </motion.header>
 
+      {/* Service tile grid — each tile gets a staggered entrance + an
+          icon (status circle) that animates between states. Clicking
+          opens the service URL in the user's default browser. */}
       <div className="grid grid-cols-2 gap-3">
-        {SERVICES.map((s) => {
+        {SERVICES.map((s, i) => {
           const url = `http://${ip}:${s.port}`
           const h = health[s.name] ?? 'unknown'
-          const dot =
-            h === 'ok' ? 'bg-emerald-400'
-            : h === 'fail' ? 'bg-rose-400'
-            : 'bg-slate-600'
+          const Icon = h === 'ok' ? CheckCircle2 : h === 'fail' ? XCircle : Circle
+          const iconColor =
+            h === 'ok' ? 'text-emerald-400'
+            : h === 'fail' ? 'text-rose-400'
+            : 'text-slate-600'
+          const ringColor =
+            h === 'ok' ? 'hover:border-emerald-600/40 hover:bg-emerald-950/20'
+            : h === 'fail' ? 'hover:border-rose-600/40 hover:bg-rose-950/20'
+            : 'hover:border-slate-600 hover:bg-slate-800/70'
           return (
-            <button
+            <motion.button
               key={s.name}
+              type="button"
               onClick={() => open(url)}
-              className="text-left p-3 bg-slate-800 hover:bg-slate-700 rounded-md border border-slate-700 flex items-center gap-3"
+              initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 + 0.025 * i, duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              whileHover={reduced ? {} : { y: -1 }}
+              whileTap={reduced ? {} : { scale: 0.985 }}
+              className={
+                `text-left p-3 bg-slate-800/40 rounded-lg border border-slate-700 ` +
+                `flex items-center gap-3 transition-colors ${ringColor}`
+              }
             >
-              <span className={`inline-block w-2.5 h-2.5 rounded-full ${dot}`} />
+              <Icon size={20} className={`shrink-0 ${iconColor}`} strokeWidth={2} />
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">
-                  {s.name}{' '}
-                  {s.note && <span className="text-emerald-400 text-xs ml-1">{s.note}</span>}
+                <div className="font-semibold truncate text-base flex items-center gap-2">
+                  {s.name}
+                  {s.note && (
+                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      {s.note}
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-slate-400 font-mono truncate">{url}</div>
               </div>
-            </button>
+              <ExternalLink size={14} className="text-slate-500 shrink-0" />
+            </motion.button>
           )
         })}
       </div>
@@ -265,12 +310,14 @@ export function DoneScreen() {
             </span>
           )}
         </div>
-        <button
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<RotateCcw size={14} />}
           onClick={reset}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Start over
-        </button>
+        </BigButton>
       </div>
     </div>
     </div>

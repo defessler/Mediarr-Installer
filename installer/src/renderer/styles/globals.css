@@ -2,14 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Fonts ──────────────────────────────────────────────────────────
+   Atkinson Hyperlegible (body) is designed for low-vision readers and
+   has the clearest letter-distinction of any free font — it solves
+   the b/d, p/q, 0/O ambiguity that confuses children just learning to
+   read. Lexend Deca (display) is optimised for reading fluency in
+   the cognitive-load research literature and looks modern without
+   being childish.
+
+   Both pulled from Google Fonts via the bundled subset to avoid a
+   network roundtrip on launch — fontsource bundles the woff2 inside
+   the Vite output. Falls back to system-ui if the font is missing.
+*/
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Lexend+Deca:wght@500;600;700&display=swap');
+
 html, body, #root {
   height: 100%;
 }
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* 16px base — research-backed minimum for children + accessibility.
+     Previous default (14px / text-sm) was too small for the target
+     audience. */
+  font-size: 16px;
+  font-family: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+/* Display headings — bigger, more confident character */
+h1, h2, h3 {
+  font-family: 'Lexend Deca', 'Atkinson Hyperlegible', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Single CSS variable for motion duration so every transition curve
+   in the app can be muted by one switch. JS callers should also check
+   `useReducedMotion()` from motion/react — but this catches anything
+   that uses plain CSS `transition:` properties. */
+:root {
+  --motion-duration: 220ms;
+  --motion-duration-fast: 120ms;
+  --motion-duration-slow: 400ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0.01ms;
+    --motion-duration-fast: 0.01ms;
+    --motion-duration-slow: 0.01ms;
+  }
+  /* Belt-and-braces: any CSS animation/transition not yet refactored
+     to use the variable still gets clamped. */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Streaming log panel — terminal aesthetic */
@@ -19,4 +70,20 @@ body {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Focus rings on every interactive element — child users / keyboard
+   users / screen-reader users all benefit. Tailwind utility classes
+   already cover focus-visible:ring-* per-component; this is the safety
+   net for anything that forgot. Limited to interactive roles so we
+   don't ring static divs. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: 2px solid #34d399; /* emerald-400 */
+  outline-offset: 2px;
 }
