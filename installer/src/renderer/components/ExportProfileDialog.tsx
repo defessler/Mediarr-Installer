@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Upload, Lock, X as XIcon, AlertCircle } from 'lucide-react'
 import { BigButton } from './BigButton.js'
+import { PasswordInput } from './PasswordInput.js'
 import { reportError } from '../store/errors.js'
 
 interface Props {
@@ -140,12 +141,11 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
             <Lock size={13} className="text-emerald-400" />
             Passphrase
           </label>
-          <input
-            type="password"
+          <PasswordInput
             autoFocus
             value={pass}
             onChange={(e) => setPass(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+            className="text-sm py-2"
             placeholder="At least 12 characters; mix letters, numbers, symbols"
           />
           <div className="flex items-center gap-2 mt-1.5">
@@ -172,12 +172,11 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
 
         <div className="space-y-1">
           <label className="block text-sm font-semibold">Confirm passphrase</label>
-          <input
-            type="password"
+          <PasswordInput
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') doExport() }}
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+            className="text-sm py-2"
             placeholder="Re-type to confirm (Enter to export)"
           />
           {confirm && !confirmsMatch && (

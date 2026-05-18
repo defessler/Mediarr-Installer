@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Download, X as XIcon, FileText, Lock, AlertCircle, ArrowLeft } from 'lucide-react'
 import { BigButton } from './BigButton.js'
+import { PasswordInput } from './PasswordInput.js'
 import { reportError } from '../store/errors.js'
 import type { ProfileExportEnvelope, SavedProfile } from '../../shared/ipc.js'
 
@@ -186,13 +187,12 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
                 <Lock size={13} className="text-emerald-400" />
                 Passphrase
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 autoFocus
                 value={pass}
                 onChange={(e) => { setPass(e.target.value); if (error) setError(null) }}
                 onKeyDown={(e) => { if (e.key === 'Enter') doImport() }}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                className="text-sm py-2"
                 placeholder="The passphrase used at export time"
               />
             </div>
