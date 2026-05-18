@@ -45,6 +45,12 @@ export function WelcomeScreen() {
    *  the secondary actions — Update / Migrate / Edit — so the primary
    *  Install action is the visually-dominant one on each row). */
   const [overflowOpenId, setOverflowOpenId] = useState<string | null>(null)
+  /** Which profile (if any) is awaiting in-place delete confirmation.
+   *  Inline confirm beats window.confirm() because it doesn't yank
+   *  focus out of the wizard, plays a Motion entrance, and gives the
+   *  user clearer label context — they see WHICH profile they're
+   *  about to delete, not a generic OS dialog. */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const reduced = useReducedMotion()
 
   async function refreshAppInfo() {
@@ -150,11 +156,11 @@ export function WelcomeScreen() {
     }
   }
 
-  async function deleteProfile(id: string, label: string) {
-    if (!window.confirm(`Delete profile "${label}"?`)) return
+  async function deleteProfile(id: string) {
     try {
       await window.installer.profiles.delete(id)
       clearRunResult(id)
+      setConfirmDeleteId(null)
       await refresh()
     } catch (e) {
       reportError('Delete profile', e)
@@ -354,14 +360,55 @@ export function WelcomeScreen() {
                           >
                             Export
                           </BigButton>
-                          <button
-                            onClick={() => deleteProfile(p.id, p.label)}
-                            disabled={busy !== null}
-                            className="col-span-2 sm:col-span-4 mt-1 inline-flex items-center justify-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 disabled:opacity-40 transition-colors"
-                          >
-                            <Trash2 size={12} />
-                            Delete this profile
-                          </button>
+                          <div className="col-span-2 sm:col-span-4 mt-1">
+                            <AnimatePresence mode="wait" initial={false}>
+                              {confirmDeleteId === p.id ? (
+                                <motion.div
+                                  key="confirm"
+                                  initial={reduced ? { opacity: 1 } : { opacity: 0, y: -4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                                  transition={{ duration: 0.14 }}
+                                  className="flex items-center justify-center gap-3 rounded-md border border-rose-700/40 bg-rose-950/30 px-3 py-2 text-xs"
+                                >
+                                  <span className="text-rose-200 inline-flex items-center gap-1.5">
+                                    <AlertTriangle size={12} />
+                                    Really delete <span className="font-medium text-rose-100 truncate max-w-[12em]">{p.label}</span>?
+                                  </span>
+                                  <BigButton
+                                    size="sm"
+                                    variant="danger"
+                                    icon={<Trash2 size={12} />}
+                                    disabled={busy !== null}
+                                    onClick={() => deleteProfile(p.id)}
+                                  >
+                                    Yes, delete
+                                  </BigButton>
+                                  <BigButton
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setConfirmDeleteId(null)}
+                                  >
+                                    Cancel
+                                  </BigButton>
+                                </motion.div>
+                              ) : (
+                                <motion.button
+                                  key="trigger"
+                                  onClick={() => setConfirmDeleteId(p.id)}
+                                  disabled={busy !== null}
+                                  initial={reduced ? { opacity: 1 } : { opacity: 0, y: 4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={reduced ? { opacity: 0 } : { opacity: 0, y: 4 }}
+                                  transition={{ duration: 0.14 }}
+                                  className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 disabled:opacity-40 transition-colors rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
+                                >
+                                  <Trash2 size={12} />
+                                  Delete this profile
+                                </motion.button>
+                              )}
+                            </AnimatePresence>
+                          </div>
                         </div>
                       </motion.div>
                     )}
