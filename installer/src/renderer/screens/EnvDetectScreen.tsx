@@ -548,9 +548,12 @@ export function EnvDetectScreen() {
             </div>
             {r.sudoMode === 'password' && (
               <p className="text-amber-200/80 mt-2">
-                You logged in as a non-root user. Phase 2 prompts for a sudo
-                password; in Phase 1 the cleanest path is to log in as
-                <span className="font-mono mx-1">root</span> instead.
+                You logged in as a non-root user. The cleanest path is to
+                log in as <span className="font-mono mx-1">root</span>
+                instead — DSM 7 disables root SSH by default but you can
+                re-enable it via Control Panel → User & Group → root →
+                Edit → set a password. (A sudo-password prompt path is
+                on the roadmap but not shipping today.)
               </p>
             )}
           </section>
