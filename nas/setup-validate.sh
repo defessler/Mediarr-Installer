@@ -214,7 +214,20 @@ done
 
 section "Firewall"
 
+# Root-required: iptables -L always needs CAP_NET_ADMIN. Detect non-root
+# invocation and skip the firewall section with a clear hint, rather
+# than reporting every port as failed (the silent failure mode is
+# misleading — looks like the firewall rules are missing when really
+# we just couldn't read them).
+if [ "$(id -u)" -ne 0 ]; then
+    warn "Skipping firewall checks — re-run with sudo to inspect iptables rules."
+    SKIP_FIREWALL=1
+else
+    SKIP_FIREWALL=0
+fi
+
 check_port() {
+    [ "$SKIP_FIREWALL" -eq 1 ] && return 0
     local port="$1"
     local label="$2"
     if iptables -L INPUT -n 2>/dev/null | grep -q "dpt:$port"; then
@@ -263,9 +276,29 @@ else
 fi
 
 if docker compose version &>/dev/null 2>&1; then
-    ok "docker compose (v2) is available"
+    # Parse Compose version. v2.20+ is needed for the `!reset` tag in
+    # docker-compose.no-vpn.yml (drops the depends_on chain from the
+    # base file when VPN is off). Older Compose silently ignores
+    # `!reset` and qBittorrent ends up waiting for a gluetun container
+    # that's not in the active profile — install hangs at step 6.
+    COMPOSE_VERSION=$(docker compose version --short 2>/dev/null || \
+                      docker compose version 2>/dev/null | sed -n 's/.*v\([0-9.]*\).*/\1/p' | head -1)
+    if [ -n "$COMPOSE_VERSION" ]; then
+        MAJOR=$(echo "$COMPOSE_VERSION" | cut -d. -f1)
+        MINOR=$(echo "$COMPOSE_VERSION" | cut -d. -f2)
+        if [ "$MAJOR" -gt 2 ] || { [ "$MAJOR" -eq 2 ] && [ "$MINOR" -ge 20 ]; }; then
+            ok "docker compose v$COMPOSE_VERSION (supports !reset YAML tag)"
+        else
+            warn "docker compose v$COMPOSE_VERSION — pre-v2.20 doesn't support the !reset tag in"
+            warn "  docker-compose.no-vpn.yml. VPN-off installs may hang at step 6."
+            warn "  Upgrade Docker via Synology Package Center → Container Manager → Update."
+        fi
+    else
+        ok "docker compose (v2) is available (couldn't parse exact version)"
+    fi
 elif command -v docker-compose &>/dev/null; then
-    ok "docker-compose (v1) is available — consider upgrading to Docker Compose v2"
+    warn "docker-compose (v1) only — upgrade to Docker Compose v2.20+ for full feature support"
+    warn "  (the no-vpn override file uses v2.20 syntax)"
 else
     fail "Neither 'docker compose' nor 'docker-compose' is installed"
 fi
