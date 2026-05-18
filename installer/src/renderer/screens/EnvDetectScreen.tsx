@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { Radar, AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react'
+import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import type { EnvDetectResult } from '../../shared/ipc.js'
 import { type EnvFormValues, isEnabled } from '../../shared/env-render.js'
@@ -200,22 +203,61 @@ export function EnvDetectScreen() {
     !!r.python3 &&
     !!r.iptables
 
+  const reduced = useReducedMotion()
   return (
     <div className="h-full flex flex-col">
     <div className="flex-1 min-h-0 overflow-y-auto">
-    <div className="max-w-2xl mx-auto p-8 space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Probing your NAS</h1>
-        <p className="text-slate-400 mt-1 text-sm">
-          Auto-detecting Docker, Python, your user IDs, timezone, and LAN
-          interfaces so we can pre-fill the next screen.
-        </p>
-      </header>
-
-      {status === 'failed' && (
-        <div className="bg-rose-900/40 text-rose-200 rounded-md p-3 text-sm">
-          Detection failed: {error}
+    <div className="max-w-2xl mx-auto px-8 py-10 space-y-7">
+      <motion.header
+        initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="text-center"
+      >
+        {/* Radar icon doubles as a "scanning" indicator while detection
+            is in flight (spinning slowly), and a static "we scanned"
+            icon once results land. */}
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500/20 to-sky-700/30 border border-sky-500/30 mb-4">
+          {/* Slow continuous rotation while scanning — Motion's animate
+              prop with infinite repeat handles the 4s loop without
+              needing a custom Tailwind keyframe. Stops to a static
+              radar icon once results land. */}
+          <motion.div
+            animate={status === 'detecting' && !reduced ? { rotate: 360 } : { rotate: 0 }}
+            transition={
+              status === 'detecting' && !reduced
+                ? { duration: 4, repeat: Infinity, ease: 'linear' }
+                : { duration: 0.3 }
+            }
+          >
+            <Radar size={32} className="text-sky-300" strokeWidth={1.5} />
+          </motion.div>
         </div>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {status === 'detecting' ? 'Scanning your NAS…' : status === 'failed' ? 'Scan trouble' : 'Scan complete'}
+        </h1>
+        <p className="text-slate-400 mt-2 text-base max-w-lg mx-auto">
+          {status === 'detecting'
+            ? "We're looking up Docker, your user IDs, timezone, and network — to pre-fill the next screen."
+            : status === 'failed'
+              ? "Couldn't reach the NAS to scan it. The details below tell you what's missing."
+              : 'Everything we found is below — review it, then continue.'}
+        </p>
+      </motion.header>
+
+      {status === 'failed' && error && (
+        <motion.div
+          initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22 }}
+          className="bg-rose-950/40 border border-rose-700/50 text-rose-100 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
+        >
+          <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-semibold">Detection failed</div>
+            <div className="text-rose-200/80 text-xs mt-0.5 font-mono whitespace-pre-wrap">{error}</div>
+          </div>
+        </motion.div>
       )}
 
       {r && (
@@ -814,15 +856,17 @@ git clone https://github.com/telnetdoogie/synology-docker.git
         always advance regardless of how far they've scrolled. */}
     <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
       <div className="max-w-2xl mx-auto flex items-center gap-3">
-        <button
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<ArrowLeft size={16} />}
           onClick={() => setStep('connect')}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Back
-        </button>
+        </BigButton>
         <div className="flex-1 text-sm text-center">
           {status === 'detecting' && (
-            <span className="text-slate-400">Running checks over SSH...</span>
+            <span className="text-slate-400">Running checks over SSH…</span>
           )}
           {status === 'failed' && (
             <span className="text-rose-300">✘ Detection failed — see details above</span>
@@ -832,13 +876,16 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           )}
           {status === 'ok' && !allBlocking && (
             <span className="text-amber-300">
-              Required checks failed — fix the red items above to continue
+              Fix the red items above to continue
             </span>
           )}
         </div>
-        <button
-          onClick={() => setStep('configure')}
+        <BigButton
+          size="md"
+          variant="primary"
+          trailingIcon={<ArrowRight size={16} />}
           disabled={!allBlocking}
+          onClick={() => setStep('configure')}
           title={
             status === 'detecting'
               ? 'Wait for environment checks to finish'
@@ -848,10 +895,9 @@ git clone https://github.com/telnetdoogie/synology-docker.git
                   ? 'One or more required checks failed — install would not succeed'
                   : 'Advance to the configure screen'
           }
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 text-sm"
         >
           Continue
-        </button>
+        </BigButton>
       </div>
     </div>
     </div>

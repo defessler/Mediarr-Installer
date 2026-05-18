@@ -1,4 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { Settings2, ArrowLeft, ArrowRight } from 'lucide-react'
+import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
 import {
@@ -18,6 +21,30 @@ import type { Country } from '../../shared/ipc.js'
 import { IndexerCard } from '../components/IndexerCard.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
 import { reportError } from '../store/errors.js'
+
+/** Centered hero header for the Configure screen. Defined at module
+ *  scope so it doesn't re-mount per keystroke (same lesson the comment
+ *  below records about co-located components). */
+function ConfigureHeader() {
+  const reduced = useReducedMotion()
+  return (
+    <motion.header
+      initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      className="text-center"
+    >
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4">
+        <Settings2 size={32} className="text-emerald-300" strokeWidth={1.5} />
+      </div>
+      <h1 className="text-3xl font-bold tracking-tight">Make it yours</h1>
+      <p className="text-slate-400 mt-2 text-base max-w-lg mx-auto">
+        We pre-filled what we could from the scan. Review the values below
+        — change anything that doesn't look right, then hit Continue.
+      </p>
+    </motion.header>
+  )
+}
 
 // React component identity matters: a component defined inside a parent
 // function render gets a new reference every render, which React treats
@@ -637,14 +664,9 @@ export function ConfigureScreen() {
     <ConfigCtx.Provider value={{ config, update }}>
     <div className="h-full flex flex-col">
     <div className="flex-1 min-h-0 overflow-y-auto">
-    <div className="max-w-3xl mx-auto p-8 space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold">Configure the stack</h1>
-        <p className="text-slate-400 mt-1 text-sm">
-          These values populate the <code className="bg-slate-800 px-1 rounded">.env</code> file
-          uploaded to your NAS. Defaults are sensible — review and adjust.
-        </p>
-      </header>
+    <div className="max-w-3xl mx-auto px-8 py-10 space-y-8">
+      <ConfigureHeader />
+
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Install location</h2>
@@ -961,27 +983,33 @@ export function ConfigureScreen() {
         form. */}
     <div className="border-t border-slate-800 bg-slate-950 px-8 py-3 shrink-0">
       <div className="max-w-3xl mx-auto flex items-center gap-3">
-        <button
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<ArrowLeft size={16} />}
           onClick={() => useWizard.getState().setStep('detect')}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
         >
           Back
-        </button>
+        </BigButton>
         <div className="flex-1 text-sm text-center">
           {errors.length > 0 ? (
             <span className="text-rose-300">
-              ✘ {errors.length} {errors.length === 1 ? 'issue' : 'issues'} above to fix
+              ✘ {errors.length} {errors.length === 1 ? 'thing to fix' : 'things to fix'} above
             </span>
           ) : (
             <span className="text-emerald-300">✓ Ready to install</span>
           )}
         </div>
-        <button
+        <BigButton
+          size="md"
+          variant="primary"
+          trailingIcon={<ArrowRight size={16} />}
+          disabled={errors.length > 0}
           onClick={go}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm"
+          title={errors.length > 0 ? 'Fix the issues above first' : 'Move to the install step'}
         >
-          Begin install →
-        </button>
+          Continue
+        </BigButton>
       </div>
     </div>
     </div>
