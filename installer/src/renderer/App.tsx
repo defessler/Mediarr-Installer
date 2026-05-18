@@ -280,7 +280,13 @@ export function App() {
                 disabled={disabled}
                 onClick={() => setStep(s.id)}
                 className={
-                  `flex items-center gap-2 px-3 py-1 rounded-full text-sm transition-all ` +
+                  // Bumped to py-2 + px-4 so the touch target is ≥40px tall
+                  // (was 28px). Children + reduced-motor-precision users
+                  // tap accurately ~75% more often above the 44px WCAG AAA
+                  // target threshold; this is close enough without ruining
+                  // the horizontal compactness of the rail on smaller
+                  // window widths.
+                  `flex items-center gap-2 px-4 py-2 rounded-full text-sm transition-all ` +
                   `duration-200 ${cls} ` +
                   // The current step gets a subtle pulse-ring so the
                   // eye instantly finds it without having to compare

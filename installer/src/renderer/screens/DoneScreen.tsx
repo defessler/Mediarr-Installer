@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
+import confetti from 'canvas-confetti'
 import { ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
@@ -128,6 +129,37 @@ export function DoneScreen() {
 
   const reduced = useReducedMotion()
   const installSucceeded = exit === 0 || (failCount === 0 && okCount > 0)
+
+  // Single confetti burst when the user lands here with the install
+  // succeeded. Reward moment — emotionally distinct from "yep, looks
+  // ok" toast. Suppressed in reduced-motion (vestibular sensitivity).
+  // Tracked in a ref so re-renders / re-runs of validate don't fire
+  // it again — once per Done screen mount, max.
+  const firedConfettiRef = useRef(false)
+  useEffect(() => {
+    if (firedConfettiRef.current) return
+    if (!installSucceeded) return
+    if (reduced) return
+    firedConfettiRef.current = true
+    // Small delay so the hero animation can lead before confetti.
+    const t = setTimeout(() => {
+      // Two cones aimed up + slightly outward from the page center.
+      // 80 particles total, gravity-pulled, fall in ~3s. Tuned to feel
+      // celebratory without being annoying on re-mount.
+      const opts = {
+        particleCount: 40,
+        spread: 60,
+        startVelocity: 35,
+        scalar: 0.9,
+        gravity: 0.9,
+        ticks: 200,
+        colors: ['#34d399', '#10b981', '#6ee7b7', '#fbbf24', '#a7f3d0'],
+      }
+      confetti({ ...opts, origin: { x: 0.3, y: 0.6 }, angle: 70 })
+      confetti({ ...opts, origin: { x: 0.7, y: 0.6 }, angle: 110 })
+    }, 350)
+    return () => clearTimeout(t)
+  }, [installSucceeded, reduced])
 
   return (
     <div className="h-full flex flex-col">

@@ -17,6 +17,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "canvas-confetti": "^1.9.4",
     "electron-log": "^5.2.0",
     "lucide-react": "^1.16.0",
     "motion": "^12.39.0",
