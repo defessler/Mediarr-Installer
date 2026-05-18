@@ -97,7 +97,7 @@ function Field({ label, k, type = 'text', placeholder }: {
       <label className="block text-sm font-medium mb-1">{label}</label>
       <input
         type={type} placeholder={placeholder}
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
         value={(config[k] as string | undefined) ?? ''}
         onChange={(e) => update(k, e.target.value || undefined)}
       />
@@ -297,7 +297,7 @@ function TrashProfilesSection({
           <div>
             <label className="block text-sm font-medium mb-1">Sonarr profile</label>
             <select
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={sonarrValue}
               onChange={(e) => update('TRASH_SONARR_PROFILE', e.target.value)}
             >
@@ -314,7 +314,7 @@ function TrashProfilesSection({
           <div>
             <label className="block text-sm font-medium mb-1">Radarr profile</label>
             <select
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={radarrValue}
               onChange={(e) => update('TRASH_RADARR_PROFILE', e.target.value)}
             >
@@ -381,7 +381,7 @@ function VpnFieldInput({ field, value, onChange }: {
   return (
     <input
       type={field.type === 'password' ? 'password' : 'text'}
-      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
       value={value}
       placeholder={field.placeholder}
       onChange={(e) => onChange(e.target.value)}
@@ -510,7 +510,7 @@ function VpnSection({
                 <input
                   type="password"
                   placeholder="Paste your provider access token"
-                  className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                  className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                   value={vpnToken} onChange={(e) => setVpnToken(e.target.value)}
                 />
                 <button
@@ -768,7 +768,7 @@ export function ConfigureScreen() {
             <div>
               <label className="block text-xs text-slate-400 mb-1">User</label>
               <select
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 value={config.PUID ?? ''}
                 onChange={(e) => selectContainerUser(e.target.value)}
               >
@@ -790,7 +790,7 @@ export function ConfigureScreen() {
             <div>
               <label className="block text-xs text-slate-400 mb-1">Group</label>
               <select
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 value={config.PGID ?? ''}
                 onChange={(e) => selectContainerGroup(e.target.value)}
               >
@@ -960,7 +960,7 @@ export function ConfigureScreen() {
               <div>
                 <label className="block text-sm font-medium mb-1">SSL</label>
                 <select
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                   value={config.USENET_SSL ?? '1'}
                   onChange={(e) => update('USENET_SSL', e.target.value)}
                 >

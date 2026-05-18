@@ -386,28 +386,28 @@ export function MigrateScreen() {
             type="text" placeholder="http://old-nas:8989"
             value={sourceSonarrUrl}
             onChange={(e) => setMigrate({ sourceSonarrUrl: e.target.value.trim() })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
           <label>Source Sonarr API key</label>
           <input
             type="password"
             value={sourceSonarrKey}
             onChange={(e) => setMigrate({ sourceSonarrKey: e.target.value.trim() })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
           <label>Source Radarr URL</label>
           <input
             type="text" placeholder="http://old-nas:7878"
             value={sourceRadarrUrl}
             onChange={(e) => setMigrate({ sourceRadarrUrl: e.target.value.trim() })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
           <label>Source Radarr API key</label>
           <input
             type="password"
             value={sourceRadarrKey}
             onChange={(e) => setMigrate({ sourceRadarrKey: e.target.value.trim() })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
         </div>
 
@@ -479,7 +479,7 @@ export function MigrateScreen() {
                   placeholder={autoSonarrUrl || 'http://nas:49152'}
                   value={migrate.destSonarrUrl ?? ''}
                   onChange={(e) => setMigrate({ destSonarrUrl: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
                 <label>Dest Sonarr API key</label>
                 <input
@@ -487,7 +487,7 @@ export function MigrateScreen() {
                   placeholder={localKeys.sonarr ? '(from .env)' : 'paste API key'}
                   value={migrate.destSonarrKey ?? ''}
                   onChange={(e) => setMigrate({ destSonarrKey: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
               </>)}
               {fetched.radarr && (<>
@@ -497,7 +497,7 @@ export function MigrateScreen() {
                   placeholder={autoRadarrUrl || 'http://nas:49151'}
                   value={migrate.destRadarrUrl ?? ''}
                   onChange={(e) => setMigrate({ destRadarrUrl: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
                 <label>Dest Radarr API key</label>
                 <input
@@ -505,7 +505,7 @@ export function MigrateScreen() {
                   placeholder={localKeys.radarr ? '(from .env)' : 'paste API key'}
                   value={migrate.destRadarrKey ?? ''}
                   onChange={(e) => setMigrate({ destRadarrKey: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
               </>)}
             </div>
@@ -642,21 +642,21 @@ export function MigrateScreen() {
             type="text" placeholder="http://old-nas:49156"
             value={sourceQbitUrl}
             onChange={(e) => setMigrate({ sourceQbitUrl: e.target.value.trim().replace(/\/$/, '') })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
           <label>Username</label>
           <input
             type="text"
             value={sourceQbitUser}
             onChange={(e) => setMigrate({ sourceQbitUser: e.target.value.trim() })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
           <label>Password</label>
           <input
             type="password"
             value={sourceQbitPass}
             onChange={(e) => setMigrate({ sourceQbitPass: e.target.value })}
-            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono"
+            className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
         </div>
 
@@ -719,14 +719,14 @@ export function MigrateScreen() {
                   type="text" placeholder="/downloads"
                   value={qbitRemapFrom}
                   onChange={(e) => setMigrate({ qbitRemapFrom: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
                 <label>Destination prefix</label>
                 <input
                   type="text" placeholder="/data/Downloads/Torrents"
                   value={qbitRemapTo}
                   onChange={(e) => setMigrate({ qbitRemapTo: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
               </div>
               {qbitRemapFrom && (
@@ -762,7 +762,7 @@ export function MigrateScreen() {
                   placeholder={autoQbitUrl || 'http://nas:49156'}
                   value={migrate.destQbitUrl ?? ''}
                   onChange={(e) => setMigrate({ destQbitUrl: e.target.value.trim().replace(/\/$/, '') })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
                 <label>Dest username</label>
                 <input
@@ -770,7 +770,7 @@ export function MigrateScreen() {
                   placeholder={localKeys.qbitUser ? '(from .env)' : 'admin'}
                   value={migrate.destQbitUser ?? ''}
                   onChange={(e) => setMigrate({ destQbitUser: e.target.value.trim() })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
                 <label>Dest password</label>
                 <input
@@ -778,7 +778,7 @@ export function MigrateScreen() {
                   placeholder={localKeys.qbitPass ? '(from .env)' : 'paste qBit WebUI password'}
                   value={migrate.destQbitPass ?? ''}
                   onChange={(e) => setMigrate({ destQbitPass: e.target.value })}
-                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+                  className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
               </div>
             </div>
