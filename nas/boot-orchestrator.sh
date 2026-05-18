@@ -47,6 +47,20 @@ cd "$SCRIPT_DIR"
 LOG="$SCRIPT_DIR/boot-orchestrator.log"
 log() { echo "[$(date -Is)] $*" | tee -a "$LOG"; }
 
+# Mutex — Task Scheduler can occasionally fire the boot-up trigger
+# twice on DSM, and a user might manually re-run while the original
+# is still in flight. Two parallel `compose up -d` aren't strictly
+# unsafe but race on the same docker-cli locks and produce confusing
+# interleaved logs. Non-blocking lock: second invocation exits clean.
+LOCK_FILE="$SCRIPT_DIR/.boot-orchestrator.lock"
+if command -v flock >/dev/null 2>&1; then
+    exec 200>"$LOCK_FILE"
+    if ! flock -n 200; then
+        log "boot-orchestrator already running (lock $LOCK_FILE held) — exiting"
+        exit 0
+    fi
+fi
+
 log "════ boot-orchestrator starting ════"
 
 if [ ! -f .env ]; then
