@@ -22,6 +22,7 @@
 import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { X as XIcon, XCircle, AlertTriangle, Info } from 'lucide-react'
+import { BigButton } from './BigButton.js'
 
 export type Issue = {
   severity: 'fail' | 'warn' | 'note'
@@ -110,12 +111,9 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
         <TabbedBody fails={fails} actions={actions} startTab={startTab} />
 
         <footer className="px-5 py-3 border-t border-slate-800 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm font-medium transition-colors"
-          >
+          <BigButton size="md" variant="secondary" onClick={onClose}>
             Close
-          </button>
+          </BigButton>
         </footer>
       </motion.div>
     </motion.div>
@@ -140,14 +138,18 @@ function TabbedBody({
           active={tab === 'fail'}
           onClick={() => setTab('fail')}
           disabled={fails.length === 0}
-          label={`Failed${fails.length > 0 ? ` · ${fails.length}` : ''}`}
+          icon={<XCircle size={13} />}
+          label="Failed"
+          count={fails.length}
           accent="rose"
         />
         <TabButton
           active={tab === 'action'}
           onClick={() => setTab('action')}
           disabled={actions.length === 0}
-          label={`Needs action${actions.length > 0 ? ` · ${actions.length}` : ''}`}
+          icon={<AlertTriangle size={13} />}
+          label="Needs action"
+          count={actions.length}
           accent="amber"
         />
       </div>
@@ -184,30 +186,45 @@ function TabbedBody({
 }
 
 function TabButton({
-  active, onClick, disabled, label, accent,
+  active, onClick, disabled, icon, label, count, accent,
 }: {
   active: boolean
   onClick: () => void
   disabled: boolean
+  icon: React.ReactNode
   label: string
+  count: number
   accent: 'rose' | 'amber'
 }) {
   // Compose class strings explicitly so Tailwind's purge picks them up
   // — dynamic class names like `bg-${accent}-900/30` get stripped at
   // build time and silently break the styling. Verbose but reliable.
-  let cls = 'px-3 py-1.5 text-sm rounded-t-md border-b-2 transition-colors '
+  let cls = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-t-md border-b-2 transition-colors focus:outline-none focus-visible:ring-2 '
   if (disabled) {
     cls += 'border-transparent text-slate-600 cursor-not-allowed'
   } else if (active) {
     cls += accent === 'rose'
-      ? 'border-rose-500 text-rose-200'
-      : 'border-amber-500 text-amber-200'
+      ? 'border-rose-500 text-rose-200 focus-visible:ring-rose-400/50'
+      : 'border-amber-500 text-amber-200 focus-visible:ring-amber-400/50'
   } else {
-    cls += 'border-transparent text-slate-400 hover:text-slate-200'
+    cls += 'border-transparent text-slate-400 hover:text-slate-200 focus-visible:ring-slate-400/50'
   }
   return (
     <button onClick={onClick} disabled={disabled} className={cls}>
-      {label}
+      {icon}
+      <span>{label}</span>
+      {count > 0 && (
+        <span
+          className={
+            'inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 text-[10px] font-semibold rounded-full ' +
+            (active
+              ? (accent === 'rose' ? 'bg-rose-500/20 text-rose-100' : 'bg-amber-500/20 text-amber-100')
+              : 'bg-slate-800 text-slate-300')
+          }
+        >
+          {count}
+        </span>
+      )}
     </button>
   )
 }
