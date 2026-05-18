@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import confetti from 'canvas-confetti'
-import { ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw } from 'lucide-react'
+import {
+  ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
+  FileText, ChevronDown,
+} from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
 import { LogActions } from '../components/LogActions.js'
@@ -247,11 +250,17 @@ export function DoneScreen() {
         })}
       </div>
 
-      <details className="rounded-md border border-slate-800">
-        <summary className="cursor-pointer p-3 text-sm font-medium flex items-center justify-between">
-          <span>
-            Validation log {exit !== null && (
-              <span className={`ml-2 text-xs ${exit === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+      <details className="rounded-md border border-slate-800 group">
+        <summary className="cursor-pointer p-3 text-sm font-medium flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden hover:bg-slate-800/40 transition-colors rounded-t-md">
+          <span className="inline-flex items-center gap-2">
+            <ChevronDown
+              size={14}
+              className="text-slate-500 transition-transform group-open:rotate-180"
+            />
+            <FileText size={14} className="text-slate-400" strokeWidth={1.75} />
+            Validation log
+            {exit !== null && (
+              <span className={`ml-1 text-xs ${exit === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
                 (exit {exit})
               </span>
             )}
@@ -331,14 +340,21 @@ export function DoneScreen() {
         </div>
         <div className="flex-1 text-sm text-center">
           {healthEntries.length === 0 ? (
-            <span className="text-slate-500">Validation pending</span>
+            <span className="text-slate-500 inline-flex items-center gap-1.5">
+              <Circle size={12} className="text-slate-600" />
+              Validation pending
+            </span>
           ) : failCount === 0 ? (
-            <span className="text-emerald-300">
-              ✓ All {okCount} services reachable
+            <span className="text-emerald-300 inline-flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              All {okCount} services reachable
             </span>
           ) : (
-            <span className="text-amber-300">
-              ✓ {okCount} reachable, ✘ {failCount} not — see grid above
+            <span className="text-amber-300 inline-flex items-center gap-1.5">
+              <CheckCircle2 size={14} className="text-emerald-400" />
+              {okCount} reachable,
+              <XCircle size={14} className="text-rose-400" />
+              {failCount} not — see grid above
             </span>
           )}
         </div>
