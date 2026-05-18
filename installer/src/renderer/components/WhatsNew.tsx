@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Sparkles, Download, ExternalLink } from 'lucide-react'
+import { Sparkles, Download, ExternalLink, ChevronDown, FileText } from 'lucide-react'
 import type { AppInfo } from '../../shared/ipc.js'
 import { useErrors, reportError } from '../store/errors.js'
+import { BigButton } from './BigButton.js'
 
 interface Props {
   info: AppInfo
@@ -202,40 +203,44 @@ export function WhatsNew({ info, onChanged }: Props) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {u.zipUrl && (
-            <button
-              type="button"
+            <BigButton
+              size="sm"
+              variant="primary"
+              icon={busy === 'download' ? undefined : <Download size={12} />}
               onClick={download}
               disabled={busy !== null}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md disabled:opacity-40 font-medium transition-colors"
+              loading={busy === 'download'}
               title="Download the win-unpacked zip to your Downloads folder"
             >
-              <Download size={14} />
               {busy === 'download' ? 'Downloading…' : 'Download'}
-            </button>
+            </BigButton>
           )}
           <a
             href={u.url}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-md transition-colors"
+            className="inline-flex items-center gap-1 h-7 px-2 text-xs bg-slate-700 hover:bg-slate-600 rounded-md transition-colors text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             title="Open the release page on GitHub"
           >
-            Release page <ExternalLink size={12} />
+            Release page <ExternalLink size={11} />
           </a>
-          <button
-            type="button"
+          <BigButton
+            size="sm"
+            variant="ghost"
             onClick={skip}
             disabled={busy !== null}
-            className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-colors"
+            loading={busy === 'skip'}
             title={`Don't remind me about v${u.latest} again`}
           >
             Skip
-          </button>
+          </BigButton>
         </div>
       </div>
 
-      <details className="rounded-md bg-slate-900/40 text-sm">
-        <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors">
+      <details className="rounded-md bg-slate-900/40 text-sm group">
+        <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+          <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180 shrink-0" />
+          <FileText size={14} className="text-slate-500 shrink-0" />
           What's new in v{u.latest}
         </summary>
         <div className="px-3 pb-3 pt-1 space-y-1 text-sm">
