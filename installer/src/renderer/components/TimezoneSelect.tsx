@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { Globe, Search, Sparkles, MonitorSmartphone } from 'lucide-react'
 
 interface Props {
   value: string
@@ -112,34 +114,42 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return null }
   }, [])
 
+  const reduced = useReducedMotion()
   return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium">
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 text-sm font-semibold">
+        <Globe size={14} className="text-emerald-400" />
         Timezone
-        <span className="text-slate-500 text-xs ml-2">
-          (the NAS&apos;s local time — used by Plex schedules, log timestamps, etc.)
+        <span className="text-slate-500 text-xs font-normal">
+          · used for Plex schedules, log timestamps, etc.
         </span>
       </label>
 
       {/* Currently-selected indicator + clear shows what's picked */}
       {selectedInfo ? (
-        <div className="rounded-md border border-emerald-700/40 bg-emerald-900/10 px-3 py-2 text-sm flex items-center justify-between gap-3">
+        <motion.div
+          key={selectedInfo.zone}
+          initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+          className="rounded-md border border-emerald-700/40 bg-emerald-900/10 px-3 py-2 text-sm flex items-center justify-between gap-3"
+        >
           <span className="truncate">
-            <span className="text-slate-100">{selectedInfo.city}</span>
+            <span className="text-slate-100 font-medium">{selectedInfo.city}</span>
             <span className="text-slate-400 text-xs ml-2">
               {selectedInfo.region}{selectedInfo.offset ? ` · ${selectedInfo.offset}` : ''}
               {selectedInfo.longName ? ` · ${selectedInfo.longName}` : ''}
-              {' · '}{formatTimeIn(selectedInfo.zone, now)}
+              {' · '}<span className="font-mono tabular-nums">{formatTimeIn(selectedInfo.zone, now)}</span>
             </span>
           </span>
           <button
             type="button"
             onClick={() => onChange('')}
-            className="text-xs text-slate-400 hover:text-slate-200 shrink-0"
+            className="text-xs text-slate-400 hover:text-slate-200 shrink-0 transition-colors"
           >
             Clear
           </button>
-        </div>
+        </motion.div>
       ) : value ? (
         <div className="rounded-md border border-rose-600 bg-rose-900/20 px-3 py-2 text-sm">
           <span className="font-mono text-rose-300">{value}</span> isn&apos;t a recognised IANA timezone.
@@ -150,37 +160,44 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
         </div>
       )}
 
-      {/* Always-visible search input. No trigger-button-then-input pattern
-          because that broke focus on some setups (the input wouldn't
-          receive keystrokes even though it was visually focused). */}
-      <input
-        ref={inputRef}
-        type="text"
-        placeholder="Search city, region, or zone (e.g. 'eastern', 'tokyo', 'gmt-8')"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
+      {/* Search input with leading icon. */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Search city, region, or zone (e.g. 'eastern', 'tokyo', 'gmt-8')"
+          className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      </div>
 
-      {/* Quick-set chips */}
-      <div className="flex flex-wrap gap-1.5 text-xs">
+      {/* Quick-set chips — hover lift via Motion. */}
+      <div className="flex flex-wrap gap-2 text-xs">
         {detectedTz && detectedTz !== value && zones.includes(detectedTz) && (
-          <button
+          <motion.button
             type="button"
             onClick={() => onChange(detectedTz)}
-            className="px-2 py-0.5 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-200 rounded font-mono"
+            whileHover={reduced ? {} : { y: -1 }}
+            whileTap={reduced ? {} : { scale: 0.97 }}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-200 rounded transition-colors"
           >
-            Use NAS&apos;s timezone: {detectedTz}
-          </button>
+            <Sparkles size={12} />
+            <span>Use NAS's tz: <span className="font-mono">{detectedTz}</span></span>
+          </motion.button>
         )}
         {browserTz && browserTz !== value && browserTz !== detectedTz && zones.includes(browserTz) && (
-          <button
+          <motion.button
             type="button"
             onClick={() => onChange(browserTz)}
-            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-mono"
+            whileHover={reduced ? {} : { y: -1 }}
+            whileTap={reduced ? {} : { scale: 0.97 }}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
           >
-            Use this PC&apos;s timezone: {browserTz}
-          </button>
+            <MonitorSmartphone size={12} />
+            <span>Use this PC's tz: <span className="font-mono">{browserTz}</span></span>
+          </motion.button>
         )}
       </div>
 
