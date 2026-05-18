@@ -6,6 +6,7 @@ import {
   Newspaper, ListChecks, Users, Captions,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
+import { PasswordInput } from '../components/PasswordInput.js'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
 import {
@@ -73,6 +74,24 @@ function Field({ label, k, type = 'text', placeholder }: {
   const ctx = useContext(ConfigCtx)
   if (!ctx) return null
   const { config, update } = ctx
+  // Password fields get the show/hide eye toggle via PasswordInput —
+  // typing a credential into a field of black dots is exactly the kind
+  // of "did I get that right?" friction we want to remove from the
+  // Configure step, especially for kids working through this with a
+  // parent looking over their shoulder.
+  if (type === 'password') {
+    return (
+      <div>
+        <label className="block text-sm font-medium mb-1">{label}</label>
+        <PasswordInput
+          placeholder={placeholder}
+          className="py-2"
+          value={(config[k] as string | undefined) ?? ''}
+          onChange={(e) => update(k, e.target.value || undefined)}
+        />
+      </div>
+    )
+  }
   return (
     <div>
       <label className="block text-sm font-medium mb-1">{label}</label>

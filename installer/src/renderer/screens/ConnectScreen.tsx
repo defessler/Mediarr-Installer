@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2, Lock, KeyRound } from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
+import { PasswordInput } from '../components/PasswordInput.js'
 import type { ConnectResult } from '../../shared/ipc.js'
 
 export function ConnectScreen() {
@@ -226,10 +227,10 @@ export function ConnectScreen() {
           })}
         </div>
         {connection.authMethod === 'password' ? (
-          <input
-            type="password" placeholder="SSH password"
-            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-            value={password} onChange={(e) => setPassword(e.target.value)}
+          <PasswordInput
+            placeholder="SSH password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
         ) : (
           <div className="space-y-2">
@@ -239,10 +240,10 @@ export function ConnectScreen() {
               value={connection.privateKeyPath ?? ''}
               onChange={(e) => setConnection({ privateKeyPath: e.target.value })}
             />
-            <input
-              type="password" placeholder="Passphrase (if encrypted)"
-              className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-              value={passphrase} onChange={(e) => setPassphrase(e.target.value)}
+            <PasswordInput
+              placeholder="Passphrase (if encrypted)"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
             />
           </div>
         )}
@@ -260,13 +261,12 @@ export function ConnectScreen() {
               ({connection.user} is not root — needed for firewall + chmod steps)
             </span>
           </label>
-          <input
-            type="password"
+          <PasswordInput
             placeholder={connection.authMethod === 'password'
               ? 'Leave blank to reuse the SSH password'
               : 'Required for non-root key auth'}
-            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-            value={sudoPassword} onChange={(e) => setSudoPassword(e.target.value)}
+            value={sudoPassword}
+            onChange={(e) => setSudoPassword(e.target.value)}
           />
           <p className="text-xs text-slate-400">
             Stored in memory only — never written to disk or saved to your
