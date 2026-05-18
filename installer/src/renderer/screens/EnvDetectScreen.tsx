@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Radar, AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react'
+import { Radar, AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import type { EnvDetectResult } from '../../shared/ipc.js'
@@ -180,12 +180,11 @@ export function EnvDetectScreen() {
 
   const Check = ({ ok, label, value }: { ok: boolean; label: string; value?: string | null }) => (
     <div className="flex items-center gap-3 py-1.5">
-      <span
-        className={
-          'inline-block w-2.5 h-2.5 rounded-full ' +
-          (ok ? 'bg-emerald-400' : 'bg-rose-400')
-        }
-      />
+      {ok ? (
+        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" strokeWidth={2} />
+      ) : (
+        <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} />
+      )}
       <span className="text-sm">{label}</span>
       {value !== undefined && (
         <span className="ml-auto text-sm font-mono text-slate-400">{value ?? '-'}</span>
@@ -578,12 +577,11 @@ export function EnvDetectScreen() {
 
           <section className="rounded-md border border-slate-800 p-4 text-sm">
             <div className="flex items-center gap-3">
-              <span
-                className={
-                  'inline-block w-2.5 h-2.5 rounded-full ' +
-                  (r.sudoMode === 'root' || r.sudoMode === 'nopasswd' ? 'bg-emerald-400' : 'bg-amber-400')
-                }
-              />
+              {r.sudoMode === 'root' || r.sudoMode === 'nopasswd' ? (
+                <CheckCircle2 size={16} className="text-emerald-400 shrink-0" strokeWidth={2} />
+              ) : (
+                <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} />
+              )}
               <span>
                 Sudo strategy: <span className="font-mono">{r.sudoMode}</span>
               </span>
@@ -612,8 +610,8 @@ export function EnvDetectScreen() {
               <h2 className="font-medium text-amber-200 mb-2">Platform readiness</h2>
               {r.tunDevice === false && (
                 <div className="mb-2">
-                  <div className="text-amber-200">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-2 align-middle"/>
+                  <div className="text-amber-200 inline-flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-amber-400 shrink-0" strokeWidth={2} />
                     <span className="font-mono">/dev/net/tun</span> not present
                   </div>
                   <p className="text-amber-200/80 mt-1 ml-5">
@@ -631,8 +629,8 @@ sudo insmod /lib/modules/tun.ko
               )}
               {r.iptablesLoaded === false && (
                 <div className="mb-2">
-                  <div className="text-amber-200">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-2 align-middle"/>
+                  <div className="text-amber-200 inline-flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-amber-400 shrink-0" strokeWidth={2} />
                     iptables kernel modules not loaded
                   </div>
                   <p className="text-amber-200/80 mt-1 ml-5">
@@ -648,8 +646,8 @@ git clone https://github.com/telnetdoogie/synology-docker.git
               )}
               {r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs) && (
                 <div className="mb-2">
-                  <div className="text-rose-200">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-400 mr-2 align-middle"/>
+                  <div className="text-rose-200 inline-flex items-center gap-2">
+                    <XCircle size={14} className="text-rose-400 shrink-0" strokeWidth={2} />
                     Install dir is on <span className="font-mono">{r.installDirFs}</span> — SQLite will corrupt
                   </div>
                   <p className="text-rose-200/80 mt-1 ml-5">
@@ -697,7 +695,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
             return (
               <section className="rounded-md border border-amber-700/50 bg-amber-900/10 p-4 space-y-3 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} />
                   <span className="font-medium">Services already running — keep them?</span>
                 </div>
                 <p className="text-slate-300 text-xs">
@@ -773,7 +771,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           {(r.existingInstall.hasCompose || r.existingInstall.runningContainers.length > 0) && (
             <section className="rounded-md border border-sky-700/50 bg-sky-900/20 p-4 space-y-3 text-sm">
               <div className="flex items-center gap-2">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-400" />
+                <Info size={16} className="text-sky-400 shrink-0" strokeWidth={2} />
                 <span className="font-medium">An install already exists at this path</span>
               </div>
               <ul className="text-slate-300 space-y-0.5 ml-5 list-disc list-inside text-xs">
@@ -811,7 +809,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           {r.portConflicts.length > 0 && (
             <section className="rounded-md border border-rose-700/50 bg-rose-900/20 p-4 space-y-3 text-sm">
               <div className="flex items-center gap-2">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-400" />
+                <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} />
                 <span className="font-medium">Port conflicts detected</span>
               </div>
               <p className="text-slate-300 text-xs">
@@ -866,16 +864,26 @@ git clone https://github.com/telnetdoogie/synology-docker.git
         </BigButton>
         <div className="flex-1 text-sm text-center">
           {status === 'detecting' && (
-            <span className="text-slate-400">Running checks over SSH…</span>
+            <span className="text-slate-400 inline-flex items-center gap-1.5">
+              <Radar size={14} className="text-sky-400" />
+              Running checks over SSH…
+            </span>
           )}
           {status === 'failed' && (
-            <span className="text-rose-300">✘ Detection failed — see details above</span>
+            <span className="text-rose-300 inline-flex items-center gap-1.5">
+              <XCircle size={14} />
+              Detection failed — see details above
+            </span>
           )}
           {status === 'ok' && allBlocking && (
-            <span className="text-emerald-300">✓ All required checks passed</span>
+            <span className="text-emerald-300 inline-flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              All required checks passed
+            </span>
           )}
           {status === 'ok' && !allBlocking && (
-            <span className="text-amber-300">
+            <span className="text-amber-300 inline-flex items-center gap-1.5">
+              <AlertTriangle size={14} />
               Fix the red items above to continue
             </span>
           )}
