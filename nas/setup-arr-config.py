@@ -1618,12 +1618,25 @@ def configure_qbittorrent(base, username, password, env=None):
     # On Synology spinning rust with a non-trivial resume-data set in
     # BT_backup/, those "internal preparations" (state load + torrent
     # integrity verification + BT session init) can run for several
-    # minutes BEFORE the WebUI binds. The old 8 × 10s = 80s budget
-    # false-failed every install in that case. Bumped to 30 × 10s =
-    # 300s (5 minutes), which matches the worst real-world wait we've
-    # measured. 'Fails.' still short-circuits immediately so the IP-
-    # ban budget isn't touched on wrong-password attempts.
-    MAX_RETRIES = 30
+    # minutes BEFORE the WebUI binds.
+    #
+    # Budget history:
+    #   8 × 10s   = 80s   — original; false-failed on every spinning-
+    #                       rust install with > a few hundred resume files
+    #   30 × 10s  = 300s  — bumped after early Synology field reports;
+    #                       still ran out for users with 1000+ torrents in
+    #                       BT_backup, e.g. the 5/18 real-world install
+    #                       log that hit 30/30 retries and gave up while
+    #                       qBit was just a few seconds away from binding
+    #                       (qBit was HTTP 200 in step 10 post-deploy)
+    #   60 × 10s  = 600s  — current. 10 minutes is the actual worst-case
+    #                       we've observed; bumping further would mean
+    #                       moving qBit config to async-on-first-bind
+    #                       which is a bigger refactor.
+    #
+    # 'Fails.' still short-circuits immediately so the IP-ban budget
+    # isn't touched on wrong-password attempts.
+    MAX_RETRIES = 60
     retries = 0
     while last_result != 'Ok.' and last_result != 'Fails.' and retries < MAX_RETRIES:
         time.sleep(10)
