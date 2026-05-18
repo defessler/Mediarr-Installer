@@ -112,10 +112,17 @@ export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
                   disabled={!!rerunningStep}
                   title={`Re-run step ${s.number}: ${s.rerun}`}
                   className={
+                    // Always-visible at low opacity (was opacity-0 + hover-only,
+                    // which hid it from touch users and didn't communicate
+                    // discoverability to anyone who didn't already know the
+                    // feature existed). Full opacity on hover / focus / running.
                     'shrink-0 inline-flex items-center justify-center h-6 w-6 rounded transition-all ' +
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ' +
                     (isRerunning
                       ? 'bg-amber-700/50 text-amber-200 opacity-100'
-                      : 'bg-slate-700/70 hover:bg-slate-600 text-slate-300 opacity-0 group-hover:opacity-100 disabled:opacity-30 disabled:hover:bg-slate-700/70')
+                      : 'bg-slate-700/70 hover:bg-slate-600 focus-visible:bg-slate-600 text-slate-300 ' +
+                        'opacity-50 group-hover:opacity-100 focus-visible:opacity-100 ' +
+                        'disabled:opacity-25 disabled:hover:bg-slate-700/70')
                   }
                 >
                   <RotateCw
