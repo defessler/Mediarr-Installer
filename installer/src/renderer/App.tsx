@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
-import { HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle } from 'lucide-react'
+import {
+  HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
+} from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
@@ -315,18 +317,21 @@ export function App() {
               </button>
               {/* Connector chevron transitions to green/blue as steps
                   complete behind it — gives a clear "we got past here"
-                  cue without an explicit progress bar. */}
+                  cue without an explicit progress bar. Lucide
+                  ChevronRight (vs the raw "›" glyph) renders at exact
+                  same metrics across platforms, which matters because
+                  the previous char was a tofu-prone single guillemet. */}
               {i < stepList.length - 1 && (
-                <span
+                <ChevronRight
+                  size={14}
+                  strokeWidth={2.5}
                   className={
-                    `transition-colors duration-300 ` +
+                    'transition-colors duration-300 shrink-0 ' +
                     (state === 'done'
                       ? (mode === 'update' ? 'text-sky-400' : 'text-emerald-400')
                       : 'text-slate-700')
                   }
-                >
-                  ›
-                </span>
+                />
               )}
             </div>
           )
