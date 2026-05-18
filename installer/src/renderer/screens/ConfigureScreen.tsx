@@ -1,6 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Settings2, ArrowLeft, ArrowRight } from 'lucide-react'
+import {
+  Settings2, ArrowLeft, ArrowRight,
+  Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
+  Newspaper, ListChecks, Users, Captions,
+} from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import { envSchema } from '../../shared/env-schema.js'
@@ -139,6 +143,7 @@ function ServicesSection({
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        <Boxes size={18} className="text-emerald-400" strokeWidth={1.75} />
         Services
         <span className="text-xs font-normal text-slate-500">
           ({enabledCount} of {SERVICE_TOGGLES.length} enabled — Prowlarr + Flaresolverr always on)
@@ -252,6 +257,7 @@ function TrashProfilesSection({
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        <Award size={18} className="text-amber-400" strokeWidth={1.75} />
         TRaSH Guide profiles
         <span className="text-xs font-normal text-slate-500">
           (which quality bundle Recyclarr applies)
@@ -415,7 +421,10 @@ function VpnSection({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium border-b border-slate-800 pb-2">VPN</h2>
+      <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        <Shield size={18} className="text-sky-400" strokeWidth={1.75} />
+        VPN
+      </h2>
 
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -669,7 +678,10 @@ export function ConfigureScreen() {
 
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Install location</h2>
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+          <HardDrive size={18} className="text-emerald-400" strokeWidth={1.75} />
+          Install location
+        </h2>
         <p className="text-xs text-slate-400">
           Two paths matter: where the wizard's compose stack + config dirs
           land (<code className="font-mono">INSTALL_DIR</code>), and where your
@@ -709,7 +721,10 @@ export function ConfigureScreen() {
       <TrashProfilesSection config={config} update={update} />
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Identity</h2>
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+          <UserCircle size={18} className="text-emerald-400" strokeWidth={1.75} />
+          Identity
+        </h2>
 
         {/* Container user / group — pulled from the NAS's /etc/passwd
             and /etc/group on screen entry. Picking a user auto-fills
@@ -813,7 +828,10 @@ export function ConfigureScreen() {
       )}
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2">Arr Web UI auth</h2>
+        <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+          <KeyRound size={18} className="text-emerald-400" strokeWidth={1.75} />
+          Arr Web UI auth
+        </h2>
         <p className="text-sm text-slate-400">
           Optional. Applied to Sonarr, Radarr, Lidarr, Prowlarr by setup-arr-config.py.
           LAN connections bypass the prompt automatically. Leave blank to skip.
@@ -828,7 +846,10 @@ export function ConfigureScreen() {
           in the stack — same reasoning as the VPN section above. */}
       {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
         <section className="space-y-4">
-          <h2 className="text-lg font-medium border-b border-slate-800 pb-2">qBittorrent WebUI</h2>
+          <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+            <Lock size={18} className="text-emerald-400" strokeWidth={1.75} />
+            qBittorrent WebUI
+          </h2>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -887,7 +908,8 @@ export function ConfigureScreen() {
           those affect the install flow itself, not just post-install
           niceties. */}
       <details className="space-y-2">
-        <summary className="cursor-pointer text-lg font-medium border-b border-slate-800 pb-2 hover:text-emerald-300 select-none">
+        <summary className="cursor-pointer text-lg font-medium border-b border-slate-800 pb-2 hover:text-emerald-300 select-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+          <Wrench size={18} className="text-slate-400" strokeWidth={1.75} />
           Advanced
           <span className="text-xs font-normal text-slate-500 ml-2">
             (click to expand — account-based usenet provider, indexer API
@@ -896,7 +918,10 @@ export function ConfigureScreen() {
         </summary>
         <div className="space-y-8 pt-4">
           <section className="space-y-4">
-            <h3 className="text-base font-medium">SABnzbd usenet provider</h3>
+            <h3 className="text-base font-medium flex items-center gap-2">
+              <Newspaper size={16} className="text-slate-400" strokeWidth={1.75} />
+              SABnzbd usenet provider
+            </h3>
             <p className="text-sm text-slate-400">
               Optional. Adds a news server to SABnzbd at first install. Leave the
               host blank to skip — you can always add servers later in
@@ -928,7 +953,10 @@ export function ConfigureScreen() {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-base font-medium">Usenet indexers</h3>
+            <h3 className="text-base font-medium flex items-center gap-2">
+              <ListChecks size={16} className="text-slate-400" strokeWidth={1.75} />
+              Usenet indexers
+            </h3>
             <p className="text-sm text-slate-400">
               AnimeTosho, ABNzb, and Althub are added automatically (no key needed).
               Toggle others on if you have an account.
@@ -941,7 +969,10 @@ export function ConfigureScreen() {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-base font-medium">Private torrent trackers</h3>
+            <h3 className="text-base font-medium flex items-center gap-2">
+              <Users size={16} className="text-slate-400" strokeWidth={1.75} />
+              Private torrent trackers
+            </h3>
             <div className="grid grid-cols-2 gap-3">
               {PRIVATE_TRACKERS.map((d) => (
                 <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
@@ -950,7 +981,10 @@ export function ConfigureScreen() {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-base font-medium">Bazarr subtitle providers</h3>
+            <h3 className="text-base font-medium flex items-center gap-2">
+              <Captions size={16} className="text-slate-400" strokeWidth={1.75} />
+              Bazarr subtitle providers
+            </h3>
             <p className="text-sm text-slate-400">
               Free providers (YIFY, Podnapisi) are added automatically. Add account-based
               providers below for better coverage.
