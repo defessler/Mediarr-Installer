@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
+  Check, Loader2,
 } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
@@ -102,7 +103,7 @@ export function App() {
 
   // Autosave per-profile changes whenever connection/config/targetDir
   // mutate. (No-op when activeProfileId is null.)
-  useProfileAutosave()
+  const autosaveStatus = useProfileAutosave()
 
   // Bounce back to a safe step when state is missing. Two cases:
   //   - any step past welcome but no profile selected → welcome
@@ -242,6 +243,39 @@ export function App() {
           </div>
           <span className="text-slate-500">Profile:</span>
           <span className="font-semibold text-slate-200">{activeProfileLabel}</span>
+          {/* Autosave status pill — only renders when we have something
+              to say. "Saving" + spinning loader during the debounce
+              window; "Saved" + check for ~1.5s after. Children + first-
+              time users need to see "yes, your edit landed somewhere"
+              or it feels like the input went into the void. */}
+          <AnimatePresence mode="wait">
+            {autosaveStatus !== 'idle' && (
+              <motion.span
+                key={autosaveStatus}
+                initial={{ opacity: 0, x: -4 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 4 }}
+                transition={{ duration: 0.18 }}
+                className={
+                  'ml-1 inline-flex items-center gap-1 ' +
+                  (autosaveStatus === 'saved' ? 'text-emerald-300' : 'text-slate-400')
+                }
+                aria-live="polite"
+              >
+                {autosaveStatus === 'saving' ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <Check size={11} />
+                    Saved
+                  </>
+                )}
+              </motion.span>
+            )}
+          </AnimatePresence>
           <button
             type="button"
             onClick={() => setStep('welcome')}

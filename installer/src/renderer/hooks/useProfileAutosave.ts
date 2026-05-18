@@ -1,13 +1,22 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWizard } from '../store/wizard.js'
 import { reportError } from '../store/errors.js'
+
+/** State surfaced from useProfileAutosave so the App-level header can
+ *  show "Saving..." / "Saved" feedback. Children + first-time users
+ *  benefit a lot from a visible "we kept that for you" signal — silent
+ *  autosave feels like the input went into the void. */
+export type AutosaveStatus = 'idle' | 'saving' | 'saved'
 
 /** Mounts at App-level. Whenever the active profile is set and the
  *  user mutates connection/config/targetDir, this hook debounces 600ms
  *  and writes the whole profile back via profile:save. Keeps the
  *  per-NAS settings in sync without the user pressing a Save button.
+ *
+ *  Returns the current status so the UI can render a non-intrusive
+ *  saving / saved indicator alongside the profile pill.
  */
-export function useProfileAutosave() {
+export function useProfileAutosave(): AutosaveStatus {
   const activeProfileId = useWizard((s) => s.activeProfileId)
   const activeProfileLabel = useWizard((s) => s.activeProfileLabel)
   const connection = useWizard((s) => s.connection)
@@ -15,7 +24,9 @@ export function useProfileAutosave() {
   const targetDir = useWizard((s) => s.targetDir)
   const migrate = useWizard((s) => s.migrate)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const firstRunRef = useRef(true)
+  const [status, setStatus] = useState<AutosaveStatus>('idle')
 
   useEffect(() => {
     if (!activeProfileId) return
@@ -26,6 +37,10 @@ export function useProfileAutosave() {
       return
     }
     if (timer.current) clearTimeout(timer.current)
+    // Immediately surface "saving" so the user sees their edit was
+    // registered — even before the debounce fires. Once the IPC
+    // resolves we flip to "saved" for ~1.5s then back to idle.
+    setStatus('saving')
     timer.current = setTimeout(async () => {
       try {
         // Preserve the user-set label. Only fall back to user@host if
@@ -63,7 +78,11 @@ export function useProfileAutosave() {
             Object.entries(migrate ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== ''),
           ),
         })
+        setStatus('saved')
+        if (savedTimer.current) clearTimeout(savedTimer.current)
+        savedTimer.current = setTimeout(() => setStatus('idle'), 1500)
       } catch (e) {
+        setStatus('idle')
         reportError('Auto-save profile', e)
       }
     }, 600)
@@ -76,5 +95,16 @@ export function useProfileAutosave() {
   // the first-run guard so the autosave skips the load.
   useEffect(() => {
     firstRunRef.current = true
+    setStatus('idle')
   }, [activeProfileId])
+
+  // Clear the saved-fade timeout on unmount so we don't try to set
+  // state on an unmounted component during HMR.
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+    }
+  }, [])
+
+  return status
 }
