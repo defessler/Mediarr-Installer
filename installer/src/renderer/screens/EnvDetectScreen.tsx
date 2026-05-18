@@ -433,17 +433,20 @@ export function EnvDetectScreen() {
                   {/* Connection host first if it's an IP and not already in the list */}
                   {connection.host && /^\d+\.\d+\.\d+\.\d+$/.test(connection.host)
                     && !r.lanIps.includes(connection.host) && (
-                      <button
+                      <motion.button
                         onClick={() => setConfig({ LAN_IP: connection.host })}
+                        whileHover={reduced ? {} : { y: -1 }}
+                        whileTap={reduced ? {} : { scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                         className={
-                          'px-2 py-0.5 rounded font-mono ' +
+                          'px-2 py-0.5 rounded font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 transition-colors ' +
                           (config.LAN_IP === connection.host
-                            ? 'bg-emerald-700/50 text-emerald-200'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300')
+                            ? 'bg-emerald-700/50 text-emerald-200 border border-emerald-600/40'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-transparent')
                         }
                       >
                         {connection.host} <span className="text-slate-500">(connected via)</span>
-                      </button>
+                      </motion.button>
                   )}
                   {r.lanIps.map((ip) => {
                     const kind = isPrivateIPv4(ip)
@@ -452,18 +455,21 @@ export function EnvDetectScreen() {
                       kind === 'cgnat' ? ' (CGNAT/Tailscale)' :
                       ' (public?)'
                     return (
-                      <button
+                      <motion.button
                         key={ip}
                         onClick={() => setConfig({ LAN_IP: ip })}
+                        whileHover={reduced ? {} : { y: -1 }}
+                        whileTap={reduced ? {} : { scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                         className={
-                          'px-2 py-0.5 rounded font-mono ' +
+                          'px-2 py-0.5 rounded font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 transition-colors ' +
                           (config.LAN_IP === ip
-                            ? 'bg-emerald-700/50 text-emerald-200'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300')
+                            ? 'bg-emerald-700/50 text-emerald-200 border border-emerald-600/40'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-transparent')
                         }
                       >
                         {ip}{tag && <span className="text-slate-500">{tag}</span>}
-                      </button>
+                      </motion.button>
                     )
                   })}
                 </div>
