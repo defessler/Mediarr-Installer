@@ -14,6 +14,11 @@
 //     internet would fail at the moment it's most needed.
 
 import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import {
+  HelpCircle, Search, X, Clipboard, ClipboardCheck, ExternalLink, SearchX,
+} from 'lucide-react'
+import { BigButton } from './BigButton.js'
 
 interface TItem {
   /** Top-level grouping shown as a section header in the modal. */
@@ -614,6 +619,7 @@ interface Props {
 
 export function TroubleshootingModal({ installDir, onClose }: Props) {
   const [query, setQuery] = useState('')
+  const reduced = useReducedMotion()
 
   // ESC closes — standard modal hygiene matching IssuesModal.
   useEffect(() => {
@@ -652,33 +658,44 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
   }, [filtered])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="help-modal-title"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
+      initial={reduced ? { opacity: 1 } : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={reduced ? { opacity: 0 } : { opacity: 0 }}
+      transition={{ duration: 0.18 }}
     >
-      <div
+      <motion.div
         className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-xl shadow-black/40"
         onClick={(e) => e.stopPropagation()}
+        initial={reduced ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 30 }}
       >
         <header className="px-5 pt-4 pb-3 border-b border-slate-800">
-          <div className="flex items-center justify-between">
-            <h2 id="help-modal-title" className="text-lg font-semibold">
-              Help & troubleshooting
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="help-modal-title" className="text-lg font-semibold inline-flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30">
+                <HelpCircle size={18} className="text-emerald-300" strokeWidth={1.75} />
+              </span>
+              Help &amp; troubleshooting
             </h2>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-200 text-xl leading-none"
+              className="text-slate-400 hover:text-slate-200 rounded-md p-1 hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
               aria-label="Close"
             >
-              ×
+              <X size={18} />
             </button>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-2">
             Common issues + the exact fix for each. Search by symptom,
             category, or error text. Commands are filled in for your
             install dir ({installDir || 'set on the Configure screen'}) —
@@ -696,34 +713,45 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
               Step-by-step beginner&apos;s walkthrough →{' '}
             </span>
             <a
-              className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2"
+              className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2 inline-flex items-center gap-1"
               href="https://github.com/defessler/NAS-Arr-Stack/blob/master/INSTALL.md"
               target="_blank"
               rel="noreferrer"
             >
               INSTALL.md on GitHub
+              <ExternalLink size={11} />
             </a>
             <span className="text-slate-400">
               {' '}— covers everything from enabling SSH on your NAS to adding your
               first show.
             </span>
           </div>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder='Search… try "tautulli", "HTTP 000", "compose down", "wedged"'
-            className="mt-3 w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:outline-none focus:border-emerald-600"
-            autoFocus
-          />
+          <div className="relative mt-3">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder='Search… try "tautulli", "HTTP 000", "compose down", "wedged"'
+              className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+              autoFocus
+            />
+          </div>
         </header>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
           {grouped.length === 0 ? (
-            <p className="text-sm text-slate-400 italic">
-              No matches. Try a shorter search term, or browse by category
-              by clearing the search.
-            </p>
+            <div className="text-sm text-slate-400 flex flex-col items-center gap-2 py-6">
+              <SearchX size={28} className="text-slate-600" strokeWidth={1.5} />
+              <p className="italic text-center">
+                No matches for <span className="font-mono text-slate-300">{query}</span>.
+                <br />
+                Try a shorter search term, or browse by category by clearing the search.
+              </p>
+            </div>
           ) : (
             grouped.map((g) => (
               <section key={g.category}>
@@ -744,15 +772,12 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
           <span className="text-xs text-slate-500">
             {filtered.length} item{filtered.length === 1 ? '' : 's'} shown · ESC to close
           </span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-md text-sm"
-          >
+          <BigButton size="md" variant="secondary" onClick={onClose}>
             Close
-          </button>
+          </BigButton>
         </footer>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -799,10 +824,36 @@ function Entry({ item, installDir }: { item: TItem; installDir: string }) {
           </pre>
           <button
             onClick={copyCmd}
-            className="absolute top-1.5 right-1.5 px-2 py-0.5 text-[10px] rounded bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600"
+            className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             title="Copy command to clipboard"
           >
-            {copied ? '✔ copied' : 'copy'}
+            <AnimatePresence mode="wait" initial={false}>
+              {copied ? (
+                <motion.span
+                  key="check"
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.7 }}
+                  transition={{ duration: 0.12 }}
+                  className="inline-flex items-center gap-1 text-emerald-300"
+                >
+                  <ClipboardCheck size={11} />
+                  copied
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="clip"
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.7 }}
+                  transition={{ duration: 0.12 }}
+                  className="inline-flex items-center gap-1"
+                >
+                  <Clipboard size={11} />
+                  copy
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
       )}

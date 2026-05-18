@@ -437,13 +437,17 @@ export function App() {
       <ToastTray />
 
       {/* Troubleshooting / help modal — opens from the footer Help
-          button. Renders nothing when closed; no perf cost. */}
-      {helpOpen && (
-        <TroubleshootingModal
-          installDir={targetDir}
-          onClose={() => setHelpOpen(false)}
-        />
-      )}
+          button. Renders nothing when closed; no perf cost. The
+          AnimatePresence wrap lets the modal play its exit animation
+          when the user closes it (backdrop fade + dialog scale-down). */}
+      <AnimatePresence>
+        {helpOpen && (
+          <TroubleshootingModal
+            installDir={targetDir}
+            onClose={() => setHelpOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
