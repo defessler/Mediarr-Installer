@@ -1591,9 +1591,28 @@ def configure_qbittorrent(base, username, password, env=None):
     opener = build_opener(HTTPCookieProcessor(cj))
 
     def attempt_login():
-        """Returns (response-body: str, error: Exception or None).
-        Empty body + None error = 200 OK with no content (qBittorrent
-        under stress). Non-None error = network / HTTP failure.
+        """Returns ('Ok.' | 'Fails.' | '' | <other>, error or None).
+
+        qBit's /api/v2/auth/login endpoint response semantics:
+          'Ok.'   — normal login success; SID cookie set, creds valid
+          'Fails.'— wrong credentials; no retry (would hit IP-ban budget)
+          ''      — TWO different states map to empty body, both 200 OK:
+                    (a) LAN auth-bypass is enabled (which the wizard
+                        ITSELF configures by default — qBit skips the
+                        password check because the request came from a
+                        whitelisted subnet) → we're already authenticated
+                    (b) Daemon is busy / WebUI not fully bound yet →
+                        we should retry
+
+        Distinguishing (a) from (b) was the bug behind every "qBittorrent
+        not ready yet — retry N/N" symptom on a HEALTHY qBit: the loop
+        kept spinning on empty body even though qBit was returning 200
+        and the auth bypass was already in effect. Fix: when we get
+        empty body, hit /api/v2/app/version (an authenticated endpoint).
+        If THAT returns 200, we're authenticated (cookie OR bypass) and
+        login was actually successful — translate the empty body to 'Ok.'
+        so the retry loop exits cleanly. If /app/version errors, the
+        daemon really is still booting — keep retrying.
 
         Note: deliberately untyped — Synology DSM7 ships python 3.9 in
         Container Manager, which doesn't yet have PEP 604 (X | None
@@ -1602,7 +1621,27 @@ def configure_qbittorrent(base, username, password, env=None):
         try:
             data = urlencode({'username': username, 'password': password}).encode()
             resp = opener.open(f"{base}/api/v2/auth/login", data, timeout=10)
-            return resp.read().decode().strip(), None
+            body = resp.read().decode().strip()
+
+            # Explicit responses are unambiguous — return as-is.
+            if body in ('Ok.', 'Fails.'):
+                return body, None
+
+            # Empty body on 200 — could be auth bypass OR busy daemon.
+            # Probe /app/version (cheapest authenticated endpoint) to
+            # disambiguate. If it 200s, we're authenticated through one
+            # of the two valid paths; the loop should exit.
+            if body == '':
+                try:
+                    verify = opener.open(f"{base}/api/v2/app/version", timeout=5)
+                    if verify.status == 200:
+                        return 'Ok.', None    # bypass or cookie auth working
+                except Exception:
+                    pass   # fall through; daemon's still booting
+            # Any other body or failed verify — return raw body so the
+            # caller decides what to do. Existing retry loop treats
+            # anything that's not 'Ok.' / 'Fails.' as a retry signal.
+            return body, None
         except Exception as e:
             return '', e
 
@@ -1623,20 +1662,21 @@ def configure_qbittorrent(base, username, password, env=None):
     # Budget history:
     #   8 × 10s   = 80s   — original; false-failed on every spinning-
     #                       rust install with > a few hundred resume files
-    #   30 × 10s  = 300s  — bumped after early Synology field reports;
-    #                       still ran out for users with 1000+ torrents in
-    #                       BT_backup, e.g. the 5/18 real-world install
-    #                       log that hit 30/30 retries and gave up while
-    #                       qBit was just a few seconds away from binding
-    #                       (qBit was HTTP 200 in step 10 post-deploy)
-    #   60 × 10s  = 600s  — current. 10 minutes is the actual worst-case
-    #                       we've observed; bumping further would mean
-    #                       moving qBit config to async-on-first-bind
-    #                       which is a bigger refactor.
+    #   30 × 10s  = 300s  — bumped after early Synology field reports
+    #   60 × 10s  = 600s  — tried briefly; turned out to be treating the
+    #                       symptom (run-out-of-retries) of a deeper bug
+    #                       where attempt_login() couldn't recognise the
+    #                       LAN-auth-bypass success case (empty body +
+    #                       200 OK + valid follow-up auth). That bug now
+    #                       fixed in attempt_login above — retry budget
+    #                       reverted to the saner 30 × 10s = 5 min.
+    #                       If 30 retries genuinely runs out, qBit's
+    #                       daemon really isn't reachable (not just
+    #                       "we can't parse its 'yes you're in' signal").
     #
     # 'Fails.' still short-circuits immediately so the IP-ban budget
     # isn't touched on wrong-password attempts.
-    MAX_RETRIES = 60
+    MAX_RETRIES = 30
     retries = 0
     while last_result != 'Ok.' and last_result != 'Fails.' and retries < MAX_RETRIES:
         time.sleep(10)
