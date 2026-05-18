@@ -18,6 +18,7 @@ echo "  ✔ $SCRIPT_DIR"
 
 echo ""
 echo "Setting permissions on scripts..."
+# Core setup scripts — run by setup.sh in order.
 for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
@@ -25,7 +26,16 @@ for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-n
     fi
 done
 
-for script in migration/fix-qbit-paths.sh migration/fix-plex-paths.py indexers/setup-indexers.py indexers/setup-bazarr-providers.py setup-arr-config.py; do
+# Helper scripts — user-invoked from CLI or Task Scheduler.
+for script in restart-qbit.sh recyclarr-sync.sh fix-imports.sh tune-arrs.sh stop-all.sh boot-orchestrator.sh; do
+    if [ -f "$SCRIPT_DIR/$script" ]; then
+        chmod 755 "$SCRIPT_DIR/$script"
+        echo "  ✔ $script"
+    fi
+done
+
+# Python scripts + migration tools.
+for script in migration/fix-qbit-paths.sh migration/fix-plex-paths.py indexers/setup-indexers.py indexers/setup-bazarr-providers.py setup-arr-config.py recyclarr-trigger.py; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
         echo "  ✔ $script"
