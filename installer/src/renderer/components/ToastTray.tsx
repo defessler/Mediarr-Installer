@@ -95,7 +95,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
               }
               className="inline-flex items-center gap-1 hover:opacity-100 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
             >
-              <FileText size={12} />
+              <FileText size={12} aria-hidden="true" />
               Open log
             </button>
           </div>

@@ -620,7 +620,7 @@ export function MigrateScreen() {
                         : 'text-rose-300')
                     }
                   >
-                    <ResultIcon size={11} className="shrink-0 mt-0.5" />
+                    <ResultIcon size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
                     <span>
                       {r.title}
                       {r.message && <span className="text-slate-500"> — {r.message}</span>}
@@ -903,7 +903,7 @@ export function MigrateScreen() {
                         (r.status === 'ok' ? 'text-emerald-300' : 'text-rose-300')
                       }
                     >
-                      <Icon size={11} className="shrink-0 mt-0.5" />
+                      <Icon size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
                       <span>
                         {r.title}
                         {r.message && <span className="text-slate-500"> — {r.message}</span>}

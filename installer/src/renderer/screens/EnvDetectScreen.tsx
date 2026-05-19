@@ -888,7 +888,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
         <div className="flex-1 text-sm text-center">
           {status === 'detecting' && (
             <span className="text-slate-400 inline-flex items-center gap-1.5">
-              <Radar size={14} className="text-sky-400" />
+              <Radar size={14} className="text-sky-400" aria-hidden="true" />
               Running checks over SSH…
             </span>
           )}

@@ -210,7 +210,7 @@ export function ConnectScreen() {
               transition={{ duration: 0.18 }}
               className="mt-1 text-xs text-amber-300 inline-flex items-center gap-1.5"
             >
-              <AlertTriangle size={11} className="shrink-0" />
+              <AlertTriangle size={11} className="shrink-0" aria-hidden="true" />
               Port {connection.port} is for HTTP/DSM, not SSH. Try 22.
             </motion.p>
           )}
@@ -335,7 +335,11 @@ export function ConnectScreen() {
           the Welcome step.) */}
 
       {/* Animated test-result banner. Two states (success / error)
-          slide in from the bottom and stay until the form changes. */}
+          slide in from the bottom and stay until the form changes.
+          role=alert on the error variant + role=status on the success
+          variant means screen readers announce the outcome as soon as
+          it renders — important for keyboard-only users testing
+          connections who can't see the visual banner appear. */}
       <AnimatePresence>
         {result && (
           <motion.div
@@ -344,6 +348,8 @@ export function ConnectScreen() {
             animate={{ opacity: 1, y: 0 }}
             exit={reduced ? { opacity: 0 } : { opacity: 0, y: -8 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            role={result.ok ? 'status' : 'alert'}
+            aria-live={result.ok ? 'polite' : 'assertive'}
             className={
               `rounded-lg px-4 py-3 text-sm flex items-start gap-3 border ` +
               (result.ok
@@ -352,7 +358,7 @@ export function ConnectScreen() {
             }
           >
             {result.ok ? (
-              <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
+              <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
             ) : (
               <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
             )}
