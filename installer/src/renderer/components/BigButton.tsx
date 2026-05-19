@@ -89,6 +89,7 @@ export function BigButton({
     <motion.button
       {...(rest as any)}
       disabled={isDisabled}
+      aria-busy={loading || undefined}
       // whileHover/whileTap take care of the press feel without per-
       // browser hover CSS — and respect reduced-motion automatically
       // when the user has it on.
@@ -103,13 +104,17 @@ export function BigButton({
       }
     >
       {loading ? (
-        <Loader2 className="animate-spin" size={size === 'lg' ? 20 : size === 'md' ? 16 : 14} />
+        <Loader2
+          className="animate-spin"
+          size={size === 'lg' ? 20 : size === 'md' ? 16 : 14}
+          aria-hidden="true"
+        />
       ) : icon ? (
-        <span className="inline-flex items-center">{icon}</span>
+        <span className="inline-flex items-center" aria-hidden="true">{icon}</span>
       ) : null}
       <span>{children}</span>
       {trailingIcon && !loading && (
-        <span className="inline-flex items-center">{trailingIcon}</span>
+        <span className="inline-flex items-center" aria-hidden="true">{trailingIcon}</span>
       )}
     </motion.button>
   )
