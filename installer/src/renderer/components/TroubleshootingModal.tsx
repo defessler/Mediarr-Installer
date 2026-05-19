@@ -682,7 +682,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
         <header className="px-5 pt-4 pb-3 border-b border-slate-800">
           <div className="flex items-center justify-between gap-3">
             <h2 id="help-modal-title" className="text-lg font-semibold inline-flex items-center gap-2">
-              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30">
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30" aria-hidden="true">
                 <HelpCircle size={18} className="text-emerald-300" strokeWidth={1.75} />
               </span>
               Help &amp; troubleshooting
@@ -690,7 +690,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-slate-200 rounded-md p-1 hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-              aria-label="Close"
+              aria-label="Close help modal"
             >
               <X size={18} />
             </button>
