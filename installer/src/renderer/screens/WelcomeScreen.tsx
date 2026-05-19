@@ -182,7 +182,7 @@ export function WelcomeScreen() {
             transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.05 }}
             className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4"
           >
-            <Server size={40} className="text-emerald-300" strokeWidth={1.5} />
+            <Server size={40} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
           </motion.div>
           <h1 className="text-4xl font-bold tracking-tight">Welcome back</h1>
           <p className="text-slate-400 mt-3 text-base">
@@ -207,16 +207,16 @@ export function WelcomeScreen() {
                   onClick={() => setCreating(true)}
                   className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                 >
-                  <Plus size={16} strokeWidth={2.5} />
+                  <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
                   New profile
                 </button>
-                <span className="text-slate-700">·</span>
+                <span className="text-slate-700" aria-hidden="true">·</span>
                 <button
                   onClick={() => setImporting(true)}
                   className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                   title="Import a passphrase-protected .mediarr-profile.json file"
                 >
-                  <Download size={16} strokeWidth={2.5} />
+                  <Download size={16} strokeWidth={2.5} aria-hidden="true" />
                   Import
                 </button>
               </div>
@@ -393,7 +393,7 @@ export function WelcomeScreen() {
                                   className="flex items-center justify-center gap-3 rounded-md border border-rose-700/40 bg-rose-950/30 px-3 py-2 text-xs"
                                 >
                                   <span className="text-rose-200 inline-flex items-center gap-1.5">
-                                    <AlertTriangle size={12} />
+                                    <AlertTriangle size={12} aria-hidden="true" />
                                     Really delete <span className="font-medium text-rose-100 truncate max-w-[12em]">{p.label}</span>?
                                   </span>
                                   <BigButton
@@ -424,7 +424,7 @@ export function WelcomeScreen() {
                                   transition={{ duration: 0.14 }}
                                   className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 disabled:opacity-40 transition-colors rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
                                 >
-                                  <Trash2 size={12} />
+                                  <Trash2 size={12} aria-hidden="true" />
                                   Delete this profile
                                 </motion.button>
                               )}
@@ -448,7 +448,7 @@ export function WelcomeScreen() {
             className="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-5 space-y-3"
           >
             <h2 className="font-semibold text-lg flex items-center gap-2" id="new-profile-heading">
-              <Plus size={18} className="text-emerald-400" strokeWidth={2.5} />
+              <Plus size={18} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
               New profile
             </h2>
             <input
@@ -482,7 +482,7 @@ export function WelcomeScreen() {
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-3 text-sm">
           <h2 className="font-semibold flex items-center gap-2">
-            <CheckCircle2 size={16} className="text-emerald-400" />
+            <CheckCircle2 size={16} className="text-emerald-400" aria-hidden="true" />
             Before you begin
           </h2>
           {/* Icon-prefixed checklist. Each item has its own Lucide
@@ -493,7 +493,7 @@ export function WelcomeScreen() {
           <ul className="space-y-2 text-slate-300">
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-slate-800/80 border border-slate-700/60">
-                <Terminal size={14} className="text-slate-300" strokeWidth={1.75} />
+                <Terminal size={14} className="text-slate-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
                 SSH is enabled on the NAS (Control Panel &rarr; Terminal &amp; SNMP).
@@ -501,7 +501,7 @@ export function WelcomeScreen() {
             </li>
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-sky-900/30 border border-sky-700/40">
-                <Boxes size={14} className="text-sky-300" strokeWidth={1.75} />
+                <Boxes size={14} className="text-sky-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
                 Docker (Container Manager) is installed via Synology Package Center.
@@ -509,7 +509,7 @@ export function WelcomeScreen() {
             </li>
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-emerald-900/30 border border-emerald-700/40">
-                <UserCircle size={14} className="text-emerald-300" strokeWidth={1.75} />
+                <UserCircle size={14} className="text-emerald-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
                 For fresh installs that include Plex: an account at plex.tv.
@@ -586,7 +586,7 @@ function EmptyState({ onCreate, onImport }: { onCreate: () => void; onImport: ()
         transition={reduced ? {} : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}
         className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-emerald-700/20 border border-emerald-500/25 mx-auto"
       >
-        <Server size={32} className="text-emerald-300" strokeWidth={1.5} />
+        <Server size={32} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
       </motion.div>
       <div>
         <div className="text-slate-200 text-xl font-semibold">Let's set up your first NAS</div>
