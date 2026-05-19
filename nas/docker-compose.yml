@@ -139,12 +139,28 @@ services:
     security_opt: *security
     environment:
       - TZ=${TZ}
-      # Restrict Host headers Homepage accepts. Default `*` accepts any
-      # Host (including DNS-rebinding attacks). Allow LAN_IP + the
-      # common mDNS / hostname patterns. Override via .env to add more
-      # (e.g. when fronting with a reverse proxy: HOMEPAGE_ALLOWED_HOSTS=
-      # nas.local,${LAN_IP},dashboard.home).
-      - HOMEPAGE_ALLOWED_HOSTS=${HOMEPAGE_ALLOWED_HOSTS:-${LAN_IP},localhost,127.0.0.1,nas.local}
+      # Homepage v1.0+ added strict Host-header validation. If the
+      # browser's Host doesn't match HOMEPAGE_ALLOWED_HOSTS, the page
+      # shows "Host validation failed. See logs for more details."
+      #
+      # We default to `*` (allow any Host) because:
+      #   1. This is a home-LAN deployment behind the user's firewall.
+      #      The threat HOMEPAGE_ALLOWED_HOSTS guards against (DNS
+      #      rebinding from a malicious site in the user's browser
+      #      hitting LAN resources) is theoretical for a tool no one
+      #      is fronting on the public internet.
+      #   2. Restricting to LAN_IP + nas.local was too narrow — users
+      #      access via the Synology's actual hostname, a custom DNS
+      #      entry, or LAN_IP:3000 with the port still on the Host
+      #      header, all of which would fail.
+      # If you DO front Homepage with a reverse proxy and want stricter
+      # validation, set HOMEPAGE_ALLOWED_HOSTS in .env to a comma-
+      # separated list of the exact hostnames you'll access from (e.g.
+      # `dashboard.home,${LAN_IP},nas.local`). Setting this in .env
+      # overrides the `*` default. Homepage strips the port from the
+      # Host header before comparing, so listing just the hostname
+      # (no `:3000`) is correct.
+      - HOMEPAGE_ALLOWED_HOSTS=${HOMEPAGE_ALLOWED_HOSTS:-*}
     ports:
       - ${LAN_IP}:3000:3000
     volumes:
