@@ -477,16 +477,18 @@ export function MigrateScreen() {
             </p>
             <div className="grid grid-cols-[1fr_2fr] gap-2 text-sm items-center">
               {fetched.sonarr && (<>
-                <label>Dest Sonarr URL</label>
+                <label htmlFor="dest-sonarr-url">Dest Sonarr URL</label>
                 <input
+                  id="dest-sonarr-url"
                   type="text"
                   placeholder={autoSonarrUrl || 'http://nas:49152'}
                   value={migrate.destSonarrUrl ?? ''}
                   onChange={(e) => setMigrate({ destSonarrUrl: e.target.value.trim() })}
                   className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
-                <label>Dest Sonarr API key</label>
+                <label htmlFor="dest-sonarr-key">Dest Sonarr API key</label>
                 <input
+                  id="dest-sonarr-key"
                   type="password"
                   placeholder={localKeys.sonarr ? '(from .env)' : 'paste API key'}
                   value={migrate.destSonarrKey ?? ''}
@@ -495,16 +497,18 @@ export function MigrateScreen() {
                 />
               </>)}
               {fetched.radarr && (<>
-                <label>Dest Radarr URL</label>
+                <label htmlFor="dest-radarr-url">Dest Radarr URL</label>
                 <input
+                  id="dest-radarr-url"
                   type="text"
                   placeholder={autoRadarrUrl || 'http://nas:49151'}
                   value={migrate.destRadarrUrl ?? ''}
                   onChange={(e) => setMigrate({ destRadarrUrl: e.target.value.trim() })}
                   className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
-                <label>Dest Radarr API key</label>
+                <label htmlFor="dest-radarr-key">Dest Radarr API key</label>
                 <input
+                  id="dest-radarr-key"
                   type="password"
                   placeholder={localKeys.radarr ? '(from .env)' : 'paste API key'}
                   value={migrate.destRadarrKey ?? ''}
