@@ -64,14 +64,28 @@ export function LogPanel({ lines, follow = true }: Props) {
       // has to wheel/touch/keyboard to enter stuck mode.
       if (atBottom) stuckRef.current = false
     }
+    // Esc jumps back to the bottom + resumes following. End key already
+    // works via native HTMLElement scroll behavior (tabIndex=0 makes
+    // the div focusable), but Esc is the more intuitive "I'm done
+    // reading history" gesture for a kid who didn't know about End.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && stuckRef.current) {
+        stuckRef.current = false
+        el.scrollTop = el.scrollHeight
+        setStuck(false)
+        e.preventDefault()
+        return
+      }
+      markStuck()
+    }
     el.addEventListener('wheel', markStuck, { passive: true })
     el.addEventListener('touchmove', markStuck, { passive: true })
-    el.addEventListener('keydown', markStuck)
+    el.addEventListener('keydown', onKey)
     el.addEventListener('scroll', checkUnstuck, { passive: true })
     return () => {
       el.removeEventListener('wheel', markStuck)
       el.removeEventListener('touchmove', markStuck)
-      el.removeEventListener('keydown', markStuck)
+      el.removeEventListener('keydown', onKey)
       el.removeEventListener('scroll', checkUnstuck)
     }
   }, [])
