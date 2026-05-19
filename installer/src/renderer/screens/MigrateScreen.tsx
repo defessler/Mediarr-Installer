@@ -787,24 +787,27 @@ export function MigrateScreen() {
                 changed since install, or the URL/port is different.
               </p>
               <div className="grid grid-cols-[1fr_2fr] gap-2 text-sm items-center">
-                <label>Dest URL</label>
+                <label htmlFor="dest-qbit-url">Dest URL</label>
                 <input
+                  id="dest-qbit-url"
                   type="text"
                   placeholder={autoQbitUrl || 'http://nas:49156'}
                   value={migrate.destQbitUrl ?? ''}
                   onChange={(e) => setMigrate({ destQbitUrl: e.target.value.trim().replace(/\/$/, '') })}
                   className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
-                <label>Dest username</label>
+                <label htmlFor="dest-qbit-user">Dest username</label>
                 <input
+                  id="dest-qbit-user"
                   type="text"
                   placeholder={localKeys.qbitUser ? '(from .env)' : 'admin'}
                   value={migrate.destQbitUser ?? ''}
                   onChange={(e) => setMigrate({ destQbitUser: e.target.value.trim() })}
                   className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
-                <label>Dest password</label>
+                <label htmlFor="dest-qbit-pass">Dest password</label>
                 <input
+                  id="dest-qbit-pass"
                   type="password"
                   placeholder={localKeys.qbitPass ? '(from .env)' : 'paste qBit WebUI password'}
                   value={migrate.destQbitPass ?? ''}
