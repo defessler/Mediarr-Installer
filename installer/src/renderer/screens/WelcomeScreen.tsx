@@ -228,7 +228,8 @@ export function WelcomeScreen() {
                   initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.04 * i, duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="group rounded-xl border border-slate-700/80 bg-slate-800/40 hover:bg-slate-800/70 hover:border-slate-600 transition-all p-4"
+                  whileHover={reduced ? {} : { y: -1 }}
+                  className="group rounded-xl border border-slate-700/80 bg-slate-800/40 hover:bg-slate-800/70 hover:border-slate-600 hover:shadow-lg hover:shadow-black/20 transition-all p-4"
                 >
                   <div className="flex items-center gap-4">
                     {/* Avatar with first-letter monogram. Reads as a
