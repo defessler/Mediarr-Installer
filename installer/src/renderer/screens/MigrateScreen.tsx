@@ -433,7 +433,7 @@ export function MigrateScreen() {
           </BigButton>
           {fetchError && (
             <span className="text-rose-300 text-sm inline-flex items-center gap-1.5">
-              <XCircle size={14} /> {fetchError}
+              <XCircle size={14} aria-hidden="true" /> {fetchError}
             </span>
           )}
           {totalFetched > 0 && !fetching && (
@@ -585,17 +585,17 @@ export function MigrateScreen() {
               <ListChecks size={16} className="text-emerald-400" strokeWidth={1.75} />
               Import results
             </h2>
-            <span className="text-xs text-slate-400 inline-flex items-center gap-2">
+            <span className="text-xs text-slate-400 inline-flex items-center gap-2" role="status" aria-live="polite">
               <span className="text-emerald-300 inline-flex items-center gap-1">
-                <CheckCircle2 size={12} /> added {counts_results.ok}
+                <CheckCircle2 size={12} aria-hidden="true" /> added {counts_results.ok}
               </span>
-              <span>·</span>
+              <span aria-hidden="true">·</span>
               <span className="text-sky-300 inline-flex items-center gap-1">
-                <RefreshCw size={12} /> updated {counts_results.updated}
+                <RefreshCw size={12} aria-hidden="true" /> updated {counts_results.updated}
               </span>
-              <span>·</span>
+              <span aria-hidden="true">·</span>
               <span className="text-rose-300 inline-flex items-center gap-1">
-                <XCircle size={12} /> {counts_results.fail}
+                <XCircle size={12} aria-hidden="true" /> {counts_results.fail}
               </span>
             </span>
           </div>
@@ -709,7 +709,7 @@ export function MigrateScreen() {
           </BigButton>
           {qbitFetchError && (
             <span className="text-rose-300 text-sm inline-flex items-center gap-1.5">
-              <XCircle size={14} /> {qbitFetchError}
+              <XCircle size={14} aria-hidden="true" /> {qbitFetchError}
             </span>
           )}
           {qbitTorrents && qbitTorrents.length > 0 && !qbitFetching && (
@@ -877,13 +877,13 @@ export function MigrateScreen() {
                 <ListChecks size={14} className="text-emerald-400" strokeWidth={1.75} />
                 Migration results
               </h3>
-              <span className="text-xs text-slate-400 inline-flex items-center gap-2">
+              <span className="text-xs text-slate-400 inline-flex items-center gap-2" role="status" aria-live="polite">
                 <span className="text-emerald-300 inline-flex items-center gap-1">
-                  <CheckCircle2 size={12} /> {qbitResults.filter((r) => r.status === 'ok').length}
+                  <CheckCircle2 size={12} aria-hidden="true" /> {qbitResults.filter((r) => r.status === 'ok').length}
                 </span>
-                <span>·</span>
+                <span aria-hidden="true">·</span>
                 <span className="text-rose-300 inline-flex items-center gap-1">
-                  <XCircle size={12} /> {qbitResults.filter((r) => r.status === 'fail').length}
+                  <XCircle size={12} aria-hidden="true" /> {qbitResults.filter((r) => r.status === 'fail').length}
                 </span>
               </span>
             </div>
