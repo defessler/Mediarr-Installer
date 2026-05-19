@@ -322,10 +322,13 @@ export function WelcomeScreen() {
                       <button
                         onClick={() => setOverflowOpenId(overflowOpenId === p.id ? null : p.id)}
                         disabled={busy !== null}
-                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-40"
-                        title="More actions"
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+                        title={`More actions for ${p.label}`}
+                        aria-label={`More actions for profile ${p.label}`}
+                        aria-expanded={overflowOpenId === p.id}
+                        aria-haspopup="menu"
                       >
-                        <Settings size={16} />
+                        <Settings size={16} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
