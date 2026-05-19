@@ -439,6 +439,7 @@ docker compose $FILES --progress plain --ansi never up -d`
           </p>
           <div className="flex gap-2">
             <select
+              aria-label="Pick a setup.sh step to re-run"
               value={stepToRerun}
               onChange={(e) => setStepToRerun(Number(e.target.value))}
               disabled={running}
