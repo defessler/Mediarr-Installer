@@ -2,9 +2,12 @@
 
 A self-hosted media automation stack running on a Synology DS1522+. Tell it what you want to watch — it finds, downloads, organises, and serves it to Plex automatically.
 
-> **New to this?** There's a step-by-step beginner's tutorial that uses the GUI
-> installer (no command line required): **[INSTALL.md](./INSTALL.md)**.
-> This page is the technical / power-user docs for the manual install path.
+> **New to this?** Download the GUI installer instead — no command line
+> required. The latest build is **[Mediarr Installer v0.3.4](https://github.com/defessler/Mediarr-Installer/releases/latest)**
+> (Windows, macOS, Linux). The step-by-step beginner's tutorial is at
+> **[INSTALL.md](./INSTALL.md)** and walks through the wizard screen by
+> screen. This page is the technical / power-user docs for the manual
+> install path.
 
 ---
 

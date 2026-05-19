@@ -5,10 +5,44 @@ over SSH. Wraps the bash + Python automation in `../nas/`.
 
 ## Status
 
-**Shipping** (current: `v0.2.0`). Multi-screen wizard with auto-detection,
-profile save/restore, migration from existing arrs, full ANSI-colored live
-log, and per-service health-dot output on Done. See [`PLAN.md`](./PLAN.md)
-for architecture.
+**Shipping** (current: `v0.3.4`). Eight-screen wizard with profile management,
+NAS-family auto-detection, install / update / migrate flows, an animated
+visual layer (Motion + Lucide), encrypted profile export/import, and a
+searchable in-app troubleshooting modal. See [`PLAN.md`](./PLAN.md) for
+architecture.
+
+### v0.3.x highlights
+
+The 0.3 line is the **child-friendly UX** release — every surface is
+hand-tuned so a first-time user (literally a kid, with a parent looking
+over their shoulder) can complete an install end-to-end:
+
+- **Hero icons + soft copy** on every screen — Server / Plug / Radar /
+  Settings2 / Rocket / AnimatedCheck. Failure language softened across the
+  board ("Install paused — tap Retry" vs "Install failed").
+- **Visible autosave**: the active-profile pill shows a Saving → Saved
+  chip so users can see their edits actually persisted.
+- **PasswordInput** with show/hide eye toggle on every credential field
+  (SSH password, sudo, key passphrase, arr/qbit/indexer passwords, profile
+  export passphrase).
+- **Segmented controls + BigButton everywhere**: auth-method picker,
+  install-mode pills, primary CTAs. Every clickable surface has spring
+  press feel + focus ring.
+- **Lucide status icons** in place of raw `✓ / ✘ / ●` glyphs across
+  EnvDetect (~25 checks), the run-screen stepper, results panels, and the
+  Done-screen service grid.
+- **Animated screen transitions** (220ms fade-up via `AnimatePresence
+  mode="wait"`), staggered grid entrances on Welcome + Done, Motion
+  layoutId-driven segmented highlights.
+- **Confetti** on a successful Done screen (suppressed under
+  `prefers-reduced-motion`).
+- **Inline animated delete confirm** replaces the system
+  `window.confirm()` for profile delete — no more focus-yank.
+- **Atkinson Hyperlegible + Lexend Deca** body / display fonts —
+  research-backed picks for low-vision readers and dyslexic users.
+
+Underlying mechanics (SSH/SFTP, env-detect, NordVPN API, payload sync,
+mocked Run/Done playback for dev) are unchanged from the 0.2 line.
 
 ## Develop
 
@@ -120,12 +154,41 @@ installer/
     ├── preload/             contextBridge surface — only path renderer uses
     │   └── index.ts
     └── renderer/            React + Tailwind UI
-        ├── main.tsx
-        ├── App.tsx
-        ├── store/wizard.ts  Zustand
-        ├── components/LogPanel.tsx
-        ├── screens/{Connect,Configure,Run,Done}Screen.tsx
-        ├── styles/globals.css
+        ├── main.tsx           LazyMotion(domAnimation) wrap
+        ├── App.tsx            stepper rail + AnimatePresence screen switcher
+        ├── store/
+        │   ├── wizard.ts      Zustand — wizard step + form values
+        │   └── errors.ts      Zustand — toast tray
+        ├── hooks/
+        │   ├── useProfileAutosave.ts   debounced profile-save + status
+        │   └── useFollowScroll.ts      log-panel auto-scroll
+        ├── components/
+        │   ├── BigButton.tsx           primary CTA with spring press feel
+        │   ├── PasswordInput.tsx       password field with eye toggle
+        │   ├── AnimatedCheck.tsx       SVG path-draw checkmark for Done
+        │   ├── ScreenTransition.tsx    220ms fade-up wrapper
+        │   ├── StepperRail.tsx         vertical step rail for the install
+        │   ├── LogPanel.tsx            scrolling terminal-style log
+        │   ├── LogActions.tsx          copy / save log to file
+        │   ├── ToastTray.tsx           bottom-right notifications
+        │   ├── IssuesModal.tsx         parsed install-log issues, tabbed
+        │   ├── TroubleshootingModal.tsx footer Help — ~30 curated entries
+        │   ├── WhatsNew.tsx            in-app new-version banner
+        │   ├── IndexerCard.tsx         per-indexer toggle + field reveal
+        │   ├── TimezoneSelect.tsx      searchable TZ picker
+        │   ├── PlexClaimRefresh.tsx    re-fetch claim token mid-install
+        │   ├── ExportProfileDialog.tsx AES-256-GCM passphrase export
+        │   └── ImportProfileDialog.tsx encrypted import
+        ├── screens/
+        │   ├── WelcomeScreen.tsx       profile picker + Install / Update / Migrate
+        │   ├── ConnectScreen.tsx       SSH host + creds
+        │   ├── EnvDetectScreen.tsx     NAS family + readiness checks
+        │   ├── ConfigureScreen.tsx     form for env values
+        │   ├── RunScreen.tsx           streaming setup.sh
+        │   ├── UpdateRunScreen.tsx     pull-and-recreate / sync-scripts / re-run-step
+        │   ├── MigrateScreen.tsx       library transfer from another arr install
+        │   └── DoneScreen.tsx          per-service health grid + confetti
+        ├── styles/globals.css          fonts, motion vars, reduced-motion
         └── global.d.ts
 ```
 

@@ -151,32 +151,51 @@ That's it. You can close the browser tab.
 
 Double-click `Mediarr Installer.exe`.
 
-The installer is a six-screen wizard. Here's what each screen does and what you
-should fill in. ASCII art shows the rough layout — your actual window will look
-nicer.
+The installer is a multi-screen wizard with a big green hero icon at the
+top of each screen, a stepper rail showing where you are, and a Help
+button in the bottom-right corner that opens a searchable list of fixes
+for every common problem. Here's what each screen does and what you
+should fill in. ASCII art shows the rough layout — your actual window
+has friendly icons + animations.
 
 ### Welcome screen
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Mediarr Installer                                      │
+│  [🖥]  Welcome back                                     │
+│         Pick a NAS to set up — or start fresh.          │
 │                                                         │
-│   Install the Mediarr stack on your NAS                 │
+│   ── Your NAS profiles ──         + New · ⬇ Import      │
+│   ┌─────────────────────────────────────────────────┐   │
+│   │ [DS]  DS1522+                  ┌─────────────┐  │   │
+│   │       heoki@192.168.1.242:22   │ ▶  Install  │ ⚙│   │
+│   │       ✓ config saved           └─────────────┘  │   │
+│   └─────────────────────────────────────────────────┘   │
 │                                                         │
-│   Six-screen wizard, ~20 minutes start to finish.       │
-│                                                         │
-│              ┌──────────────────────┐                   │
-│              │   Start new install  │                   │
-│              └──────────────────────┘                   │
-│              ┌──────────────────────┐                   │
-│              │   Resume last setup  │                   │
-│              └──────────────────────┘                   │
-│                                                         │
+│   ── Before you begin ──                                │
+│    [🖥] SSH is enabled on the NAS                       │
+│    [📦] Docker (Container Manager) is installed         │
+│    [👤] (Optional) An account at plex.tv                │
 └─────────────────────────────────────────────────────────┘
 ```
 
-Click **Start new install** the first time. (Next time you can pick up where
-you left off — saved profiles are encrypted on disk.)
+**First run:** the profile list is empty. The wizard shows a centered
+"Let's set up your first NAS" card with two buttons — **Create your first
+profile** and **Import from a file**.
+
+**Returning runs:** click the green **Install** button on the profile
+you want to set up. The little gear icon on each row opens an overflow
+menu with the other actions:
+
+- **Edit** — jump straight to the Configure screen with the saved values.
+- **Update** — pull newer container images for an existing install
+  without redoing everything.
+- **Migrate** — bring an existing Sonarr/Radarr library across from
+  another instance.
+- **Export** — save the profile to an encrypted `.mediarr-profile.json`
+  file (passphrase-protected).
+
+Profiles are encrypted at rest with Electron's built-in `safeStorage`.
 
 ---
 
@@ -184,35 +203,45 @@ you left off — saved profiles are encrypted on disk.)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Connect to your NAS                                    │
+│  [🔌]  Connect to your NAS                              │
+│         On Synology: Control Panel → Terminal → SSH     │
 │                                                         │
-│   Host:      [ 192.168.1.242                         ]  │
-│   Port:      [ 22                                    ]  │
-│   Username:  [ heoki                                 ]  │
-│   Password:  [ ●●●●●●●●●●●●●                         ]  │
+│   Host:      [ 192.168.1.242             ]  Port: [22]  │
+│   User:      [ heoki                                 ]  │
 │                                                         │
-│   ☐  Use SSH key file instead of password               │
+│   Authentication                                        │
+│    [ 🔒 Password ]  [ 🔑 Private key ]                  │
 │                                                         │
-│              ┌──────────────────────┐                   │
-│              │       Connect        │                   │
-│              └──────────────────────┘                   │
+│   Password:  [ ●●●●●●●●●●●●●                  ] [ 👁 ]  │
 │                                                         │
+│   ┌── Back ──┐         ┌── 🛡 Test ──┐  ┌── Continue ──┐│
+│   └──────────┘         └──────────────┘  └─────────────┘│
 └─────────────────────────────────────────────────────────┘
 ```
 
 Fill in:
 
 - **Host** — your NAS's LAN IP (e.g. `192.168.1.242`). If you don't know it:
-  - **Windows:** open Command Prompt → `arp -a` → look for a manufacturer like
-    Synology.
-  - **Or check your router's admin page** — it'll list connected devices by
-    name.
+  - **Windows:** open Command Prompt → `arp -a` → look for a manufacturer
+    like Synology.
+  - **Or check your router's admin page** — it'll list connected devices
+    by name.
+- The wizard accepts pasted DSM URLs (e.g. `http://192.168.1.242:5000`)
+  and strips the scheme + port automatically. It'll also warn you if you
+  type port 80/443/5000/5001 — those are DSM's web ports, not SSH (which
+  is 22).
 - **Port** — leave as `22`.
-- **Username** — your DSM admin username (the one you log in to DSM with).
-- **Password** — your DSM admin password.
+- **User** — your DSM admin username.
+- **Authentication** — click the **Password** or **Private key** pill.
+  The wizard handles both. The little 👁 icon in the password field
+  lets you peek at what you typed.
+- **Sudo password** *(only if you're not logging in as root)* — appears
+  below in an amber-tinted box. Leave blank to reuse the SSH password.
 
-Click **Connect**. If you typed everything right, you'll see a green "Connected"
-indicator and the wizard advances to Env Detect.
+Click **Test** first — the wizard will verify the SSH credentials without
+opening a persistent session. You'll see a green ✓ "Connection
+successful" banner, after which the **Continue** button lights up green.
+Click Continue to open the SSH session and advance to Env Detect.
 
 **Common stumbles:**
 
@@ -228,76 +257,112 @@ indicator and the wizard advances to Env Detect.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Environment detection                                  │
+│  [📡 ↻]  Scanning your NAS…                             │
+│           Looking up Docker, your user IDs, timezone…   │
 │                                                         │
-│   Auto-filled (read from your NAS):                     │
-│     ●  NAS family:        Synology DSM 7.2.2            │
-│     ●  Install path:      /volume1/docker/media         │
-│     ●  Data path:         /volume1/Data                 │
-│     ●  Time zone:         America/New_York              │
-│     ●  Your LAN IP:       192.168.1.242                 │
+│   Detected NAS  Synology DSM  7.2.2                     │
+│      Install dir: /volume1/docker/media                 │
+│      Data root:   /volume1/Data                         │
 │                                                         │
-│   Shared folder:                                        │
-│     ●  /volume1/Data writable as heoki                  │
+│   Required                                              │
+│      ✓  Docker                v2                        │
+│      ✓  /volume1 exists       /volume1 (Synology)       │
+│      ✓  python3               /usr/bin/python3          │
+│      ✓  iptables              /sbin/iptables            │
 │                                                         │
-│   Sudo strategy:                                        │
-│     ●  Passwordless sudo available                      │
+│   Capacity & connectivity                               │
+│      ✓  Disk space            842 GiB free of 4096 GiB  │
+│      ✓  Image pulls           verified reachable        │
 │                                                         │
-│              ┌──────────────────────┐                   │
-│              │       Continue       │                   │
-│              └──────────────────────┘                   │
+│   Auto-filled                                           │
+│      ✓  Timezone              America/New_York          │
+│      ✓  LAN IP                192.168.1.242             │
+│         Detected interfaces (click to use):             │
+│         [ 192.168.1.242 ]  [ 100.64.0.42 (Tailscale) ]  │
+│                                                         │
+│   ┌── Back ──┐    ✓ All required checks passed          │
+│                                ┌── Continue → ──┐       │
+│                                └─────────────────┘      │
 └─────────────────────────────────────────────────────────┘
 ```
 
-This screen runs a few checks against your NAS and shows what it found.
-**You don't need to do anything here — just click Continue** if everything is
-green.
+The Radar icon spins slowly while the scan is in flight, then settles
+once results land. Each check has a Lucide CheckCircle2 (green) or
+XCircle (red) icon so you can tell pass / fail in shape, not just colour
+— useful if you're colour-blind or have a dim screen.
 
-If anything is red, the message will tell you what to fix (most common: the
-`/volume1/Data` shared folder doesn't exist yet — create it in DSM →
-Control Panel → Shared Folder → Create).
+**You don't need to do anything here — just click Continue** if every
+required check is green.
+
+If anything is red or amber, the screen explains exactly what to do
+(e.g. "Create the Data shared folder in DSM → Control Panel → Shared
+Folder → Create"). The wizard also detects:
+
+- **Existing installs** — a sky-blue "An install already exists" banner
+  appears with a **Switch to Update mode** button if you've installed
+  here before.
+- **Already-running services** — if Plex / Sonarr / Radarr are already
+  running, an amber "Services already running — keep them?" panel lets
+  you tick which ones the wizard should leave alone.
+- **Port conflicts** — a red panel surfaces any port already bound by
+  something else (with a specific fix for Synology Media Server squatting
+  on port 49152).
+- **DSM-7 platform quirks** — missing tun module, unloaded iptables
+  modules, install dir on a network filesystem. Each comes with the
+  exact fix command.
 
 ---
 
 ### Configure screen
 
-This is the longest screen but the wizard pre-fills sensible defaults. You only
-need to touch a few sections.
+This is the longest screen but the wizard pre-fills sensible defaults.
+You only need to touch a few sections. Every section header has a small
+tinted icon (Boxes, Award, Shield, HardDrive, UserCircle, KeyRound,
+Lock, Wrench) so you can find a section at a glance instead of reading
+each heading.
+
+A small **Saving… → Saved ✓** chip appears in the profile pill at the
+top whenever you change a field — your edits persist automatically and
+you'll see proof of it.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Configure                                              │
+│  [⚙]   Make it yours                                    │
+│         We pre-filled what we could from the scan.      │
 │                                                         │
-│   Paths                                                 │
-│     Install dir   [/volume1/docker/media             ]  │
-│     Data root     [/volume1/Data                     ]  │
-│                                                         │
-│   Services  (9 of 9 enabled)                            │
+│   [📦] Services  (10 of 10 enabled — Prowlarr always on)│
 │     ☑ Plex stack    ☑ Sonarr     ☑ Radarr               │
 │     ☑ Lidarr        ☑ Bazarr     ☑ qBittorrent          │
 │     ☑ SABnzbd       ☑ Homepage   ☑ Recyclarr            │
 │     ☑ Unpackerr                                         │
 │                                                         │
-│   TRaSH Guide profiles                                  │
-│     Sonarr profile:  [ WEB-1080p     ▾ ]                │
-│     Radarr profile:  [ HD Bluray+WEB ▾ ]                │
+│   [🏆] TRaSH Guide profiles                             │
+│     Sonarr:  [ WEB-1080p     ▾ ]                        │
+│     Radarr:  [ HD Bluray+WEB ▾ ]                        │
 │                                                         │
-│   Identity                                              │
+│   [🛡] VPN  ▾                                            │
+│                                                         │
+│   [💾] Install location                                  │
+│     Install dir   [/volume1/docker/media             ]  │
+│     Data root     [/volume1/Data                     ]  │
+│                                                         │
+│   [👤] Identity                                          │
 │     User    [ heoki    ▾ ]   Group   [ users   ▾ ]      │
 │                                                         │
-│   Plex                                                  │
-│     Claim token  [ claim-AbC123dEf45...               ] │
+│   [🔑] Arr Web UI auth                                   │
+│     Username  [ admin                                 ] │
+│     Password  [ ●●●●●●●●●●●●●●●●           ] [ 👁 ]     │
 │                                                         │
-│   qBittorrent                                           │
+│   [🔒] qBittorrent WebUI                                 │
 │     User      [ admin                                 ] │
-│     Password  [ ●●●●●●●●●●●●●●●●                      ] │
+│     Password  [ ●●●●●●●●●●●●●●●●           ] [ 👁 ]     │
 │                                                         │
-│   VPN  ▾                                                │
-│   Indexers  ▾                                           │
+│   [🔧] Advanced  ▾                                       │
+│        — usenet provider, indexer keys, private tracker │
+│          logins, subtitle providers                     │
 │                                                         │
-│              ┌──────────────────────┐                   │
-│              │ Save & Continue      │                   │
-│              └──────────────────────┘                   │
+│   ┌── ← Back ──┐               ┌── Continue → ──┐       │
+│   └────────────┘               └─────────────────┘      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -346,37 +411,54 @@ Click **Save & Continue**.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Installing — step 4 of 10                              │
+│  Installing the stack                                   │
+│  [🚀] Applying firewall rules…                          │
+│  ████████████████░░░░░░░░░░░░░░░░░░░░  40% · step 4/10  │
 │                                                         │
-│   ✓  Step 1 — Validate config                           │
-│   ✓  Step 2 — Set permissions                           │
-│   ✓  Step 3 — Create folders                            │
-│   ●  Step 4 — Apply firewall                  [ ... ]   │
-│      Step 5 — Fetch VPN key                             │
-│      Step 6 — Start the stack                           │
-│      Step 7 — Configure services                        │
-│      Step 8 — Add indexers                              │
-│      Step 9 — Add subtitle providers                    │
-│      Step 10 — Final validation                         │
+│   ✓  Step 1  Set file permissions                       │
+│   ✓  Step 2  Create data and config directories         │
+│   ✓  Step 3  Apply firewall rules                       │
+│   ↻  Step 4  Fetch NordVPN WireGuard key       ← here   │
+│      Step 5  Validate configuration                     │
+│      Step 6  Start the stack                            │
+│      Step 7  Configure all services                     │
+│      Step 8  Add Prowlarr indexers                      │
+│      Step 9  Enable Bazarr subtitle providers           │
+│      Step 10 Verify stack health                        │
 │                                                         │
-│   ┌──────────── live log ────────────────────────────┐  │
-│   │ [firewall] Applying iptables rules...           │  │
-│   │ [firewall] Saved to /etc/iptables/rules.v4     │  │
-│   │ ...                                              │  │
-│   └──────────────────────────────────────────────────┘  │
+│   ┌── 📋 Copy log · 💾 Save log… ───────────────────┐    │
+│   │ [VPN] Fetching WireGuard key from NordVPN API… │    │
+│   │ [VPN] Got key in 1.4s                          │    │
+│   │ ...                                            │    │
+│   └────────────────────────────────────────────────┘    │
+│                                                         │
+│   ┌── ← Back ──┐  ┌── ↻ Retry ──┐  ┌── Continue → ──┐   │
+│   └────────────┘  └─────────────┘  └─────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
-This screen runs the actual install. **Just wait.** First time takes 15–25
-minutes because Docker has to download about 3 GB of images.
+This screen runs the actual install. **Just wait.** First time takes
+15–25 minutes because Docker has to download about 3 GB of images.
 
-You'll see steps tick over from grey → spinning → green check. If any step
-fails it goes red and a banner appears letting you re-run just that step.
+The animated headline at the top changes as each phase begins (uploading
+→ writing .env → running setup). The progress bar fills with a gentle
+shimmer animation on its leading edge — you can see the install is alive
+even when the log is quiet. Steps tick over from grey → amber-spinning →
+green-check. If any step fails it goes red and a banner above the
+stepper appears with two buttons (**N failed** / **N need action**),
+each opening a tabbed details modal.
 
-**While you wait:** open https://plex.tv/claim in another tab, generate a new
-claim token, and keep it handy — Plex will need it. *(If your claim token from
-the Configure screen expired during the install, the Plex container starts
-unclaimed; just go through Plex's web UI claim flow when the wizard finishes.)*
+**If the install pauses:** the headline softens to "Install paused" and
+the Retry button promotes to primary green. Tap Retry to run the whole
+install again (your config is already saved), or Back to tweak a setting
+first. Hovering any finished step in the rail reveals a small
+**re-run** button so you can re-run just that step without redoing the
+whole install.
+
+**While you wait:** open https://plex.tv/claim in another tab, generate
+a new claim token, and keep it handy — Plex will need it. The wizard
+has a "Refresh Plex claim" panel that appears on pause, so you can
+paste a fresh token directly there if needed.
 
 ---
 
@@ -384,28 +466,47 @@ unclaimed; just go through Plex's web UI claim flow when the wizard finishes.)*
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  All done                                               │
 │                                                         │
-│   Open these URLs in your browser to finish setup:      │
+│                        [ ✓ ]                            │
 │                                                         │
-│   ●  Homepage    http://192.168.1.242:3000              │
-│   ●  Plex        http://192.168.1.242:32400/web         │
-│   ●  Sonarr      http://192.168.1.242:49152             │
-│   ●  Radarr      http://192.168.1.242:49151             │
-│   ●  Lidarr      http://192.168.1.242:49154             │
-│   ●  Prowlarr    http://192.168.1.242:49150             │
-│   ●  Bazarr      http://192.168.1.242:49153             │
-│   ●  SABnzbd     http://192.168.1.242:49155             │
-│   ●  qBit        http://192.168.1.242:49156             │
-│   ●  Seerr       http://192.168.1.242:5056              │
-│   ●  Tautulli    http://192.168.1.242:8181              │
+│                    You did it!                          │
+│       Your media stack is live. Click any service       │
+│              below to open it.   🎉 (confetti)          │
 │                                                         │
-│   [ Click any URL to open it in your browser ]          │
+│              ┌── ↻ Re-check health ──┐                  │
+│                                                         │
+│   ┌──────────────────┐  ┌────────────────────┐          │
+│   │ ✓ Homepage [Start]│  │ ✓ Plex             │          │
+│   │   :3000   →       │  │   :32400/web      → │          │
+│   └──────────────────┘  └────────────────────┘          │
+│   ┌──────────────────┐  ┌────────────────────┐          │
+│   │ ✓ Sonarr   :49152│  │ ✓ Radarr   :49151  │          │
+│   └──────────────────┘  └────────────────────┘          │
+│   ... (Lidarr, Prowlarr, Bazarr, SABnzbd,               │
+│        qBit, Seerr, Tautulli, Flaresolverr)             │
+│                                                         │
+│   ▾ Validation log  (exit 0)        📋 Copy · 💾 Save  │
+│                                                         │
+│   exit 0       ✓ All 12 services reachable              │
+│                                  ┌── ↺ Start over ──┐   │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Bookmark the Homepage URL.** That's your one-stop dashboard with tiles linking
-to everything else.
+A big green checkmark draws itself in over ~1s, then a quick confetti
+burst celebrates the install. The headline says **"You did it!"** if
+all services came up cleanly, or **"Setup complete"** with a different
+status banner if some need attention.
+
+Each service tile shows:
+
+- **CheckCircle2** (green) — service responded on its port.
+- **XCircle** (red) — service didn't respond. Tile hover highlights the
+  service in rose so you can spot it.
+- **Circle** (slate) — validation still running.
+
+Click any tile to open that service in your browser. The **Homepage**
+tile has a small "Start" badge — bookmark that URL; it's your one-stop
+dashboard with tiles linking to everything else.
 
 ---
 
@@ -530,10 +631,20 @@ via `\\<nas-ip>` and browse to the share. (Most paths are visible through the
 
 ### First stop: the in-app Help button
 
-Click **Help** in the installer's footer (works on any screen). A search box
-opens with 30+ troubleshooting entries — each one has a symptom, the underlying
-cause, the fix, and copy-pasteable commands. Search for the error message you're
-seeing.
+Click **Help** in the installer's footer (works on any screen). A modal
+opens with a HelpCircle hero icon and a searchable list of 30+
+troubleshooting entries — each one has a symptom, the underlying cause,
+the fix, and copy-pasteable commands. The wizard auto-substitutes your
+actual install path into every command, so you can copy-paste straight
+to SSH without editing.
+
+Tips:
+
+- Search by **symptom** ("HTTP 000"), **service name** ("qBittorrent",
+  "tautulli"), or **exact error text** ("must join at least one network").
+- Each command snippet has a 📋 → ✓ icon swap so you can confirm the copy
+  landed before pasting.
+- ESC closes the modal.
 
 ### The most common stumbles
 
