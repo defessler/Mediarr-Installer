@@ -941,7 +941,7 @@ export function ConfigureScreen() {
             <Lock size={18} className="text-emerald-400" strokeWidth={1.75} />
             qBittorrent WebUI
           </h2>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
               type="checkbox"
               checked={qbitSameAsArr}
@@ -949,12 +949,23 @@ export function ConfigureScreen() {
             />
             Use same credentials as ARR Web UI
           </label>
-          {!qbitSameAsArr && (
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Username" k="QBITTORRENT_USER" />
-              <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {!qbitSameAsArr && (
+              <motion.div
+                key="qbit-fields"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="grid grid-cols-2 gap-4 pt-1">
+                  <Field label="Username" k="QBITTORRENT_USER" />
+                  <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {qbitSameAsArr && (
             <p className="text-xs text-slate-500">
               qBittorrent will use{' '}
