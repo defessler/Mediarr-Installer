@@ -266,7 +266,9 @@ export function App() {
                   'ml-1 inline-flex items-center gap-1 ' +
                   (autosaveStatus === 'saved' ? 'text-emerald-300' : 'text-slate-400')
                 }
+                role="status"
                 aria-live="polite"
+                aria-atomic="true"
               >
                 {autosaveStatus === 'saving' ? (
                   <>
