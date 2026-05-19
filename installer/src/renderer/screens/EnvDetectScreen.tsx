@@ -260,7 +260,7 @@ export function EnvDetectScreen() {
           transition={{ duration: 0.22 }}
           className="bg-rose-950/40 border border-rose-700/50 text-rose-100 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
         >
-          <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" />
+          <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <div className="font-semibold">Detection failed</div>
             <div className="text-rose-200/80 text-xs mt-0.5 font-mono whitespace-pre-wrap">{error}</div>
@@ -893,20 +893,20 @@ git clone https://github.com/telnetdoogie/synology-docker.git
             </span>
           )}
           {status === 'failed' && (
-            <span className="text-rose-300 inline-flex items-center gap-1.5">
-              <XCircle size={14} />
+            <span className="text-rose-300 inline-flex items-center gap-1.5" role="status" aria-live="polite">
+              <XCircle size={14} aria-hidden="true" />
               Detection failed — see details above
             </span>
           )}
           {status === 'ok' && allBlocking && (
-            <span className="text-emerald-300 inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} />
+            <span className="text-emerald-300 inline-flex items-center gap-1.5" role="status" aria-live="polite">
+              <CheckCircle2 size={14} aria-hidden="true" />
               All required checks passed
             </span>
           )}
           {status === 'ok' && !allBlocking && (
-            <span className="text-amber-300 inline-flex items-center gap-1.5">
-              <AlertTriangle size={14} />
+            <span className="text-amber-300 inline-flex items-center gap-1.5" role="status" aria-live="polite">
+              <AlertTriangle size={14} aria-hidden="true" />
               Fix the red items above to continue
             </span>
           )}
