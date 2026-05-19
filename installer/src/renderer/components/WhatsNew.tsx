@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { Sparkles, Download, ExternalLink, ChevronDown, FileText } from 'lucide-react'
 import type { AppInfo } from '../../shared/ipc.js'
 import { useErrors, reportError } from '../store/errors.js'
@@ -145,6 +146,7 @@ function renderNotes(md: string): React.ReactNode {
 
 export function WhatsNew({ info, onChanged }: Props) {
   const [busy, setBusy] = useState<'download' | 'skip' | null>(null)
+  const reduced = useReducedMotion()
   const u = info.updateAvailable
   if (!u) return null
 
@@ -185,9 +187,13 @@ export function WhatsNew({ info, onChanged }: Props) {
     <section className="rounded-xl border border-emerald-700/40 bg-gradient-to-b from-emerald-950/30 to-slate-900/30 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="shrink-0 w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+          <motion.div
+            className="shrink-0 w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center"
+            animate={reduced ? {} : { scale: [1, 1.06, 1] }}
+            transition={reduced ? {} : { duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          >
             <Sparkles size={18} className="text-emerald-300" />
-          </div>
+          </motion.div>
           <div className="min-w-0">
             <h2 className="font-semibold text-emerald-100 flex items-center gap-2 flex-wrap">
               <span>New version</span>
