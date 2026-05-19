@@ -107,7 +107,7 @@ export function LogPanel({ lines, follow = true }: Props) {
       >
         {lines.length === 0 ? (
           <div className="flex items-center gap-2 text-slate-500">
-            <Terminal size={14} className="text-slate-600" />
+            <Terminal size={14} className="text-slate-600" aria-hidden="true" />
             <span className="italic">Waiting for output</span>
             {/* Three dots that pulse one-by-one — gives a clear
                 "I'm alive, just waiting on the shell" signal without
@@ -160,7 +160,7 @@ export function LogPanel({ lines, follow = true }: Props) {
             title="Resume following the log (Esc / End also works)"
           >
             Jump to bottom
-            <ChevronDown size={14} />
+            <ChevronDown size={14} aria-hidden="true" />
           </motion.button>
         )}
       </AnimatePresence>
