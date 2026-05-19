@@ -59,16 +59,19 @@ interface StatusIconProps {
 }
 
 function StatusIcon({ status, size = 16 }: StatusIconProps) {
+  // Icons here are decorative — the surrounding <li> has aria-label
+  // with the textual status (complete / failed / in progress / pending),
+  // so the visual glyph should not be re-announced by SRs.
   if (status === 'ok') {
-    return <Check size={size} className="text-emerald-400" strokeWidth={3} />
+    return <Check size={size} className="text-emerald-400" strokeWidth={3} aria-hidden="true" />
   }
   if (status === 'fail') {
-    return <X size={size} className="text-rose-400" strokeWidth={3} />
+    return <X size={size} className="text-rose-400" strokeWidth={3} aria-hidden="true" />
   }
   if (status === 'running') {
-    return <Loader2 size={size} className="text-amber-300 animate-spin" strokeWidth={2.5} />
+    return <Loader2 size={size} className="text-amber-300 animate-spin" strokeWidth={2.5} aria-hidden="true" />
   }
-  return <Circle size={size} className="text-slate-700" strokeWidth={2} fill="currentColor" />
+  return <Circle size={size} className="text-slate-700" strokeWidth={2} fill="currentColor" aria-hidden="true" />
 }
 
 export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
