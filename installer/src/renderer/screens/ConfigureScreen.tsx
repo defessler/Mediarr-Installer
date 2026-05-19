@@ -822,9 +822,10 @@ export function ConfigureScreen() {
             the GID independently (handy when you want files owned by a
             shared "users" group rather than the user's private group). */}
         <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-3">
-          <label className="block text-sm font-medium">
+          <label className="block text-sm font-medium inline-flex items-center gap-2 w-full">
+            <Users size={14} className="text-emerald-400" strokeWidth={1.75} />
             Container user / group
-            <span className="text-slate-500 text-xs ml-2">
+            <span className="text-slate-500 text-xs">
               (these own the media files — pick something other than the install user)
             </span>
           </label>
