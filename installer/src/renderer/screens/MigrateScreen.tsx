@@ -382,29 +382,33 @@ export function MigrateScreen() {
         </p>
 
         <div className="grid grid-cols-[1fr_2fr] gap-3 text-sm items-center">
-          <label>Source Sonarr URL</label>
+          <label htmlFor="src-sonarr-url">Source Sonarr URL</label>
           <input
+            id="src-sonarr-url"
             type="text" placeholder="http://old-nas:8989"
             value={sourceSonarrUrl}
             onChange={(e) => setMigrate({ sourceSonarrUrl: e.target.value.trim() })}
             className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
-          <label>Source Sonarr API key</label>
+          <label htmlFor="src-sonarr-key">Source Sonarr API key</label>
           <input
+            id="src-sonarr-key"
             type="password"
             value={sourceSonarrKey}
             onChange={(e) => setMigrate({ sourceSonarrKey: e.target.value.trim() })}
             className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
-          <label>Source Radarr URL</label>
+          <label htmlFor="src-radarr-url">Source Radarr URL</label>
           <input
+            id="src-radarr-url"
             type="text" placeholder="http://old-nas:7878"
             value={sourceRadarrUrl}
             onChange={(e) => setMigrate({ sourceRadarrUrl: e.target.value.trim() })}
             className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
-          <label>Source Radarr API key</label>
+          <label htmlFor="src-radarr-key">Source Radarr API key</label>
           <input
+            id="src-radarr-key"
             type="password"
             value={sourceRadarrKey}
             onChange={(e) => setMigrate({ sourceRadarrKey: e.target.value.trim() })}
