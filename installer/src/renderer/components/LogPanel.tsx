@@ -99,6 +99,10 @@ export function LogPanel({ lines, follow = true }: Props) {
       <div
         ref={ref}
         tabIndex={0}
+        role="log"
+        aria-label="Install log"
+        aria-live="polite"
+        aria-atomic="false"
         className="log-panel h-full overflow-y-auto bg-black/60 border border-slate-800 rounded-md p-3 text-slate-300 focus:outline-none"
       >
         {lines.length === 0 ? (
