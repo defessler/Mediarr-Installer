@@ -2579,6 +2579,22 @@ def render_homepage_services(env, ip):
             f"        icon: recyclarr.svg\n"
             f"        siteMonitor: http://{ip}:8889/"
         )
+    # "Update Images" tile — exposes /pull on the recyclarr-trigger
+    # sidecar. The /pull endpoint runs `POST /images/create` against
+    # the docker API for every container in the `media` compose
+    # project, pulling new image layers WITHOUT recreating any
+    # container. ALWAYS-on (not gated on Recyclarr) because the
+    # sidecar now starts independently of the Recyclarr profile,
+    # so the pull button works for users who disabled Recyclarr too.
+    # Docker icon since this targets the docker daemon directly,
+    # not a specific service.
+    maintenance.append(
+        f"    - Update Images:\n"
+        f"        href: http://{ip}:8889/pull\n"
+        f"        description: 'Pull newer image layers · no container restart'\n"
+        f"        icon: docker.svg\n"
+        f"        siteMonitor: http://{ip}:8889/pull"
+    )
     if maintenance:
         out.append("- Maintenance:")
         out.extend(maintenance)
@@ -2614,13 +2630,13 @@ def render_homepage_settings(env):
         out.append("  Downloads:")
         out.append("    style: row")
         out.append("    columns: 2")
-    # Maintenance — currently just Recyclarr (could grow with future
-    # CLI-only services). columns: 1 so the single tile renders full-
-    # width rather than getting orphaned in a 3-col grid.
-    if is_enabled(env, 'ENABLE_RECYCLARR'):
-        out.append("  Maintenance:")
-        out.append("    style: row")
-        out.append("    columns: 1")
+    # Maintenance — always has Update Images (the recyclarr-trigger
+    # sidecar runs unconditionally now), gets a second Recyclarr tile
+    # when ENABLE_RECYCLARR=true. columns flex to match how many
+    # tiles will actually be in the row.
+    out.append("  Maintenance:")
+    out.append("    style: row")
+    out.append("    columns: 2" if is_enabled(env, 'ENABLE_RECYCLARR') else "    columns: 1")
     return "\n".join(out) + "\n"
 
 def write_config_file(label, path, content):

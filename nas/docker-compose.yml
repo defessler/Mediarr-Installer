@@ -496,19 +496,30 @@ services:
     logging: *logging
     restart: unless-stopped
 
-  # Web-UI for Recyclarr. Recyclarr itself is a CLI tool with no web
-  # interface — this sidecar exposes a single status page with a
-  # "Sync Now" button so the user can trigger a sync from the
-  # Homepage dashboard tile rather than having to SSH in. See
-  # recyclarr-trigger.py for the full justification + endpoints.
+  # Generic "stack-ops" webhook sidecar. Born as Recyclarr's web UI
+  # (Recyclarr itself is a CLI tool with no web interface) but has
+  # grown to also serve /pull — a one-click Docker-image refresh
+  # endpoint reachable from the Homepage dashboard's Update Images
+  # tile. See recyclarr-trigger.py for both endpoints' justification.
+  #
+  # NOT gated on the "recyclarr" compose profile any more: /pull is
+  # useful regardless of whether Recyclarr is enabled, so we want this
+  # sidecar to start with the rest of the stack. The /sync endpoint
+  # still requires the `recyclarr` container to be running, but it
+  # responds with a clear error in its absence rather than crashing.
+  # Container name is kept (rename would orphan existing containers
+  # on `docker compose up -d`).
   recyclarr-trigger:
     # Pin Python minor so a future 3.x release doesn't break http.server
     # or http.cookiejar (both used in recyclarr-trigger.py). Bump after
     # smoke-testing the trigger against the new minor.
     image: python:3.12-alpine
     container_name: recyclarr-trigger
-    profiles: ["recyclarr"]
     networks: [media]
+    # depends_on retained for startup ordering when Recyclarr IS in the
+    # compose run. Compose silently drops the dep when `recyclarr` is
+    # filtered out by its profile, so this doesn't block the trigger
+    # from starting in Recyclarr-disabled stacks.
     depends_on: [recyclarr]
     ports:
       - ${LAN_IP}:8889:8888

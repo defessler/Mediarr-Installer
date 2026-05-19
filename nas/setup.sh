@@ -630,6 +630,11 @@ if is_enabled ENABLE_RECYCLARR; then
     echo ""
 fi
 echo "  ── Updates ────────────────────────────────────"
+echo "  Image-only pull (no restart, no downtime) — click Update Images"
+echo "  on the Homepage dashboard, or:"
+echo "     http://${IP}:8889/pull                    # web UI with Pull Now button"
+echo ""
+echo "  Full pull + recreate (swaps containers onto the new images):"
 echo "  cd $SCRIPT_DIR"
 # Surface the active profile set so a copy-pasted update command will
 # actually update the user's selected services. Without COMPOSE_PROFILES

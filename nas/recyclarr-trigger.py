@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Tiny webhook server backing the Recyclarr tile on the Homepage dashboard.
+Tiny webhook server backing the Maintenance tiles on the Homepage dashboard.
 
-The Recyclarr container itself has no web UI — it's a CLI tool. This file
-runs in its own little Python:alpine container next to Recyclarr and
-exposes a one-page web UI with profile pickers + a "Sync Now" button.
+This file runs in its own little Python:alpine container next to Recyclarr
+and exposes a couple of one-page web UIs:
 
-  GET  /          → status page (last sync time, current profiles,
-                    profile pickers, Sync Now button, recent output if any)
+  GET  /          → Recyclarr status page (last sync time, current
+                    profiles, profile pickers, Sync Now button, recent
+                    output if any). Recyclarr itself is a CLI tool with
+                    no web UI, hence this sidecar.
   POST /sync      → runs `docker exec recyclarr recyclarr sync` (via the
                     mounted docker socket), captures output, re-renders.
   POST /profile   → updates TRASH_SONARR_PROFILE / TRASH_RADARR_PROFILE
@@ -15,30 +16,40 @@ exposes a one-page web UI with profile pickers + a "Sync Now" button.
                     `python3 setup-arr-config.py --recyclarr-only`, then
                     falls through to a sync. Single call from the form.
 
-Why a separate container instead of bolting onto Recyclarr's:
-- Recyclarr's official image is locked to its own entrypoint; bolting
-  a Python server on top means a custom Dockerfile we'd have to keep
-  rebased against upstream. Not worth the maintenance burden for ~50
-  lines of code that don't need to share Recyclarr's filesystem.
+  GET  /pull      → "Update images" status page — shows the list of
+                    media-stack containers, their current images, last
+                    pull outcome, and a "Pull Now" button.
+  POST /pull      → kicks off a background thread that streams
+                    `POST /images/create` against the Docker socket
+                    for every image label-matched to com.docker.compose.
+                    project=media. Containers keep running with their
+                    currently-loaded image; new layers land on disk but
+                    no service is recreated. Returns immediately to a
+                    polling page (auto-refresh while running).
 
-- The webhook container can stay tiny (python:3-alpine + apk add
-  docker-cli) and gets reusable: any future "tiny dashboard widget that
-  needs to docker-exec into another container" can use the same pattern.
+Why one sidecar handling both: same docker.sock + install-dir mounts,
+same CSRF / lock pattern, same Python image — separating them would
+double the container count for ~50 extra lines of code. The container
+is named `recyclarr-trigger` for backward compatibility (rename would
+orphan existing containers on `docker compose up -d`); think of it as
+the "stack-ops trigger" with Recyclarr being its first user.
 
 Volumes mounted by docker-compose.yml:
-  /var/run/docker.sock                  (rw)  — docker exec recyclarr
+  /var/run/docker.sock                  (rw)  — docker exec / image pull
   ${INSTALL_DIR}/recyclarr/config       (ro)  — read .last-sync stamp
   ${INSTALL_DIR}/recyclarr-trigger.py   (ro)  — this file
   ${INSTALL_DIR}                        (rw)  — write .env + regenerate
                                                 recyclarr.yml in place
 
-Security note: anyone on the LAN can hit POST /sync OR /profile. The
-"attack" surface for /sync is they trigger a no-op idempotent sync. For
-/profile it's they swap your TRaSH profile to a different valid pick —
-annoying but trivially reversible from the same page. We take a coarse
-in-process lock so trampling parallel requests is impossible. CSRF
-protection (Origin / Host match) closes the cross-origin browser vector.
-This is a home-LAN tool, not exposed to the internet.
+Security note: anyone on the LAN can hit POST /sync, /profile, OR /pull.
+The "attack" surface for /sync is they trigger a no-op idempotent sync.
+For /profile it's they swap your TRaSH profile to a different valid pick
+— annoying but trivially reversible from the same page. For /pull it's
+they trigger a slightly-bandwidth-consuming image download (no other
+side effects since we DON'T recreate containers). Coarse in-process
+locks prevent parallel-request trampling. CSRF protection (Origin / Host
+match) closes the cross-origin browser vector. This is a home-LAN tool,
+not exposed to the internet.
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -49,6 +60,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 import urllib.parse
 
 # Where the .last-sync stamp file lives, AS SEEN INSIDE THIS CONTAINER.
@@ -93,6 +105,26 @@ RADARR_KEYS = {k for k, _ in RADARR_PROFILES}
 # we don't want to debug. Non-blocking acquire so the user sees an
 # immediate "in progress" response instead of waiting.
 SYNC_LOCK = threading.Lock()
+
+# Image-pull state — distinct lock + state dict from SYNC_LOCK because
+# a pull can take 10+ min (large lsio images on a slow uplink) and we
+# don't want it to block a Recyclarr sync the user kicks off
+# in another tab. The pull runs in a background thread so POST /pull
+# can return immediately to a polling page rather than holding the
+# HTTP connection open for the duration of the download.
+#
+# PULL_STATE is read by render_pull() under PULL_LOCK to avoid a torn
+# read mid-update. Mutations from the worker thread also take the lock.
+PULL_LOCK = threading.Lock()
+PULL_STATE = {
+    'running':     False,   # True while a worker thread is mid-pull
+    'started_at':  None,    # epoch seconds; None if never run
+    'finished_at': None,    # epoch seconds; None if never run
+    'kind':        None,    # 'ok' | 'warn' | 'err' | None
+    'msg':         '',      # one-line summary for the banner
+    'output':      '',      # multi-line progress dump (per-image lines)
+    'images':      [],      # list of {'ref': 'foo:bar', 'status': 'pulled' | 'up-to-date' | 'error', 'detail': '...'}
+}
 
 
 PAGE = """<!DOCTYPE html>
@@ -229,6 +261,134 @@ code {{
   runs <code>python3 setup-arr-config.py --recyclarr-only</code> on
   save. Schedule weekly sync via Synology Task Scheduler — see the
   in-app Help → Recyclarr.
+</p>
+
+</body>
+</html>"""
+
+
+PAGE_PULL = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mediarr — Update Images</title>
+{refresh_meta}
+<style>
+* {{ box-sizing: border-box; }}
+body {{
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: #0f172a; color: #e2e8f0;
+  padding: 2rem 1rem; max-width: 800px; margin: 0 auto;
+}}
+h1 {{ font-weight: 600; color: #38bdf8; margin: 0 0 0.5rem 0; }}
+.muted {{ color: #94a3b8; font-size: 0.875rem; }}
+.card {{
+  background: #1e293b; border: 1px solid #334155;
+  border-radius: 0.5rem; padding: 1rem; margin: 1rem 0;
+}}
+.label {{
+  color: #64748b; font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 0.5rem;
+}}
+.row {{ display: flex; justify-content: space-between; gap: 1rem;
+        padding: 0.25rem 0; align-items: center; }}
+.row strong {{ font-weight: 500; }}
+.actions {{ display: flex; gap: 0.75rem; flex-wrap: wrap;
+            align-items: center; margin-top: 0.5rem; }}
+button {{
+  background: #0ea5e9; color: white; border: none;
+  padding: 0.875rem 1.75rem; font-size: 1rem; font-weight: 600;
+  border-radius: 0.375rem; cursor: pointer;
+  transition: background 0.15s ease;
+}}
+button:hover  {{ background: #0284c7; }}
+button:active {{ background: #0369a1; }}
+button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+pre {{
+  background: #0b1220; padding: 1rem; border-radius: 0.375rem;
+  overflow: auto; font-size: 0.8125rem; line-height: 1.45;
+  white-space: pre-wrap; word-wrap: break-word; max-height: 60vh;
+}}
+code {{
+  background: #0b1220; padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem; font-size: 0.875em;
+}}
+.banner {{
+  border-radius: 0.375rem; padding: 0.75rem 1rem;
+  margin: 1rem 0; font-size: 0.9rem;
+}}
+.banner.ok {{ background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #6ee7b7; }}
+.banner.warn {{ background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d; }}
+.banner.err {{ background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }}
+.banner.info {{ background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #7dd3fc; }}
+.hint {{ font-size: 0.8rem; color: #64748b; margin-top: 1.5rem;
+         line-height: 1.6; }}
+.image-list {{ margin: 0; padding: 0; list-style: none; }}
+.image-list li {{
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.5rem 0; border-bottom: 1px solid #1e293b;
+  font-size: 0.875rem;
+}}
+.image-list li:last-child {{ border-bottom: none; }}
+.image-list .img {{ font-family: ui-monospace, SFMono-Regular, monospace;
+                    font-size: 0.8125rem; color: #cbd5e1; }}
+.image-list .status {{ font-size: 0.75rem; padding: 0.125rem 0.5rem;
+                       border-radius: 9999px; }}
+.image-list .status.pulled    {{ background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }}
+.image-list .status.up-to-date {{ background: rgba(100, 116, 139, 0.2); color: #cbd5e1; }}
+.image-list .status.error     {{ background: rgba(239, 68, 68, 0.15);  color: #fca5a5; }}
+.image-list .status.pending   {{ background: rgba(245, 158, 11, 0.15); color: #fcd34d; }}
+.spinner {{
+  display: inline-block; width: 0.875rem; height: 0.875rem;
+  border: 2px solid #38bdf8; border-right-color: transparent;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  vertical-align: middle; margin-right: 0.4rem;
+}}
+@keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+</style>
+</head>
+<body>
+<h1>Update Images</h1>
+<p class="muted">
+  Pulls newer Docker image layers for every container in your media stack.
+  Containers keep running on their currently-loaded image — no service is
+  recreated, no downtime. New images take effect on the next restart
+  (Sync Now in the wizard's Update Stack, or just <code>docker compose
+  up -d</code>).
+</p>
+
+{banner}
+
+<div class="card">
+  <div class="label">Last pull</div>
+  <div class="row"><span>Status</span><strong>{state_label}</strong></div>
+  <div class="row"><span>Started</span><strong>{started_at}</strong></div>
+  <div class="row"><span>Finished</span><strong>{finished_at}</strong></div>
+</div>
+
+<div class="card">
+  <div class="label">Pull now</div>
+  <form method="POST" action="/pull">
+    <div class="actions">
+      <button type="submit" {pull_disabled}>{button_label}</button>
+      <span class="muted">Streams <code>POST /images/create</code> against the
+        docker socket for every image in your stack.</span>
+    </div>
+  </form>
+</div>
+
+{images_section}
+
+{output_section}
+
+<p class="hint">
+  Equivalent CLI: <code>docker compose pull</code> from your install
+  directory. To restart containers onto the new images after the pull:
+  <code>docker compose up -d</code> (no downtime since unchanged
+  containers stay up; only the ones with new image hashes get
+  recreated). The installer's Update Stack screen has a one-click
+  "Pull + recreate" button that does both in one step.
 </p>
 
 </body>
@@ -395,6 +555,380 @@ def regenerate_recyclarr_yml():
         return (False, f'failed to run setup-arr-config.py: {e}')
 
 
+# ── Docker API helpers (UNIX socket → /var/run/docker.sock) ──────────
+# Used by both `detect_daemon_api_version` (startup pin) and `run_pull`
+# (image-update endpoint). Reading from the socket directly avoids
+# needing the `docker` Python SDK (which would require a pip install at
+# container boot) AND avoids spawning `docker pull` subprocesses (which
+# would need docker-cli-compose for `docker compose pull` parity).
+class UnixHTTPConn(http.client.HTTPConnection):
+    """Tiny adapter making http.client speak Docker's UNIX socket. The
+    Docker engine API IS HTTP — just delivered over /var/run/docker.sock
+    instead of a TCP port. Reusing http.client lets us avoid both the
+    `requests` and `docker` packages (each ~5MB + wheel-build delays
+    on python:3-alpine apk add). Caller manages the connection lifecycle
+    and parses the response."""
+    def __init__(self, timeout=10):
+        super().__init__('localhost', timeout=timeout)
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect('/var/run/docker.sock')
+
+
+def docker_list_containers(project_label):
+    """Return the list of containers (parsed JSON) whose
+    com.docker.compose.project label matches `project_label`. Docker
+    API GET /containers/json?filters=... — Docker filters its own
+    container list server-side so we get back exactly the media-stack
+    containers (no other docker projects on the same daemon).
+
+    Returns [] on any API error (and prints to stderr) so the caller
+    can render a helpful "no containers found" page rather than 500.
+    """
+    try:
+        conn = UnixHTTPConn(timeout=10)
+        filters = json.dumps({'label': [f'com.docker.compose.project={project_label}']})
+        path = f'/containers/json?filters={urllib.parse.quote(filters)}'
+        conn.request('GET', path)
+        resp = conn.getresponse()
+        if resp.status != 200:
+            print(f'[pull] /containers/json returned {resp.status}', flush=True)
+            return []
+        return json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        print(f'[pull] docker_list_containers failed: {e}', flush=True)
+        return []
+
+
+def docker_pull_image(image_ref, timeout_seconds=600):
+    """Stream POST /images/create against the docker socket to pull
+    `image_ref` (e.g. "linuxserver/sonarr:latest"). Docker returns a
+    chunked stream of JSON status lines as the pull progresses — we
+    consume them to detect:
+
+      - Any `"error"` field    → pull failed (auth, network, no tag)
+      - `"Status: Image is up to date for ..."` final line → no work
+      - `"Status: Downloaded newer image for ..."` final line → updated
+
+    Returns (kind, detail) where kind is one of 'pulled' | 'up-to-date'
+    | 'error', and detail is a short human-readable line.
+
+    Why parse the stream rather than just check exit status: the API
+    response code is 200 even on a successful pull-with-error (the
+    error is buried in a stream line). The Docker CLI does this same
+    parsing internally. timeout_seconds is per-image — large lsio
+    images on a slow uplink can take 5+ min.
+    """
+    # Split "name:tag" with sensible defaults. Docker accepts the full
+    # ref in fromImage OR a separate tag query param; we pass both
+    # forms split to be explicit (some older API versions get confused
+    # by a tag in fromImage).
+    if '@sha256:' in image_ref:
+        # Digest pin — pass through whole ref, no tag split.
+        name, tag = image_ref, ''
+    elif ':' in image_ref and image_ref.rfind(':') > image_ref.rfind('/'):
+        name, tag = image_ref.rsplit(':', 1)
+    else:
+        name, tag = image_ref, 'latest'
+
+    try:
+        conn = UnixHTTPConn(timeout=timeout_seconds)
+        params = {'fromImage': name}
+        if tag:
+            params['tag'] = tag
+        path = '/images/create?' + urllib.parse.urlencode(params)
+        # X-Registry-Auth = "" makes Docker not pass any auth header.
+        # Sufficient for Docker Hub / ghcr.io public images (our entire
+        # stack). Private registries would need a base64-encoded
+        # {"username":"","password":"","serveraddress":""} JSON here.
+        conn.request('POST', path, body='', headers={'X-Registry-Auth': ''})
+        resp = conn.getresponse()
+        if resp.status >= 400:
+            try:
+                body = resp.read().decode('utf-8', errors='replace')
+            except Exception:
+                body = ''
+            return ('error', f'HTTP {resp.status} from docker API ({body[:200]})')
+
+        # Consume the streamed JSON-lines body. Docker emits one JSON
+        # object per line (CRLF or LF separated). We don't need to
+        # parse every progress tick — just the final status + any
+        # error. Read until EOF (the connection closes when the pull
+        # finishes).
+        raw = b''
+        while True:
+            chunk = resp.read(4096)
+            if not chunk:
+                break
+            raw += chunk
+            # Defensive cap so a runaway stream can't OOM the trigger.
+            if len(raw) > 4 * 1024 * 1024:
+                break
+
+        text = raw.decode('utf-8', errors='replace')
+        last_status = ''
+        error_msg = None
+        for ln in text.splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                d = json.loads(ln)
+            except Exception:
+                continue
+            if isinstance(d, dict):
+                if 'error' in d:
+                    error_msg = d.get('error') or d.get('errorDetail', {}).get('message', '?')
+                elif 'status' in d:
+                    s = d.get('status', '')
+                    # Status: lines are the final summary from Docker.
+                    if s.startswith('Status:'):
+                        last_status = s
+
+        if error_msg:
+            return ('error', error_msg)
+        if 'is up to date' in last_status.lower():
+            return ('up-to-date', last_status or 'Image is up to date')
+        if 'downloaded newer image' in last_status.lower():
+            return ('pulled', last_status or 'Downloaded newer image')
+        # Fell through — assume pulled (Docker emitted no final Status:
+        # line, which sometimes happens on older daemons).
+        return ('pulled', last_status or 'Pull complete (no Status line)')
+
+    except socket.timeout:
+        return ('error', f'Pull timed out after {timeout_seconds}s')
+    except Exception as e:
+        return ('error', f'Pull request failed: {e}')
+
+
+def run_pull():
+    """Worker function — runs in a background thread. Pulls every image
+    referenced by a running container in the `media` compose project.
+    Updates PULL_STATE as it goes so the polling /pull page reflects
+    real-time progress.
+
+    Caller has already claimed the slot by setting PULL_STATE['running']
+    = True inside the lock; this function flips it back to False at the
+    end (success or crash) so the next /pull POST is allowed."""
+    try:
+        # Compose project name is pinned to `media` in docker-compose.yml.
+        # If we ever rename the project, update this string OR teach
+        # main() to read it from .env.
+        containers = docker_list_containers('media')
+        if not containers:
+            with PULL_LOCK:
+                PULL_STATE['kind'] = 'warn'
+                PULL_STATE['msg']  = (
+                    'No running containers found in compose project "media". '
+                    'Bring the stack up first (docker compose up -d) before pulling.'
+                )
+                PULL_STATE['running']     = False
+                PULL_STATE['finished_at'] = time.time()
+            return
+
+        # Collapse to unique image refs — multiple containers can share an
+        # image (e.g., before a future split). Sort for deterministic order
+        # so the user can scan the list left-to-right same way each time.
+        image_refs = sorted({
+            (c.get('Image') or '').strip()
+            for c in containers
+            if c.get('Image') and not (c.get('Image') or '').startswith('sha256:')
+        })
+        if not image_refs:
+            with PULL_LOCK:
+                PULL_STATE['kind'] = 'warn'
+                PULL_STATE['msg']  = (
+                    'No tagged images found in compose project "media" '
+                    '(all containers reference image IDs, not tags?)'
+                )
+                PULL_STATE['running']     = False
+                PULL_STATE['finished_at'] = time.time()
+            return
+
+        # Pre-populate the image list with `pending` so the polling page
+        # shows the full set up front — then statuses flip in place as
+        # each pull completes. Better UX than "nothing, nothing, then a
+        # final list".
+        with PULL_LOCK:
+            PULL_STATE['images'] = [
+                {'ref': ref, 'status': 'pending', 'detail': 'queued'}
+                for ref in image_refs
+            ]
+
+        output_lines = []
+        pulled_count = 0
+        updated_count = 0
+        error_count = 0
+        for idx, ref in enumerate(image_refs):
+            output_lines.append(f'→ pulling {ref}...')
+            with PULL_LOCK:
+                PULL_STATE['output'] = '\n'.join(output_lines)
+                PULL_STATE['images'][idx] = {
+                    'ref': ref, 'status': 'pending', 'detail': 'in progress',
+                }
+
+            kind, detail = docker_pull_image(ref)
+            output_lines.append(f'  {kind}: {detail}')
+            with PULL_LOCK:
+                PULL_STATE['output'] = '\n'.join(output_lines)
+                PULL_STATE['images'][idx] = {
+                    'ref': ref, 'status': kind, 'detail': detail,
+                }
+            pulled_count += 1
+            if kind == 'pulled':
+                updated_count += 1
+            elif kind == 'error':
+                error_count += 1
+
+        with PULL_LOCK:
+            if error_count == 0 and updated_count > 0:
+                PULL_STATE['kind'] = 'ok'
+                PULL_STATE['msg']  = (
+                    f'Pulled {pulled_count} images — {updated_count} updated, '
+                    f'{pulled_count - updated_count} already current. '
+                    f'Run `docker compose up -d` (or the installer\'s "Pull + '
+                    f'recreate" button) to swap containers onto the new images.'
+                )
+            elif error_count == 0:
+                PULL_STATE['kind'] = 'ok'
+                PULL_STATE['msg']  = (
+                    f'All {pulled_count} images already up to date — nothing to do.'
+                )
+            elif error_count < pulled_count:
+                PULL_STATE['kind'] = 'warn'
+                PULL_STATE['msg']  = (
+                    f'Pulled {pulled_count - error_count} OK, {error_count} '
+                    f'failed — see the per-image status below.'
+                )
+            else:
+                PULL_STATE['kind'] = 'err'
+                PULL_STATE['msg']  = (
+                    f'All {error_count} image pulls failed — check the docker '
+                    f'daemon is reachable (volume: /var/run/docker.sock) and '
+                    f'that the trigger container has internet access.'
+                )
+            PULL_STATE['running']     = False
+            PULL_STATE['finished_at'] = time.time()
+    except Exception as e:
+        # Last-chance: if anything else explodes, surface it to the UI
+        # instead of leaving PULL_STATE.running stuck at True forever.
+        with PULL_LOCK:
+            PULL_STATE['kind'] = 'err'
+            PULL_STATE['msg']  = f'Pull worker crashed: {e}'
+            PULL_STATE['running']     = False
+            PULL_STATE['finished_at'] = time.time()
+
+
+def format_ts(ts):
+    """Format a Unix timestamp as a short human-readable string in
+    the trigger's local time. Returns '—' for None so the page can
+    show a clean placeholder before the first pull runs."""
+    if ts is None:
+        return '—'
+    try:
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))
+    except Exception:
+        return '?'
+
+
+def render_pull():
+    """Render the /pull status page. Reads a single snapshot of
+    PULL_STATE under the lock so we don't get a torn mid-update read.
+
+    Auto-refresh: when running, the page sets a 2s meta refresh so
+    progress lines tick in without the user clicking anything. Once
+    finished_at is set, refresh stops — the banner shows the outcome
+    and the user can pull again or close the tab."""
+    with PULL_LOCK:
+        snap = {k: v for k, v in PULL_STATE.items()}
+        # Deep-copy the image list since we'll iterate outside the lock.
+        snap['images'] = [dict(x) for x in PULL_STATE.get('images', [])]
+
+    refresh_meta = ''
+    if snap['running']:
+        refresh_meta = '<meta http-equiv="refresh" content="2">'
+
+    banner_html = ''
+    if snap['running']:
+        banner_html = (
+            '<div class="banner info"><span class="spinner" aria-hidden="true"></span>'
+            'Pulling images — this page refreshes every 2s as each finishes.</div>'
+        )
+    elif snap['kind'] and snap['msg']:
+        banner_html = (
+            f'<div class="banner {html.escape(snap["kind"])}">'
+            f'{html.escape(snap["msg"])}</div>'
+        )
+
+    if snap['running']:
+        state_label = 'In progress'
+        button_label = 'Pull in progress…'
+        pull_disabled = 'disabled'
+    elif snap['kind'] == 'ok':
+        state_label = 'Last pull completed'
+        button_label = 'Pull Now'
+        pull_disabled = ''
+    elif snap['kind'] in ('warn', 'err'):
+        state_label = f'Last pull: {snap["kind"]}'
+        button_label = 'Pull Now (retry)'
+        pull_disabled = ''
+    else:
+        state_label = 'Never pulled yet'
+        button_label = 'Pull Now'
+        pull_disabled = ''
+
+    # Per-image status list. Only render when there ARE images — pre-
+    # first-pull, the section is hidden (no card with empty list).
+    images_section = ''
+    if snap['images']:
+        rows = []
+        for img in snap['images']:
+            ref    = html.escape(img.get('ref', '?'))
+            status = html.escape(img.get('status', 'pending'))
+            detail = html.escape(img.get('detail', ''))
+            label_map = {
+                'pulled':     'updated',
+                'up-to-date': 'up-to-date',
+                'error':      'error',
+                'pending':    'pending',
+            }
+            label = label_map.get(status, status)
+            rows.append(
+                f'    <li><span class="img">{ref}</span>'
+                f'<span class="status {status}" title="{detail}">{label}</span></li>'
+            )
+        images_section = (
+            '<div class="card">\n'
+            '  <div class="label">Images in your stack</div>\n'
+            '  <ul class="image-list">\n'
+            + '\n'.join(rows) + '\n'
+            '  </ul>\n'
+            '</div>'
+        )
+
+    output_section = ''
+    if snap['output']:
+        output_section = (
+            '<div class="card">'
+            '<div class="label">Pull log</div>'
+            f'<pre>{html.escape(snap["output"])}</pre>'
+            '</div>'
+        )
+
+    return PAGE_PULL.format(
+        refresh_meta=refresh_meta,
+        banner=banner_html,
+        state_label=html.escape(state_label),
+        started_at=html.escape(format_ts(snap.get('started_at'))),
+        finished_at=html.escape(format_ts(snap.get('finished_at'))),
+        button_label=html.escape(button_label),
+        pull_disabled=pull_disabled,
+        images_section=images_section,
+        output_section=output_section,
+    )
+
+
 def run_sync():
     """`docker exec recyclarr recyclarr sync`. Returns
     (status_kind, message, output) — status_kind one of ok/warn/err for
@@ -472,10 +1006,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def do_GET(self):
-        if self.path != '/':
-            self.send_error(404)
+        if self.path == '/':
+            self._send_html(render())
             return
-        self._send_html(render())
+        if self.path == '/pull':
+            self._send_html(render_pull())
+            return
+        self.send_error(404)
 
     def _check_csrf(self):
         """Minimal DNS-rebinding protection. The browser sends `Host:` and
@@ -549,6 +1086,39 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html(render(banner_kind=kind, banner_text=msg, output=out), code=code)
             return
 
+        if self.path == '/pull':
+            # CAS: read+set running inside the lock to atomically claim
+            # the slot. Two concurrent POSTs racing each other would
+            # otherwise both see running=False and both spawn threads
+            # — leading to two parallel pulls clobbering PULL_STATE.
+            # Claiming under the lock guarantees exactly one thread
+            # gets to start the pull; the other re-renders the page
+            # with the "already running" banner.
+            with PULL_LOCK:
+                already_running = PULL_STATE['running']
+                if not already_running:
+                    PULL_STATE['running']     = True
+                    PULL_STATE['started_at']  = time.time()
+                    PULL_STATE['finished_at'] = None
+                    PULL_STATE['kind']        = None
+                    PULL_STATE['msg']         = ''
+                    PULL_STATE['output']      = ''
+                    PULL_STATE['images']      = []
+            if already_running:
+                self._send_html(render_pull(), code=200)
+                return
+            # daemon=True so the trigger container can exit cleanly
+            # mid-pull if the user docker-restarts it — the in-flight
+            # pull would be a half-downloaded layer cleaned up by
+            # Docker's own resume-on-retry.
+            t = threading.Thread(target=run_pull, daemon=True)
+            t.start()
+            self.send_response(303)
+            self.send_header('Location', '/pull')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+
         self.send_error(404)
 
 
@@ -576,21 +1146,8 @@ def detect_daemon_api_version():
     fails — that way a broken docker.sock mount still gives a usable
     starting point rather than crashing the trigger at boot.
     """
-    class UnixHTTPConn(http.client.HTTPConnection):
-        # Tiny adapter to make http.client speak UNIX sockets — Docker's
-        # API IS HTTP, just over /var/run/docker.sock instead of a TCP
-        # port. Means we avoid pulling in `requests` or the `docker`
-        # SDK (both would add wheel-building delays to apk init).
-        def __init__(self):
-            super().__init__('localhost')
-        def connect(self):
-            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self.sock.settimeout(self.timeout)
-            self.sock.connect('/var/run/docker.sock')
-
     try:
-        conn = UnixHTTPConn()
-        conn.timeout = 5
+        conn = UnixHTTPConn(timeout=5)
         conn.request('GET', '/version')
         resp = conn.getresponse()
         if resp.status != 200:
@@ -622,7 +1179,11 @@ def main():
               f'DOCKER_API_VERSION={existing}', flush=True)
 
     addr = ('0.0.0.0', 8888)
-    print(f'Recyclarr trigger webhook listening on http://{addr[0]}:{addr[1]}/', flush=True)
+    print(
+        f'Mediarr stack-trigger webhook listening on http://{addr[0]}:{addr[1]}/'
+        f' (endpoints: / for Recyclarr sync, /pull for image updates)',
+        flush=True,
+    )
     HTTPServer(addr, Handler).serve_forever()
 
 

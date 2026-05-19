@@ -73,7 +73,7 @@ the cheat sheet, sorted by which ones you'll actually open:
 | **SABnzbd** | The usenet downloader | Pulls files from Usenet — faster + more reliable than torrents, but requires a paid provider (Eweka, Newshosting, etc.). Optional. |
 | **Tautulli** | The watch-stats dashboard | Pretty graphs of what's been watched, by whom, for how long. Sends optional notifications. Talks only to Plex. |
 | **Recyclarr** | The quality-rules keeper | The TRaSH Guides community publishes "use these rules for the best 1080p / 4K experience." Recyclarr automatically pushes those rules into Sonarr / Radarr so you get the right quality without having to copy-paste hundreds of settings. Has no UI of its own — the sidecar below provides one. |
-| **recyclarr-trigger** | The Recyclarr web UI | Tiny web page at `http://<NAS>:8889` with **profile dropdowns** (pick a different TRaSH bundle without re-running the installer) and a **Sync Now** button. Click the Recyclarr tile on Homepage to get there. |
+| **recyclarr-trigger** | The Recyclarr + image-update web UI | Tiny webhook server at `http://<NAS>:8889`. Two pages: `/` is Recyclarr — **profile dropdowns** (pick a different TRaSH bundle without re-running the installer) plus a **Sync Now** button. `/pull` is **Update Images** — pulls newer image layers for every container in your stack via the Docker API, without recreating any container (no downtime). Both reachable from the Homepage dashboard's Maintenance row. |
 | **Unpackerr** | The auto-unzipper | Some downloads arrive as `.rar` archives split into 50 files. Unpackerr extracts them in place so Sonarr / Radarr can see the actual video file. |
 | **Flaresolverr** | The CloudFlare lock-picker | Some indexer sites (e.g. 1337x) hide behind a "are you human?" CloudFlare challenge. Flaresolverr solves the challenge so Prowlarr can still talk to them. Set-and-forget background service. |
 
@@ -713,6 +713,15 @@ Everything streams to phones, smart TVs, and browsers via Plex.
   click "Save profile & sync". The page rewrites `.env` + `recyclarr.yml`
   and runs the sync in one click — no need to edit files or re-run the
   installer.
+- **Pull newer Docker images straight from Homepage** — click the
+  **Update Images** tile in the Maintenance row, then **Pull Now**. The
+  trigger sidecar streams `POST /images/create` against your Docker
+  socket for every container in your stack — new layers land on disk
+  while services keep running unchanged. To actually swap containers
+  onto the new images afterwards, open the installer and use **Update**
+  → **Pull + recreate** (or just `docker compose up -d` from the install
+  dir). Useful for "I want the newest Sonarr available the next time I
+  reboot" without disrupting anything right now.
 - **Update the stack periodically** — re-launch **Mediarr Installer.exe**,
   pick your profile, click **Update**, then **Pull + recreate**. The
   wizard handles `docker compose pull && up -d` over SSH for you.
