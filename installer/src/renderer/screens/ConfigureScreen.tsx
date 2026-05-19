@@ -5,7 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, ListChecks, Users, Captions,
   PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
-  Clock,
+  Clock, CheckCircle2, XCircle,
   type LucideIcon,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
@@ -561,25 +561,35 @@ function VpnSection({
                 </span>
               </label>
               <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder="Paste your provider access token"
-                  className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-                  value={vpnToken} onChange={(e) => setVpnToken(e.target.value)}
-                />
-                <button
-                  type="button"
+                <div className="flex-1">
+                  <PasswordInput
+                    placeholder="Paste your provider access token"
+                    className="py-2"
+                    value={vpnToken}
+                    onChange={(e) => setVpnToken(e.target.value)}
+                  />
+                </div>
+                <BigButton
+                  size="md"
+                  variant={vpnToken.length >= 16 && !vpnBusy ? 'primary' : 'secondary'}
+                  icon={!vpnBusy ? <KeyRound size={14} /> : undefined}
                   onClick={fetchVpnKey}
                   disabled={vpnBusy || vpnToken.length < 16}
-                  className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-40"
+                  loading={vpnBusy}
                   title="Fetch and cache the WireGuard private key"
                 >
                   {vpnBusy ? 'Fetching…' : 'Fetch key'}
-                </button>
+                </BigButton>
               </div>
-              {vpnError && <div className="text-rose-300 text-sm">{vpnError}</div>}
+              {vpnError && (
+                <div className="text-rose-300 text-sm inline-flex items-center gap-1.5">
+                  <XCircle size={14} />
+                  {vpnError}
+                </div>
+              )}
               {config.WIREGUARD_PRIVATE_KEY && !vpnError && (
-                <div className="text-emerald-300 text-sm">
+                <div className="text-emerald-300 text-sm inline-flex items-center gap-1.5">
+                  <CheckCircle2 size={14} />
                   Got it — {config.WIREGUARD_PRIVATE_KEY.length}-char WireGuard key cached.
                 </div>
               )}
