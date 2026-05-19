@@ -242,6 +242,7 @@ export function WelcomeScreen() {
                         <input
                           autoFocus
                           type="text"
+                          aria-label={`Rename profile (originally ${p.label})`}
                           className="w-full px-2 py-1 text-base bg-slate-900 border border-emerald-600 rounded font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                           value={editingLabelText}
                           onChange={(e) => setEditingLabelText(e.target.value)}
