@@ -125,6 +125,8 @@ export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
                   onClick={() => onRerun!(s.number)}
                   disabled={!!rerunningStep}
                   title={`Re-run step ${s.number}: ${s.rerun}`}
+                  aria-label={`Re-run step ${s.number}: ${s.label}`}
+                  aria-busy={isRerunning || undefined}
                   className={
                     // Always-visible at low opacity (was opacity-0 + hover-only,
                     // which hid it from touch users and didn't communicate
@@ -141,6 +143,7 @@ export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
                 >
                   <RotateCw
                     size={12}
+                    aria-hidden="true"
                     className={isRerunning ? 'animate-spin' : ''}
                     strokeWidth={2.5}
                   />
