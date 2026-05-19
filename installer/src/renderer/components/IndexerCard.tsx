@@ -104,25 +104,37 @@ export function IndexerCard({ def, values, onChange }: Props) {
             className="overflow-hidden"
           >
             <div className="mt-3 space-y-2">
-              {def.fields.map((f) => (
-                <div key={f.key}>
-                  <label className="block text-xs text-slate-400 mb-1">{f.label}</label>
-                  {f.password ? (
-                    <PasswordInput
-                      className="text-sm bg-slate-900 py-2"
-                      value={(values[f.key] as string | undefined) ?? ''}
-                      onChange={(e) => onChange({ [f.key]: e.target.value || undefined } as Partial<EnvFormValues>)}
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      className="w-full px-2.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-                      value={(values[f.key] as string | undefined) ?? ''}
-                      onChange={(e) => onChange({ [f.key]: e.target.value || undefined } as Partial<EnvFormValues>)}
-                    />
-                  )}
-                </div>
-              ))}
+              {def.fields.map((f) => {
+                const inputId = `${def.id}-${f.key}`
+                return (
+                  <div key={f.key}>
+                    <label
+                      className="block text-xs text-slate-400 mb-1"
+                      htmlFor={inputId}
+                    >
+                      {f.label}
+                    </label>
+                    {f.password ? (
+                      <PasswordInput
+                        id={inputId}
+                        aria-label={`${def.name} ${f.label}`}
+                        className="text-sm bg-slate-900 py-2"
+                        value={(values[f.key] as string | undefined) ?? ''}
+                        onChange={(e) => onChange({ [f.key]: e.target.value || undefined } as Partial<EnvFormValues>)}
+                      />
+                    ) : (
+                      <input
+                        id={inputId}
+                        aria-label={`${def.name} ${f.label}`}
+                        type="text"
+                        className="w-full px-2.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                        value={(values[f.key] as string | undefined) ?? ''}
+                        onChange={(e) => onChange({ [f.key]: e.target.value || undefined } as Partial<EnvFormValues>)}
+                      />
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </motion.div>
         )}
