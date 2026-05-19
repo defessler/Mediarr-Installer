@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
-  Check, Loader2, FlaskConical, Users,
+  Check, Loader2, FlaskConical, Users, Server,
 } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
@@ -221,7 +221,10 @@ export function App() {
           paddingRight: 150,
         }}
       >
-        <span className="font-medium tracking-wide text-slate-300">Mediarr Installer</span>
+        <span className="font-medium tracking-wide text-slate-300 inline-flex items-center gap-1.5">
+          <Server size={12} className="text-emerald-400" strokeWidth={2.5} />
+          Mediarr Installer
+        </span>
       </div>
 
       {info?.mock && (
