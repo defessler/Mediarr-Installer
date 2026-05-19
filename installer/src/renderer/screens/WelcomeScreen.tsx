@@ -279,24 +279,24 @@ export function WelcomeScreen() {
                       <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
                         {p.hasConfig && (
                           <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <Settings size={11} /> config saved
+                            <Settings size={11} aria-hidden="true" /> config saved
                           </span>
                         )}
                         {p.hasSecret && (
                           <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <Lock size={11} /> secrets saved
+                            <Lock size={11} aria-hidden="true" /> secrets saved
                           </span>
                         )}
                         {lastRuns[p.id]?.phase === 'done' && (
                           <span className="inline-flex items-center gap-1 text-emerald-300">
-                            <Sparkles size={11} />
+                            <Sparkles size={11} aria-hidden="true" />
                             last install ok
                             <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
                           </span>
                         )}
                         {lastRuns[p.id]?.phase === 'failed' && (
                           <span className="inline-flex items-center gap-1 text-amber-300/90">
-                            <AlertTriangle size={11} /> last install paused
+                            <AlertTriangle size={11} aria-hidden="true" /> last install paused
                             {lastRuns[p.id].failedStep != null && <span> at step {lastRuns[p.id].failedStep}</span>}
                             <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
                           </span>
