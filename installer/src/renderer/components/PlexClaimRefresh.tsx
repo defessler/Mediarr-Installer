@@ -101,14 +101,14 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
         >
           {expired ? (
             <>
-              <XCircle size={14} className="text-rose-400 shrink-0" />
+              <XCircle size={14} className="text-rose-400 shrink-0" aria-hidden="true" />
               <span className="text-rose-300">
                 Expired — open plex.tv/claim and paste a fresh token.
               </span>
             </>
           ) : stale ? (
             <>
-              <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+              <AlertTriangle size={14} className="text-amber-400 shrink-0" aria-hidden="true" />
               <span className="text-amber-300">
                 Expires in <span className="font-mono tabular-nums">{mm}:{ss}</span> —
                 refresh if you'll wait before clicking install.
@@ -116,7 +116,7 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
             </>
           ) : (
             <>
-              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" aria-hidden="true" />
               <span className="text-emerald-300">
                 Fresh · <span className="font-mono tabular-nums">{mm}:{ss}</span> remaining
               </span>
