@@ -441,6 +441,53 @@ echo "  Using: $COMPOSE"
 echo "  This script runs the full first-time install."
 echo "  Safe to re-run — all steps skip what's already done."
 
+# ── Legacy loose-script cleanup ──────────────────────────────────────────────
+#
+# v0.3.21 and earlier shipped all setup scripts loose at INSTALL_DIR root,
+# next to docker-compose.yml. v0.3.22 moved them under scripts/. The Sync
+# Scripts upload only ADDS files; it doesn't remove the now-stale copies
+# at the root, which leaves the user with a confusing dual layout and the
+# risk that a stale loose-copy gets run by hand instead of the new one
+# under scripts/.
+#
+# We do this cleanup HERE (in setup.sh itself, not just the installer's
+# Sync flow) so it covers every path: fresh installer install, installer
+# Sync + step-rerun, AND `bash setup.sh` invoked directly over SSH. The
+# guard `[ "$INSTALL_DIR" != "$SCRIPT_DIR" ]` keeps us from nuking the
+# live scripts on a legacy loose-layout install (where there IS no
+# scripts/ subdir, so SCRIPT_DIR == INSTALL_DIR and the new copies don't
+# exist yet).
+#
+# Whitelist of exact filenames so a user's hand-placed file at the root
+# is never touched. Order-independent; the loop just `rm -f`s each match.
+if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
+    LEGACY_LOOSE=(
+        setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh
+        setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh
+        setup-arr-config.py recyclarr-trigger.py recyclarr-sync.sh
+        restart-qbit.sh tune-arrs.sh fix-imports.sh stop-all.sh
+        boot-orchestrator.sh boot-orchestrator.log
+    )
+    removed=0
+    for f in "${LEGACY_LOOSE[@]}"; do
+        if [ -f "$INSTALL_DIR/$f" ] && [ -f "$SCRIPT_DIR/$f" ]; then
+            # Belt-and-suspenders: only delete the loose copy when the
+            # canonical copy under scripts/ actually exists, so we can't
+            # remove a file we have no replacement for.
+            rm -f "$INSTALL_DIR/$f" && removed=$((removed+1))
+        fi
+    done
+    # The legacy `indexers/` lived directly at INSTALL_DIR; new layout
+    # puts it under scripts/indexers/. Only nuke when the new path is
+    # populated so we can't drop the user with no indexer scripts at all.
+    if [ -d "$INSTALL_DIR/indexers" ] && [ -d "$SCRIPT_DIR/indexers" ]; then
+        rm -rf "$INSTALL_DIR/indexers" && removed=$((removed+1))
+    fi
+    if [ "$removed" -gt 0 ]; then
+        echo "  ℹ Migrated $removed legacy loose script(s) out of $INSTALL_DIR — canonical copies live under scripts/ now."
+    fi
+fi
+
 run_step 1 "Set file permissions" \
     bash "$SCRIPT_DIR/setup-chmod.sh"
 
