@@ -39,6 +39,8 @@ export function AnimatedCheck({
       height={size}
       className={className}
       style={{ color }}
+      role="img"
+      aria-label="Success"
     >
       {/* Outer circle — draws first */}
       <motion.circle
