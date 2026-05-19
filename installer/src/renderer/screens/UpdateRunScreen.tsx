@@ -36,6 +36,20 @@ import { SETUP_STEPS } from '../components/StepperRail.js'
 
 const CHANNEL_ID = 'compose-update'
 
+/** Helper sidecar containers that mount wizard-shipped scripts as
+ *  single-file volumes (e.g. recyclarr-trigger reads recyclarr-trigger.py
+ *  ONCE at startup). After every payload sync we restart any of these
+ *  that's currently running so the new code takes effect — file mounts
+ *  are visible to the container immediately, but the Python process
+ *  keeps the old request-handler code loaded until it restarts.
+ *
+ *  Explicit list (no wildcard / no `docker compose restart`) so we never
+ *  accidentally bounce a media container. The main arrs / Plex / qBit
+ *  don't need this — their /config volumes hold runtime state, not
+ *  wizard scripts. Add new entries here when a future helper sidecar
+ *  is added with a similar single-file-mount pattern. */
+const HELPER_CONTAINERS: readonly string[] = ['recyclarr-trigger']
+
 type Phase = 'idle' | 'running' | 'done' | 'failed'
 type Action = 'pull' | 'sync' | 'homepage' | `step-${number}` | null
 
@@ -127,6 +141,12 @@ export function UpdateRunScreen() {
         ),
       ])
       wlog(`Uploaded ${r.uploaded} files (${(r.bytesTotal / 1024).toFixed(1)} KiB)`)
+      // Bounce any helper sidecar containers (recyclarr-trigger today)
+      // so single-file mounts like recyclarr-trigger.py take effect
+      // without a manual `docker restart`. Non-fatal: a failure here
+      // doesn't fail the upload — the new file is already on disk and
+      // the user can restart manually if needed.
+      await restartHelperContainers()
       return true
     } catch (e) {
       const msg = (e as Error).message
@@ -134,6 +154,47 @@ export function UpdateRunScreen() {
       setPhase('failed')
       reportError('SFTP upload', e)
       return false
+    }
+  }
+
+  /** Restart every container in HELPER_CONTAINERS that's currently
+   *  running. Uses `docker ps --filter name=^X$` to check first so a
+   *  stopped helper isn't spuriously started — if the user disabled it
+   *  intentionally we leave it alone. Each result is logged to the run
+   *  panel so the user sees exactly what was restarted. */
+  async function restartHelperContainers(): Promise<void> {
+    if (!sessionId) return
+    for (const name of HELPER_CONTAINERS) {
+      try {
+        const r = await window.installer.ssh.exec({
+          sessionId,
+          // sudo: docker ps + restart need root on most NAS setups
+          // (Synology DSM in particular gates /var/run/docker.sock
+          // behind the docker group, and the SSH user often isn't in
+          // it). Mirrors the sudo:true used by execStream below.
+          sudo: true,
+          cmd:
+            PATH_PREFIX +
+            `if docker ps --filter name=^${name}$ --format '{{.Names}}' ` +
+            `  | grep -qx ${shellQuote(name)}; then ` +
+            `  docker restart ${shellQuote(name)} >/dev/null && echo restarted; ` +
+            `else ` +
+            `  echo not-running; ` +
+            `fi`,
+        })
+        const out = r.stdout.trim()
+        if (out === 'restarted') {
+          wlog(`Restarted ${name} to pick up new mounted scripts.`)
+        } else if (out === 'not-running') {
+          wlog(`Skipped ${name} restart — container is not running.`)
+        } else if (r.exitCode !== 0) {
+          wlog(`[warn] Restart probe for ${name} returned exit ${r.exitCode}: ${(r.stderr || '').trim()}`)
+        }
+      } catch (e) {
+        // Non-fatal — the upload already succeeded. Log a warning so the
+        // user knows they may need to docker-restart manually.
+        wlog(`[warn] Could not restart ${name}: ${(e as Error).message}`)
+      }
     }
   }
 
@@ -410,8 +471,8 @@ docker compose $FILES --progress plain --ansi never up -d`
         />
         <ActionCard
           title="Sync wizard scripts"
-          subtitle="Re-upload setup.sh / setup-arr-config.py / setup-indexers.py from this wizard's bundled payload."
-          when="When the wizard itself was updated and the on-NAS scripts are stale, but you don't want to re-run anything yet."
+          subtitle="Re-upload setup.sh / setup-arr-config.py / setup-indexers.py / recyclarr-trigger.py from this wizard's bundled payload, then restart helper sidecars (recyclarr-trigger) so file-mount changes take effect."
+          when="When the wizard itself was updated and the on-NAS scripts (or the Recyclarr 'Sync Now' page) are stale, but you don't want to re-run anything yet."
           buttonLabel={running && lastAction === 'sync' ? 'Uploading…' : 'Sync scripts'}
           onClick={syncOnly}
           disabled={running}
