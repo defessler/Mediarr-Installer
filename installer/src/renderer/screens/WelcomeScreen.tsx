@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Plus, Download, Upload, Play, RefreshCw, ArrowRightLeft, Settings,
   Trash2, Edit3, AlertTriangle, Server, CheckCircle2,
-  Terminal, Boxes, UserCircle,
+  Terminal, Boxes, UserCircle, Sparkles, Lock,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { reportError, useErrors } from '../store/errors.js'
@@ -268,20 +268,33 @@ export function WelcomeScreen() {
                       <div className="text-xs text-slate-400 truncate font-mono mt-0.5">
                         {p.connection.user}@{p.connection.host || '<not set>'}:{p.connection.port}
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs">
+                      {/* Per-profile status chips: config saved (config
+                          file exists), secrets saved (encrypted creds
+                          exist), and the last-run outcome. Differentiated
+                          icons (Settings, Lock, Sparkles, AlertTriangle)
+                          give each chip a visually distinct meaning
+                          beyond colour. */}
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
                         {p.hasConfig && (
                           <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <CheckCircle2 size={12} /> config saved
+                            <Settings size={11} /> config saved
                           </span>
                         )}
                         {p.hasSecret && (
                           <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <CheckCircle2 size={12} /> secrets saved
+                            <Lock size={11} /> secrets saved
+                          </span>
+                        )}
+                        {lastRuns[p.id]?.phase === 'done' && (
+                          <span className="inline-flex items-center gap-1 text-emerald-300">
+                            <Sparkles size={11} />
+                            last install ok
+                            <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
                           </span>
                         )}
                         {lastRuns[p.id]?.phase === 'failed' && (
                           <span className="inline-flex items-center gap-1 text-amber-300/90">
-                            <AlertTriangle size={12} /> last install failed
+                            <AlertTriangle size={11} /> last install paused
                             {lastRuns[p.id].failedStep != null && <span> at step {lastRuns[p.id].failedStep}</span>}
                             <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
                           </span>
