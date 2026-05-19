@@ -2682,10 +2682,11 @@ def main():
 
     if not LAN_IP:  print("Error: LAN_IP not set in .env");           sys.exit(1)
     # QBITTORRENT_PASS is only required when qBittorrent is in the stack.
-    # The configure_qbittorrent() block at the bottom of main() is gated
-    # on ENABLE_QBITTORRENT, but this top-level check fires before that
-    # gate — so it would refuse to run setup-arr-config.py at all on an
-    # install where the user opted out of qBittorrent.
+    # The configure_qbittorrent() call (just before the arr section) is
+    # gated on ENABLE_QBITTORRENT, but this top-level check fires before
+    # that gate — so without the guard here it would refuse to run
+    # setup-arr-config.py at all on an install where the user opted out
+    # of qBittorrent.
     if is_enabled(env, 'ENABLE_QBITTORRENT') and not QB_PASS:
         print("Error: QBITTORRENT_PASS not set in .env"); sys.exit(1)
 
