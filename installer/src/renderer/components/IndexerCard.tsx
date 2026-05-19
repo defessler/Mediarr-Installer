@@ -50,7 +50,8 @@ export function IndexerCard({ def, values, onChange }: Props) {
           type="button"
           onClick={toggle}
           aria-pressed={open}
-          aria-label={`Toggle ${def.name}`}
+          aria-expanded={open}
+          aria-label={`Toggle ${def.name} ${open ? 'on (collapse details)' : 'off (expand to configure)'}`}
           whileTap={reduced ? {} : { scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
           className={
