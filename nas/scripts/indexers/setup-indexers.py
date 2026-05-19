@@ -84,6 +84,9 @@ PUBLIC_TORRENT_INDEXERS = [
     "LimeTorrents",
     "The Pirate Bay",
     "Knaben",            # Large Norwegian index, excellent general coverage
+    # TheRARBG — community-run successor to RARBG (which shut down in
+    # 2023). Public, no auth. Prowlarr ships a definition.
+    "TheRARBG",
     # NB: Bitsearch and Solidtorrents were removed from Prowlarr's
     # indexer DB upstream (renamed / discontinued). Adding them here
     # just produced `not found in Prowlarr` failures during install
@@ -94,6 +97,7 @@ PUBLIC_TORRENT_INDEXERS = [
     "Nyaa",              # Primary anime tracker
     "SubsPlease",        # Simulcast rips — best for current-season anime
     "Tokyo Toshokan",    # Japanese media (long-running, broad)
+    "AniDex",            # Anime / manga / Asian video, public
 ]
 
 # Newznab-compatible usenet indexers.
@@ -131,6 +135,10 @@ USENET_INDEXERS = [
     ("DogNZB",         "https://api.dognzb.cr",            "DOGNZB_API_KEY",        None),
     ("NinjaCentral",   "https://www.ninjacentral.co.za",   "NINJACZENTRAL_API_KEY", None),
     ("Tabula Rasa",    "https://www.tabula-rasa.pw",       "TABULARASA_API_KEY",    None),
+    # NZB.su — long-running general-purpose paid indexer. Added by
+    # name (Prowlarr ships a definition) using the standard Newznab
+    # template; the env var holds the user's API key.
+    ("NZB.su",         "https://nzb.su",                   "NZBSU_API_KEY",         None),
 ]
 
 # Private torrent trackers — added only if credentials are set in .env.
@@ -150,6 +158,30 @@ PRIVATE_TORRENT_INDEXERS = [
     # into IPTORRENTS_COOKIE in .env. Prowlarr's IPTorrents indexer
     # uses a single `cookie` field; we map our env var to that name.
     ("IPTorrents",      "IPTorrents",      {"cookie":   "IPTORRENTS_COOKIE"}),
+    # General-purpose, paid. RSS-key auth (find it under Profile → My
+    # Profile → RSS Feed on the site). Prowlarr's TorrentLeech indexer
+    # uses a single `rssKey` field.
+    ("TorrentLeech",    "TorrentLeech",    {"rssKey":   "TORRENTLEECH_RSSKEY"}),
+    # High-quality movies / TV, paid. Username + password auth.
+    ("HD-Torrents",     "HD-Torrents",     {"username": "HDTORRENTS_USER",
+                                            "password": "HDTORRENTS_PASS"}),
+    # ── TV-focused private ──────────────────────────────────────────
+    # BroadcasTheNet — premier TV-only private tracker. API key from
+    # Profile → Edit → Authentication keys.
+    ("BroadcasTheNet",  "BroadcasTheNet",  {"apiKey":   "BTN_API_KEY"}),
+    # MoreThanTV — TV-focused; API key from Settings → Access.
+    ("MoreThanTV",      "MoreThanTV",      {"apiKey":   "MTV_API_KEY"}),
+    # ── Movies-focused private ──────────────────────────────────────
+    # PassThePopcorn — premier movies-only private tracker. Username +
+    # passkey auth (passkey on Profile → Security).
+    ("PassThePopcorn",  "PassThePopcorn",  {"username": "PTP_USER",
+                                            "passKey":  "PTP_KEY"}),
+    # ── Music-focused private ───────────────────────────────────────
+    # Redacted (RED) — premier music tracker, What.CD lineage. API key
+    # from Profile → Access settings.
+    ("Redacted",        "Redacted",        {"apiKey":   "RED_API_KEY"}),
+    # Orpheus Network — invite-only music tracker.
+    ("Orpheus",         "Orpheus",         {"apiKey":   "ORPHEUS_API_KEY"}),
 ]
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -866,6 +898,67 @@ def main():
 
     if private_added == 0:
         warn("No private tracker credentials in .env — see header comments to enable")
+
+    # ── User-defined custom indexers (CUSTOM_INDEXERS_JSON) ──────────────────
+    #
+    # Power users edit the JSON blob via the wizard's CustomIndexerEditor
+    # (Configure screen → Custom indexers section) to register Newznab-
+    # compatible indexers the curated catalog doesn't ship with. Each
+    # entry is added through the same add_newznab path as a paid usenet
+    # indexer — same schema, same re-sync semantics, same Prowlarr
+    # API call.
+    #
+    # Tolerance: missing optional fields are quietly skipped. A blank
+    # `apiKey` means "no auth" (handled by add_newznab). A blank `url`
+    # or `name` skips the entry entirely with a warn() — we never
+    # half-add something the user clearly didn't finish typing. Malformed
+    # JSON gets a single warn() at the top of the block, not per-entry.
+    custom_raw = (env.get('CUSTOM_INDEXERS_JSON', '') or '').strip()
+    if custom_raw:
+        section("Custom Indexers (CUSTOM_INDEXERS_JSON)")
+        custom_entries = []
+        try:
+            parsed = json.loads(custom_raw)
+            if isinstance(parsed, list):
+                custom_entries = parsed
+            else:
+                warn("CUSTOM_INDEXERS_JSON is not a JSON array — skipping")
+        except Exception as e:
+            warn(f"CUSTOM_INDEXERS_JSON parse failed: {e} — skipping")
+
+        custom_added = 0
+        custom_skipped = 0
+        for idx, entry in enumerate(custom_entries):
+            if not isinstance(entry, dict):
+                warn(f"Custom entry #{idx + 1} is not an object — skipping")
+                custom_skipped += 1
+                continue
+            ce_name = (entry.get('name') or '').strip()
+            ce_url  = (entry.get('url') or '').strip()
+            ce_key  = (entry.get('apiKey') or '').strip()
+            if not ce_name or not ce_url:
+                # Missing required field — the editor allows the user to
+                # add a blank row + fill it in later; we tolerate that
+                # silently when both required fields are blank, and
+                # warn when ONE of them is set (the user clearly meant
+                # to add this entry).
+                if ce_name or ce_url:
+                    warn(
+                        f"Custom entry #{idx + 1} missing "
+                        f"{'name' if not ce_name else 'url'} — skipping"
+                    )
+                custom_skipped += 1
+                continue
+            add_newznab(
+                PROWLARR, PROWLARR_KEY, ce_name, ce_url, ce_key,
+                schemas, existing_names, existing_indexers=existing,
+            )
+            custom_added += 1
+
+        if custom_added > 0:
+            info(f"Added {custom_added} custom indexer(s) from CUSTOM_INDEXERS_JSON")
+        if custom_skipped > 0:
+            info(f"Skipped {custom_skipped} incomplete custom entry/entries")
 
     # ── Public indexer settings ───────────────────────────────────────────────
 

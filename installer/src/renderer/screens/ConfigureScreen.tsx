@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Settings2, ArrowLeft, ArrowRight,
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
-  Newspaper, ListChecks, Users, Captions,
+  Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
   Clock, CheckCircle2, XCircle, AlertTriangle,
   type LucideIcon,
@@ -15,6 +15,7 @@ import { envSchema } from '../../shared/env-schema.js'
 import {
   type EnvFormValues,
   USENET_INDEXERS,
+  PUBLIC_TRACKERS,
   PRIVATE_TRACKERS,
   BAZARR_PROVIDERS,
   isEnabled,
@@ -27,6 +28,8 @@ import {
 } from '../../shared/vpn-providers.js'
 import type { Country } from '../../shared/ipc.js'
 import { IndexerCard } from '../components/IndexerCard.js'
+import { IndexerBrowser } from '../components/IndexerBrowser.js'
+import { CustomIndexerEditor } from '../components/CustomIndexerEditor.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
 import { reportError } from '../store/errors.js'
 
@@ -1116,38 +1119,23 @@ export function ConfigureScreen() {
             </div>
           </section>
 
-          <section className="space-y-3">
-            <h3 className="text-base font-medium flex items-center gap-2">
-              <ListChecks size={16} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
-              Usenet indexers
-            </h3>
-            <p className="text-sm text-slate-400">
-              <strong className="text-slate-300">Free with no signup</strong> —
-              {' '}<code className="text-slate-300">AnimeTosho</code>,
-              {' '}<code className="text-slate-300">NZBKing</code>,
-              {' '}<code className="text-slate-300">Binsearch</code> — added automatically.
-              Free <em>with</em> signup options like ABNzb and Althub need an API key
-              (toggle on + paste the key from the indexer's website). Paid / invite-only
-              indexers are listed too if you already have a subscription.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {USENET_INDEXERS.map((d) => (
-                <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
-              ))}
-            </div>
-          </section>
+          {/* Unified indexer browser — replaces the previous trio of
+              section blocks (Usenet / Private torrent / Bazarr). The
+              first two share a problem domain ("things Prowlarr can
+              search") so they're merged into one filterable catalog;
+              the third (Bazarr subtitle providers) is a different
+              concern and stays on its own. */}
+          <IndexerBrowser
+            catalog={[...USENET_INDEXERS, ...PUBLIC_TRACKERS, ...PRIVATE_TRACKERS]}
+            values={config}
+            onChange={setConfig}
+          />
 
-          <section className="space-y-3">
-            <h3 className="text-base font-medium flex items-center gap-2">
-              <Users size={16} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
-              Private torrent trackers
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              {PRIVATE_TRACKERS.map((d) => (
-                <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
-              ))}
-            </div>
-          </section>
+          {/* JSON-backed custom indexer editor for entries the curated
+              catalog doesn't ship with. Persisted as CUSTOM_INDEXERS_JSON
+              in .env; setup-indexers.py reads + registers each at
+              install time. */}
+          <CustomIndexerEditor values={config} onChange={setConfig} />
 
           <section className="space-y-3">
             <h3 className="text-base font-medium flex items-center gap-2">
