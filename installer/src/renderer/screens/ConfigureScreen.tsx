@@ -328,11 +328,12 @@ function TrashProfilesSection({
       <div className="grid grid-cols-2 gap-4">
         {sonarrOn && (
           <div>
-            <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5">
+            <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5" htmlFor="trash-sonarr-profile">
               <Tv size={13} className="text-sky-400" strokeWidth={1.75} />
               Sonarr profile
             </label>
             <select
+              id="trash-sonarr-profile"
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={sonarrValue}
               onChange={(e) => update('TRASH_SONARR_PROFILE', e.target.value)}
@@ -360,11 +361,12 @@ function TrashProfilesSection({
         )}
         {radarrOn && (
           <div>
-            <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5">
+            <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5" htmlFor="trash-radarr-profile">
               <Film size={13} className="text-yellow-400" strokeWidth={1.75} />
               Radarr profile
             </label>
             <select
+              id="trash-radarr-profile"
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={radarrValue}
               onChange={(e) => update('TRASH_RADARR_PROFILE', e.target.value)}
@@ -1087,8 +1089,9 @@ export function ConfigureScreen() {
               <Field label="Password" k="USENET_PASS" type="password" />
               <Field label="Connections" k="USENET_CONNECTIONS" placeholder="8" />
               <div>
-                <label className="block text-sm font-medium mb-1">SSL</label>
+                <label className="block text-sm font-medium mb-1" htmlFor="cfg-usenet-ssl">SSL</label>
                 <select
+                  id="cfg-usenet-ssl"
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                   value={config.USENET_SSL ?? '1'}
                   onChange={(e) => update('USENET_SSL', e.target.value)}
