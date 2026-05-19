@@ -54,7 +54,7 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
   const reduced = useReducedMotion()
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm">
+      <label className="flex items-center gap-2 text-sm" htmlFor="plex-claim-input">
         <Clock size={16} className="text-emerald-400 shrink-0" />
         <span className="font-semibold">Plex claim token</span>
         <span className="text-slate-500 text-xs">
@@ -64,14 +64,17 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
           href="https://plex.tv/claim"
           target="_blank"
           rel="noreferrer"
-          className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
+          className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded"
         >
           Get fresh token <ExternalLink size={11} />
         </a>
-      </div>
+      </label>
       <input
+        id="plex-claim-input"
         type="text"
         placeholder="claim-xxxxxxxxxxxxxxxxxxxx"
+        aria-invalid={expired ? true : undefined}
+        aria-describedby="plex-claim-status"
         className={
           'w-full px-3 py-2 text-sm bg-slate-800 border rounded-md font-mono transition-colors focus:outline-none focus:ring-1 ' +
           (expired
@@ -91,6 +94,9 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
           initial={reduced ? { opacity: 1, x: 0 } : { opacity: 0, x: -4 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.15 }}
+          id="plex-claim-status"
+          role="status"
+          aria-live="polite"
           className="text-xs flex items-center gap-1.5"
         >
           {expired ? (
