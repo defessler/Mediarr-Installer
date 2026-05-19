@@ -307,14 +307,15 @@ export function ConnectScreen() {
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
           className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 space-y-2 overflow-hidden"
         >
-          <label className="block text-sm font-medium inline-flex items-center gap-2">
-            <Shield size={14} className="text-amber-300" strokeWidth={2} />
+          <label className="block text-sm font-medium inline-flex items-center gap-2" htmlFor="ssh-sudo-pass">
+            <Shield size={14} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
             Sudo password
             <span className="ml-1 text-xs text-amber-300/90 font-normal">
               ({connection.user} is not root — needed for firewall + chmod)
             </span>
           </label>
           <PasswordInput
+            id="ssh-sudo-pass"
             placeholder={connection.authMethod === 'password'
               ? 'Leave blank to reuse the SSH password'
               : 'Required for non-root key auth'}
@@ -322,7 +323,7 @@ export function ConnectScreen() {
             onChange={(e) => setSudoPassword(e.target.value)}
           />
           <p className="text-xs text-slate-400 inline-flex items-center gap-1.5">
-            <Lock size={11} className="text-slate-500" />
+            <Lock size={11} className="text-slate-500" aria-hidden="true" />
             Stored in memory only — never written to disk or saved to your
             connection profile.
           </p>
