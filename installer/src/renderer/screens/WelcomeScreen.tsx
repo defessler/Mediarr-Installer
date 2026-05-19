@@ -205,7 +205,7 @@ export function WelcomeScreen() {
               <div className="flex items-center gap-3 text-sm">
                 <button
                   onClick={() => setCreating(true)}
-                  className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors"
+                  className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                 >
                   <Plus size={16} strokeWidth={2.5} />
                   New profile
@@ -213,7 +213,7 @@ export function WelcomeScreen() {
                 <span className="text-slate-700">·</span>
                 <button
                   onClick={() => setImporting(true)}
-                  className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors"
+                  className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                   title="Import a passphrase-protected .mediarr-profile.json file"
                 >
                   <Download size={16} strokeWidth={2.5} />
