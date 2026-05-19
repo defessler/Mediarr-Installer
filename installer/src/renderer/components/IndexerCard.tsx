@@ -79,8 +79,9 @@ export function IndexerCard({ def, values, onChange }: Props) {
                 href={def.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline shrink-0 transition-colors"
+                className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                 onClick={(e) => e.stopPropagation()}
+                title={`Visit ${def.name} — opens in browser`}
               >
                 site <ExternalLink size={10} />
               </a>
