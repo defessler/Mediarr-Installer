@@ -75,6 +75,36 @@ export function WelcomeScreen() {
   }
   useEffect(() => { refresh() }, [])
 
+  // Global Escape handler — bails out of whichever transient panel is
+  // currently open (delete confirm, label edit, create-profile form).
+  // Without this, a kid hits Escape expecting "nope, never mind" and
+  // nothing happens because the panel is inline (not a focus-trapped
+  // modal). Priority order is "most destructive first" so a single
+  // Escape always cancels the riskiest thing on screen.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      if (confirmDeleteId !== null) {
+        setConfirmDeleteId(null)
+        e.preventDefault()
+        return
+      }
+      if (editingLabelId !== null) {
+        setEditingLabelId(null)
+        setEditingLabelText('')
+        e.preventDefault()
+        return
+      }
+      if (creating) {
+        setCreating(false)
+        setNewLabel('')
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [confirmDeleteId, editingLabelId, creating])
+
   async function pickProfile(id: string, target: 'install' | 'update' | 'edit' | 'migrate') {
     setBusy(id)
     try {
