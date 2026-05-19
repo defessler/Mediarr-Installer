@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import {
   Rocket, ArrowLeft, ArrowRight, AlertCircle, RotateCw, CheckCircle2,
-  XCircle, AlertTriangle,
+  XCircle, AlertTriangle, Clock,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
@@ -42,6 +42,12 @@ export function RunScreen() {
   const [progress, setProgress] = useState<{ pct: number; file: string } | null>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  // Track when the current run started so we can show "X min running"
+  // alongside the progress bar. Resets when a new run starts (Retry /
+  // first-run go()). Cleared when phase reaches done / failed so the
+  // user doesn't keep seeing the counter climb post-finish.
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+  const [elapsedMs, setElapsedMs] = useState<number>(0)
   const linesRef = useRef<string[]>([])
   const [steps, setSteps] = useState<SetupStep[]>(() =>
     SETUP_STEPS.map((s) => ({ ...s })),
@@ -452,6 +458,8 @@ export function RunScreen() {
       // *test* writability as the original SSH user (via su -c) so
       // failures surface here instead of cryptically inside SFTP.
       setPhase('uploading')
+      setRunStartedAt(Date.now())
+      setElapsedMs(0)
       wlog(`Preparing target directory ${targetDir}...`)
       const tq = shellQuote(targetDir)
       const prep = await window.installer.ssh.exec({
@@ -859,6 +867,27 @@ export function RunScreen() {
   // pending/fail contribute zero. Total = number of steps (10).
   const completedSteps = steps.filter((s) => s.status === 'ok').length
   const inflightSteps = steps.filter((s) => s.status === 'running').length
+
+  // Tick the elapsed counter every second while the run is in flight.
+  // Stops at done / failed so the counter freezes at the final value
+  // (so the user can read "completed in 18:42").
+  useEffect(() => {
+    if (!runStartedAt) return
+    if (phase === 'done' || phase === 'failed') return
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - runStartedAt)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [runStartedAt, phase])
+
+  // Format ms as "Xm Ys" — capped at 99 minutes so the chip doesn't
+  // get unreasonably wide if something hangs.
+  function fmtElapsed(ms: number): string {
+    const totalSec = Math.floor(ms / 1000)
+    const m = Math.min(99, Math.floor(totalSec / 60))
+    const s = totalSec % 60
+    return m > 0 ? `${m}m ${s.toString().padStart(2, '0')}s` : `${s}s`
+  }
   const progressPct =
     phase === 'uploading'
       ? Math.min(100, (progress?.pct ?? 0) * 0.1)   // SFTP is ~10% of the total bar
@@ -968,8 +997,22 @@ export function RunScreen() {
               ? `Paused at step ${currentStep.number}: ${currentStep.label}`
               : 'Install paused — see log')}
           </span>
-          <span className="shrink-0 tabular-nums text-slate-500">
-            {progressPct}%
+          <span className="shrink-0 flex items-center gap-2 text-slate-500">
+            {/* Elapsed-time chip — reassures the user the install is
+                making progress during long phases (Docker pulling
+                images can take ~10 min on first run). Only renders
+                once a run has started so the idle phase isn't
+                cluttered. */}
+            {runStartedAt && (
+              <span
+                className="inline-flex items-center gap-1 tabular-nums"
+                title="Total time since the install started"
+              >
+                <Clock size={11} className="text-slate-600" />
+                {fmtElapsed(elapsedMs)}
+              </span>
+            )}
+            <span className="tabular-nums">{progressPct}%</span>
           </span>
         </div>
       </div>
