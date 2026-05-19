@@ -113,19 +113,19 @@ export function ConnectScreen() {
         className="text-center"
       >
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500/20 to-sky-700/30 border border-sky-500/30 mb-4">
-          <Plug size={32} className="text-sky-300" strokeWidth={1.5} />
+          <Plug size={32} className="text-sky-300" strokeWidth={1.5} aria-hidden="true" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
           Connect to your NAS
           {mode === 'update' && (
             <span className="inline-flex items-center gap-1 ml-3 align-middle text-xs font-semibold uppercase tracking-wider text-sky-300 bg-sky-500/15 border border-sky-500/30 rounded-full px-2 py-0.5">
-              <RefreshCw size={10} strokeWidth={2.5} />
+              <RefreshCw size={10} strokeWidth={2.5} aria-hidden="true" />
               Update
             </span>
           )}
           {mode === 'migrate' && (
             <span className="inline-flex items-center gap-1 ml-3 align-middle text-xs font-semibold uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">
-              <ArrowRight size={10} strokeWidth={2.5} />
+              <ArrowRight size={10} strokeWidth={2.5} aria-hidden="true" />
               Migrate
             </span>
           )}
@@ -150,7 +150,7 @@ export function ConnectScreen() {
             onClick={() => setStep('welcome')}
             className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors"
           >
-            <Users size={11} />
+            <Users size={11} aria-hidden="true" />
             Switch profile
           </button>
         </div>
@@ -354,7 +354,7 @@ export function ConnectScreen() {
             {result.ok ? (
               <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" />
+              <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
             )}
             <div className="flex-1 min-w-0">
               {result.ok ? (
