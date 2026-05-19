@@ -364,6 +364,7 @@ docker compose $FILES --progress plain --ansi never up -d`
               size={22}
               className={`text-sky-300 ${phase === 'running' && !reduced ? 'animate-spin' : ''}`}
               strokeWidth={2}
+              aria-hidden="true"
             />
           </div>
           <div>
