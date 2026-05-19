@@ -5,7 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, ListChecks, Users, Captions,
   PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
-  Clock, CheckCircle2, XCircle,
+  Clock, CheckCircle2, XCircle, AlertTriangle,
   type LucideIcon,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
@@ -509,11 +509,24 @@ function VpnSection({
       </label>
 
       {!enabled ? (
-        <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-sm text-slate-300">
-          VPN off (default). qBittorrent runs on the regular network and your
-          real public IP is visible to torrent peers. Check the box above to
-          add gluetun (Mediarr's VPN container) and route through your provider.
-        </div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.18 }}
+          className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3"
+        >
+          <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
+            <AlertTriangle size={14} className="text-amber-300" strokeWidth={2} />
+          </div>
+          <div>
+            <div className="font-medium text-amber-100">VPN off (default)</div>
+            <div className="text-xs text-slate-400 mt-1">
+              qBittorrent runs on the regular network and your real public IP is
+              visible to torrent peers. Check the box above to add Gluetun and
+              route through your provider.
+            </div>
+          </div>
+        </motion.div>
       ) : (
         <>
           {/* Provider picker — radio-card grid */}
