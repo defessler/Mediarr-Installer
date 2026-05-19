@@ -1168,18 +1168,18 @@ export function RunScreen() {
         >
           Back
         </BigButton>
-        <div className="flex-1 text-sm text-center text-slate-400">
+        <div className="flex-1 text-sm text-center text-slate-400" role="status" aria-live="polite">
           {phase === 'uploading'  && `Uploading files... ${progress?.pct ?? 0}%`}
           {phase === 'writing-env' && 'Writing .env'}
           {phase === 'running-setup' && 'Running setup.sh — see log'}
           {phase === 'done'   && (
             <span className="inline-flex items-center gap-1.5 text-emerald-300">
-              <CheckCircle2 size={14} /> Install complete — click Continue
+              <CheckCircle2 size={14} aria-hidden="true" /> Install complete — click Continue
             </span>
           )}
           {phase === 'failed' && (
             <span className="inline-flex items-start gap-1.5 text-amber-200/90">
-              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>
                 Install paused — tap <span className="text-slate-200 font-medium">Retry</span> to run it again,
                 or <span className="text-slate-200 font-medium">Back</span> to tweak a setting first.
