@@ -525,6 +525,13 @@ services:
       # the image vanilla (just python:3-alpine + docker-cli at
       # boot via apk) so updates to the script don't require rebuilds.
       - ${INSTALL_DIR}/recyclarr-trigger.py:/app/server.py:ro
+      # Install dir mounted RW so the trigger can update
+      # TRASH_*_PROFILE in .env and re-run setup-arr-config.py
+      # --recyclarr-only to regenerate recyclarr.yml in place when
+      # the user changes their profile picks via the trigger's web UI.
+      # setup-arr-config.py uses only Python stdlib so it runs fine
+      # inside python:3-alpine.
+      - ${INSTALL_DIR}:/install-dir:rw
     environment:
       - TZ=${TZ}
       # Pin docker-cli to the API version Synology DSM 7's bundled

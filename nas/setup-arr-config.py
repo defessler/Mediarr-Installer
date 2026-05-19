@@ -3460,10 +3460,59 @@ def homepage_only_main():
         warn("  docker restart homepage")
 
 
+def recyclarr_only_main():
+    """Regenerate recyclarr.yml from .env without re-running every arr's
+    API configuration. Used by the recyclarr-trigger sidecar when the
+    user changes TRaSH profile picks from the web UI — fast, side-effect-
+    free against the running arrs, no need to wait on API config + key
+    discovery.
+
+    Reads api keys from each arr's on-disk config.xml (same fallback
+    path the main configurator uses when env values are missing) so we
+    can render the include: blocks with real keys. If the arr hasn't
+    booted yet (no config.xml), we render the REPLACE_WITH_*_KEY
+    sentinel — same as main() — which the next full wizard run will
+    fix up.
+    """
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    env        = read_env_merged(script_dir)
+    if not is_enabled(env, 'ENABLE_RECYCLARR'):
+        print("ENABLE_RECYCLARR=false in .env — nothing to regenerate.")
+        sys.exit(0)
+
+    B = script_dir
+
+    section("Recyclarr-only regenerate")
+
+    # Try config.xml first (authoritative), fall back to .env values.
+    sonarr_key = read_arr_key(f"{B}/sonarr/config/config.xml") or env.get('SONARR_API_KEY') or ''
+    radarr_key = read_arr_key(f"{B}/radarr/config/config.xml") or env.get('RADARR_API_KEY') or ''
+
+    sonarr_profile = (env.get('TRASH_SONARR_PROFILE') or '').strip() or 'web-1080p'
+    radarr_profile = (env.get('TRASH_RADARR_PROFILE') or '').strip() or 'hd-bluray-web'
+
+    print(f"    sonarr profile: {sonarr_profile}")
+    print(f"    radarr profile: {radarr_profile}")
+    print(f"    sonarr key:     {'(from config.xml)' if sonarr_key else '(missing — using REPLACE_WITH_* sentinel)'}")
+    print(f"    radarr key:     {'(from config.xml)' if radarr_key else '(missing — using REPLACE_WITH_* sentinel)'}")
+
+    rendered = render_recyclarr_config(
+        sonarr_key or 'REPLACE_WITH_SONARR_KEY',
+        radarr_key or 'REPLACE_WITH_RADARR_KEY',
+        sonarr_profile, radarr_profile,
+    )
+    recyclarr_yml = f"{B}/recyclarr/config/recyclarr.yml"
+    overwrite_config_file("Recyclarr", recyclarr_yml, rendered)
+    print()
+    ok("recyclarr.yml regenerated — caller should `docker exec recyclarr recyclarr sync` to apply.")
+
+
 if __name__ == '__main__':
-    # Tiny CLI dispatch — no argparse needed for one flag. Anything
+    # Tiny CLI dispatch — no argparse needed for two flags. Anything
     # else falls through to the full main().
     if '--homepage-only' in sys.argv:
         homepage_only_main()
+    elif '--recyclarr-only' in sys.argv:
+        recyclarr_only_main()
     else:
         main()

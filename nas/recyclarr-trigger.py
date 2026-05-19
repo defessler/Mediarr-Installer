@@ -4,13 +4,16 @@ Tiny webhook server backing the Recyclarr tile on the Homepage dashboard.
 
 The Recyclarr container itself has no web UI — it's a CLI tool. This file
 runs in its own little Python:alpine container next to Recyclarr and
-exposes a one-page web UI with a "Sync Now" button.
+exposes a one-page web UI with profile pickers + a "Sync Now" button.
 
-  GET  /       → status page (last sync time, currently-applied profile,
-                 big green Sync Now button, recent output if any)
-  POST /sync   → runs `docker exec recyclarr recyclarr sync` (via the
-                 mounted docker socket), captures output, re-renders the
-                 page with the result
+  GET  /          → status page (last sync time, current profiles,
+                    profile pickers, Sync Now button, recent output if any)
+  POST /sync      → runs `docker exec recyclarr recyclarr sync` (via the
+                    mounted docker socket), captures output, re-renders.
+  POST /profile   → updates TRASH_SONARR_PROFILE / TRASH_RADARR_PROFILE
+                    in .env, regenerates recyclarr.yml by exec'ing
+                    `python3 setup-arr-config.py --recyclarr-only`, then
+                    falls through to a sync. Single call from the form.
 
 Why a separate container instead of bolting onto Recyclarr's:
 - Recyclarr's official image is locked to its own entrypoint; bolting
@@ -23,15 +26,19 @@ Why a separate container instead of bolting onto Recyclarr's:
   needs to docker-exec into another container" can use the same pattern.
 
 Volumes mounted by docker-compose.yml:
-  /var/run/docker.sock          (rw)  — to run `docker exec recyclarr ...`
-  ${INSTALL_DIR}/recyclarr/config  (ro) — to read .last-sync timestamp
-  ${INSTALL_DIR}/recyclarr-trigger.py (ro) — this file
+  /var/run/docker.sock                  (rw)  — docker exec recyclarr
+  ${INSTALL_DIR}/recyclarr/config       (ro)  — read .last-sync stamp
+  ${INSTALL_DIR}/recyclarr-trigger.py   (ro)  — this file
+  ${INSTALL_DIR}                        (rw)  — write .env + regenerate
+                                                recyclarr.yml in place
 
-Security note: anyone on the LAN can hit POST /sync. The "attack" is
-they trigger a recyclarr sync, which is idempotent and harmless. We
-take a coarse in-process lock to avoid trampling parallel triggers but
-otherwise don't authenticate — this is a home-LAN tool, not exposed
-to the internet.
+Security note: anyone on the LAN can hit POST /sync OR /profile. The
+"attack" surface for /sync is they trigger a no-op idempotent sync. For
+/profile it's they swap your TRaSH profile to a different valid pick —
+annoying but trivially reversible from the same page. We take a coarse
+in-process lock so trampling parallel requests is impossible. CSRF
+protection (Origin / Host match) closes the cross-origin browser vector.
+This is a home-LAN tool, not exposed to the internet.
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -42,6 +49,7 @@ import os
 import socket
 import subprocess
 import threading
+import urllib.parse
 
 # Where the .last-sync stamp file lives, AS SEEN INSIDE THIS CONTAINER.
 # docker-compose mounts the recyclarr container's /config dir read-only
@@ -49,11 +57,41 @@ import threading
 # (and recyclarr-sync.sh refreshes) is visible.
 STAMP_FILE = '/recyclarr-config/.last-sync'
 
-# Single-flight lock: while a sync is in flight, any second sync request
-# bounces with a "wait a sec" message rather than queuing. Recyclarr's
-# sync is idempotent so even a queue would be safe, but it'd just chew
-# Sonarr/Radarr's API budget for no reason. Non-blocking acquire so the
-# user sees an immediate "in progress" response instead of waiting.
+# Install dir mounted writable at /install-dir so we can update .env
+# and re-run setup-arr-config.py --recyclarr-only when the user picks
+# a different profile. Path constants live here so a future remount
+# rename touches one spot.
+INSTALL_DIR    = '/install-dir'
+ENV_FILE       = f'{INSTALL_DIR}/.env'
+SETUP_SCRIPT   = f'{INSTALL_DIR}/setup-arr-config.py'
+
+# Profile picks shown in the dropdowns. MUST match the recipes table in
+# setup-arr-config.py (which is the source of truth) — when a new TRaSH
+# profile is added there it needs to be added here too. If the user
+# somehow submits an unknown value we reject it server-side rather than
+# write garbage to .env.
+SONARR_PROFILES = [
+    ('web-1080p',    'WEB-1080p (most users)'),
+    ('web-2160p',    'WEB-2160p (4K web)'),
+    ('bluray-1080p', 'Bluray-1080p (better than WEB)'),
+    ('bluray-2160p', 'Bluray-2160p (4K Bluray + REMUX)'),
+    ('anime',        'Anime (anime-specific scoring)'),
+]
+RADARR_PROFILES = [
+    ('hd-bluray-web',   'HD Bluray + WEB (default — most users)'),
+    ('uhd-bluray-web',  'UHD Bluray + WEB (4K Bluray + web)'),
+    ('remux-web-2160p', 'Remux + WEB 2160p (largest files)'),
+    ('anime',           'Anime (anime-specific scoring)'),
+]
+SONARR_KEYS = {k for k, _ in SONARR_PROFILES}
+RADARR_KEYS = {k for k, _ in RADARR_PROFILES}
+
+# Single-flight lock: while a sync OR profile-change is in flight, any
+# second request bounces with "wait a sec" rather than queuing.
+# Recyclarr's sync is idempotent so even a queue would be safe, but
+# changing .env mid-sync invites the kind of half-written file races
+# we don't want to debug. Non-blocking acquire so the user sees an
+# immediate "in progress" response instead of waiting.
 SYNC_LOCK = threading.Lock()
 
 
@@ -81,16 +119,31 @@ h1 {{ font-weight: 600; color: #34d399; margin: 0 0 0.5rem 0; }}
   letter-spacing: 0.05em; margin-bottom: 0.5rem;
 }}
 .row {{ display: flex; justify-content: space-between; gap: 1rem;
-        padding: 0.25rem 0; }}
+        padding: 0.25rem 0; align-items: center; }}
 .row strong {{ font-weight: 500; }}
+.field {{ display: flex; flex-direction: column; gap: 0.35rem;
+          margin: 0.75rem 0; }}
+.field label {{ font-size: 0.8rem; color: #94a3b8; }}
+select {{
+  background: #0b1220; color: #e2e8f0;
+  border: 1px solid #334155; border-radius: 0.375rem;
+  padding: 0.5rem 0.6rem; font: inherit; font-size: 0.9rem;
+}}
+select:focus {{ outline: 2px solid #34d399; outline-offset: 1px; }}
+.actions {{ display: flex; gap: 0.75rem; flex-wrap: wrap;
+            align-items: center; margin-top: 0.5rem; }}
 button {{
   background: #10b981; color: white; border: none;
   padding: 0.875rem 1.75rem; font-size: 1rem; font-weight: 600;
   border-radius: 0.375rem; cursor: pointer;
   transition: background 0.15s ease;
 }}
+button.secondary {{ background: #334155; }}
 button:hover  {{ background: #059669; }}
+button.secondary:hover {{ background: #475569; }}
 button:active {{ background: #047857; }}
+button.secondary:active {{ background: #1e293b; }}
+button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
 pre {{
   background: #0b1220; padding: 1rem; border-radius: 0.375rem;
   overflow: auto; font-size: 0.8125rem; line-height: 1.45;
@@ -109,6 +162,8 @@ code {{
 .banner.err {{ background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }}
 .hint {{ font-size: 0.8rem; color: #64748b; margin-top: 1.5rem;
          line-height: 1.6; }}
+.grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
+@media (max-width: 600px) {{ .grid {{ grid-template-columns: 1fr; }} }}
 </style>
 </head>
 <body>
@@ -126,19 +181,54 @@ code {{
   <div class="row"><span>Radarr profile</span><strong><code>{radarr_profile}</code></strong></div>
 </div>
 
-<form method="POST" action="/sync">
-  <button type="submit">Sync Now</button>
-</form>
+<div class="card">
+  <div class="label">Sync now (apply the current profile)</div>
+  <form method="POST" action="/sync">
+    <div class="actions">
+      <button type="submit">Sync Now</button>
+      <span class="muted">Runs <code>recyclarr sync</code> against Sonarr + Radarr.</span>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="label">Change profile</div>
+  <p class="muted" style="margin: 0 0 0.75rem 0">
+    Picks the TRaSH Guide quality bundle Recyclarr applies. Saving rewrites
+    <code>recyclarr.yml</code> and runs a sync in one go — no need to edit
+    <code>.env</code> or re-run the installer.
+  </p>
+  <form method="POST" action="/profile">
+    <div class="grid">
+      <div class="field">
+        <label for="sonarr">Sonarr profile</label>
+        <select name="sonarr" id="sonarr">
+{sonarr_options}
+        </select>
+      </div>
+      <div class="field">
+        <label for="radarr">Radarr profile</label>
+        <select name="radarr" id="radarr">
+{radarr_options}
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="submit">Save profile &amp; sync</button>
+      <span class="muted">Regenerates <code>recyclarr.yml</code>, then syncs.</span>
+    </div>
+  </form>
+</div>
 
 {output_section}
 
 <p class="hint">
-  Change profiles: edit <code>TRASH_SONARR_PROFILE</code> /
-  <code>TRASH_RADARR_PROFILE</code> in <code>.env</code> and re-run the wizard
-  — recyclarr.yml gets regenerated to match.<br>
   Equivalent CLI: <code>docker exec recyclarr recyclarr sync</code> or
-  <code>bash recyclarr-sync.sh</code>.<br>
-  Schedule weekly via Synology Task Scheduler — see the in-app Help → Recyclarr.
+  <code>bash recyclarr-sync.sh</code> for sync; for profile changes the
+  Configure screen in the installer also writes <code>.env</code> and
+  runs <code>python3 setup-arr-config.py --recyclarr-only</code> on
+  save. Schedule weekly sync via Synology Task Scheduler — see the
+  in-app Help → Recyclarr.
 </p>
 
 </body>
@@ -167,10 +257,50 @@ def read_stamp():
         return (f'(read error: {e})', '?', '?')
 
 
+def read_env_profile_values():
+    """Return (sonarr_profile, radarr_profile) by reading the live .env.
+    Falls back to defaults (web-1080p / hd-bluray-web) when the keys
+    aren't present — same defaults setup-arr-config.py uses. Returns
+    sensible values even when .env can't be read (mount missing) so the
+    page still renders rather than 500ing."""
+    sp = ''
+    rp = ''
+    try:
+        with open(ENV_FILE, encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('TRASH_SONARR_PROFILE='):
+                    sp = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('TRASH_RADARR_PROFILE='):
+                    rp = line.split('=', 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return (sp or 'web-1080p', rp or 'hd-bluray-web')
+
+
+def render_options(profiles, current):
+    """Build a string of <option> tags for a dropdown, marking the
+    current pick as selected. Caller escapes via html.escape elsewhere;
+    the values + labels here are constants from our own tables so
+    they're safe."""
+    out = []
+    for value, label in profiles:
+        sel = ' selected' if value == current else ''
+        out.append(
+            f'          <option value="{html.escape(value)}"{sel}>'
+            f'{html.escape(label)}</option>'
+        )
+    return '\n'.join(out)
+
+
 def render(banner_kind=None, banner_text=None, output=None):
     """Render the status page. `banner_*` shows a top-of-page status flash
-    after a sync; `output` is the captured sync output (shown in a <pre>)."""
-    ts, sp, rp = read_stamp()
+    after a sync; `output` is the captured sync output (shown in a <pre>).
+
+    Pulls the currently-applied profile from the .last-sync stamp (what
+    Recyclarr last ran with), but pre-selects the dropdowns from .env
+    (what the user has SET, which might differ between sync runs)."""
+    ts, last_sp, last_rp = read_stamp()
+    env_sp, env_rp = read_env_profile_values()
     banner_html = ''
     if banner_kind and banner_text:
         banner_html = f'<div class="banner {html.escape(banner_kind)}">{html.escape(banner_text)}</div>'
@@ -178,47 +308,149 @@ def render(banner_kind=None, banner_text=None, output=None):
     if output:
         output_html = (
             '<div class="card">'
-            '<div class="label">Sync output</div>'
+            '<div class="label">Output</div>'
             f'<pre>{html.escape(output)}</pre>'
             '</div>'
         )
     return PAGE.format(
         banner=banner_html,
         last_sync=html.escape(ts),
-        sonarr_profile=html.escape(sp),
-        radarr_profile=html.escape(rp),
+        # Show the LAST APPLIED profile in the "Current state" panel —
+        # answers "what is actually live in Sonarr/Radarr right now."
+        sonarr_profile=html.escape(last_sp),
+        radarr_profile=html.escape(last_rp),
+        # Pre-select the .env value in the dropdowns — answers "what
+        # WILL apply on the next sync." They might differ if the user
+        # has changed .env outside of a sync run.
+        sonarr_options=render_options(SONARR_PROFILES, env_sp),
+        radarr_options=render_options(RADARR_PROFILES, env_rp),
         output_section=output_html,
     )
 
 
-def run_sync():
-    """Single-flight `docker exec recyclarr recyclarr sync`.
-    Returns (status_kind, message, output) where status_kind is one of
-    'ok' / 'warn' / 'err' for the banner styling. Non-blocking lock
-    acquire so a second concurrent click gets immediate feedback."""
-    if not SYNC_LOCK.acquire(blocking=False):
-        return ('warn', 'Another sync is already in progress — try again in a moment.', '')
+def update_env_profiles(sonarr, radarr):
+    """Rewrite TRASH_SONARR_PROFILE + TRASH_RADARR_PROFILE in .env in
+    place. Appends a new line if the key is missing. Returns (ok, msg)
+    where ok is True on success, msg is human-readable for the banner.
+
+    Atomic write: render the full new body, then write+rename so a
+    crash mid-write doesn't leave .env truncated."""
+    if not os.path.exists(ENV_FILE):
+        return (False, f'.env not found at {ENV_FILE} — is the install dir mounted?')
     try:
-        try:
-            r = subprocess.run(
-                ['docker', 'exec', 'recyclarr', 'recyclarr', 'sync'],
-                capture_output=True, text=True, timeout=180,
-            )
-        except FileNotFoundError:
-            # docker CLI not available — image initialisation didn't apk-add it
-            return ('err',
-                    'docker CLI missing in trigger container — check the image '
-                    'entrypoint installed docker-cli.', '')
-        except subprocess.TimeoutExpired:
-            return ('err',
-                    'Sync timed out after 180s. Check `docker logs recyclarr` '
-                    'and Sonarr/Radarr API reachability.', '')
+        with open(ENV_FILE, encoding='utf-8') as f:
+            lines = f.readlines()
+        updates = {
+            'TRASH_SONARR_PROFILE': sonarr,
+            'TRASH_RADARR_PROFILE': radarr,
+        }
+        seen = set()
+        new_lines = []
+        for ln in lines:
+            stripped = ln.lstrip()
+            replaced = False
+            for key, val in updates.items():
+                if stripped.startswith(f'{key}='):
+                    new_lines.append(f'{key}={val}\n')
+                    seen.add(key)
+                    replaced = True
+                    break
+            if not replaced:
+                new_lines.append(ln)
+        # Append any keys that didn't exist yet.
+        for key, val in updates.items():
+            if key not in seen:
+                if new_lines and not new_lines[-1].endswith('\n'):
+                    new_lines.append('\n')
+                new_lines.append(f'{key}={val}\n')
+        tmp = ENV_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        os.replace(tmp, ENV_FILE)
+        return (True, '')
+    except PermissionError as e:
+        return (False, f'permission denied writing .env ({e}) — the trigger '
+                       'container needs a writable mount on $INSTALL_DIR.')
+    except Exception as e:
+        return (False, f'failed to update .env: {e}')
+
+
+def regenerate_recyclarr_yml():
+    """Run `python3 setup-arr-config.py --recyclarr-only` inside this
+    container. The script is mounted from the install dir + uses only
+    stdlib so it runs fine on python:3-alpine. Returns (ok, output)."""
+    if not os.path.exists(SETUP_SCRIPT):
+        return (False, f'setup-arr-config.py not found at {SETUP_SCRIPT}')
+    try:
+        r = subprocess.run(
+            ['python3', SETUP_SCRIPT, '--recyclarr-only'],
+            capture_output=True, text=True, timeout=60,
+            cwd=INSTALL_DIR,
+        )
         out = (r.stdout or '') + (r.stderr or '')
-        if r.returncode == 0:
-            return ('ok', 'Sync completed — refresh Sonarr/Radarr Settings → Profiles to see updates.', out)
-        return ('err', f'Sync failed (exit {r.returncode}). See output below.', out)
-    finally:
-        SYNC_LOCK.release()
+        return (r.returncode == 0, out)
+    except subprocess.TimeoutExpired:
+        return (False, 'setup-arr-config.py --recyclarr-only timed out after 60s')
+    except Exception as e:
+        return (False, f'failed to run setup-arr-config.py: {e}')
+
+
+def run_sync():
+    """`docker exec recyclarr recyclarr sync`. Returns
+    (status_kind, message, output) — status_kind one of ok/warn/err for
+    the banner styling. Caller holds SYNC_LOCK; this function doesn't."""
+    try:
+        r = subprocess.run(
+            ['docker', 'exec', 'recyclarr', 'recyclarr', 'sync'],
+            capture_output=True, text=True, timeout=180,
+        )
+    except FileNotFoundError:
+        return ('err',
+                'docker CLI missing in trigger container — check the image '
+                'entrypoint installed docker-cli.', '')
+    except subprocess.TimeoutExpired:
+        return ('err',
+                'Sync timed out after 180s. Check `docker logs recyclarr` '
+                'and Sonarr/Radarr API reachability.', '')
+    out = (r.stdout or '') + (r.stderr or '')
+    if r.returncode == 0:
+        return ('ok', 'Sync completed — refresh Sonarr/Radarr Settings → Profiles to see updates.', out)
+    return ('err', f'Sync failed (exit {r.returncode}). See output below.', out)
+
+
+def run_profile_change(sonarr, radarr):
+    """Validate, write .env, regenerate recyclarr.yml, then sync.
+    Returns (status_kind, message, output) for the page render."""
+    if sonarr not in SONARR_KEYS:
+        return ('err', f'Unknown Sonarr profile "{sonarr}" — rejected.', '')
+    if radarr not in RADARR_KEYS:
+        return ('err', f'Unknown Radarr profile "{radarr}" — rejected.', '')
+
+    ok_env, msg_env = update_env_profiles(sonarr, radarr)
+    if not ok_env:
+        return ('err', f'Could not save profile picks: {msg_env}', '')
+
+    ok_regen, regen_out = regenerate_recyclarr_yml()
+    if not ok_regen:
+        return ('err',
+                'Profile picks saved to .env but regenerating recyclarr.yml failed.',
+                regen_out)
+
+    sync_kind, sync_msg, sync_out = run_sync()
+    combined = ''
+    if regen_out:
+        combined += '── recyclarr.yml regeneration ──\n' + regen_out + '\n\n'
+    if sync_out:
+        combined += '── recyclarr sync ──\n' + sync_out
+
+    if sync_kind == 'ok':
+        return ('ok',
+                f'Saved profiles (Sonarr={sonarr}, Radarr={radarr}) and synced. '
+                'Refresh Sonarr/Radarr Settings → Profiles to see updates.',
+                combined)
+    return (sync_kind,
+            f'Saved profiles but sync reported a problem: {sync_msg}',
+            combined)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -257,8 +489,6 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get('Host', '')
         if not origin:
             return True
-        # Allow when Origin's host matches our Host header. Empty Host
-        # would make this fail-closed, which is what we want.
         try:
             from urllib.parse import urlparse
             origin_host = urlparse(origin).netloc
@@ -266,18 +496,60 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return origin_host == host
 
+    def _read_form(self):
+        """Parse application/x-www-form-urlencoded POST body. Returns
+        a dict of first-value-per-key (form selects can't multi-select
+        in this UI so single-value is right)."""
+        length = int(self.headers.get('Content-Length', '0') or '0')
+        if length <= 0 or length > 4096:  # tiny cap — our form is two keys
+            return {}
+        raw = self.rfile.read(length).decode('utf-8', errors='replace')
+        parsed = urllib.parse.parse_qs(raw)
+        return {k: v[0] for k, v in parsed.items() if v}
+
     def do_POST(self):
-        if self.path != '/sync':
-            self.send_error(404)
-            return
         if not self._check_csrf():
             self.send_error(403, "Cross-origin POST rejected (CSRF protection)")
             return
-        kind, msg, out = run_sync()
-        # HTTP status mirrors the sync outcome — useful if anyone scripts
-        # against this endpoint (curl -X POST returns rc=22 on 5xx).
-        code = 200 if kind == 'ok' else (409 if kind == 'warn' else 500)
-        self._send_html(render(banner_kind=kind, banner_text=msg, output=out), code=code)
+
+        if self.path == '/sync':
+            if not SYNC_LOCK.acquire(blocking=False):
+                self._send_html(render(
+                    banner_kind='warn',
+                    banner_text='Another sync is already in progress — try again in a moment.',
+                ), code=409)
+                return
+            try:
+                kind, msg, out = run_sync()
+            finally:
+                SYNC_LOCK.release()
+            code = 200 if kind == 'ok' else (409 if kind == 'warn' else 500)
+            self._send_html(render(banner_kind=kind, banner_text=msg, output=out), code=code)
+            return
+
+        if self.path == '/profile':
+            if not SYNC_LOCK.acquire(blocking=False):
+                self._send_html(render(
+                    banner_kind='warn',
+                    banner_text='Another sync is in progress — wait for it before changing the profile.',
+                ), code=409)
+                return
+            try:
+                form = self._read_form()
+                sonarr = form.get('sonarr', '').strip()
+                radarr = form.get('radarr', '').strip()
+                if not sonarr or not radarr:
+                    kind, msg, out = ('err',
+                                      'Missing sonarr/radarr profile in form submission.', '')
+                else:
+                    kind, msg, out = run_profile_change(sonarr, radarr)
+            finally:
+                SYNC_LOCK.release()
+            code = 200 if kind == 'ok' else (409 if kind == 'warn' else 500)
+            self._send_html(render(banner_kind=kind, banner_text=msg, output=out), code=code)
+            return
+
+        self.send_error(404)
 
 
 def detect_daemon_api_version():
@@ -324,9 +596,6 @@ def detect_daemon_api_version():
         if resp.status != 200:
             return None
         data = json.loads(resp.read().decode('utf-8'))
-        # /version returns the daemon's MAX supported API version in
-        # ApiVersion. There's also MinAPIVersion for the floor; we
-        # want the max for forward-compat.
         return data.get('ApiVersion')
     except Exception as e:
         print(f'[trigger] Could not probe daemon API version ({e}); '
