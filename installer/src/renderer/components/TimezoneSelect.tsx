@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Globe, Search, Sparkles, MonitorSmartphone } from 'lucide-react'
+import { Globe, Search, Sparkles, MonitorSmartphone, CheckCircle2 } from 'lucide-react'
 
 interface Props {
   value: string
@@ -207,8 +207,12 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
         className="max-h-72 overflow-y-auto rounded-md border border-slate-700 bg-slate-900/40"
       >
         {filtered.length === 0 ? (
-          <div className="px-3 py-3 text-sm text-slate-500 italic">
-            No timezones match.
+          <div className="px-3 py-6 text-sm text-slate-500 flex flex-col items-center gap-2">
+            <Search size={20} className="text-slate-600" />
+            <span className="italic">
+              No timezones match <span className="font-mono text-slate-400">{filter}</span>.
+            </span>
+            <span className="text-xs">Try "GMT", "eastern", or a city.</span>
           </div>
         ) : (
           filtered.map((z) => (
@@ -219,11 +223,20 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
               onClick={() => onChange(z.zone)}
               className={
                 'w-full text-left px-3 py-1.5 flex items-baseline gap-3 text-sm border-b border-slate-800 last:border-b-0 ' +
+                'focus:outline-none focus-visible:bg-emerald-900/20 focus-visible:ring-1 focus-visible:ring-emerald-500/40 focus-visible:ring-inset ' +
                 (z.zone === value
                   ? 'bg-emerald-900/40 text-emerald-100'
                   : 'hover:bg-slate-800 text-slate-200')
               }
             >
+              {/* Selected-state check icon so the chosen zone is obvious
+                  even when the user scrolls away from it (the highlight
+                  bg alone can blend into long zone lists). */}
+              {z.zone === value ? (
+                <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+              ) : (
+                <span className="inline-block w-3 shrink-0" />
+              )}
               <span className="min-w-[10rem] truncate">{z.city}</span>
               <span className="text-slate-500 text-xs min-w-[5rem]">{z.region}</span>
               <span className="text-slate-400 text-xs font-mono w-20 shrink-0">{z.offset}</span>
