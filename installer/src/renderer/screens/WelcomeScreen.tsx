@@ -569,11 +569,23 @@ function EmptyState({ onCreate, onImport }: { onCreate: () => void; onImport: ()
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
       className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/60 to-slate-950/60 p-8 text-center space-y-5"
     >
-      <div className="text-slate-200 text-xl font-semibold">Let's set up your first NAS</div>
-      <p className="text-slate-400 text-sm max-w-md mx-auto">
-        A profile remembers your NAS connection and every setting so you don't
-        re-type them next time. You can have one for each NAS.
-      </p>
+      {/* Hero glyph for the empty state — a Server icon with a gentle
+          rocking animation so the empty profile list doesn't feel
+          stagnant. ~3s sway loop, suppressed under reduced-motion. */}
+      <motion.div
+        animate={reduced ? {} : { y: [0, -2, 0] }}
+        transition={reduced ? {} : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+        className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-emerald-700/20 border border-emerald-500/25 mx-auto"
+      >
+        <Server size={32} className="text-emerald-300" strokeWidth={1.5} />
+      </motion.div>
+      <div>
+        <div className="text-slate-200 text-xl font-semibold">Let's set up your first NAS</div>
+        <p className="text-slate-400 text-sm max-w-md mx-auto mt-2">
+          A profile remembers your NAS connection and every setting so you don't
+          re-type them next time. You can have one for each NAS.
+        </p>
+      </div>
       <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
         <BigButton
           variant="primary"
