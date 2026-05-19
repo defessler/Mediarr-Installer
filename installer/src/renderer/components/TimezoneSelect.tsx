@@ -225,6 +225,8 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
             <button
               key={z.zone}
               type="button"
+              role="option"
+              aria-selected={z.zone === value}
               data-zone={z.zone}
               onClick={() => onChange(z.zone)}
               className={
