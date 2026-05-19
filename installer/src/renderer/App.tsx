@@ -414,7 +414,8 @@ export function App() {
                 href={info.updateAvailable.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+                aria-label={`v${info.updateAvailable.latest} update available — open release on GitHub in new tab`}
                 title={`Click to open the v${info.updateAvailable.latest} release page on GitHub`}
               >
                 <ArrowUpCircle size={11} aria-hidden="true" />
