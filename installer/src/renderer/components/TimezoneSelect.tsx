@@ -117,7 +117,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
   const reduced = useReducedMotion()
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-2 text-sm font-semibold">
+      <label className="flex items-center gap-2 text-sm font-semibold" htmlFor="tz-search">
         <Globe size={14} className="text-emerald-400" />
         Timezone
         <span className="text-slate-500 text-xs font-normal">
@@ -162,11 +162,14 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
 
       {/* Search input with leading icon. */}
       <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
         <input
           ref={inputRef}
+          id="tz-search"
           type="text"
           placeholder="Search city, region, or zone (e.g. 'eastern', 'tokyo', 'gmt-8')"
+          aria-label="Search timezones"
+          aria-controls="tz-list"
           className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -204,6 +207,9 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
       {/* Always-visible scrollable list */}
       <div
         ref={listRef}
+        id="tz-list"
+        role="listbox"
+        aria-label="Available timezones"
         className="max-h-72 overflow-y-auto rounded-md border border-slate-700 bg-slate-900/40"
       >
         {filtered.length === 0 ? (
