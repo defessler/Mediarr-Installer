@@ -472,15 +472,22 @@ function VpnSection({
 
   function switchProvider(newId: VpnProvider['id']) {
     if (newId === currentId) return
-    // Clear PROVIDER-SPECIFIC secret fields when switching so e.g. a
-    // stale Mullvad WireGuard key doesn't carry into a Surfshark
-    // profile. VPN_COUNTRIES + VPN_ENABLED stay — they're provider-
-    // agnostic and the user shouldn't have to re-type the country
-    // list just because they switched from NordVPN to Mullvad.
+    const newProv = findVpnProvider(newId)
+    // Clear provider-specific credential fields when switching so a stale
+    // Mullvad WireGuard tunnel-address doesn't carry into a NordVPN profile.
+    // VPN_COUNTRIES + VPN_ENABLED stay — they're provider-agnostic.
+    //
+    // WIREGUARD_PRIVATE_KEY is intentionally NOT cleared when the new provider
+    // is also WireGuard-based: all four WireGuard providers (NordVPN,
+    // ProtonVPN, Mullvad, AirVPN) use the same key format, the key is
+    // generated locally and registered with each provider independently,
+    // so it's fully portable. Clearing it just forces the user to re-paste
+    // or re-fetch a key they already have when they click between providers.
     const blanks: Partial<EnvFormValues> = {
       VPN_PROVIDER: newId,
-      VPN_TYPE: findVpnProvider(newId).vpnType,
-      WIREGUARD_PRIVATE_KEY: undefined,
+      VPN_TYPE: newProv.vpnType,
+      // Tunnel address is provider-assigned (a /32 from their IP pool) and
+      // is different for every provider — always clear it.
       WIREGUARD_ADDRESSES: undefined,
       WIREGUARD_PRESHARED_KEY: undefined,
       OPENVPN_USER: undefined,
@@ -488,6 +495,11 @@ function VpnSection({
       NORDVPN_ACCESS_TOKEN: undefined,
       NORDVPN_PRIVATE_KEY: undefined,
       CUSTOM_VPN_ENV: undefined,
+    }
+    // Only wipe the WireGuard private key when switching TO a non-WireGuard
+    // provider. The key is irrelevant for OpenVPN/custom setups.
+    if (newProv.vpnType !== 'wireguard') {
+      blanks.WIREGUARD_PRIVATE_KEY = undefined
     }
     // Use setConfig so all fields update in one batch.
     for (const [k, v] of Object.entries(blanks)) {
@@ -1036,7 +1048,8 @@ export function ConfigureScreen() {
                 href="https://plex.tv/claim"
                 target="_blank"
                 rel="noreferrer"
-                className="text-amber-300 hover:underline"
+                className="text-amber-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 rounded"
+                aria-label="Open plex.tv/claim in a new tab"
               >
                 plex.tv/claim
               </a>
