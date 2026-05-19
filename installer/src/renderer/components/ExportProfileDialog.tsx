@@ -116,7 +116,7 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="shrink-0 w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-              <Upload size={20} className="text-emerald-300" />
+              <Upload size={20} className="text-emerald-300" aria-hidden="true" />
             </div>
             <div>
               <h2 id="export-dialog-title" className="text-lg font-bold tracking-tight">Export profile</h2>
@@ -132,13 +132,13 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
             className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors disabled:opacity-40"
             aria-label="Close export dialog"
           >
-            <XIcon size={18} />
+            <XIcon size={18} aria-hidden="true" />
           </button>
         </div>
 
         <div className="space-y-1">
           <label className="block text-sm font-semibold flex items-center gap-1.5" htmlFor="export-pass">
-            <Lock size={13} className="text-emerald-400" />
+            <Lock size={13} className="text-emerald-400" aria-hidden="true" />
             Passphrase
           </label>
           <PasswordInput
@@ -196,7 +196,7 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
               animate={{ opacity: 1, x: 0 }}
               className="text-xs text-rose-300 mt-1 flex items-center gap-1"
             >
-              <AlertCircle size={12} /> Doesn't match the passphrase above.
+              <AlertCircle size={12} aria-hidden="true" /> Doesn't match the passphrase above.
             </motion.p>
           )}
         </div>
