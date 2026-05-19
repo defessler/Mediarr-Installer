@@ -83,8 +83,9 @@ export function IndexerCard({ def, values, onChange }: Props) {
                 className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                 onClick={(e) => e.stopPropagation()}
                 title={`Visit ${def.name} — opens in browser`}
+                aria-label={`Visit ${def.name} website — opens in new tab`}
               >
-                site <ExternalLink size={10} />
+                site <ExternalLink size={10} aria-hidden="true" />
               </a>
             )}
           </div>
