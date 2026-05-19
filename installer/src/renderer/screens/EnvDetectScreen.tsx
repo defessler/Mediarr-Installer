@@ -183,12 +183,18 @@ export function EnvDetectScreen() {
 
   const Check = ({ ok, label, value }: { ok: boolean; label: string; value?: string | null }) => (
     <div className="flex items-center gap-3 py-1.5">
+      {/* aria-hidden on the icon — surrounding label already carries
+          the pass/fail meaning. We surface the actual status via the
+          parent role/aria-label structure on the section. */}
       {ok ? (
-        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" strokeWidth={2} />
+        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
       ) : (
-        <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} />
+        <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
       )}
-      <span className="text-sm">{label}</span>
+      <span className="text-sm">
+        <span className="sr-only">{ok ? 'OK: ' : 'Failed: '}</span>
+        {label}
+      </span>
       {value !== undefined && (
         <span className="ml-auto text-sm font-mono text-slate-400">{value ?? '-'}</span>
       )}
