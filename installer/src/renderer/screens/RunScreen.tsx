@@ -768,6 +768,27 @@ export function RunScreen() {
     }
   }
 
+  // Tick the elapsed counter every second while the run is in flight.
+  // Stops at done / failed so the counter freezes at the final value
+  // (so the user can read "completed in 18:42").
+  //
+  // CRITICAL: this useEffect MUST live above the `if (phase === 'idle')`
+  // early return below. React's Rules of Hooks demand the same hook
+  // call order on every render — if this hook were called only when
+  // phase !== 'idle', the very transition from idle → uploading on
+  // Start install would add a "new" hook to the order and React would
+  // throw, unmounting the entire screen. That manifested as a literal
+  // blank window on v0.3.18 once the user clicked Install. Keep this
+  // ABOVE any conditional return.
+  useEffect(() => {
+    if (!runStartedAt) return
+    if (phase === 'done' || phase === 'failed') return
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - runStartedAt)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [runStartedAt, phase])
+
   // Pre-install screen: just the Plex claim widget and a big Start CTA.
   // Showing the empty stepper + empty log here was confusing — users
   // thought the install was running and stuck.
@@ -867,18 +888,6 @@ export function RunScreen() {
   // pending/fail contribute zero. Total = number of steps (10).
   const completedSteps = steps.filter((s) => s.status === 'ok').length
   const inflightSteps = steps.filter((s) => s.status === 'running').length
-
-  // Tick the elapsed counter every second while the run is in flight.
-  // Stops at done / failed so the counter freezes at the final value
-  // (so the user can read "completed in 18:42").
-  useEffect(() => {
-    if (!runStartedAt) return
-    if (phase === 'done' || phase === 'failed') return
-    const interval = setInterval(() => {
-      setElapsedMs(Date.now() - runStartedAt)
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [runStartedAt, phase])
 
   // Format ms as "Xm Ys" — capped at 99 minutes so the chip doesn't
   // get unreasonably wide if something hangs.

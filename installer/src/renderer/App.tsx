@@ -122,6 +122,18 @@ export function App() {
   // "something changed under the user's feet," worth surfacing.
   const firstBounceRef = useRef(true)
   useEffect(() => {
+    // Defensive: an unknown step (corrupted persist, future-version
+    // localStorage, etc.) would render nothing and leave the user
+    // looking at a blank window. Normalize to 'welcome' first so the
+    // rest of the bounce logic operates on a known value.
+    const KNOWN_STEPS: WizardStep[] = [
+      'welcome', 'connect', 'detect', 'configure',
+      'run', 'run-update', 'migrate', 'done',
+    ]
+    if (!KNOWN_STEPS.includes(step)) {
+      setStep('welcome')
+      return
+    }
     if (step !== 'welcome' && !activeProfileId) {
       setStep('welcome')
       return
@@ -392,14 +404,22 @@ export function App() {
             the transition. */}
         <AnimatePresence mode="wait">
           <ScreenTransition screenKey={step}>
-            {step === 'welcome'    && <WelcomeScreen />}
-            {step === 'connect'    && <ConnectScreen />}
-            {step === 'detect'     && <EnvDetectScreen />}
-            {step === 'configure'  && <ConfigureScreen />}
-            {step === 'run'        && <RunScreen />}
-            {step === 'run-update' && <UpdateRunScreen />}
-            {step === 'migrate'    && <MigrateScreen />}
-            {step === 'done'       && <DoneScreen />}
+            {/* Render the matching screen, OR fall back to WelcomeScreen
+                if step somehow holds an unknown value. A literal blank
+                screen (no branch matched) was the failure mode reported
+                in v0.3.18 — defensive fallback ensures the user always
+                sees SOMETHING they can navigate from. The bounce
+                effect above also re-syncs step='welcome' on the next
+                tick when activeProfileId is null. */}
+            {step === 'welcome' ? <WelcomeScreen />
+              : step === 'connect' ? <ConnectScreen />
+              : step === 'detect' ? <EnvDetectScreen />
+              : step === 'configure' ? <ConfigureScreen />
+              : step === 'run' ? <RunScreen />
+              : step === 'run-update' ? <UpdateRunScreen />
+              : step === 'migrate' ? <MigrateScreen />
+              : step === 'done' ? <DoneScreen />
+              : <WelcomeScreen />}
           </ScreenTransition>
         </AnimatePresence>
       </main>
