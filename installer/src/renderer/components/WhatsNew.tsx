@@ -192,7 +192,7 @@ export function WhatsNew({ info, onChanged }: Props) {
             animate={reduced ? {} : { scale: [1, 1.06, 1] }}
             transition={reduced ? {} : { duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <Sparkles size={18} className="text-emerald-300" />
+            <Sparkles size={18} className="text-emerald-300" aria-hidden="true" />
           </motion.div>
           <div className="min-w-0">
             <h2 className="font-semibold text-emerald-100 flex items-center gap-2 flex-wrap">
@@ -246,8 +246,8 @@ export function WhatsNew({ info, onChanged }: Props) {
 
       <details className="rounded-md bg-slate-900/40 text-sm group">
         <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-          <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180 shrink-0" />
-          <FileText size={14} className="text-slate-500 shrink-0" />
+          <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180 shrink-0" aria-hidden="true" />
+          <FileText size={14} className="text-slate-500 shrink-0" aria-hidden="true" />
           What's new in v{u.latest}
         </summary>
         <div className="px-3 pb-3 pt-1 space-y-1 text-sm">
