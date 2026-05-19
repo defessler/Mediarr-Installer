@@ -345,6 +345,8 @@ export function WelcomeScreen() {
                         exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
                         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                         className="overflow-hidden"
+                        role="menu"
+                        aria-label={`Actions for ${p.label}`}
                       >
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-700/60">
                           <BigButton
