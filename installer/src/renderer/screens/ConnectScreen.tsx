@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2,
-  Lock, KeyRound, Users,
+  Lock, KeyRound, Users, Shield,
 } from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
@@ -258,11 +258,17 @@ export function ConnectScreen() {
           install) need root, so we wrap them in `sudo -S` and pipe
           the password to stdin. */}
       {isNonRoot && (
-        <div className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 space-y-2">
-          <label className="block text-sm font-medium">
+        <motion.div
+          initial={reduced ? { opacity: 1, height: 'auto' } : { opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 space-y-2 overflow-hidden"
+        >
+          <label className="block text-sm font-medium inline-flex items-center gap-2">
+            <Shield size={14} className="text-amber-300" strokeWidth={2} />
             Sudo password
-            <span className="ml-2 text-xs text-amber-300">
-              ({connection.user} is not root — needed for firewall + chmod steps)
+            <span className="ml-1 text-xs text-amber-300/90 font-normal">
+              ({connection.user} is not root — needed for firewall + chmod)
             </span>
           </label>
           <PasswordInput
@@ -272,11 +278,12 @@ export function ConnectScreen() {
             value={sudoPassword}
             onChange={(e) => setSudoPassword(e.target.value)}
           />
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-400 inline-flex items-center gap-1.5">
+            <Lock size={11} className="text-slate-500" />
             Stored in memory only — never written to disk or saved to your
             connection profile.
           </p>
-        </div>
+        </motion.div>
       )}
 
       {/* (Save UI removed — auto-save handles writing changes back to
