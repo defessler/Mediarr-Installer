@@ -371,7 +371,7 @@ function VpnFieldInput({ field, value, onChange }: {
     return (
       <textarea
         rows={5}
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs"
+        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
         value={value}
         placeholder={field.placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -714,7 +714,7 @@ export function ConfigureScreen() {
           </label>
           <input
             type="text"
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-sm"
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             placeholder="/volume1/docker/media"
             value={config.INSTALL_DIR ?? targetDir}
             onChange={(e) => {
