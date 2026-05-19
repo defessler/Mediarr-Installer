@@ -46,13 +46,17 @@ export function IndexerCard({ def, values, onChange }: Props) {
       <div className="flex items-center gap-3">
         {/* Toggle pill — Motion handles the knob slide as a spring so
             the on/off transition feels physical, not mechanical. */}
-        <button
+        <motion.button
           type="button"
           onClick={toggle}
           aria-pressed={open}
           aria-label={`Toggle ${def.name}`}
+          whileTap={reduced ? {} : { scale: 0.95 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
           className={
             'shrink-0 inline-flex items-center w-11 h-6 rounded-full p-0.5 transition-colors ' +
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 ' +
+            'focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ' +
             (open ? 'bg-emerald-500' : 'bg-slate-700 hover:bg-slate-600')
           }
         >
@@ -65,7 +69,7 @@ export function IndexerCard({ def, values, onChange }: Props) {
             }
             className="block w-5 h-5 bg-white rounded-full shadow-md"
           />
-        </button>
+        </motion.button>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
