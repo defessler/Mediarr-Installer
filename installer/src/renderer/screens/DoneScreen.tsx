@@ -266,7 +266,7 @@ export function DoneScreen() {
                 <div className="text-xs text-slate-400 font-mono truncate">{url}</div>
               </div>
               <StatusIcon size={16} className={`shrink-0 ${statusColor}`} strokeWidth={2} />
-              <ExternalLink size={14} className="text-slate-500 shrink-0" />
+              <ExternalLink size={14} className="text-slate-500 shrink-0" aria-hidden="true" />
             </motion.button>
           )
         })}
@@ -279,7 +279,7 @@ export function DoneScreen() {
               size={14}
               className="text-slate-500 transition-transform group-open:rotate-180"
             />
-            <FileText size={14} className="text-slate-400" strokeWidth={1.75} />
+            <FileText size={14} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
             Validation log
             {exit !== null && (
               <span className={`ml-1 text-xs ${exit === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
