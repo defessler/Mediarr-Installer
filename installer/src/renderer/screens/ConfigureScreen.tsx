@@ -4,6 +4,8 @@ import {
   Settings2, ArrowLeft, ArrowRight,
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, ListChecks, Users, Captions,
+  PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
+  type LucideIcon,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 import { PasswordInput } from '../components/PasswordInput.js'
@@ -131,21 +133,30 @@ interface ServiceToggle {
   key: keyof EnvFormValues
   label: string
   hint?: string
+  /** Per-service Lucide icon. Children + scanning users pick a service by
+   *  glyph (📺 Sonarr, 🎬 Radarr, 🎵 Lidarr) much faster than by reading
+   *  ten near-identical bullet lines. */
+  icon: LucideIcon
+  /** Tailwind colour class for the icon — matches the service's visual
+   *  vocabulary across the rest of the wizard (Plex = amber, Sonarr =
+   *  sky, etc.) so the eye learns "this row is Sonarr-ish" once and
+   *  applies it everywhere. */
+  iconColor: string
   /** "needs" hint — shown when the toggle is on but its dependencies are off. */
   needs?: (keyof EnvFormValues)[]
 }
 
 const SERVICE_TOGGLES: ServiceToggle[] = [
-  { key: 'ENABLE_PLEX',        label: 'Plex stack',   hint: 'Plex + Tautulli + Seerr (request system)' },
-  { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation' },
-  { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation' },
-  { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation' },
-  { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)' },
-  { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader' },
-  { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above' },
+  { key: 'ENABLE_PLEX',        label: 'Plex stack',   hint: 'Plex + Tautulli + Seerr (request system)',     icon: PlaySquare,      iconColor: 'text-amber-400' },
+  { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation',                                 icon: Tv,              iconColor: 'text-sky-400' },
+  { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation',                              icon: Film,            iconColor: 'text-yellow-400' },
+  { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
+  { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
+  { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
+  { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
 ]
 
 function ServicesSection({
@@ -184,14 +195,15 @@ function ServicesSection({
           // externally-managed Sonarr; the hint is enough.
           const unmetDep =
             on && t.needs && !t.needs.some((dep) => isOn(dep))
+          const Icon = t.icon
           return (
             <label
               key={t.key}
               className={
-                'flex items-start gap-2 rounded-md border p-3 cursor-pointer transition-colors ' +
+                'flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors ' +
                 (on
-                  ? 'border-emerald-700/50 bg-emerald-900/10'
-                  : 'border-slate-700 bg-slate-900/40 opacity-70')
+                  ? 'border-emerald-700/50 bg-emerald-900/10 hover:border-emerald-600/70'
+                  : 'border-slate-700 bg-slate-900/40 opacity-70 hover:opacity-100')
               }
             >
               <input
@@ -200,6 +212,20 @@ function ServicesSection({
                 checked={on}
                 onChange={(e) => update(t.key, e.target.checked ? 'true' : 'false')}
               />
+              {/* Per-service icon tile — gives every row a unique visual
+                  anchor at a glance. Tinted square preserves the service's
+                  colour vocabulary even when the toggle is off (dimmed
+                  via the parent's opacity). */}
+              <div
+                className={
+                  'shrink-0 w-9 h-9 rounded-md flex items-center justify-center ' +
+                  (on
+                    ? 'bg-slate-800/70 border border-slate-700/60'
+                    : 'bg-slate-800/30 border border-slate-700/30')
+                }
+              >
+                <Icon size={18} className={t.iconColor} strokeWidth={1.75} />
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium">{t.label}</div>
                 {t.hint && (
