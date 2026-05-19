@@ -46,8 +46,15 @@ def _find_install_dir():
     scripts/ parent in the new layout, or the script's own dir in
     legacy loose-scripts installs. Module-level so anything that
     previously used `os.path.dirname(__file__)` for .env can use this
-    helper instead and Just Work in both layouts."""
-    here = INSTALL_DIR_DEFAULT
+    helper instead and Just Work in both layouts.
+
+    Resolves `here` from the script's own filesystem path (not the
+    INSTALL_DIR_DEFAULT module global) because this function IS what
+    computes INSTALL_DIR_DEFAULT — referencing it here is a self-loop
+    that NameError's on import. abspath() to defend against the script
+    being invoked via a relative path like `python3 ./setup-arr-config.py`
+    where dirname would return "." and break the basename check."""
+    here = os.path.dirname(os.path.abspath(__file__))
     if os.path.basename(here) == 'scripts':
         return os.path.dirname(here)
     return here
