@@ -551,7 +551,13 @@ services:
       # The Python webhook itself — single file, mounted in. Keeps
       # the image vanilla (just python:3-alpine + docker-cli at
       # boot via apk) so updates to the script don't require rebuilds.
-      - ${INSTALL_DIR}/recyclarr-trigger.py:/app/server.py:ro
+      # As of v0.3.22 the wizard places helper scripts under
+      # ${INSTALL_DIR}/scripts/ so the compose root stays tidy. Bind-
+      # mount from the new path. Existing installs that ran Sync wizard
+      # scripts on v0.3.22+ will have the file in this location; legacy
+      # installs still at INSTALL_DIR/recyclarr-trigger.py need to do a
+      # one-time Update → Pull + recreate to apply the new mount.
+      - ${INSTALL_DIR}/scripts/recyclarr-trigger.py:/app/server.py:ro
       # Install dir mounted RW so the trigger can update
       # TRASH_*_PROFILE in .env and re-run setup-arr-config.py
       # --recyclarr-only to regenerate recyclarr.yml in place when

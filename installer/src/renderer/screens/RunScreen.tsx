@@ -728,7 +728,17 @@ export function RunScreen() {
         //
         // Each branch echoes a "using: …" line so the log tells us which
         // path actually ran when we're debugging silent installs.
-        const targetSh = shellQuote(`${targetDir}/setup.sh`)
+        // As of v0.3.22 the wizard drops setup.sh under scripts/ inside
+        // INSTALL_DIR. Legacy installs (loose scripts at INSTALL_DIR)
+        // are detected here so we still find setup.sh in either layout
+        // — we exec the new path when it exists and fall back to the
+        // legacy one otherwise. setup.sh itself also handles both
+        // layouts internally, so it doesn't matter which path we end
+        // up running.
+        const targetSh = shellQuote(
+          `${targetDir}/scripts/setup.sh`,
+        )
+        const legacySh = shellQuote(`${targetDir}/setup.sh`)
         await window.installer.ssh.execStream({
           sessionId,
           cmd:
@@ -740,19 +750,25 @@ export function RunScreen() {
             // setting them here makes us robust to older setup.sh
             // payloads or shell variants that drop the export.
             `export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false; ` +
+            // Pick the new scripts/ layout if it exists; fall back to
+            // the legacy loose-scripts path. setup.sh handles both
+            // layouts internally, so either path runs to completion.
+            `if [ -f ${targetSh} ]; then SETUP=${targetSh}; ` +
+            `else SETUP=${legacySh}; fi; ` +
+            `echo "[wizard-debug] using setup.sh at: $SETUP"; ` +
             `echo "[wizard-debug] before setup.sh: $(date)"; ` +
             `if command -v script >/dev/null 2>&1; then ` +
             `  echo "[wizard-debug] using: script -qfc (forced pty)"; ` +
-            `  script -qfc "bash ${targetSh}" /dev/null 2>&1; rc=$?; ` +
+            `  script -qfc "bash $SETUP" /dev/null 2>&1; rc=$?; ` +
             `elif command -v stdbuf >/dev/null 2>&1; then ` +
             `  echo "[wizard-debug] using: stdbuf -oL -eL"; ` +
-            `  stdbuf -oL -eL bash ${targetSh} 2>&1; rc=$?; ` +
+            `  stdbuf -oL -eL bash $SETUP 2>&1; rc=$?; ` +
             `elif command -v awk >/dev/null 2>&1; then ` +
             `  echo "[wizard-debug] using: bash | awk fflush"; ` +
-            `  bash ${targetSh} 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
+            `  bash $SETUP 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
             `else ` +
             `  echo "[wizard-debug] using: plain bash (output may be block-buffered)"; ` +
-            `  bash ${targetSh} 2>&1; rc=$?; ` +
+            `  bash $SETUP 2>&1; rc=$?; ` +
             `fi; ` +
             `echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
           sudo: true,

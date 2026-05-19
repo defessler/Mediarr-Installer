@@ -190,8 +190,15 @@ def read_env(path):
     return env
 
 def read_env_merged(script_dir):
-    # .env lives in nas/ — walk up if this script is in a subdirectory
-    candidates = [script_dir, os.path.dirname(script_dir)]
+    # .env lives at the compose root. v0.3.22 layout has this script at
+    # INSTALL_DIR/scripts/indexers/ — walk up two parents. Legacy
+    # installs had it at INSTALL_DIR/indexers/ (one parent). Try both,
+    # plus script_dir itself for very-old layouts.
+    candidates = [
+        script_dir,
+        os.path.dirname(script_dir),
+        os.path.dirname(os.path.dirname(script_dir)),
+    ]
     env_dir = next((d for d in candidates if os.path.exists(os.path.join(d, '.env'))), script_dir)
     return read_env(os.path.join(env_dir, '.env'))
 
@@ -219,11 +226,16 @@ def main():
 
     LAN_IP     = env.get('LAN_IP', '')
     # Resolve INSTALL_DIR portably: .env writes it on every install since
-    # the multi-NAS refactor, but fall back to script_dir's parent (this
-    # script lives at <INSTALL_DIR>/indexers/) for older .envs the user
-    # may have hand-edited, and finally to the Synology-historical path
-    # so really-old installs don't regress.
-    install_dir = env.get('INSTALL_DIR') or os.path.dirname(script_dir) or '/volume1/docker/media'
+    # the multi-NAS refactor. Fallbacks: walk up from script_dir (v0.3.22
+    # layout has it at INSTALL_DIR/scripts/indexers/, so two parents up;
+    # legacy installs had it at INSTALL_DIR/indexers/, one parent up).
+    # Final fallback is the Synology-historical path.
+    if env.get('INSTALL_DIR'):
+        install_dir = env.get('INSTALL_DIR')
+    elif os.path.basename(os.path.dirname(script_dir)) == 'scripts':
+        install_dir = os.path.dirname(os.path.dirname(script_dir))
+    else:
+        install_dir = os.path.dirname(script_dir) or '/volume1/docker/media'
 
     # Respect the user's service selection — if they opted Bazarr out, the
     # container doesn't exist and there's no key to read. Exit cleanly

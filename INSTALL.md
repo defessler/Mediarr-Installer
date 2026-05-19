@@ -619,7 +619,7 @@ obscure it can take hours (or never appear) depending on indexer coverage.
 | Plex data | `/volume1/docker/media/plex/config/` |
 | The wizard's compose file | `/volume1/docker/media/docker-compose.yml` |
 | The wizard's `.env` | `/volume1/docker/media/.env` (don't share this — it has your passwords) |
-| Helper scripts (re-run sync, etc.) | `/volume1/docker/media/recyclarr-sync.sh`, `restart-qbit.sh`, etc. |
+| Helper scripts (re-run sync, etc.) | `/volume1/docker/media/scripts/recyclarr-sync.sh`, `scripts/restart-qbit.sh`, etc. (v0.3.22+ tucks all `.sh` / `.py` helpers under `scripts/` so the install dir stays tidy). |
 
 To inspect any of these from your PC: connect to your NAS in File Explorer
 via `\\<nas-ip>` and browse to the share. (Most paths are visible through the
@@ -652,7 +652,7 @@ Tips:
 |---------|-------------------|-----|
 | "Authentication failed" on Connect screen | Wrong DSM password | Try logging into DSM with that exact password to confirm |
 | Install timed out at step 4 | iptables not installed (DSM 7 quirk) | DSM Package Center → install "iptables" → re-run install |
-| qBittorrent shows "container must join at least one network" after a reboot | Gluetun (the VPN) wasn't running yet | `bash /volume1/docker/media/restart-qbit.sh` |
+| qBittorrent shows "container must join at least one network" after a reboot | Gluetun (the VPN) wasn't running yet | `bash /volume1/docker/media/scripts/restart-qbit.sh` |
 | Plex shows a hash code instead of your server name | Claim token expired before Plex started | Open `http://<nas-ip>:32400/web`, sign in, claim it manually |
 | Seerr shows "Port 5056 connection refused" | First-run wizard not yet completed | Open Seerr in a browser; finish its setup wizard |
 | A movie/show I requested never downloads | Indexer coverage gap, or it's not available on free indexers | Add a paid indexer in Prowlarr |
@@ -726,8 +726,8 @@ Everything streams to phones, smart TVs, and browsers via Plex.
   pick your profile, click **Update**, then **Pull + recreate**. The
   wizard handles `docker compose pull && up -d` over SSH for you.
 - **Schedule weekly TRaSH-Guide updates** — DSM → Task Scheduler → run
-  `bash /volume1/docker/media/recyclarr-sync.sh` weekly. (Or just click
-  the Recyclarr tile when you remember.)
+  `bash /volume1/docker/media/scripts/recyclarr-sync.sh` weekly. (Or
+  just click the Recyclarr tile when you remember.)
 - **Browse [TRaSH Guides](https://trash-guides.info)** to fine-tune quality
   profiles.
 - **Browse [r/selfhosted](https://reddit.com/r/selfhosted) and

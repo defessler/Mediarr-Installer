@@ -32,10 +32,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Compose root (INSTALL_DIR) is the scripts/ parent when this lives in
+# the new layout, or SCRIPT_DIR itself in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR_FALLBACK="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR_FALLBACK="$SCRIPT_DIR"
+fi
+cd "$INSTALL_DIR_FALLBACK"
 
 if [ ! -f .env ]; then
-    echo "✘ .env not found at $SCRIPT_DIR/.env"
+    echo "✘ .env not found at $INSTALL_DIR_FALLBACK/.env"
     echo "  This script expects to live next to docker-compose.yml in the install dir."
     exit 1
 fi
@@ -49,7 +56,7 @@ set -a
 . ./.env
 set +a
 
-INSTALL_DIR="${INSTALL_DIR:-$SCRIPT_DIR}"
+INSTALL_DIR="${INSTALL_DIR:-$INSTALL_DIR_FALLBACK}"
 RECYCLARR_CONFIG_DIR="$INSTALL_DIR/recyclarr/config"
 STAMP_FILE="$RECYCLARR_CONFIG_DIR/.last-sync"
 LOG_FILE="$RECYCLARR_CONFIG_DIR/sync.log"

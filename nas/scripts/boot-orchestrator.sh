@@ -42,7 +42,16 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR itself
+# in legacy loose-scripts installs. The orchestrator needs INSTALL_DIR
+# for .env + `docker compose` cwd; the lock + log files stay alongside
+# the script itself so they're discoverable in either layout.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+cd "$INSTALL_DIR"
 
 LOG="$SCRIPT_DIR/boot-orchestrator.log"
 log() { echo "[$(date -Is)] $*" | tee -a "$LOG"; }
@@ -64,7 +73,7 @@ fi
 log "════ boot-orchestrator starting ════"
 
 if [ ! -f .env ]; then
-    log "✘ .env not found at $SCRIPT_DIR/.env — aborting"
+    log "✘ .env not found at $INSTALL_DIR/.env — aborting"
     exit 1
 fi
 
