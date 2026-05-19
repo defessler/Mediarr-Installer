@@ -259,6 +259,23 @@ export interface UpdateDownloadResult {
   bytes: number
 }
 
+/** Lifecycle states the in-place updater can be in. The main side
+ *  emits transitions over the `updater:state` event; the renderer's
+ *  WhatsNew banner subscribes and renders the matching UI (idle =
+ *  hidden; available = "Install" button; downloading = progress bar;
+ *  downloaded = "Restart and install" button; error = banner).
+ *
+ *  Discriminated union — every variant carries exactly the data its
+ *  matching UI needs, no more. */
+export type UpdaterState =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'available'; version: string; releaseNotes?: string }
+  | { kind: 'not-available' }
+  | { kind: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
+  | { kind: 'downloaded'; version: string; releaseNotes?: string }
+  | { kind: 'error'; message: string }
+
 // ── Connection profiles ───────────────────────────────────────────────────────
 //
 // Profiles are the source of truth for every per-NAS setting. The user

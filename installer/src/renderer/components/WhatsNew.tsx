@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Sparkles, Download, ExternalLink, ChevronDown, FileText } from 'lucide-react'
-import type { AppInfo } from '../../shared/ipc.js'
+import { Sparkles, Download, ExternalLink, ChevronDown, FileText, RefreshCw } from 'lucide-react'
+import type { AppInfo, UpdaterState } from '../../shared/ipc.js'
 import { useErrors, reportError } from '../store/errors.js'
 import { BigButton } from './BigButton.js'
 
@@ -145,12 +145,75 @@ function renderNotes(md: string): React.ReactNode {
 }
 
 export function WhatsNew({ info, onChanged }: Props) {
-  const [busy, setBusy] = useState<'download' | 'skip' | null>(null)
+  const [busy, setBusy] = useState<'download' | 'skip' | 'install' | null>(null)
   const reduced = useReducedMotion()
-  const u = info.updateAvailable
-  if (!u) return null
+  // Live updater state, subscribed from the main process. Drives whether
+  // we show "Install update" (in-place), a progress bar, or the legacy
+  // "Download zip" button. Builds older than the electron-updater
+  // integration (or builds running in dev / mock) stay on `idle`
+  // forever — the legacy zip flow handles those.
+  const [updater, setUpdater] = useState<UpdaterState>({ kind: 'idle' })
+  useEffect(() => {
+    let cancelled = false
+    void window.installer.updater?.getState().then((s) => {
+      if (!cancelled) setUpdater(s)
+    }).catch(() => { /* updater unavailable — stay idle */ })
+    const off = window.installer.updater?.onState((s) => setUpdater(s))
+    return () => { cancelled = true; off?.() }
+  }, [])
 
-  async function download() {
+  const u = info.updateAvailable
+  // Only suppress the banner if there's no GitHub-reported newer version
+  // AND the in-place updater hasn't found one. The updater can fire
+  // before our GitHub fetch (it has its own publish.yml manifest), so
+  // we surface the banner from either source.
+  if (!u && updater.kind === 'idle') return null
+  if (!u && updater.kind === 'not-available') return null
+
+  // The version we display in the banner — prefer whichever source
+  // has fresher info. Both should agree on the same tag.
+  const latestVersion = (updater.kind === 'available' || updater.kind === 'downloaded')
+    ? updater.version
+    : u?.latest ?? ''
+
+  // What action button to show:
+  // - 'install'   — update is downloaded; one click restarts + replaces.
+  // - 'download'  — in-place updater knows about the version but hasn't
+  //                 downloaded it yet; one click pulls + installs.
+  // - 'fallback'  — no in-place updater in this build (idle even after
+  //                 page mount); fall back to the legacy zip download.
+  const mode: 'install' | 'download' | 'progress' | 'fallback' =
+    updater.kind === 'downloaded'   ? 'install'
+    : updater.kind === 'downloading' ? 'progress'
+    : updater.kind === 'available'   ? 'download'
+    : 'fallback'
+
+  async function startInPlaceDownload() {
+    setBusy('download')
+    try {
+      await window.installer.updater?.download()
+      // State transitions land via the onState subscription; we don't
+      // poll. Just clear the local busy flag once the IPC returns —
+      // the actual progress bar is updater-driven.
+    } catch (e) {
+      reportError('Start update download', e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function installAndRestart() {
+    setBusy('install')
+    try {
+      await window.installer.updater?.install()
+      // The app is about to quit — there's nothing to clean up here.
+    } catch (e) {
+      reportError('Install update', e)
+      setBusy(null)
+    }
+  }
+
+  async function legacyDownload() {
     setBusy('download')
     try {
       const r = await window.installer.app.downloadUpdate()
@@ -159,7 +222,7 @@ export function WhatsNew({ info, onChanged }: Props) {
       } else if (r.path) {
         const mb = (r.bytes / (1024 * 1024)).toFixed(1)
         useErrors.getState().pushInfo(
-          `Downloaded v${u!.latest}`,
+          `Downloaded v${latestVersion}`,
           `Saved to ${r.path} (${mb} MB). Close this app and extract the new ` +
           `folder over your current install.`,
         )
@@ -196,64 +259,134 @@ export function WhatsNew({ info, onChanged }: Props) {
           </motion.div>
           <div className="min-w-0">
             <h2 className="font-semibold text-emerald-100 flex items-center gap-2 flex-wrap">
-              <span>New version</span>
+              <span>{mode === 'install' ? 'Update ready' : 'New version'}</span>
               <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-200 border border-emerald-500/30">
-                v{u.latest}
+                v{latestVersion}
               </span>
             </h2>
             <p className="text-xs text-emerald-200/70 mt-0.5">
-              You're on v{info.version}. Your current install keeps working
-              until you swap the folder.
+              {mode === 'install'
+                ? 'Downloaded — restart now to apply the update in place.'
+                : mode === 'progress'
+                  ? 'Downloading update… you can keep using the app.'
+                  : mode === 'download'
+                    ? `You're on v${info.version}. Click below to download and install in place — no manual extract needed.`
+                    : /* fallback */
+                      `You're on v${info.version}. Your current install keeps working until you swap the folder.`}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {u.zipUrl && (
+          {mode === 'install' && (
             <BigButton
               size="sm"
               variant="primary"
-              icon={busy === 'download' ? undefined : <Download size={12} />}
-              onClick={download}
+              icon={busy === 'install' ? undefined : <RefreshCw size={12} aria-hidden="true" />}
+              onClick={installAndRestart}
               disabled={busy !== null}
-              loading={busy === 'download'}
-              title="Download the win-unpacked zip to your Downloads folder"
+              loading={busy === 'install'}
+              title="Quit the app and apply the downloaded update, then relaunch"
             >
-              {busy === 'download' ? 'Downloading…' : 'Download'}
+              {busy === 'install' ? 'Restarting…' : 'Restart & install'}
             </BigButton>
           )}
-          <a
-            href={u.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 h-7 px-2 text-xs bg-slate-700 hover:bg-slate-600 rounded-md transition-colors text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-            title="Open the release page on GitHub"
-            aria-label={`Open v${u.latest} release notes on GitHub — opens in new tab`}
-          >
-            Release page <ExternalLink size={11} aria-hidden="true" />
-          </a>
+          {mode === 'download' && (
+            <BigButton
+              size="sm"
+              variant="primary"
+              icon={busy === 'download' ? undefined : <Download size={12} aria-hidden="true" />}
+              onClick={startInPlaceDownload}
+              disabled={busy !== null}
+              loading={busy === 'download'}
+              title="Download the update in the background; you'll get a restart prompt when it's ready"
+            >
+              Install update
+            </BigButton>
+          )}
+          {mode === 'fallback' && u?.zipUrl && (
+            <BigButton
+              size="sm"
+              variant="primary"
+              icon={busy === 'download' ? undefined : <Download size={12} aria-hidden="true" />}
+              onClick={legacyDownload}
+              disabled={busy !== null}
+              loading={busy === 'download'}
+              title="Download the win-unpacked zip to your Downloads folder (manual swap)"
+            >
+              {busy === 'download' ? 'Downloading…' : 'Download zip'}
+            </BigButton>
+          )}
+          {u && (
+            <a
+              href={u.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 h-7 px-2 text-xs bg-slate-700 hover:bg-slate-600 rounded-md transition-colors text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+              title="Open the release page on GitHub"
+              aria-label={`Open v${latestVersion} release notes on GitHub — opens in new tab`}
+            >
+              Release page <ExternalLink size={11} aria-hidden="true" />
+            </a>
+          )}
           <BigButton
             size="sm"
             variant="ghost"
             onClick={skip}
             disabled={busy !== null}
             loading={busy === 'skip'}
-            title={`Don't remind me about v${u.latest} again`}
+            title={`Don't remind me about v${latestVersion} again`}
           >
             Skip
           </BigButton>
         </div>
       </div>
 
-      <details className="rounded-md bg-slate-900/40 text-sm group">
-        <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-          <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180 shrink-0" aria-hidden="true" />
-          <FileText size={14} className="text-slate-500 shrink-0" aria-hidden="true" />
-          What's new in v{u.latest}
-        </summary>
-        <div className="px-3 pb-3 pt-1 space-y-1 text-sm">
-          {renderNotes(u.notes)}
+      {/* Download progress bar — only when the in-place updater is
+          actively downloading. Shows percent + MB transferred so the
+          user knows the wait is bounded. */}
+      {mode === 'progress' && updater.kind === 'downloading' && (
+        <div className="space-y-1.5" aria-live="polite">
+          <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+            <motion.div
+              className="h-2 bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full"
+              animate={{ width: `${updater.percent}%` }}
+              transition={{ type: 'spring', stiffness: 80, damping: 20 }}
+            />
+          </div>
+          <div className="text-xs text-emerald-200/80 flex items-center justify-between gap-2 font-mono">
+            <span>
+              {updater.percent}% &middot; {(updater.transferred / (1024 * 1024)).toFixed(1)}/
+              {(updater.total / (1024 * 1024)).toFixed(1)} MB
+            </span>
+            <span>{(updater.bytesPerSecond / (1024 * 1024)).toFixed(2)} MB/s</span>
+          </div>
         </div>
-      </details>
+      )}
+
+      {/* Updater error banner — separate from the toast tray so it stays
+          visible while the user reads it, not auto-dismissing after 6s. */}
+      {updater.kind === 'error' && (
+        <div
+          className="rounded-md border border-rose-700/40 bg-rose-900/15 px-3 py-2 text-xs text-rose-200 flex items-start gap-2"
+          role="alert"
+        >
+          <span className="font-medium">Update failed:</span>
+          <span className="flex-1">{updater.message}</span>
+        </div>
+      )}
+
+      {u && (
+        <details className="rounded-md bg-slate-900/40 text-sm group">
+          <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+            <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180 shrink-0" aria-hidden="true" />
+            <FileText size={14} className="text-slate-500 shrink-0" aria-hidden="true" />
+            What's new in v{latestVersion}
+          </summary>
+          <div className="px-3 pb-3 pt-1 space-y-1 text-sm">
+            {renderNotes(u.notes)}
+          </div>
+        </details>
+      )}
     </section>
   )
 }

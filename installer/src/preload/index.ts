@@ -145,6 +145,22 @@ const installer = {
     reveal: (): Promise<{ path: string | null }> => ipcRenderer.invoke(IPC.installLogReveal),
     path: (): Promise<{ path: string | null }> => ipcRenderer.invoke(IPC.installLogPath),
   },
+  // In-place auto-updater bridge. The main side is updater-service.ts —
+  // it owns electron-updater and broadcasts state changes via the
+  // 'updater:state' event. The renderer's WhatsNew banner subscribes
+  // via onState() to drive its progress bar + install button.
+  updater: {
+    getState: (): Promise<import('../shared/ipc.js').UpdaterState> =>
+      ipcRenderer.invoke('updater:get-state'),
+    check:    (): Promise<void> => ipcRenderer.invoke('updater:check'),
+    download: (): Promise<void> => ipcRenderer.invoke('updater:download'),
+    install:  (): Promise<void> => ipcRenderer.invoke('updater:install'),
+    onState:  (cb: (s: import('../shared/ipc.js').UpdaterState) => void) => {
+      const handler = (_e: unknown, payload: import('../shared/ipc.js').UpdaterState) => cb(payload)
+      ipcRenderer.on('updater:state', handler)
+      return () => ipcRenderer.off('updater:state', handler)
+    },
+  },
 }
 
 export type InstallerApi = typeof installer

@@ -13,6 +13,7 @@ import * as ssh from './ssh-service.js'
 import * as sftp from './sftp-service.js'
 import * as mock from './mock-services.js'
 import * as installLog from './install-log.js'
+import { initUpdater } from './updater-service.js'
 
 const __dirname_main = dirname(fileURLToPath(import.meta.url))
 
@@ -327,9 +328,23 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
 
-  // Fire-and-forget update check. Non-blocking — result lands in
-  // `updateInfo` and gets surfaced by appGetInfo on the next IPC call.
+  // Legacy update check — keeps the WhatsNew banner working on builds
+  // that pre-date the electron-updater integration. New builds also
+  // populate `updateInfo` from the same fetch so the banner still
+  // shows release notes; the difference is the in-app install button
+  // is now driven by the updater-service below, not by the legacy
+  // download-zip path.
   checkForUpdate().catch(() => { /* checkForUpdate already logs */ })
+
+  // Initialise the in-place updater. Listens for available updates,
+  // streams download progress to the renderer, exposes IPC handlers
+  // for the renderer's "Download" + "Install + restart" buttons.
+  // No-ops in mock mode or unpackaged dev.
+  if (mainWindow) {
+    initUpdater(mainWindow, isMockMode()).catch((e) => {
+      log.error('initUpdater failed:', e)
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -20,6 +20,7 @@
     "@types/canvas-confetti": "^1.9.0",
     "canvas-confetti": "^1.9.4",
     "electron-log": "^5.2.0",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^1.16.0",
     "motion": "^12.39.0",
     "react": "^19.0.0",

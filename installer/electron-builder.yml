@@ -12,23 +12,57 @@ extraResources:
     filter:
       - "**/*"
 asar: true
+# Publish config drives electron-updater's "where do I look for new
+# versions?" lookup. Pointing at GitHub Releases means every tagged
+# release that uploads its artifacts here is automatically discoverable
+# by previously-installed copies. electron-builder also auto-generates
+# the latest.yml / latest-mac.yml / latest-linux.yml manifests that the
+# updater needs (file hashes + size + version metadata) and attaches
+# them to the release alongside the binaries.
+publish:
+  provider: github
+  owner: defessler
+  repo: Mediarr-Installer
 # TODO: branding icons. Drop a 1024x1024 PNG at resources/icon.png and
 # electron-builder will auto-generate ICO/ICNS. Until then we let it fall
 # back to the default Electron icon.
 win:
-  # `dir` target = unpacked folder only (dist/win-unpacked/). No
-  # installer, no portable wrapper, no NSIS. Run by double-clicking
-  # `Mediarr Installer.exe` inside the folder. Per-user data
-  # (logs, profiles) goes to %APPDATA%/Mediarr Installer.
+  # NSIS installer = single Mediarr-Installer-Setup.exe that installs to
+  # %LOCALAPPDATA%/Programs by default. We switched from `dir` to `nsis`
+  # specifically to support in-place auto-update via electron-updater
+  # (which can't update a hand-extracted folder — it needs a known
+  # install location). Per-user install means no UAC prompt for normal
+  # use; oneClick:false gives the user a choice of install dir.
   target:
-    - target: dir
+    - target: nsis
       arch:
         - x64
   # Skip rcedit + signtool entirely. They live in the winCodeSign cache
   # whose extraction fails on Windows without Developer Mode (the archive
   # contains macOS dylib symlinks that need elevated privileges to write).
-  # We don't sign and we don't need to rewrite the exe metadata for v0.1.
+  # We don't sign and we don't need to rewrite the exe metadata.
   signAndEditExecutable: false
+nsis:
+  # Per-user install — no admin elevation required, no UAC popup on
+  # double-click. The downside is that the app appears in the current
+  # user's "Programs" list only, not system-wide; for a home-LAN
+  # installer that's fine (and typical users wouldn't want their
+  # NAS-install tool to need admin rights anyway).
+  oneClick: false
+  perMachine: false
+  # Let the user pick the install directory if they don't want the
+  # default — power users on multi-drive setups appreciate this.
+  allowToChangeInstallationDirectory: true
+  # Pin a stable install dir name so electron-updater's path logic
+  # is deterministic across upgrades. (Otherwise NSIS might version
+  # the dir which breaks update locating.)
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Mediarr Installer
+  # Display warning before uninstall so a misclick doesn't blow away
+  # the user's saved profiles. (Profiles live in %APPDATA% and survive
+  # uninstall by default anyway, but the warning is reassuring.)
+  deleteAppDataOnUninstall: false
 mac:
   target:
     - target: dmg
