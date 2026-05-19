@@ -164,17 +164,31 @@ export function ConnectScreen() {
               empty, no tint while typing partial values. Helps a kid
               know "yes that's a valid-looking host" without making
               them click Test to find out. */}
-          <input
-            type="text" placeholder="192.168.1.10  (NOT your DSM URL — that's port 5000)"
-            className={
-              'w-full px-3 py-2.5 bg-slate-800 border rounded-md focus:outline-none focus:ring-1 transition-colors ' +
-              (connection.host && /^([\w-]+\.)+[\w-]+$|^\d+\.\d+\.\d+\.\d+$/.test(connection.host)
-                ? 'border-emerald-700/50 focus:border-emerald-500 focus:ring-emerald-500/40'
-                : 'border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/40')
-            }
-            value={connection.host ?? ''}
-            onChange={(e) => onHostChange(e.target.value)}
-          />
+          {(() => {
+            const hostValue = connection.host ?? ''
+            const looksValid = /^([\w-]+\.)+[\w-]+$|^\d+\.\d+\.\d+\.\d+$/.test(hostValue)
+            return (
+              <input
+                type="text"
+                placeholder="192.168.1.10  (NOT your DSM URL — that's port 5000)"
+                aria-required="true"
+                aria-invalid={hostValue.length > 0 && !looksValid ? true : undefined}
+                aria-describedby="host-hint"
+                className={
+                  'w-full px-3 py-2.5 bg-slate-800 border rounded-md focus:outline-none focus:ring-1 transition-colors ' +
+                  (looksValid
+                    ? 'border-emerald-700/50 focus:border-emerald-500 focus:ring-emerald-500/40'
+                    : 'border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/40')
+                }
+                value={hostValue}
+                onChange={(e) => onHostChange(e.target.value)}
+              />
+            )
+          })()}
+          <span id="host-hint" className="sr-only">
+            Enter your NAS LAN IP or hostname. The wizard accepts pasted DSM
+            URLs and will strip the http(s):// and trailing path.
+          </span>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
