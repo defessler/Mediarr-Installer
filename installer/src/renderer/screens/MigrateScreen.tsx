@@ -18,7 +18,7 @@ function MigrateHeader() {
       className="flex items-center gap-3"
     >
       <div className="shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/30 border border-amber-500/30 flex items-center justify-center">
-        <ArrowRightLeft size={22} className="text-amber-300" strokeWidth={2} />
+        <ArrowRightLeft size={22} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
       </div>
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Migrate library</h1>
@@ -371,7 +371,7 @@ export function MigrateScreen() {
 
       <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
         <h2 className="font-medium inline-flex items-center gap-2">
-          <Cloud size={16} className="text-sky-400" strokeWidth={1.75} />
+          <Cloud size={16} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
           Source arr connection
         </h2>
         <p className="text-xs text-slate-400">
@@ -448,7 +448,7 @@ export function MigrateScreen() {
       {totalFetched > 0 && (
         <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
           <h2 className="font-medium inline-flex items-center gap-2">
-            <Eye size={16} className="text-emerald-400" strokeWidth={1.75} />
+            <Eye size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
             Preview
           </h2>
           {counts.sonarr > 0 && (
@@ -466,7 +466,7 @@ export function MigrateScreen() {
               doesn't have to re-paste on every wizard launch. */}
           <div className="border-t border-slate-800 pt-3 space-y-2">
             <h3 className="text-sm font-medium inline-flex items-center gap-2">
-              <KeyRound size={14} className="text-emerald-400" strokeWidth={1.75} />
+              <KeyRound size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
               Destination credentials
             </h3>
             {keysError && (
@@ -582,7 +582,7 @@ export function MigrateScreen() {
         <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="font-medium inline-flex items-center gap-2">
-              <ListChecks size={16} className="text-emerald-400" strokeWidth={1.75} />
+              <ListChecks size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
               Import results
             </h2>
             <span className="text-xs text-slate-400 inline-flex items-center gap-2" role="status" aria-live="polite">
@@ -640,7 +640,7 @@ export function MigrateScreen() {
                 className="absolute bottom-1 right-1 inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 title="Resume following — jump to bottom"
               >
-                Jump to bottom <ChevronDown size={12} />
+                Jump to bottom <ChevronDown size={12} aria-hidden="true" />
               </motion.button>
             )}
           </div>
@@ -650,7 +650,7 @@ export function MigrateScreen() {
       {/* ── qBittorrent migration ─────────────────────────────────────── */}
       <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
         <h2 className="font-medium inline-flex items-center gap-2">
-          <Download size={16} className="text-amber-400" strokeWidth={1.75} />
+          <Download size={16} className="text-amber-400" strokeWidth={1.75} aria-hidden="true" />
           qBittorrent torrents
         </h2>
         <p className="text-xs text-slate-400">
@@ -737,7 +737,7 @@ export function MigrateScreen() {
 
             <div className="border-t border-slate-800 pt-3 space-y-2">
               <h3 className="text-sm font-medium inline-flex items-center gap-2">
-                <Route size={14} className="text-sky-400" strokeWidth={1.75} />
+                <Route size={14} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
                 Path remap
               </h3>
               <p className="text-xs text-slate-400">
@@ -787,7 +787,7 @@ export function MigrateScreen() {
                 where .env hasn't been read yet. */}
             <div className="border-t border-slate-800 pt-3 space-y-2">
               <h3 className="text-sm font-medium inline-flex items-center gap-2">
-                <Lock size={14} className="text-emerald-400" strokeWidth={1.75} />
+                <Lock size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
                 Destination qBittorrent
               </h3>
               <p className="text-xs text-slate-400">
@@ -874,7 +874,7 @@ export function MigrateScreen() {
           <div className="border-t border-slate-800 pt-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium inline-flex items-center gap-2">
-                <ListChecks size={14} className="text-emerald-400" strokeWidth={1.75} />
+                <ListChecks size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
                 Migration results
               </h3>
               <span className="text-xs text-slate-400 inline-flex items-center gap-2" role="status" aria-live="polite">
@@ -923,7 +923,7 @@ export function MigrateScreen() {
                   className="absolute bottom-1 right-1 inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                   title="Resume following — jump to bottom"
                 >
-                  Jump to bottom <ChevronDown size={12} />
+                  Jump to bottom <ChevronDown size={12} aria-hidden="true" />
                 </motion.button>
               )}
             </div>
