@@ -487,17 +487,17 @@ docker compose $FILES --progress plain --ansi never up -d`
         >
           Back to start
         </BigButton>
-        <div className="flex-1 text-sm text-center text-slate-400">
+        <div className="flex-1 text-sm text-center text-slate-400" role="status" aria-live="polite">
           {phase === 'idle' && 'Pick an action above'}
           {phase === 'running' && `${lastActionLabel} in progress…`}
           {phase === 'done' && (
             <span className="inline-flex items-center gap-1.5 text-emerald-300">
-              <CheckCircle2 size={14} /> {lastActionLabel} complete
+              <CheckCircle2 size={14} aria-hidden="true" /> {lastActionLabel} complete
             </span>
           )}
           {phase === 'failed' && (
             <span className="inline-flex items-center gap-1.5 text-amber-200/90">
-              <AlertCircle size={14} /> {lastActionLabel} paused — see log
+              <AlertCircle size={14} aria-hidden="true" /> {lastActionLabel} paused — see log
             </span>
           )}
         </div>
