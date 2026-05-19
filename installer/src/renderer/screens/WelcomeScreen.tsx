@@ -445,11 +445,13 @@ export function WelcomeScreen() {
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-5 space-y-3"
           >
-            <h2 className="font-semibold text-lg flex items-center gap-2">
+            <h2 className="font-semibold text-lg flex items-center gap-2" id="new-profile-heading">
               <Plus size={18} className="text-emerald-400" strokeWidth={2.5} />
               New profile
             </h2>
             <input
+              id="new-profile-label"
+              aria-labelledby="new-profile-heading"
               type="text"
               placeholder="Name it — e.g. DS1522+, Home NAS, Office"
               className="w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-md text-base focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
