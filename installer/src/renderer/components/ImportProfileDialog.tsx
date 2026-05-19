@@ -134,7 +134,7 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
           <button
             onClick={onClose}
             disabled={busy}
-            className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors disabled:opacity-40"
+            className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
             aria-label="Close import dialog"
           >
             <XIcon size={18} aria-hidden="true" />
@@ -147,7 +147,7 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
               type="button"
               onClick={pickFile}
               disabled={busy}
-              className="w-full px-4 py-4 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 hover:border-slate-500 rounded-md text-sm disabled:opacity-40 transition-colors flex items-center justify-center gap-2 font-medium"
+              className="w-full px-4 py-4 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 hover:border-slate-500 rounded-md text-sm disabled:opacity-40 transition-colors flex items-center justify-center gap-2 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
             >
               <FileText size={18} className="text-slate-400" aria-hidden="true" />
               {busy ? 'Opening…' : 'Pick .mediarr-profile.json file…'}
@@ -226,7 +226,7 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
               type="button"
               onClick={() => { setEnvelope(null); setPass(''); setError(null) }}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 hover:text-slate-200 disabled:opacity-40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 rounded"
             >
               <ArrowLeft size={14} aria-hidden="true" />
               Pick a different file

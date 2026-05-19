@@ -129,7 +129,7 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
           <button
             onClick={onClose}
             disabled={busy}
-            className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors disabled:opacity-40"
+            className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
             aria-label="Close export dialog"
           >
             <XIcon size={18} aria-hidden="true" />
