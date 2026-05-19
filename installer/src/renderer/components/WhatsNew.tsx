@@ -227,8 +227,9 @@ export function WhatsNew({ info, onChanged }: Props) {
             rel="noreferrer"
             className="inline-flex items-center gap-1 h-7 px-2 text-xs bg-slate-700 hover:bg-slate-600 rounded-md transition-colors text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             title="Open the release page on GitHub"
+            aria-label={`Open v${u.latest} release notes on GitHub — opens in new tab`}
           >
-            Release page <ExternalLink size={11} />
+            Release page <ExternalLink size={11} aria-hidden="true" />
           </a>
           <BigButton
             size="sm"
