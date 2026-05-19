@@ -358,7 +358,15 @@ export function ConnectScreen() {
             }
           >
             {result.ok ? (
-              <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
+              <motion.span
+                initial={reduced ? { scale: 1 } : { scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 16, delay: 0.05 }}
+                className="shrink-0 mt-0.5"
+                aria-hidden="true"
+              >
+                <CheckCircle2 size={20} className="text-emerald-400" />
+              </motion.span>
             ) : (
               <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
             )}
