@@ -360,22 +360,22 @@ export function DoneScreen() {
         <div className="text-sm text-slate-400">
           {running ? 'Running validation...' : `exit ${exit ?? '?'}`}
         </div>
-        <div className="flex-1 text-sm text-center">
+        <div className="flex-1 text-sm text-center" role="status" aria-live="polite">
           {healthEntries.length === 0 ? (
             <span className="text-slate-500 inline-flex items-center gap-1.5">
-              <Circle size={12} className="text-slate-600" />
+              <Circle size={12} className="text-slate-600" aria-hidden="true" />
               Validation pending
             </span>
           ) : failCount === 0 ? (
             <span className="text-emerald-300 inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} />
+              <CheckCircle2 size={14} aria-hidden="true" />
               All {okCount} services reachable
             </span>
           ) : (
             <span className="text-amber-300 inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} className="text-emerald-400" />
+              <CheckCircle2 size={14} className="text-emerald-400" aria-hidden="true" />
               {okCount} reachable,
-              <XCircle size={14} className="text-rose-400" />
+              <XCircle size={14} className="text-rose-400" aria-hidden="true" />
               {failCount} not — see grid above
             </span>
           )}
