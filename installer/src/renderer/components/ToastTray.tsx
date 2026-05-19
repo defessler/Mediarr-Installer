@@ -33,7 +33,11 @@ export function ToastTray() {
   const dismiss = useErrors((s) => s.dismiss)
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md pointer-events-none">
+    <div
+      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md pointer-events-none"
+      role="region"
+      aria-label="Notifications"
+    >
       {/* pointer-events-none on the tray + auto on individual cards
           so a misbehaving toast can't block clicks elsewhere on the
           screen while still being interactive. */}
@@ -57,6 +61,8 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       exit={reduced ? { opacity: 0 } : { opacity: 0, x: 40, scale: 0.95 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28 }}
       layout
+      role={toast.severity === 'error' ? 'alert' : 'status'}
+      aria-live={toast.severity === 'error' ? 'assertive' : 'polite'}
       className={
         'pointer-events-auto rounded-lg border shadow-2xl p-3 text-sm backdrop-blur-sm ' +
         SEVERITY_STYLE[toast.severity]
