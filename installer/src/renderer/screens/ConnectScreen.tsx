@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2,
-  Lock, KeyRound, Users, Shield,
+  Lock, KeyRound, Users, Shield, AlertTriangle,
 } from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
@@ -179,9 +179,15 @@ export function ConnectScreen() {
             onChange={(e) => setConnection({ port: Number(e.target.value) || 22 })}
           />
           {connection.port && [80, 443, 5000, 5001].includes(connection.port) && (
-            <p className="mt-1 text-xs text-amber-300">
+            <motion.p
+              initial={reduced ? { opacity: 1 } : { opacity: 0, y: -2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+              className="mt-1 text-xs text-amber-300 inline-flex items-center gap-1.5"
+            >
+              <AlertTriangle size={11} className="shrink-0" />
               Port {connection.port} is for HTTP/DSM, not SSH. Try 22.
-            </p>
+            </motion.p>
           )}
         </div>
       </div>
