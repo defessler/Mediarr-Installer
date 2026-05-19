@@ -666,22 +666,25 @@ export function MigrateScreen() {
         </p>
 
         <div className="grid grid-cols-[1fr_2fr] gap-3 text-sm items-center">
-          <label>Source qBittorrent URL</label>
+          <label htmlFor="src-qbit-url">Source qBittorrent URL</label>
           <input
+            id="src-qbit-url"
             type="text" placeholder="http://old-nas:49156"
             value={sourceQbitUrl}
             onChange={(e) => setMigrate({ sourceQbitUrl: e.target.value.trim().replace(/\/$/, '') })}
             className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
-          <label>Username</label>
+          <label htmlFor="src-qbit-user">Username</label>
           <input
+            id="src-qbit-user"
             type="text"
             value={sourceQbitUser}
             onChange={(e) => setMigrate({ sourceQbitUser: e.target.value.trim() })}
             className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           />
-          <label>Password</label>
+          <label htmlFor="src-qbit-pass">Password</label>
           <input
+            id="src-qbit-pass"
             type="password"
             value={sourceQbitPass}
             onChange={(e) => setMigrate({ sourceQbitPass: e.target.value })}
@@ -746,15 +749,17 @@ export function MigrateScreen() {
                 <code className="bg-slate-800 px-1 rounded">/data/Downloads/Torrents</code>
               </p>
               <div className="grid grid-cols-[1fr_2fr] gap-2 text-sm items-center">
-                <label>Source path prefix</label>
+                <label htmlFor="qbit-remap-from">Source path prefix</label>
                 <input
+                  id="qbit-remap-from"
                   type="text" placeholder="/downloads"
                   value={qbitRemapFrom}
                   onChange={(e) => setMigrate({ qbitRemapFrom: e.target.value.trim() })}
                   className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 />
-                <label>Destination prefix</label>
+                <label htmlFor="qbit-remap-to">Destination prefix</label>
                 <input
+                  id="qbit-remap-to"
                   type="text" placeholder="/data/Downloads/Torrents"
                   value={qbitRemapTo}
                   onChange={(e) => setMigrate({ qbitRemapTo: e.target.value.trim() })}
