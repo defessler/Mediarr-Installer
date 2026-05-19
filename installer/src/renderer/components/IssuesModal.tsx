@@ -171,10 +171,17 @@ function TabbedBody({
                 it.severity === 'fail' ? XCircle
                 : it.severity === 'warn' ? AlertTriangle
                 : Info
+              const srPrefix =
+                it.severity === 'fail' ? 'Failed: '
+                : it.severity === 'warn' ? 'Warning: '
+                : 'Info: '
               return (
                 <li key={i} className={`flex gap-2 items-start ${cls}`}>
-                  <Icon size={14} className={`shrink-0 mt-0.5 ${iconColor}`} />
-                  <span className="break-words">{it.text}</span>
+                  <Icon size={14} className={`shrink-0 mt-0.5 ${iconColor}`} aria-hidden="true" />
+                  <span className="break-words">
+                    <span className="sr-only">{srPrefix}</span>
+                    {it.text}
+                  </span>
                 </li>
               )
             })}
