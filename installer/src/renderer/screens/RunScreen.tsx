@@ -956,7 +956,14 @@ export function RunScreen() {
           the eye is reassured "still moving" even when the percentage
           updates infrequently between steps. */}
       <div className="space-y-1.5">
-        <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+        <div
+          className="w-full bg-slate-800 rounded-full h-3 overflow-hidden"
+          role="progressbar"
+          aria-valuenow={progressPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Install progress: ${progressPct}%${currentStep ? ` — ${currentStep.label}` : ''}`}
+        >
           <motion.div
             initial={false}
             animate={{ width: `${progressPct}%` }}
