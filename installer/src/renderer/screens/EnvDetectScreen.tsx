@@ -238,7 +238,7 @@ export function EnvDetectScreen() {
                 : { duration: 0.3 }
             }
           >
-            <Radar size={32} className="text-sky-300" strokeWidth={1.5} />
+            <Radar size={32} className="text-sky-300" strokeWidth={1.5} aria-hidden="true" />
           </motion.div>
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
