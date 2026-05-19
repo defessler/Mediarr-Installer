@@ -713,10 +713,11 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
               Step-by-step beginner&apos;s walkthrough →{' '}
             </span>
             <a
-              className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2 inline-flex items-center gap-1"
+              className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2 inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded"
               href="https://github.com/defessler/NAS-Arr-Stack/blob/master/INSTALL.md"
               target="_blank"
               rel="noreferrer"
+              aria-label="Open the beginner's INSTALL.md walkthrough on GitHub in a new tab"
             >
               INSTALL.md on GitHub
               <ExternalLink size={11} aria-hidden="true" />
