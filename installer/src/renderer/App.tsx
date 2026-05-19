@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
-  Check, Loader2, FlaskConical,
+  Check, Loader2, FlaskConical, Users,
 } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
@@ -282,8 +282,10 @@ export function App() {
           <button
             type="button"
             onClick={() => setStep('welcome')}
-            className="ml-2 text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
+            className="ml-2 inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors"
+            title="Switch to a different profile"
           >
+            <Users size={11} />
             switch
           </button>
         </div>
