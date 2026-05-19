@@ -54,9 +54,11 @@ export function LogActions({ lines, defaultName, header }: Props) {
 
   return (
     <div className="flex gap-2 items-center text-sm">
-      <button
+      <motion.button
         onClick={copy}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+        whileTap={reduced ? {} : { scale: 0.95 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
         title="Copy log contents to clipboard"
       >
         {/* Swap icon between Clipboard / ClipboardCheck with a fade —
@@ -88,15 +90,17 @@ export function LogActions({ lines, defaultName, header }: Props) {
           )}
         </AnimatePresence>
         {copied ? 'Copied!' : 'Copy log'}
-      </button>
-      <button
+      </motion.button>
+      <motion.button
         onClick={save}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+        whileTap={reduced ? {} : { scale: 0.95 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
         title="Save log to a file"
       >
         <Save size={13} />
         Save log…
-      </button>
+      </motion.button>
       <AnimatePresence>
         {savedPath && (
           <motion.span
