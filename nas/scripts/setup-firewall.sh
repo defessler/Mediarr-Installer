@@ -26,12 +26,20 @@
 # Override by exporting LAN_SUBNET before invoking this script; that
 # wins over the .env-derived value.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
+# itself in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR_DEFAULT="$SCRIPT_DIR"
+fi
 # When this script is installed at /usr/local/etc/rc.d/, SCRIPT_DIR is
 # /usr/local/etc/rc.d which has no .env. Look up one level (where DSM
 # admin installed the stack) too. Final fallback: try the historical
 # Synology path.
 ENV_FILE=""
 for candidate in \
+    "$INSTALL_DIR_DEFAULT/.env" \
     "$SCRIPT_DIR/.env" \
     "/volume1/docker/media/.env" \
     "/volume1/docker/mediarr/.env"; do

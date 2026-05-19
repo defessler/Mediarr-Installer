@@ -8,7 +8,14 @@
 #   bash /volume1/docker/media/post-deploy-validate.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
+# itself in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+ENV_FILE="$INSTALL_DIR/.env"
 
 PASS=0
 FAIL=0
@@ -436,8 +443,8 @@ section "Indexer Health"
 PROWLARR_KEY=$(env_val PROWLARR_API_KEY)
 # Prowlarr's key isn't always in .env (auto-discovered from config.xml
 # by setup-arr-config.py). Fall back to extracting from config.xml.
-if [ -z "$PROWLARR_KEY" ] && [ -f "$SCRIPT_DIR/prowlarr/config/config.xml" ]; then
-    PROWLARR_KEY=$(sed -n 's|.*<ApiKey>\([^<]*\)</ApiKey>.*|\1|p' "$SCRIPT_DIR/prowlarr/config/config.xml" 2>/dev/null | head -1)
+if [ -z "$PROWLARR_KEY" ] && [ -f "$INSTALL_DIR/prowlarr/config/config.xml" ]; then
+    PROWLARR_KEY=$(sed -n 's|.*<ApiKey>\([^<]*\)</ApiKey>.*|\1|p' "$INSTALL_DIR/prowlarr/config/config.xml" 2>/dev/null | head -1)
 fi
 if [ -z "$PROWLARR_KEY" ]; then
     warn "Prowlarr API key not found — skipping indexer health check"
@@ -527,7 +534,7 @@ fi
 # loudly with a one-command fix.
 if is_enabled ENABLE_HOMEPAGE; then
     section "Dashboard Config"
-    SERVICES_YAML="$SCRIPT_DIR/homepage/config/services.yaml"
+    SERVICES_YAML="$INSTALL_DIR/homepage/config/services.yaml"
     if [ ! -f "$SERVICES_YAML" ]; then
         warn "Homepage services.yaml is missing — dashboard will be empty"
         echo "    Fix:  sudo python3 $SCRIPT_DIR/setup-arr-config.py"
@@ -574,7 +581,7 @@ if is_enabled ENABLE_HOMEPAGE; then
             echo "    The wizard regenerates services.yaml from your .env on every run."
             echo "    Most likely cause: services.yaml is from a pre-fix install."
             echo "    Fix — force a fresh regeneration (Homepage picks it up live):"
-            echo "      sudo rm $SERVICES_YAML $SCRIPT_DIR/homepage/config/settings.yaml"
+            echo "      sudo rm $SERVICES_YAML $INSTALL_DIR/homepage/config/settings.yaml"
             echo "      sudo python3 $SCRIPT_DIR/setup-arr-config.py"
         fi
     fi

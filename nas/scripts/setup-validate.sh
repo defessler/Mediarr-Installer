@@ -7,7 +7,14 @@
 #   bash /volume1/docker/media/setup-validate.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
+# itself in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR_DEFAULT="$SCRIPT_DIR"
+fi
+ENV_FILE="$INSTALL_DIR_DEFAULT/.env"
 
 PASS=0
 FAIL=0
@@ -33,8 +40,8 @@ echo "============================================="
 
 section "Files"
 
-[ -f "$SCRIPT_DIR/docker-compose.yml" ] && ok "docker-compose.yml exists" || fail "docker-compose.yml not found"
-[ -r "$SCRIPT_DIR/docker-compose.yml" ] && ok "docker-compose.yml is readable" || fail "docker-compose.yml is not readable — run setup-chmod.sh"
+[ -f "$INSTALL_DIR_DEFAULT/docker-compose.yml" ] && ok "docker-compose.yml exists" || fail "docker-compose.yml not found"
+[ -r "$INSTALL_DIR_DEFAULT/docker-compose.yml" ] && ok "docker-compose.yml is readable" || fail "docker-compose.yml is not readable — run setup-chmod.sh"
 
 [ -f "$ENV_FILE" ]  && ok ".env exists"       || fail ".env not found — copy .env.example to .env and fill in your values"
 [ -r "$ENV_FILE" ]  && ok ".env is readable"  || fail ".env is not readable — run setup-chmod.sh"
@@ -139,7 +146,7 @@ section "Directories"
 # fall back to the Synology-historical defaults for older .envs.
 INSTALL_DIR=$(env_val "INSTALL_DIR")
 DATA_ROOT=$(env_val "DATA_ROOT")
-: "${INSTALL_DIR:=$SCRIPT_DIR}"
+: "${INSTALL_DIR:=$INSTALL_DIR_DEFAULT}"
 : "${DATA_ROOT:=/volume1/Data}"
 
 # Default-on opt-out check, matching env-render.ts / setup.sh / setup-

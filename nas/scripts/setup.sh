@@ -5,16 +5,31 @@
 # Safe to re-run — all steps are idempotent.
 #
 # Usage:
-#   sudo bash /volume1/docker/media/setup.sh
+#   sudo bash /volume1/docker/media/scripts/setup.sh
 
+# SCRIPT_DIR holds setup.sh + all its helper scripts. As of v0.3.22 the
+# wizard drops these in a `scripts/` subfolder under INSTALL_DIR so the
+# compose root stays tidy (no more dozens of loose .sh / .py files
+# sitting next to docker-compose.yml). Compute INSTALL_DIR as the
+# parent when SCRIPT_DIR ends in `/scripts`; fall back to SCRIPT_DIR
+# itself for legacy layouts where setup.sh lives loose at INSTALL_DIR.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
 
 # Mutex against concurrent runs (installer wizard + manual SSH session,
 # or two SSH sessions racing). The lock is a flock on a fixed file in
 # the install dir; if flock isn't available (busybox-only systems) we
 # fall back to PID-file detection. Best-effort: a stale PID after a
 # crashed setup.sh is detected via `kill -0` and reaped.
-LOCK_FILE="$SCRIPT_DIR/.setup.lock"
+#
+# Lock lives at INSTALL_DIR/.setup.lock (compose root) — not SCRIPT_DIR —
+# so a legacy run from loose-scripts AND a new run from scripts/ can't
+# both think they hold the lock independently.
+LOCK_FILE="$INSTALL_DIR/.setup.lock"
 if command -v flock >/dev/null 2>&1; then
     # Open FD 200 onto the lock file and try a non-blocking exclusive
     # lock. The lock auto-releases when this shell exits, no trap
@@ -50,14 +65,14 @@ fi
 # The Mediarr Installer wizard always writes these vars. They'd only be
 # missing if someone hand-edited .env or copied an older one over the
 # top. Back-compat: if INSTALL_DIR is missing but a .env exists, we
-# auto-fill it with SCRIPT_DIR (which IS the install dir by definition,
-# since setup.sh lives there). DATA_ROOT has no portable default — bail
-# with a clear message rather than guess.
-ENV_FILE="$SCRIPT_DIR/.env"
+# auto-fill it with the path we just computed above (which is the
+# compose root regardless of whether scripts/ exists or not). DATA_ROOT
+# has no portable default — bail with a clear message rather than guess.
+ENV_FILE="$INSTALL_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
     if ! grep -q '^INSTALL_DIR=' "$ENV_FILE"; then
-        echo "INSTALL_DIR was missing from .env — auto-filling with $SCRIPT_DIR (setup.sh's directory)."
-        echo "INSTALL_DIR=$SCRIPT_DIR" >> "$ENV_FILE"
+        echo "INSTALL_DIR was missing from .env — auto-filling with $INSTALL_DIR."
+        echo "INSTALL_DIR=$INSTALL_DIR" >> "$ENV_FILE"
     fi
     if ! grep -q '^DATA_ROOT=' "$ENV_FILE"; then
         echo "Error: DATA_ROOT is missing from $ENV_FILE"
@@ -120,7 +135,7 @@ fi
 # Small helper for reading a value out of .env, strips inline comments
 # and surrounding whitespace. Returns empty string if the key is absent.
 env_val() {
-    grep -m1 "^$1=" "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
 }
 
 # Default-ON semantics: missing or empty key counts as enabled, only
@@ -496,7 +511,7 @@ fi
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
 run_step 6 "Start the stack" \
-    bash -c "cd '$SCRIPT_DIR' && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d"
+    bash -c "cd '$INSTALL_DIR' && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d"
 
 abort_if_failed
 
@@ -554,7 +569,7 @@ run_step 11 "Import any download backlog" \
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-LAN_IP=$(grep -m1 '^LAN_IP=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+LAN_IP=$(grep -m1 '^LAN_IP=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
 IP="${LAN_IP:-<NAS-IP>}"
 
 echo ""
@@ -635,7 +650,7 @@ echo "  on the Homepage dashboard, or:"
 echo "     http://${IP}:8889/pull                    # web UI with Pull Now button"
 echo ""
 echo "  Full pull + recreate (swaps containers onto the new images):"
-echo "  cd $SCRIPT_DIR"
+echo "  cd $INSTALL_DIR"
 # Surface the active profile set so a copy-pasted update command will
 # actually update the user's selected services. Without COMPOSE_PROFILES
 # the only services compose touches are the no-profile ones (Prowlarr +
@@ -651,7 +666,7 @@ echo ""
 echo "  To schedule monthly updates via Synology Task Scheduler:"
 echo "    Control Panel → Task Scheduler → Create → Scheduled Task →"
 echo "    User-defined script → run as root, schedule = monthly:"
-echo "      cd $SCRIPT_DIR && $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"
+echo "      cd $INSTALL_DIR && $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"
 if [ -n "${COMPOSE_PROFILES:-}" ]; then
     echo "    (prepend: export COMPOSE_PROFILES=$COMPOSE_PROFILES; )"
 fi

@@ -141,6 +141,12 @@ export function UpdateRunScreen() {
         ),
       ])
       wlog(`Uploaded ${r.uploaded} files (${(r.bytesTotal / 1024).toFixed(1)} KiB)`)
+      // v0.3.22 moved every script under scripts/ — clean up the old
+      // loose copies at INSTALL_DIR root so the compose root stays
+      // tidy. We delete a known whitelist of filenames, not a wildcard,
+      // so a user's hand-placed file with an unrelated name survives.
+      // Non-fatal: failures here just leave the orphan present.
+      await cleanupLegacyLooseScripts()
       // Bounce any helper sidecar containers (recyclarr-trigger today)
       // so single-file mounts like recyclarr-trigger.py take effect
       // without a manual `docker restart`. Non-fatal: a failure here
@@ -154,6 +160,83 @@ export function UpdateRunScreen() {
       setPhase('failed')
       reportError('SFTP upload', e)
       return false
+    }
+  }
+
+  /** Delete the v0.3.21-and-earlier loose scripts at INSTALL_DIR root.
+   *  The v0.3.22 payload puts them under scripts/, but Sync just adds
+   *  new files — it doesn't remove anything. Without this step, an
+   *  upgraded install ends up with both layouts present, which is
+   *  ugly and risks the user accidentally running the stale loose
+   *  copy. Whitelist of filenames so a hand-placed unrelated file is
+   *  never touched. Non-fatal: failures (permission denied, etc.) log
+   *  a warning but don't fail the Sync action. */
+  async function cleanupLegacyLooseScripts(): Promise<void> {
+    if (!sessionId) return
+    // Closed set of historical loose-script filenames. New scripts must
+    // not be added here — they ship under scripts/ from day one.
+    const LEGACY_LOOSE = [
+      'setup.sh',
+      'setup-arr-config.py',
+      'setup-chmod.sh',
+      'setup-firewall.sh',
+      'setup-folders.sh',
+      'setup-nordvpn.sh',
+      'setup-validate.sh',
+      'post-deploy-validate.sh',
+      'recyclarr-sync.sh',
+      'recyclarr-trigger.py',
+      'tune-arrs.sh',
+      'fix-imports.sh',
+      'boot-orchestrator.sh',
+      'boot-orchestrator.log',
+      'restart-qbit.sh',
+      'stop-all.sh',
+      '.setup.lock',
+      '.boot-orchestrator.lock',
+    ]
+    // Only run if scripts/ exists (i.e., the new layout actually
+    // landed). Otherwise we'd nuke the live setup.sh and leave the
+    // user with no scripts at all.
+    try {
+      const probe = await window.installer.ssh.exec({
+        sessionId,
+        sudo: true,
+        cmd:
+          PATH_PREFIX +
+          `cd ${shellQuote(targetDir)} && ` +
+          `if [ -d scripts ] && [ -f scripts/setup.sh ]; then echo ready; else echo skip; fi`,
+      })
+      if (probe.stdout.trim() !== 'ready') {
+        wlog('Skipped cleanup of legacy loose scripts (scripts/ not present).')
+        return
+      }
+    } catch (e) {
+      wlog(`[warn] Could not probe scripts/ presence: ${(e as Error).message}`)
+      return
+    }
+    // Two more entries: the indexers/ subfolder (legacy) and migration/
+    // stays put — only delete indexers/ since it moved under scripts/.
+    const rmList = LEGACY_LOOSE.map((f) => shellQuote(f)).join(' ')
+    try {
+      const r = await window.installer.ssh.exec({
+        sessionId,
+        sudo: true,
+        cmd:
+          PATH_PREFIX +
+          `cd ${shellQuote(targetDir)} && ` +
+          // Loose .sh / .py files: delete by exact name. Old indexers/
+          // dir gets `rm -rf` because it's now scripts/indexers/.
+          `removed=0; for f in ${rmList}; do ` +
+          `  if [ -f "$f" ]; then rm -f "$f" && removed=$((removed+1)); fi; ` +
+          `done; ` +
+          `if [ -d indexers ]; then rm -rf indexers && removed=$((removed+1)); fi; ` +
+          `echo "[cleanup] removed $removed legacy loose entries"`,
+      })
+      const out = r.stdout.trim()
+      if (out) wlog(out)
+    } catch (e) {
+      wlog(`[warn] Legacy-cleanup step failed: ${(e as Error).message}`)
     }
   }
 
@@ -343,7 +426,13 @@ docker compose $FILES --progress plain --ansi never up -d`
         cmd:
           PATH_PREFIX +
           `cd ${shellQuote(targetDir)} && ` +
-          `python3 setup-arr-config.py --homepage-only`,
+          // v0.3.22 layout puts setup-arr-config.py under scripts/.
+          // Legacy installs (loose at INSTALL_DIR) get the fallback.
+          `if [ -f scripts/setup-arr-config.py ]; then ` +
+          `  python3 scripts/setup-arr-config.py --homepage-only; ` +
+          `else ` +
+          `  python3 setup-arr-config.py --homepage-only; ` +
+          `fi`,
         sudo: true,
         channelId: CHANNEL_ID,
       })
@@ -409,7 +498,18 @@ export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never up -d`
       cmd = PATH_PREFIX + `cd ${shellQuote(targetDir)} && bash -c ${shellQuote(composeUp)}`
     } else {
-      cmd = PATH_PREFIX + `cd ${shellQuote(targetDir)} && ${step.rerun}`
+      // step.rerun uses the v0.3.22 layout paths (scripts/...). Wrap
+      // in a one-shot bash that falls back to the legacy loose-scripts
+      // location if scripts/ doesn't exist — that way an upgrade
+      // through this very screen works on installs that haven't run
+      // Sync wizard scripts yet.
+      const legacyRerun = step.rerun
+        .replace(/^bash scripts\//, 'bash ')
+        .replace(/^python3 scripts\//, 'python3 ')
+      const guard =
+        `if [ -d scripts ]; then ${step.rerun}; ` +
+        `else ${legacyRerun}; fi`
+      cmd = PATH_PREFIX + `cd ${shellQuote(targetDir)} && bash -c ${shellQuote(guard)}`
     }
 
     try {

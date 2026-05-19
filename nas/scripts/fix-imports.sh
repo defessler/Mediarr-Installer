@@ -30,7 +30,14 @@
 # errors and reports cleanly.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR itself
+# in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+ENV_FILE="$INSTALL_DIR/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "✘ .env not found at $ENV_FILE — this script must live next to docker-compose.yml."
@@ -67,9 +74,9 @@ SONARR_KEY="$(env_val SONARR_API_KEY)"
 RADARR_KEY="$(env_val RADARR_API_KEY)"
 LIDARR_KEY="$(env_val LIDARR_API_KEY)"
 
-[ -z "$SONARR_KEY" ] && SONARR_KEY="$(extract_api_key "$SCRIPT_DIR/sonarr/config/config.xml")"
-[ -z "$RADARR_KEY" ] && RADARR_KEY="$(extract_api_key "$SCRIPT_DIR/radarr/config/config.xml")"
-[ -z "$LIDARR_KEY" ] && LIDARR_KEY="$(extract_api_key "$SCRIPT_DIR/lidarr/config/config.xml")"
+[ -z "$SONARR_KEY" ] && SONARR_KEY="$(extract_api_key "$INSTALL_DIR/sonarr/config/config.xml")"
+[ -z "$RADARR_KEY" ] && RADARR_KEY="$(extract_api_key "$INSTALL_DIR/radarr/config/config.xml")"
+[ -z "$LIDARR_KEY" ] && LIDARR_KEY="$(extract_api_key "$INSTALL_DIR/lidarr/config/config.xml")"
 
 if [ -z "$LAN_IP" ]; then
     echo "✘ LAN_IP not set in .env — can't reach the arrs."

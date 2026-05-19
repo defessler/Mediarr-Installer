@@ -34,7 +34,16 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
+# itself in legacy loose-scripts installs. tune-arrs.sh reads service
+# config DBs at $INSTALL_DIR/<service>/config/<service>.db, and runs
+# `docker compose stop` from $INSTALL_DIR.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+cd "$INSTALL_DIR"
 
 DRY_RUN=0
 SKIP_VACUUM=0
@@ -55,8 +64,8 @@ for arg in "$@"; do
 done
 
 if [ ! -f .env ]; then
-    echo "✘ .env not found at $SCRIPT_DIR/.env"
-    echo "  This script expects to live next to docker-compose.yml in the install dir."
+    echo "✘ .env not found at $INSTALL_DIR/.env"
+    echo "  This script expects to find docker-compose.yml + .env in the install dir."
     exit 1
 fi
 
@@ -71,9 +80,9 @@ PROWLARR_KEY=$(env_val PROWLARR_API_KEY)
 
 # Prowlarr's key sometimes isn't in .env (auto-discovered during install
 # from config.xml). Fall back to extracting from there.
-if [ -z "$PROWLARR_KEY" ] && [ -f "$SCRIPT_DIR/prowlarr/config/config.xml" ]; then
+if [ -z "$PROWLARR_KEY" ] && [ -f "$INSTALL_DIR/prowlarr/config/config.xml" ]; then
     PROWLARR_KEY=$(sed -n 's|.*<ApiKey>\([^<]*\)</ApiKey>.*|\1|p' \
-                   "$SCRIPT_DIR/prowlarr/config/config.xml" 2>/dev/null | head -1)
+                   "$INSTALL_DIR/prowlarr/config/config.xml" 2>/dev/null | head -1)
 fi
 
 echo "=============================================="
@@ -95,7 +104,7 @@ echo "=============================================="
 
 vacuum_arr() {
     local name="$1" db_path="$2"
-    local full_path="$SCRIPT_DIR/$db_path"
+    local full_path="$INSTALL_DIR/$db_path"
 
     if [ ! -f "$full_path" ]; then
         echo "  ⏭  $name — db not found ($db_path); skipping"
@@ -152,13 +161,13 @@ vacuum_arr() {
         sqlite3 "$full_path" 'VACUUM; REINDEX;' 2>"$ERR_FILE" || sqlite3_result=$?
     else
         # Alpine container — mount the install dir, run sqlite3 on the
-        # path relative to /wd. -v takes "host:container" so $SCRIPT_DIR
+        # path relative to /wd. -v takes "host:container" so INSTALL_DIR
         # needs to be a real path with no spaces (true in our standard
         # NAS install dirs). The DB path passed to sqlite3 is the
         # container-side relative path, computed below.
-        rel_db="${full_path#$SCRIPT_DIR/}"
+        rel_db="${full_path#$INSTALL_DIR/}"
         sqlite3_result=0
-        docker run --rm -v "$SCRIPT_DIR:/wd" -w /wd alpine:latest \
+        docker run --rm -v "$INSTALL_DIR:/wd" -w /wd alpine:latest \
             sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 "$1" "VACUUM; REINDEX;"' \
             -- "/wd/$rel_db" 2>"$ERR_FILE" || sqlite3_result=$?
     fi
@@ -197,7 +206,7 @@ if [ "$SKIP_VACUUM" -eq 0 ]; then
     # version (Overseerr fork vs Jellyseerr fork vs original Seerr).
     # Try the most likely paths in order.
     for seerr_db in "seerr/config/db/db.sqlite3" "seerr/config/data/db.sqlite3"; do
-        if [ -f "$SCRIPT_DIR/$seerr_db" ]; then
+        if [ -f "$INSTALL_DIR/$seerr_db" ]; then
             vacuum_arr seerr "$seerr_db"
             break
         fi

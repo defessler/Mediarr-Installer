@@ -701,7 +701,16 @@ def read_env(path):
     return env
 
 def read_env_merged(script_dir):
-    candidates = [script_dir, os.path.dirname(script_dir)]
+    # .env lives at the compose root (INSTALL_DIR). With the v0.3.22 layout
+    # this script lives at INSTALL_DIR/scripts/indexers/ — two levels deep
+    # — so we walk up two parents. Legacy installs had it at
+    # INSTALL_DIR/indexers/ (one level), so the shorter walk is also
+    # checked. Falls back to script_dir for very-old layouts.
+    candidates = [
+        script_dir,
+        os.path.dirname(script_dir),
+        os.path.dirname(os.path.dirname(script_dir)),
+    ]
     env_dir = next((d for d in candidates if os.path.exists(os.path.join(d, '.env'))), script_dir)
     return read_env(os.path.join(env_dir, '.env'))
 
@@ -720,11 +729,18 @@ def main():
 
     LAN_IP       = env.get('LAN_IP', '')
     # Resolve INSTALL_DIR portably: .env writes it on every install since
-    # the multi-NAS refactor, but fall back to script_dir's parent (this
-    # script lives at <INSTALL_DIR>/indexers/) for older .envs the user
-    # may have hand-edited, and finally to the Synology-historical path
-    # so really-old installs don't regress.
-    install_dir  = env.get('INSTALL_DIR') or os.path.dirname(script_dir) or '/volume1/docker/media'
+    # the multi-NAS refactor. Fallbacks: walk up from script_dir (which
+    # under the v0.3.22 layout is INSTALL_DIR/scripts/indexers/, so two
+    # parents up = compose root; legacy installs had this script at
+    # INSTALL_DIR/indexers/, one parent up). Final fallback is the
+    # Synology-historical path so really-old hand-edited installs don't
+    # regress to "" and produce empty bind mounts.
+    if env.get('INSTALL_DIR'):
+        install_dir = env.get('INSTALL_DIR')
+    elif os.path.basename(os.path.dirname(script_dir)) == 'scripts':
+        install_dir = os.path.dirname(os.path.dirname(script_dir))
+    else:
+        install_dir = os.path.dirname(script_dir) or '/volume1/docker/media'
     PROWLARR_KEY = env.get('PROWLARR_API_KEY') or read_arr_key(f'{install_dir}/prowlarr/config/config.xml')
 
     if not LAN_IP:

@@ -12,7 +12,14 @@
 #   bash <INSTALL_DIR>/setup-nordvpn.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
+# itself in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+ENV_FILE="$INSTALL_DIR/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "  ✘ .env not found at $ENV_FILE"

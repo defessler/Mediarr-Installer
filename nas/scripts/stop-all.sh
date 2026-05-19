@@ -27,11 +27,18 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR itself
+# in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+cd "$INSTALL_DIR"
 
 if [ ! -f .env ]; then
-    echo "✘ .env not found at $SCRIPT_DIR/.env"
-    echo "  This script expects to live next to docker-compose.yml in the install dir."
+    echo "✘ .env not found at $INSTALL_DIR/.env"
+    echo "  This script expects to find docker-compose.yml + .env in the install dir."
     exit 1
 fi
 

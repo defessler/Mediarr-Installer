@@ -8,7 +8,14 @@
 #   sudo bash /volume1/docker/media/setup-folders.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
+# itself in legacy loose-scripts installs.
+if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+    INSTALL_DIR_DEFAULT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    INSTALL_DIR_DEFAULT="$SCRIPT_DIR"
+fi
+ENV_FILE="$INSTALL_DIR_DEFAULT/.env"
 
 # Read PUID/PGID from .env — required, no fallback
 if [ ! -f "$ENV_FILE" ]; then
@@ -30,7 +37,7 @@ fi
 # INSTALL_DIR + DATA_ROOT explicitly into .env; the fallbacks below
 # only matter when this script runs against an older .env or stand-
 # alone (someone tweaked their own setup and re-ran our scripts).
-: "${INSTALL_DIR:=$SCRIPT_DIR}"
+: "${INSTALL_DIR:=$INSTALL_DIR_DEFAULT}"
 : "${DATA_ROOT:=/volume1/Data}"
 
 echo "Using PUID=$PUID PGID=$PGID  (from ${ENV_FILE})"
@@ -283,7 +290,7 @@ if [ -d "$DATA_ROOT" ]; then
             else
                 echo "      Find the user matching PUID=${PUID}, check Read/Write, click Save."
             fi
-            echo "    Then re-run: sudo bash \"$SCRIPT_DIR/setup.sh\""
+            echo "    Then re-run: sudo bash \"$SCRIPT_DIR/setup.sh\"   # (setup.sh lives next to this script)"
         fi
     fi
 fi

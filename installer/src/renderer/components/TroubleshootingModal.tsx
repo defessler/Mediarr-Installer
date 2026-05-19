@@ -500,6 +500,21 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
   // ── Homepage ────────────────────────────────────────────────────────
   {
     category: 'Homepage dashboard',
+    symptom: 'Homepage shows "Host validation failed. See logs for more details."',
+    cause:
+      'Homepage v1.0+ enforces strict Host-header validation. Older wizard builds defaulted HOMEPAGE_ALLOWED_HOSTS to a narrow list (LAN_IP + localhost + nas.local), so accessing the dashboard via the Synology\'s hostname, a custom DNS name, or any host not in that list got rejected.',
+    fix:
+      'Easiest: open the installer → Update → Pull + recreate. The current wizard build defaults HOMEPAGE_ALLOWED_HOSTS to `*` (any Host accepted) since this is a home-LAN tool. Or manually patch your .env on the NAS:',
+    command:
+      `# Either edit .env to set HOMEPAGE_ALLOWED_HOSTS=*  (simplest)
+# or list the exact hostnames you access from, comma-separated, no ports:
+#   HOMEPAGE_ALLOWED_HOSTS=dashboard.home,192.168.1.10,my-nas.local
+cd <INSTALL_DIR>
+sudo nano .env
+sudo docker compose up -d homepage   # apply the .env change`,
+  },
+  {
+    category: 'Homepage dashboard',
     symptom: 'Service tile is missing from the Homepage dashboard',
     cause:
       'Older wizard builds used a skip-if-exists writer for services.yaml, so once the file existed from a prior install, the dashboard layout was frozen — enabling a service later, or upgrading the wizard to add a new section (like Recyclarr Maintenance), wouldn\'t reflect on the dashboard. Fixed in the current build, which overwrites services.yaml every install, but a NAS upgraded from the old build needs a one-time refresh.',

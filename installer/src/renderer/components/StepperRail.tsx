@@ -29,20 +29,28 @@ export interface SetupStep {
   rerun: string
 }
 
-// Mirrors the 10 steps in nas/setup.sh in order. Labels copied verbatim
-// from the script so a future renumbering breaks loudly here. The rerun
-// commands map each step back to the script setup.sh would have run.
+// Mirrors the 10 steps in nas/scripts/setup.sh in order. Labels copied
+// verbatim from the script so a future renumbering breaks loudly here.
+// The rerun commands map each step back to the script setup.sh would
+// have run. Paths are relative to INSTALL_DIR (the compose root, where
+// setup.sh would cwd to before running these): step 6 stays bare
+// `docker compose up -d`; everything else lives under scripts/.
+//
+// Back-compat: the UpdateRunScreen's step-rerun runs `bash scripts/foo.sh`
+// from $targetDir. Legacy installs (loose-scripts) get a fallback
+// chooser there — see UpdateRunScreen's `rerunStep` for the if-exists
+// dance that finds the right path in either layout.
 export const SETUP_STEPS: SetupStep[] = [
-  { number: 1,  label: 'Set file permissions',                    status: 'pending', rerun: 'bash setup-chmod.sh' },
-  { number: 2,  label: 'Create data and config directories',      status: 'pending', rerun: 'bash setup-folders.sh' },
-  { number: 3,  label: 'Apply firewall rules',                    status: 'pending', rerun: 'bash setup-firewall.sh' },
-  { number: 4,  label: 'Fetch NordVPN WireGuard key',             status: 'pending', rerun: 'bash setup-nordvpn.sh' },
-  { number: 5,  label: 'Validate configuration',                  status: 'pending', rerun: 'bash setup-validate.sh' },
+  { number: 1,  label: 'Set file permissions',                    status: 'pending', rerun: 'bash scripts/setup-chmod.sh' },
+  { number: 2,  label: 'Create data and config directories',      status: 'pending', rerun: 'bash scripts/setup-folders.sh' },
+  { number: 3,  label: 'Apply firewall rules',                    status: 'pending', rerun: 'bash scripts/setup-firewall.sh' },
+  { number: 4,  label: 'Fetch NordVPN WireGuard key',             status: 'pending', rerun: 'bash scripts/setup-nordvpn.sh' },
+  { number: 5,  label: 'Validate configuration',                  status: 'pending', rerun: 'bash scripts/setup-validate.sh' },
   { number: 6,  label: 'Start the stack',                         status: 'pending', rerun: 'docker compose up -d' },
-  { number: 7,  label: 'Configure all services',                  status: 'pending', rerun: 'python3 setup-arr-config.py' },
-  { number: 8,  label: 'Add Prowlarr indexers',                   status: 'pending', rerun: 'python3 indexers/setup-indexers.py' },
-  { number: 9,  label: 'Enable Bazarr subtitle providers',        status: 'pending', rerun: 'python3 indexers/setup-bazarr-providers.py' },
-  { number: 10, label: 'Verify stack health',                     status: 'pending', rerun: 'bash post-deploy-validate.sh' },
+  { number: 7,  label: 'Configure all services',                  status: 'pending', rerun: 'python3 scripts/setup-arr-config.py' },
+  { number: 8,  label: 'Add Prowlarr indexers',                   status: 'pending', rerun: 'python3 scripts/indexers/setup-indexers.py' },
+  { number: 9,  label: 'Enable Bazarr subtitle providers',        status: 'pending', rerun: 'python3 scripts/indexers/setup-bazarr-providers.py' },
+  { number: 10, label: 'Verify stack health',                     status: 'pending', rerun: 'bash scripts/post-deploy-validate.sh' },
 ]
 
 interface Props {

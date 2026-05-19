@@ -39,6 +39,22 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 
+
+def _find_install_dir():
+    """Walk up from this script's location to find the compose root
+    (the dir containing .env + docker-compose.yml). Returns the
+    scripts/ parent in the new layout, or the script's own dir in
+    legacy loose-scripts installs. Module-level so anything that
+    previously used `os.path.dirname(__file__)` for .env can use this
+    helper instead and Just Work in both layouts."""
+    here = INSTALL_DIR_DEFAULT
+    if os.path.basename(here) == 'scripts':
+        return os.path.dirname(here)
+    return here
+
+
+INSTALL_DIR_DEFAULT = _find_install_dir()
+
 # When stdout is piped (i.e. running from setup.sh via SSH/SFTP rather
 # than a tty), Python defaults to BLOCK buffering with an 8 KB window.
 # In a long-running config step that prints small status lines, output
@@ -379,9 +395,10 @@ def acl_diagnostic(path):
         # Fish it out of the local .env via a quick file read — we're
         # already inside main() so script_dir is available, but
         # acl_diagnostic is module-level so we walk up to find it.
+        # Use the layout-aware helper so this works under both the new
+        # scripts/ layout and the legacy loose-scripts install.
         try:
-            here = os.path.dirname(os.path.realpath(__file__))
-            with open(os.path.join(here, '.env'), encoding='utf-8') as f:
+            with open(os.path.join(INSTALL_DIR_DEFAULT, '.env'), encoding='utf-8') as f:
                 for line in f:
                     if line.startswith('DATA_ROOT='):
                         data_root = line.split('=', 1)[1].strip().strip('"').strip("'")
@@ -427,7 +444,7 @@ def acl_diagnostic(path):
         print(f"        3. Find user '{user_name}' in the list")
         print(f"        4. Check 'Read/Write', click Save")
         print(f"        5. Back here:  docker compose restart")
-        print(f"        6. Re-run:  sudo bash {os.path.dirname(os.path.realpath(__file__))}/setup.sh")
+        print(f"        6. Re-run:  sudo bash {INSTALL_DIR_DEFAULT}/scripts/setup.sh")
         print(f"")
         print(f"      Or from CLI:")
         print(f"        sudo synoacltool -add {data_root} \\")
@@ -444,7 +461,7 @@ def acl_diagnostic(path):
         print(f"        sudo setfacl -R -d -m u:{CONTAINER_UID}:rwx {host_path}")
         print(f"      Then:")
         print(f"        docker compose restart")
-        print(f"        sudo bash {os.path.dirname(os.path.realpath(__file__))}/setup.sh")
+        print(f"        sudo bash {INSTALL_DIR_DEFAULT}/scripts/setup.sh")
 
 
 def add_root_folder(base, key, api, path, extra_fields=None, container=None):
@@ -1761,8 +1778,8 @@ def configure_qbittorrent(base, username, password, env=None):
     # post-install; the next setup.sh re-run finds qBit responsive
     # and finishes its config.
     if env is None:
-        env = read_env_merged(os.path.dirname(os.path.realpath(__file__)))
-    install_dir = env.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
+        env = read_env_merged(INSTALL_DIR_DEFAULT)
+    install_dir = env.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
     restarted = False  # kept for the success branch below to compile cleanly
 
     if last_result == 'Ok.':
@@ -1773,7 +1790,7 @@ def configure_qbittorrent(base, username, password, env=None):
         # verbatim so the user gets paths that match their actual NAS
         # layout (Synology /volume1/docker/media vs Unraid /mnt/user/
         # appdata/mediarr vs whatever).
-        install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
+        install_dir = os.environ.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
         warn(f"qBittorrent login rejected: username='{username}' did not match qBittorrent.conf.")
         warn("This usually means qBittorrent's WebUI password was changed manually after a")
         warn("previous install. Fix:")
@@ -1800,7 +1817,7 @@ def configure_qbittorrent(base, username, password, env=None):
         # next-step recipe, and let the install proceed to Step 8+.
         # The user runs restart-qbit.sh once after install completes
         # AND/OR re-runs setup.sh once qBit has fully booted.
-        install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
+        install_dir = os.environ.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
         warn("qBittorrent's WebUI hasn't bound to port 49156 after 5 minutes of retries.")
         warn("This is usually SLOW not BROKEN — qBit's first-boot 'internal preparations'")
         warn("(loading BT_backup + verifying torrent integrity + initializing the BT session)")
@@ -2075,7 +2092,7 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
                     plex_token=None):
     section("Seerr")
     if not key:
-        install_dir = os.environ.get('INSTALL_DIR') or os.path.dirname(os.path.realpath(__file__))
+        install_dir = os.environ.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
         warn("Seerr settings.json not found — complete the setup wizard first.")
         warn(f"Then re-run:  python3 {install_dir}/setup-arr-config.py")
         return
@@ -2674,7 +2691,7 @@ def is_enabled(env, key):
 
 
 def main():
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+    script_dir = INSTALL_DIR_DEFAULT
     env        = read_env_merged(script_dir)
 
     LAN_IP   = env.get('LAN_IP', '')
@@ -3461,7 +3478,7 @@ def homepage_only_main():
     widgets.yaml stays whatever the user set it to — that file is for
     the datetime + search widgets and isn't generated from .env.
     """
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+    script_dir = INSTALL_DIR_DEFAULT
     env        = read_env_merged(script_dir)
     LAN_IP     = env.get('LAN_IP', '')
     if not LAN_IP:
@@ -3526,7 +3543,7 @@ def recyclarr_only_main():
     sentinel — same as main() — which the next full wizard run will
     fix up.
     """
-    script_dir = os.path.dirname(os.path.realpath(__file__))
+    script_dir = INSTALL_DIR_DEFAULT
     env        = read_env_merged(script_dir)
     if not is_enabled(env, 'ENABLE_RECYCLARR'):
         print("ENABLE_RECYCLARR=false in .env — nothing to regenerate.")
