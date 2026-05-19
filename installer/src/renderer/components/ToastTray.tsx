@@ -69,7 +69,11 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       }
     >
       <div className="flex items-start gap-3">
-        <Icon size={20} className={`shrink-0 mt-0.5 ${SEVERITY_ICON_COLOR[toast.severity]}`} />
+        <Icon
+          size={20}
+          aria-hidden="true"
+          className={`shrink-0 mt-0.5 ${SEVERITY_ICON_COLOR[toast.severity]}`}
+        />
         <div className="flex-1 min-w-0">
           <div className="font-semibold break-words">{toast.title}</div>
           <div className="mt-1 flex items-center gap-3 text-xs opacity-80">
