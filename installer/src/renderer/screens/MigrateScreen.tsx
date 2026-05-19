@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowRightLeft, ArrowLeft, ArrowRight, Download, RefreshCw,
   CheckCircle2, XCircle, Cloud, Eye, ListChecks, ChevronDown,
+  KeyRound, Route, Lock,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 
@@ -460,7 +461,10 @@ export function MigrateScreen() {
               Persisted to the profile via setMigrate so the user
               doesn't have to re-paste on every wizard launch. */}
           <div className="border-t border-slate-800 pt-3 space-y-2">
-            <h3 className="text-sm font-medium">Destination credentials</h3>
+            <h3 className="text-sm font-medium inline-flex items-center gap-2">
+              <KeyRound size={14} className="text-emerald-400" strokeWidth={1.75} />
+              Destination credentials
+            </h3>
             {keysError && (
               <p className="text-xs text-amber-300">{keysError}</p>
             )}
@@ -721,7 +725,10 @@ export function MigrateScreen() {
             </div>
 
             <div className="border-t border-slate-800 pt-3 space-y-2">
-              <h3 className="text-sm font-medium">Path remap</h3>
+              <h3 className="text-sm font-medium inline-flex items-center gap-2">
+                <Route size={14} className="text-sky-400" strokeWidth={1.75} />
+                Path remap
+              </h3>
               <p className="text-xs text-slate-400">
                 The source torrents&apos; save paths get rewritten when
                 added to the dest. Leave blank if paths are identical
@@ -766,7 +773,10 @@ export function MigrateScreen() {
                 longer matches), wrong URL/port, or a fresh wizard run
                 where .env hasn't been read yet. */}
             <div className="border-t border-slate-800 pt-3 space-y-2">
-              <h3 className="text-sm font-medium">Destination qBittorrent</h3>
+              <h3 className="text-sm font-medium inline-flex items-center gap-2">
+                <Lock size={14} className="text-emerald-400" strokeWidth={1.75} />
+                Destination qBittorrent
+              </h3>
               <p className="text-xs text-slate-400">
                 Auto-filled from <code className="bg-slate-800 px-1 rounded">LAN_IP</code> + your local
                 <code className="bg-slate-800 px-1 rounded mx-1">.env</code>. Override if the WebUI password
