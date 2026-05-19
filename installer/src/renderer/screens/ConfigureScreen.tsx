@@ -523,20 +523,27 @@ function VpnSection({
               {VPN_PROVIDERS.map((p) => {
                 const picked = p.id === currentId
                 return (
-                  <button
+                  <motion.button
                     type="button"
                     key={p.id}
                     onClick={() => switchProvider(p.id)}
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                     className={
-                      'text-left rounded-md border p-2 text-sm transition-colors ' +
+                      'text-left rounded-md border p-2 text-sm transition-colors focus:outline-none ' +
+                      'focus-visible:ring-2 focus-visible:ring-emerald-400/50 ' +
                       (picked
-                        ? 'border-emerald-600/70 bg-emerald-900/20 text-emerald-100'
+                        ? 'border-emerald-600/70 bg-emerald-900/20 text-emerald-100 shadow-md shadow-emerald-900/30'
                         : 'border-slate-700 bg-slate-800/40 hover:bg-slate-800 text-slate-200')
                     }
                   >
-                    <div className="font-medium">{p.label}</div>
+                    <div className="font-medium flex items-center gap-1.5">
+                      {picked && <CheckCircle2 size={12} className="text-emerald-400" />}
+                      {p.label}
+                    </div>
                     <div className="text-xs text-slate-400 mt-0.5">{p.blurb}</div>
-                  </button>
+                  </motion.button>
                 )
               })}
             </div>
