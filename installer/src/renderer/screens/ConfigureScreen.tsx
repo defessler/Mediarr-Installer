@@ -77,6 +77,10 @@ function Field({ label, k, type = 'text', placeholder }: {
   const ctx = useContext(ConfigCtx)
   if (!ctx) return null
   const { config, update } = ctx
+  // Stable ID per field key so the label can htmlFor-link, and
+  // screen readers say the right thing on focus. The ENV-style
+  // keys (PUID, ARR_USERNAME, etc.) are already stable identifiers.
+  const inputId = `cfg-${k}`
   // Password fields get the show/hide eye toggle via PasswordInput —
   // typing a credential into a field of black dots is exactly the kind
   // of "did I get that right?" friction we want to remove from the
@@ -85,8 +89,9 @@ function Field({ label, k, type = 'text', placeholder }: {
   if (type === 'password') {
     return (
       <div>
-        <label className="block text-sm font-medium mb-1">{label}</label>
+        <label className="block text-sm font-medium mb-1" htmlFor={inputId}>{label}</label>
         <PasswordInput
+          id={inputId}
           placeholder={placeholder}
           className="py-2"
           value={(config[k] as string | undefined) ?? ''}
@@ -97,8 +102,9 @@ function Field({ label, k, type = 'text', placeholder }: {
   }
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+      <label className="block text-sm font-medium mb-1" htmlFor={inputId}>{label}</label>
       <input
+        id={inputId}
         type={type} placeholder={placeholder}
         className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
         value={(config[k] as string | undefined) ?? ''}
