@@ -802,10 +802,11 @@ export function ConfigureScreen() {
           — override for non-standard layouts.
         </p>
         <div>
-          <label className="block text-sm font-medium mb-1">
+          <label className="block text-sm font-medium mb-1" htmlFor="cfg-install-dir">
             Install directory <span className="text-slate-500 text-xs ml-1">(compose stack + per-container configs)</span>
           </label>
           <input
+            id="cfg-install-dir"
             type="text"
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             placeholder="/volume1/docker/media"
