@@ -2,34 +2,34 @@
 
 A self-hosted media automation stack running on a Synology DS1522+. Tell it what you want to watch — it finds, downloads, organises, and serves it to Plex automatically.
 
-> **New to this?** Download the GUI installer instead — no command line
-> required. The latest build is **[Mediarr Installer v0.3.4](https://github.com/defessler/Mediarr-Installer/releases/latest)**
-> (Windows, macOS, Linux). The step-by-step beginner's tutorial is at
-> **[INSTALL.md](./INSTALL.md)** and walks through the wizard screen by
-> screen. This page is the technical / power-user docs for the manual
-> install path.
+> **The wizard does all of this for you.** Download the latest **[Mediarr
+> Installer](https://github.com/defessler/Mediarr-Installer/releases/latest)**
+> (Windows / macOS / Linux), point it at your NAS, and the eight-screen
+> wizard handles SSH, payload upload, `.env`, claim tokens, VPN keys,
+> Recyclarr profile picks, post-install validation — everything below.
+> The beginner walkthrough is at **[INSTALL.md](./INSTALL.md)** with a
+> screen-by-screen tour.
+>
+> The rest of this page exists for two reasons:
+> 1. To explain what the wizard is doing on your NAS under the hood
+>    (architecture, services, hardlinks, internal hostnames).
+> 2. As the manual install path if you want to skip the wizard — the
+>    `nas/` directory in this repo is exactly what the wizard uploads,
+>    so you can SCP it yourself and run `setup.sh`. See the
+>    [Manual install (no wizard)](#manual-install-no-wizard) section.
 
 ---
 
 ## Table of Contents
 
 - [How it works](#how-it-works)
+- [Services](#services)
 - [Scripts](#scripts)
-- [Setup](#setup)
-  - [Step 1: Copy files to the NAS](#step-1-copy-files-to-the-nas)
-  - [Step 2: Fill in .env](#step-2-fill-in-env)
-  - [Step 3: Run setup.sh](#step-3-run-setupsh)
-  - [Step 4: Manual configuration](#step-4-manual-configuration)
-  - [Step 5: Verify end-to-end](#step-5-verify-end-to-end)
+- [Day-2 operations](#day-2-operations)
+- [Manual install (no wizard)](#manual-install-no-wizard)
 - [Troubleshooting](#troubleshooting)
 - [Quick Reference](#quick-reference)
-  - [Service URLs](#service-urls)
-  - [Internal Hostnames](#internal-hostnames)
-  - [Docker Compose Cheatsheet](#docker-compose-cheatsheet)
 - [Migrating from Existing Services](#migrating-from-existing-services)
-  - [From the native Plex package](#from-the-native-plex-package)
-  - [From Jackett](#from-jackett)
-  - [From Overseerr](#from-overseerr)
 
 ---
 
@@ -117,166 +117,44 @@ All deployment files live in the `nas/` folder. Copy the entire `nas/` directory
 
 ---
 
-## Setup
+## Day-2 operations
 
-### Step 1: Copy files to the NAS
+After install, the stack is mostly self-managing — Sonarr / Radarr / Prowlarr / Recyclarr all run on their own. The few things you might still want to do are surfaced through web UIs rather than the command line:
 
-Copy the contents of `nas/` to `/volume1/docker/media/` on the NAS.
+| Action | Where |
+|--------|-------|
+| Add a TV show / movie | Sonarr / Radarr, or **Seerr** for the Netflix-style request flow |
+| Change TRaSH Guide quality profile | Recyclarr tile on Homepage → pick the new profile in the dropdown → "Save profile & sync". (Or re-run the installer.) The trigger page rewrites `.env` + `recyclarr.yml` + syncs in one click. |
+| Re-pull container images | Installer → pick the profile → **Update mode** → "Pull + recreate". No SSH needed. |
+| Refresh the Homepage dashboard | Installer Update mode → "Refresh dashboard". Regenerates `services.yaml` from your current enabled-service flags. |
+| Re-run a specific setup step | Installer Update mode → "Re-run a step" — picks from the 10-step setup.sh in a dropdown. |
+| Migrate a library across NAS | Installer → pick destination profile → **Migrate mode** → paste source URL + API key, click Import. |
 
-Via SMB — open `\\192.168.1.242` in File Explorer, navigate to `docker/media`, drag in the contents of `nas/`.
-
-Or via SCP:
-```bash
-scp -r nas/ user@192.168.1.242:/volume1/docker/media/
-```
-
----
-
-### Step 2: Fill in .env
-
-Copy the template and fill in your values:
-```bash
-cp /volume1/docker/media/.env.example /volume1/docker/media/.env
-nano /volume1/docker/media/.env
-```
-
-`.env.example` is the committed template with all keys documented. `.env` holds your real values and is gitignored — never committed. Docker Compose reads `.env` automatically.
-
-```env
-PUID=1034
-PGID=100
-TZ=America/New_York           # your timezone
-LAN_IP=192.168.1.242          # your NAS LAN IP
-LAN_SUBNET=                   # optional — auto-derived from LAN_IP as /24
-                              #   override only if your LAN isn't a /24
-                              #   (e.g. LAN_SUBNET=10.0.0.0/16)
-
-PLEX_CLAIM=                   # from https://plex.tv/claim (expires in 4 min — fill in right before Step 4)
-
-SONARR_API_KEY=               # from Sonarr → Settings → General (fill in after first boot)
-RADARR_API_KEY=               # from Radarr → Settings → General (fill in after first boot)
-
-QBITTORRENT_USER=admin
-QBITTORRENT_PASS=             # choose any password
-
-ARR_USERNAME=                 # optional — sets login on Sonarr/Radarr/Lidarr/Prowlarr/SABnzbd/Bazarr
-ARR_PASSWORD=                 # leave blank to skip auth setup
-
-NORDVPN_ACCESS_TOKEN=         # from my.nordaccount.com → NordVPN → Access Tokens
-VPN_PROVIDER=nordvpn          # nordvpn | protonvpn | mullvad | airvpn | surfshark | custom
-VPN_TYPE=wireguard
-NORDVPN_PRIVATE_KEY=          # leave blank — setup-nordvpn.sh fills this in
-VPN_COUNTRIES=                # e.g. United States, Netherlands
-VPN_PORT_FORWARDING=off       # set to "on" for ProtonVPN/PIA/PrivateVPN
-                              # — NOT supported on NordVPN (silently no-ops)
-```
-
-**Getting your NordVPN access token:**
-1. Log in at https://my.nordaccount.com
-2. Go to **NordVPN → Manual configuration → Access Tokens**
-3. Generate a new token and copy it into `NORDVPN_ACCESS_TOKEN`
-
-`setup-nordvpn.sh` (called by `setup.sh`) uses this token to fetch the WireGuard private key automatically and writes it into `.env`.
+Everything above is also achievable from SSH if you prefer — see [Manual install (no wizard)](#manual-install-no-wizard) for the underlying scripts. But the wizard is the supported path.
 
 ---
 
-### Step 3: Run setup.sh
+## Manual install (no wizard)
 
-Get a fresh Plex claim token right before running this (it expires in 4 minutes):
-1. Go to https://plex.tv/claim
-2. Copy the token and set `PLEX_CLAIM=claim-...` in `.env`
+If you'd rather skip the installer (e.g. headless setup, scripted deployment, or you just don't want a desktop app):
 
-Then run:
-```bash
-sudo bash /volume1/docker/media/setup.sh
-```
-
-This handles everything in one command:
-1. Sets correct permissions on all scripts and config files
-2. Creates all required directories with correct ownership
-3. Applies iptables firewall rules and installs them to survive reboots
-4. Fetches your NordVPN WireGuard key and writes it to `.env`
-5. Validates the full configuration
-6. Starts the stack with `docker-compose up -d`
-7. Waits for all services to come up (first run downloads images — may take a few minutes)
-8. Configures all services automatically via API (root folders, download clients, indexer connections, auth)
-9. Adds torrent and usenet indexers to Prowlarr
-10. Enables subtitle providers in Bazarr
-
-What gets configured automatically:
-
-| Service | What gets set up |
-|---------|-----------------|
-| SABnzbd | Download directories, tv/movies/music categories |
-| Sonarr | Root folders, qBittorrent + SABnzbd clients, remote path mapping, hardlinks |
-| Radarr | Same with movie categories and roots |
-| Lidarr | Same with music category and root |
-| Prowlarr | Sonarr, Radarr, and Lidarr app connections; public torrent + usenet indexers |
-| Bazarr | Sonarr and Radarr connections; free subtitle providers |
-| Seerr | Sonarr and Radarr connections *(after wizard — see Step 4)* |
-| Unpackerr | Generates `unpackerr.conf` with API keys pre-filled |
-| Recyclarr | Generates starter `recyclarr.yml` with API keys pre-filled |
-
-Safe to re-run — all steps skip anything already configured.
-
----
-
-### Step 4: Manual configuration
-
-The script handles everything it can via API. The following require manual action:
-
-#### qBittorrent (http://192.168.1.242:49156)
-
-**Watched folder** — Settings → Downloads → Automatically add torrents from: `/downloads/ToFetch`
-
-**Seeding limits** — Settings → BitTorrent → set your preferred ratio (e.g. 2.0) or time limit.
-
-#### Sonarr / Radarr / Lidarr
-
-Set up your quality profiles and then add the series/movies/artists you want to monitor.
-
-#### Prowlarr (http://192.168.1.242:49150)
-
-`setup.sh` already connected Prowlarr to Sonarr, Radarr, and Lidarr and added public indexers. Add any additional indexers manually: Indexers → **+ Add Indexer**.
-
-#### Seerr (http://192.168.1.242:5056)
-
-Seerr needs its wizard completed before it can be wired up:
-1. Complete the setup wizard
-2. Connect Plex during the wizard: `http://plex:32400`
-3. Re-run `setup-arr-config.py` — it will wire up Sonarr and Radarr automatically:
+1. **Copy `nas/` to the NAS**
    ```bash
-   python3 /volume1/docker/media/setup-arr-config.py
+   scp -r nas/ user@192.168.1.242:/volume1/docker/media/
    ```
-
-#### Tautulli (http://192.168.1.242:8181)
-
-Connect to Plex: `http://plex:32400` and your Plex token
-(find it in Plex → Settings → Troubleshooting → Get your X-Plex-Token)
-
-#### Recyclarr
-
-The script generated a starter config at `/volume1/docker/media/recyclarr/config/recyclarr.yml` with your API keys pre-filled. Customise it with the TRaSH Guide quality profiles you want — see https://recyclarr.dev/wiki.
-
-To trigger a manual sync:
-```bash
-docker exec recyclarr recyclarr sync
-```
-
----
-
-### Step 5: Verify end-to-end
-
-1. Confirm Gluetun is connected — the IP should be your VPN's, not your home IP:
+2. **Copy + fill in `.env`** — `.env.example` is the documented template:
    ```bash
-   docker exec gluetun wget -qO- https://ipinfo.io
+   cp /volume1/docker/media/.env.example /volume1/docker/media/.env
+   nano /volume1/docker/media/.env
    ```
-2. Search for something in Sonarr or Radarr and trigger a manual download
-3. Verify qBittorrent downloads to `/downloads/Completed/` (via `/downloads/InProgress/` while active)
-4. Verify Sonarr/Radarr activity log says **hardlinked** (not copied)
-5. Verify qBittorrent keeps seeding after import
-6. Check Plex sees the newly imported media
-7. Try requesting something through Seerr
+   Required keys: `PUID`, `PGID`, `TZ`, `LAN_IP`, `QBITTORRENT_PASS`. Optional: `PLEX_CLAIM` (from https://plex.tv/claim — expires in 4 minutes, paste it right before running `setup.sh`), `NORDVPN_ACCESS_TOKEN` (auto-fetches WireGuard key), `ARR_USERNAME` / `ARR_PASSWORD`, `TRASH_SONARR_PROFILE` / `TRASH_RADARR_PROFILE` for the Recyclarr quality bundle.
+3. **Run setup.sh**
+   ```bash
+   sudo bash /volume1/docker/media/setup.sh
+   ```
+   Handles permissions, folders, firewall, NordVPN key fetch, validation, `docker-compose up -d`, then API-configures every arr (root folders, download clients, remote path mappings, hardlinks, auth, indexers, subtitle providers). Safe to re-run — every step is idempotent.
+
+The installer does exactly the same work; it just uploads `nas/` via SFTP and runs `setup.sh` over SSH on your behalf, plus wraps profile management + claim-token freshness + per-step re-run.
 
 ---
 

@@ -5,7 +5,7 @@ over SSH. Wraps the bash + Python automation in `../nas/`.
 
 ## Status
 
-**Shipping** (current: `v0.3.4`). Eight-screen wizard with profile management,
+**Shipping** (current: `v0.3.16`). Eight-screen wizard with profile management,
 NAS-family auto-detection, install / update / migrate flows, an animated
 visual layer (Motion + Lucide), encrypted profile export/import, and a
 searchable in-app troubleshooting modal. See [`PLAN.md`](./PLAN.md) for
