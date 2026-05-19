@@ -424,7 +424,7 @@ export function App() {
             <button
               type="button"
               onClick={() => setHelpOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-700/50 hover:bg-emerald-600/60 text-emerald-100 font-medium transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-700/50 hover:bg-emerald-600/60 text-emerald-100 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
               title="Common issues + the exact fix for each — searchable, copy-to-clipboard"
             >
               <HelpCircle size={12} />
@@ -444,7 +444,7 @@ export function App() {
                   }
                 }).catch((e) => reportError('Open log', e))
               }
-              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               title={info.logPath}
             >
               <FileText size={12} />
@@ -456,7 +456,7 @@ export function App() {
                 window.installer.app.showLogInFolder()
                   .catch((e) => reportError('Reveal log', e))
               }
-              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               title="Show the log file in your file manager"
             >
               <FolderOpen size={12} />
@@ -468,7 +468,7 @@ export function App() {
                 window.installer.app.openDevTools()
                   .catch((e) => reportError('Open DevTools', e))
               }
-              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               title="Toggle Chromium DevTools — only needed for debugging"
             >
               <Wrench size={12} />
