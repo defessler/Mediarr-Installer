@@ -150,9 +150,19 @@ export function ConnectScreen() {
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2">
           <label className="block text-sm font-medium mb-1">Host</label>
+          {/* Border tint reflects what we think of the entered value:
+              emerald for a parseable host (IP / hostname), slate for
+              empty, no tint while typing partial values. Helps a kid
+              know "yes that's a valid-looking host" without making
+              them click Test to find out. */}
           <input
             type="text" placeholder="192.168.1.10  (NOT your DSM URL — that's port 5000)"
-            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+            className={
+              'w-full px-3 py-2.5 bg-slate-800 border rounded-md focus:outline-none focus:ring-1 transition-colors ' +
+              (connection.host && /^([\w-]+\.)+[\w-]+$|^\d+\.\d+\.\d+\.\d+$/.test(connection.host)
+                ? 'border-emerald-700/50 focus:border-emerald-500 focus:ring-emerald-500/40'
+                : 'border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/40')
+            }
             value={connection.host ?? ''}
             onChange={(e) => onHostChange(e.target.value)}
           />
