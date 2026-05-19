@@ -5,6 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, ListChecks, Users, Captions,
   PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
+  Clock,
   type LucideIcon,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
@@ -957,14 +958,29 @@ export function ConfigureScreen() {
           Hide the banner when Plex is opted out of the stack — there's
           no Plex container to claim. */}
       {isEnabled(config.ENABLE_PLEX as string | undefined) && (
-        <section className="rounded-md border border-slate-800 bg-slate-900/30 p-3 text-sm text-slate-400 flex items-start gap-2">
-          <span className="text-emerald-400 shrink-0">i</span>
-          <span>
-            <strong className="text-slate-300">Plex claim token</strong> is
-            collected on the <em>next</em> screen, right before install starts —
-            tokens expire 4 minutes after you generate them, so we keep it for
-            last.
-          </span>
+        <section className="rounded-md border border-amber-700/30 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
+          <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
+            <Clock size={14} className="text-amber-300" strokeWidth={2} />
+          </div>
+          <div className="space-y-1">
+            <div className="font-medium text-amber-100">
+              Plex claim comes up on the next screen
+            </div>
+            <div className="text-xs text-slate-400">
+              Claim tokens expire 4 minutes after you generate them, so we keep
+              it for last — the next screen has a fresh-token countdown +
+              one-click link to{' '}
+              <a
+                href="https://plex.tv/claim"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-300 hover:underline"
+              >
+                plex.tv/claim
+              </a>
+              .
+            </div>
+          </div>
         </section>
       )}
 
