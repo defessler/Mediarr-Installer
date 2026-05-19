@@ -74,7 +74,7 @@ function StatusIcon({ status, size = 16 }: StatusIconProps) {
 export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
   const reduced = useReducedMotion()
   return (
-    <ol className="space-y-1">
+    <ol className="space-y-1" aria-label="Install steps">
       {steps.map((s) => {
         const text =
           s.status === 'ok' ? 'text-slate-300'
@@ -83,8 +83,22 @@ export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
           : 'text-slate-500'
         const showRerun = onRerun && (s.status === 'ok' || s.status === 'fail') && s.rerun
         const isRerunning = rerunningStep === s.number
+        // aria-current marks the active step for screen readers — same
+        // semantic as visual "this is happening right now."
+        const ariaCurrent: 'step' | undefined = s.status === 'running' ? 'step' : undefined
+        const ariaLabel = `Step ${s.number} of ${steps.length}: ${s.label} — ${
+          s.status === 'ok' ? 'complete'
+          : s.status === 'fail' ? 'failed'
+          : s.status === 'running' ? 'in progress'
+          : 'pending'
+        }`
         return (
-          <li key={s.number} className={`relative group ${text}`}>
+          <li
+            key={s.number}
+            className={`relative group ${text}`}
+            aria-current={ariaCurrent}
+            aria-label={ariaLabel}
+          >
             {/* Running-step background highlight. layoutId tells Motion
                 to share a single highlight DOM element across rows so
                 it slides between steps as they progress — a cheap but
