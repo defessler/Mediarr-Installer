@@ -387,17 +387,20 @@ function TrashProfilesSection({
           users with ENABLE_LIDARR=true don't wonder why there's no
           Lidarr dropdown here. */}
       {isEnabled(config.ENABLE_LIDARR) && (
-        <p className="text-xs text-slate-500 italic">
-          Lidarr isn&apos;t supported by Recyclarr — for music quality definitions
-          see{' '}
-          <a
-            className="text-emerald-400 underline"
-            href="https://trash-guides.info/Lidarr/lidarr-setup-quality-profiles/"
-            target="_blank" rel="noreferrer"
-          >
-            TRaSH&apos;s Lidarr page
-          </a>
-          {' '}and set the size limits by hand in Lidarr&apos;s Settings → Profiles.
+        <p className="text-xs text-slate-500 italic inline-flex items-start gap-1.5">
+          <Music size={11} className="text-fuchsia-400 shrink-0 mt-0.5" strokeWidth={1.75} />
+          <span>
+            Lidarr isn&apos;t supported by Recyclarr — for music quality definitions
+            see{' '}
+            <a
+              className="text-emerald-400 underline hover:text-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded inline-flex items-center gap-1"
+              href="https://trash-guides.info/Lidarr/lidarr-setup-quality-profiles/"
+              target="_blank" rel="noreferrer"
+            >
+              TRaSH&apos;s Lidarr page
+            </a>
+            {' '}and set the size limits by hand in Lidarr&apos;s Settings → Profiles.
+          </span>
         </p>
       )}
     </section>
