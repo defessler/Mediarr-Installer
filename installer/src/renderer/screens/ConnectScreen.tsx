@@ -158,7 +158,7 @@ export function ConnectScreen() {
 
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2">
-          <label className="block text-sm font-medium mb-1">Host</label>
+          <label className="block text-sm font-medium mb-1" htmlFor="ssh-host">Host</label>
           {/* Border tint reflects what we think of the entered value:
               emerald for a parseable host (IP / hostname), slate for
               empty, no tint while typing partial values. Helps a kid
@@ -169,6 +169,7 @@ export function ConnectScreen() {
             const looksValid = /^([\w-]+\.)+[\w-]+$|^\d+\.\d+\.\d+\.\d+$/.test(hostValue)
             return (
               <input
+                id="ssh-host"
                 type="text"
                 placeholder="192.168.1.10  (NOT your DSM URL — that's port 5000)"
                 aria-required="true"
@@ -191,11 +192,12 @@ export function ConnectScreen() {
           </span>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">
+          <label className="block text-sm font-medium mb-1" htmlFor="ssh-port">
             Port
             <span className="text-slate-500 text-xs ml-1">(SSH = 22)</span>
           </label>
           <input
+            id="ssh-port"
             type="number"
             className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             value={connection.port ?? 22}
@@ -216,10 +218,12 @@ export function ConnectScreen() {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">User</label>
+        <label className="block text-sm font-medium mb-1" htmlFor="ssh-user">User</label>
         <input
+          id="ssh-user"
           type="text"
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md"
+          aria-required="true"
+          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           value={connection.user ?? 'root'}
           onChange={(e) => setConnection({ user: e.target.value })}
         />
