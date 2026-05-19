@@ -183,17 +183,24 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-semibold flex items-center gap-1.5">
+              <label
+                className="block text-sm font-semibold flex items-center gap-1.5"
+                htmlFor="import-pass"
+              >
                 <Lock size={13} className="text-emerald-400" />
                 Passphrase
               </label>
               <PasswordInput
+                id="import-pass"
                 autoFocus
                 value={pass}
                 onChange={(e) => { setPass(e.target.value); if (error) setError(null) }}
                 onKeyDown={(e) => { if (e.key === 'Enter') doImport() }}
                 className="text-sm py-2"
                 placeholder="The passphrase used at export time"
+                aria-required="true"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? 'import-error' : undefined}
               />
             </div>
 
@@ -201,6 +208,9 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
               <motion.div
                 initial={reduced ? { opacity: 1 } : { opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
+                id="import-error"
+                role="alert"
+                aria-live="assertive"
                 className="bg-rose-950/40 border border-rose-700/50 text-rose-200 rounded-md px-3 py-2 text-xs flex items-start gap-2"
               >
                 <AlertCircle size={14} className="text-rose-400 shrink-0 mt-0.5" />
