@@ -616,7 +616,10 @@ export function EnvDetectScreen() {
           {(r.tunDevice === false || r.iptablesLoaded === false ||
             (r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs))) && (
             <section className="rounded-md border border-amber-900/50 bg-amber-950/30 p-4 text-sm">
-              <h2 className="font-medium text-amber-200 mb-2">Platform readiness</h2>
+              <h2 className="font-medium text-amber-200 mb-2 inline-flex items-center gap-2">
+                <AlertTriangle size={14} className="text-amber-400" strokeWidth={2} />
+                Platform readiness
+              </h2>
               {r.tunDevice === false && (
                 <div className="mb-2">
                   <div className="text-amber-200 inline-flex items-center gap-2">
