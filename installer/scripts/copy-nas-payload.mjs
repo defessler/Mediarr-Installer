@@ -14,8 +14,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const SRC = join(__dirname, '..', '..', 'nas')
 const DST = join(__dirname, '..', 'resources', 'nas-payload')
 
-const EXCLUDED_NAMES = new Set(['.env', 'migration', 'node_modules'])
-const EXCLUDED_GLOBS = [/\.DS_Store$/, /Thumbs\.db$/]
+// Directories / filenames excluded by exact name (matched against the
+// dirent's name regardless of depth). __pycache__ catches Python bytecode
+// from local syntax-check runs — those would otherwise bloat the payload
+// and end up uploaded to /volume1/docker/media/scripts/ on every install.
+// node_modules guards against an accidental cross-tree leak; migration/
+// stays out of v1 because its tooling isn't release-ready.
+const EXCLUDED_NAMES = new Set(['.env', 'migration', 'node_modules', '__pycache__'])
+// File globs (matched against the relative posix path). .pyc files are
+// excluded both for size and because they're CPython-major-tied — a
+// 3.10 .pyc would be ignored on a NAS running 3.12 anyway.
+const EXCLUDED_GLOBS = [/\.DS_Store$/, /Thumbs\.db$/, /\.pyc$/]
 
 const toPosix = (p) => p.split(sep).join(posix.sep)
 
