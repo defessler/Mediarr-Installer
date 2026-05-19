@@ -784,7 +784,7 @@ export function RunScreen() {
               className="text-center"
             >
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4">
-                <Rocket size={32} className="text-emerald-300" strokeWidth={1.5} />
+                <Rocket size={32} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
               </div>
               <h1 className="text-3xl font-bold tracking-tight">Ready to launch</h1>
               <p className="text-slate-400 mt-3 text-base max-w-md mx-auto">
@@ -814,7 +814,7 @@ export function RunScreen() {
                 transition={{ duration: 0.22 }}
                 className="bg-rose-950/40 border border-rose-700/50 text-rose-100 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
               >
-                <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="font-mono whitespace-pre-wrap">{errorMsg}</div>
               </motion.div>
             )}
@@ -1015,7 +1015,7 @@ export function RunScreen() {
                 className="inline-flex items-center gap-1 tabular-nums"
                 title="Total time since the install started"
               >
-                <Clock size={11} className="text-slate-600" />
+                <Clock size={11} className="text-slate-600" aria-hidden="true" />
                 {fmtElapsed(elapsedMs)}
               </span>
             )}
@@ -1051,7 +1051,7 @@ export function RunScreen() {
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-rose-900/30 hover:bg-rose-800/40 border border-rose-700/50 rounded-md text-rose-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50"
               >
-                <XCircle size={14} />
+                <XCircle size={14} aria-hidden="true" />
                 <span className="font-semibold">{failCount}</span> failed
               </motion.button>
             )}
@@ -1063,7 +1063,7 @@ export function RunScreen() {
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-900/20 hover:bg-amber-800/30 border border-amber-700/40 rounded-md text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
               >
-                <AlertTriangle size={14} />
+                <AlertTriangle size={14} aria-hidden="true" />
                 <span className="font-semibold">{actionCount}</span> need{actionCount === 1 ? 's' : ''} action
               </motion.button>
             )}
