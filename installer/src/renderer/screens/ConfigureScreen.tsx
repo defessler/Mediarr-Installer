@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { motion, useReducedMotion } from 'motion/react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Settings2, ArrowLeft, ArrowRight,
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
@@ -321,7 +321,10 @@ function TrashProfilesSection({
       <div className="grid grid-cols-2 gap-4">
         {sonarrOn && (
           <div>
-            <label className="block text-sm font-medium mb-1">Sonarr profile</label>
+            <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5">
+              <Tv size={13} className="text-sky-400" strokeWidth={1.75} />
+              Sonarr profile
+            </label>
             <select
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={sonarrValue}
@@ -331,14 +334,29 @@ function TrashProfilesSection({
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </select>
-            <div className="text-xs text-slate-400 mt-1">
-              {SONARR_TRASH_PROFILES.find((p) => p.value === sonarrValue)?.hint}
-            </div>
+            {/* Hint text crossfades when the selection changes — gives a
+                clear visual signal that the description tracks the
+                dropdown without yanking the user's eye. */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={sonarrValue}
+                initial={{ opacity: 0, y: -2 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -2 }}
+                transition={{ duration: 0.15 }}
+                className="text-xs text-slate-400 mt-1"
+              >
+                {SONARR_TRASH_PROFILES.find((p) => p.value === sonarrValue)?.hint}
+              </motion.div>
+            </AnimatePresence>
           </div>
         )}
         {radarrOn && (
           <div>
-            <label className="block text-sm font-medium mb-1">Radarr profile</label>
+            <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5">
+              <Film size={13} className="text-yellow-400" strokeWidth={1.75} />
+              Radarr profile
+            </label>
             <select
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={radarrValue}
@@ -348,9 +366,18 @@ function TrashProfilesSection({
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </select>
-            <div className="text-xs text-slate-400 mt-1">
-              {RADARR_TRASH_PROFILES.find((p) => p.value === radarrValue)?.hint}
-            </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={radarrValue}
+                initial={{ opacity: 0, y: -2 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -2 }}
+                transition={{ duration: 0.15 }}
+                className="text-xs text-slate-400 mt-1"
+              >
+                {RADARR_TRASH_PROFILES.find((p) => p.value === radarrValue)?.hint}
+              </motion.div>
+            </AnimatePresence>
           </div>
         )}
       </div>
