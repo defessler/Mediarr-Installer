@@ -135,7 +135,7 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
             onClick={onClose}
             disabled={busy}
             className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors disabled:opacity-40"
-            aria-label="Close"
+            aria-label="Close import dialog"
           >
             <XIcon size={18} />
           </button>
