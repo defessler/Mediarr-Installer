@@ -157,43 +157,65 @@ export function UpdateRunScreen() {
     }
   }
 
-  /** Restart every container in HELPER_CONTAINERS that's currently
-   *  running. Uses `docker ps --filter name=^X$` to check first so a
-   *  stopped helper isn't spuriously started — if the user disabled it
-   *  intentionally we leave it alone. Each result is logged to the run
-   *  panel so the user sees exactly what was restarted. */
+  /** Re-up every container in HELPER_CONTAINERS that's currently
+   *  running. We use `docker compose up -d --no-deps <name>` (NOT
+   *  `docker restart`) for an important reason: restart preserves the
+   *  EXISTING container's volume mounts, network config, and env. If
+   *  the wizard ships a docker-compose.yml change that adds a new
+   *  mount (e.g. ${INSTALL_DIR}:/install-dir:rw for recyclarr-trigger),
+   *  a plain restart leaves the container running without the new
+   *  mount and the freshly-uploaded Python code fails at runtime ("Could
+   *  not save profile picks: .env not found at /install-dir/.env"). The
+   *  compose-up path is smart enough to detect the spec changed and
+   *  recreate just the changed container; if nothing changed, it's a
+   *  cheap no-op restart instead.
+   *
+   *  --no-deps so recyclarr-trigger's recyclarr dependency doesn't get
+   *  re-pulled / restarted along with it; we want surgical changes.
+   *  We still probe with `docker ps --filter` first so a stopped helper
+   *  isn't spuriously started — if the user disabled it intentionally
+   *  we leave it alone. */
   async function restartHelperContainers(): Promise<void> {
     if (!sessionId) return
     for (const name of HELPER_CONTAINERS) {
       try {
         const r = await window.installer.ssh.exec({
           sessionId,
-          // sudo: docker ps + restart need root on most NAS setups
-          // (Synology DSM in particular gates /var/run/docker.sock
-          // behind the docker group, and the SSH user often isn't in
-          // it). Mirrors the sudo:true used by execStream below.
+          // sudo: docker compose + docker ps both need root on most NAS
+          // setups (Synology DSM in particular gates /var/run/docker.sock
+          // behind the docker group, and the SSH user often isn't in it).
+          // Mirrors the sudo:true used by execStream below.
           sudo: true,
           cmd:
             PATH_PREFIX +
+            `cd ${shellQuote(targetDir)} && ` +
             `if docker ps --filter name=^${name}$ --format '{{.Names}}' ` +
             `  | grep -qx ${shellQuote(name)}; then ` +
-            `  docker restart ${shellQuote(name)} >/dev/null && echo restarted; ` +
+            // Detect VPN to pick the right override-file. Mirrors the
+            // FILES logic in pullAndRecreate's composeUpdate script.
+            `  VPN=$(grep -m1 '^VPN_ENABLED=' .env 2>/dev/null | cut -d= -f2- | tr -d '\\r' | tr '[:upper:]' '[:lower:]' | xargs); ` +
+            `  FILES='-f docker-compose.yml'; ` +
+            `  case "$VPN" in true|1|yes|on) ;; *) FILES="$FILES -f docker-compose.no-vpn.yml" ;; esac; ` +
+            `  docker compose $FILES up -d --no-deps ${shellQuote(name)} 2>&1 && echo recreated; ` +
             `else ` +
             `  echo not-running; ` +
             `fi`,
         })
         const out = r.stdout.trim()
-        if (out === 'restarted') {
-          wlog(`Restarted ${name} to pick up new mounted scripts.`)
+        // `docker compose up -d` emits its own status lines (e.g.
+        // "Container recyclarr-trigger  Recreated" or "  Running"); we
+        // append the final "recreated" sentinel to confirm success.
+        if (out.endsWith('recreated')) {
+          wlog(`Re-upped ${name} so any new compose mounts / env take effect.`)
         } else if (out === 'not-running') {
-          wlog(`Skipped ${name} restart — container is not running.`)
+          wlog(`Skipped ${name} re-up — container is not running.`)
         } else if (r.exitCode !== 0) {
-          wlog(`[warn] Restart probe for ${name} returned exit ${r.exitCode}: ${(r.stderr || '').trim()}`)
+          wlog(`[warn] Re-up of ${name} returned exit ${r.exitCode}: ${(r.stderr || '').trim()}`)
         }
       } catch (e) {
         // Non-fatal — the upload already succeeded. Log a warning so the
-        // user knows they may need to docker-restart manually.
-        wlog(`[warn] Could not restart ${name}: ${(e as Error).message}`)
+        // user knows they may need to `docker compose up -d` manually.
+        wlog(`[warn] Could not re-up ${name}: ${(e as Error).message}`)
       }
     }
   }
