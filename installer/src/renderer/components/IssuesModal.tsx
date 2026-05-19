@@ -95,10 +95,10 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
             </h2>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors"
-              aria-label="Close"
+              className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+              aria-label="Close issues modal"
             >
-              <XIcon size={18} />
+              <XIcon size={18} aria-hidden="true" />
             </button>
           </div>
           <p className="text-xs text-slate-400 mt-1">
