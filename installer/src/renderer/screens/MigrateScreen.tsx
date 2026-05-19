@@ -437,8 +437,8 @@ export function MigrateScreen() {
             </span>
           )}
           {totalFetched > 0 && !fetching && (
-            <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} />
+            <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5" role="status" aria-live="polite">
+              <CheckCircle2 size={14} aria-hidden="true" />
               Got {totalFetched} title{totalFetched === 1 ? '' : 's'}. Scroll down to import →
             </span>
           )}
@@ -713,8 +713,8 @@ export function MigrateScreen() {
             </span>
           )}
           {qbitTorrents && qbitTorrents.length > 0 && !qbitFetching && (
-            <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} />
+            <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5" role="status" aria-live="polite">
+              <CheckCircle2 size={14} aria-hidden="true" />
               Got {qbitTorrents.length} torrent{qbitTorrents.length === 1 ? '' : 's'}. Scroll down to migrate →
             </span>
           )}
