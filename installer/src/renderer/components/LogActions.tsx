@@ -107,10 +107,13 @@ export function LogActions({ lines, defaultName, header }: Props) {
             initial={reduced ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
-            className="text-xs text-emerald-400 truncate"
+            className="text-xs text-emerald-400 truncate inline-flex items-center gap-1"
             title={savedPath}
+            role="status"
+            aria-live="polite"
           >
-            ✓ Saved to {savedPath}
+            <ClipboardCheck size={11} />
+            Saved to {savedPath}
           </motion.span>
         )}
       </AnimatePresence>
