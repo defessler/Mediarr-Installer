@@ -117,9 +117,9 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           type="button"
           onClick={onDismiss}
           className="shrink-0 opacity-60 hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:opacity-100"
-          aria-label="Dismiss"
+          aria-label={`Dismiss "${toast.title}" notification`}
         >
-          <X size={14} />
+          <X size={14} aria-hidden="true" />
         </button>
       </div>
     </motion.div>
