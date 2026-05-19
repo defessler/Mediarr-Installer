@@ -191,7 +191,7 @@ export function DoneScreen() {
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         className="text-center"
       >
-        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-emerald-500/15 border border-emerald-500/30 mb-5">
+        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-emerald-500/15 border border-emerald-500/30 mb-5" aria-hidden="true">
           <AnimatedCheck size={64} className="text-emerald-400" />
         </div>
         <h1 className="text-4xl font-bold tracking-tight">
@@ -251,7 +251,7 @@ export function DoneScreen() {
               {/* Service-specific icon tile — same vocabulary as the
                   Configure screen so users carry the mental model
                   across screens. */}
-              <div className="shrink-0 w-9 h-9 rounded-md bg-slate-900/70 border border-slate-700/60 flex items-center justify-center">
+              <div className="shrink-0 w-9 h-9 rounded-md bg-slate-900/70 border border-slate-700/60 flex items-center justify-center" aria-hidden="true">
                 <ServiceIcon size={18} className={s.iconColor} strokeWidth={1.75} />
               </div>
               <div className="flex-1 min-w-0">
@@ -265,7 +265,14 @@ export function DoneScreen() {
                 </div>
                 <div className="text-xs text-slate-400 font-mono truncate">{url}</div>
               </div>
-              <StatusIcon size={16} className={`shrink-0 ${statusColor}`} strokeWidth={2} />
+              {/* StatusIcon stays VISIBLE (the dot is the at-a-glance
+                  health signal) but it's aria-hidden because we expose
+                  the same info textually in a sr-only span below — keeps
+                  screen readers from voicing both "checkmark" + "ok". */}
+              <StatusIcon size={16} className={`shrink-0 ${statusColor}`} strokeWidth={2} aria-hidden="true" />
+              <span className="sr-only">
+                Status: {h === 'ok' ? 'healthy' : h === 'fail' ? 'not responding' : 'unknown'}
+              </span>
               <ExternalLink size={14} className="text-slate-500 shrink-0" aria-hidden="true" />
             </motion.button>
           )
@@ -278,6 +285,7 @@ export function DoneScreen() {
             <ChevronDown
               size={14}
               className="text-slate-500 transition-transform group-open:rotate-180"
+              aria-hidden="true"
             />
             <FileText size={14} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
             Validation log

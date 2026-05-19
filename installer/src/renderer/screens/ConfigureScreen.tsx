@@ -1122,8 +1122,13 @@ export function ConfigureScreen() {
               Usenet indexers
             </h3>
             <p className="text-sm text-slate-400">
-              AnimeTosho, ABNzb, and Althub are added automatically (no key needed).
-              Toggle others on if you have an account.
+              <strong className="text-slate-300">Free with no signup</strong> —
+              {' '}<code className="text-slate-300">AnimeTosho</code>,
+              {' '}<code className="text-slate-300">NZBKing</code>,
+              {' '}<code className="text-slate-300">Binsearch</code> — added automatically.
+              Free <em>with</em> signup options like ABNzb and Althub need an API key
+              (toggle on + paste the key from the indexer's website). Paid / invite-only
+              indexers are listed too if you already have a subscription.
             </p>
             <div className="grid grid-cols-2 gap-3">
               {USENET_INDEXERS.map((d) => (

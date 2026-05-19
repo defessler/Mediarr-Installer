@@ -386,6 +386,46 @@ export function ConnectScreen() {
                   <div className="text-rose-200/80 text-xs mt-0.5 whitespace-pre-wrap font-mono">
                     {result.error?.message}
                   </div>
+                  {/* Error-kind specific recovery hints. Maps each
+                      ConnectResult.error.kind to a plain-language
+                      "try this" checklist. We're explicitly NOT auto-
+                      retrying — the user should understand why it
+                      failed before clicking Test again, otherwise
+                      they hit the same wall faster. */}
+                  {result.error?.kind && (
+                    <div className="mt-2 pt-2 border-t border-rose-700/40 text-rose-100/90 text-xs">
+                      <div className="font-semibold mb-1">Try this:</div>
+                      <ul className="list-disc pl-4 space-y-0.5 text-rose-200/85">
+                        {result.error.kind === 'auth-failed' && (
+                          <>
+                            <li>Double-check the password — passwords are case-sensitive.</li>
+                            <li>If you use 2-factor on DSM, generate an <em>application password</em> for SSH (Control Panel → User → Advanced).</li>
+                            <li>Make sure the user you typed actually has SSH access. DSM 7 disables <code className="font-mono">root</code> by default — use your admin user instead.</li>
+                          </>
+                        )}
+                        {result.error.kind === 'host-unreachable' && (
+                          <>
+                            <li>Is the host right? Paste your NAS IP (e.g. <code className="font-mono">192.168.1.10</code>), not a website URL.</li>
+                            <li>Is the NAS on the same network as this computer? Try pinging it.</li>
+                            <li>Is SSH enabled? On Synology: Control Panel → Terminal &amp; SNMP → check <em>Enable SSH service</em>.</li>
+                          </>
+                        )}
+                        {result.error.kind === 'timeout' && (
+                          <>
+                            <li>The NAS isn't answering on this port. Default SSH is 22 — try that first.</li>
+                            <li>Firewall? If you have one on the NAS or LAN, allow incoming TCP port {connection.port ?? 22}.</li>
+                            <li>Try connecting from a terminal first: <code className="font-mono">ssh {connection.user ?? 'root'}@{connection.host || '<host>'} -p {connection.port ?? 22}</code></li>
+                          </>
+                        )}
+                        {result.error.kind === 'unknown' && (
+                          <>
+                            <li>Open the install log (footer → Open log) for the full error.</li>
+                            <li>Try the same login from a regular SSH terminal — does that work?</li>
+                          </>
+                        )}
+                      </ul>
+                    </div>
+                  )}
                 </>
               )}
             </div>
