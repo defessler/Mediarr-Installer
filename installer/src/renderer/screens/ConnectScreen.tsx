@@ -310,7 +310,14 @@ export function ConnectScreen() {
                 <>
                   <div className="font-semibold">Connection successful</div>
                   <div className="text-emerald-200/70 text-xs mt-0.5">
-                    Click Continue to open the SSH session.
+                    Logged in as{' '}
+                    <span className="font-mono text-emerald-100">
+                      {connection.user ?? 'root'}@{connection.host}
+                    </span>
+                    {connection.port && connection.port !== 22 && (
+                      <span className="font-mono text-emerald-100">:{connection.port}</span>
+                    )}
+                    {' '}— click Continue to open the SSH session.
                   </div>
                 </>
               ) : (
