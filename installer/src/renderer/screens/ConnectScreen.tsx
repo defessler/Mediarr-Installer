@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   ArrowLeft, ArrowRight, Plug, ShieldCheck, AlertCircle, CheckCircle2,
-  Lock, KeyRound, Users, Shield, AlertTriangle,
+  Lock, KeyRound, Users, Shield, AlertTriangle, RefreshCw,
 } from 'lucide-react'
 import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
@@ -118,7 +118,16 @@ export function ConnectScreen() {
         <h1 className="text-3xl font-bold tracking-tight">
           Connect to your NAS
           {mode === 'update' && (
-            <span className="ml-2 text-base text-sky-400 align-middle font-medium">(update mode)</span>
+            <span className="inline-flex items-center gap-1 ml-3 align-middle text-xs font-semibold uppercase tracking-wider text-sky-300 bg-sky-500/15 border border-sky-500/30 rounded-full px-2 py-0.5">
+              <RefreshCw size={10} strokeWidth={2.5} />
+              Update
+            </span>
+          )}
+          {mode === 'migrate' && (
+            <span className="inline-flex items-center gap-1 ml-3 align-middle text-xs font-semibold uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">
+              <ArrowRight size={10} strokeWidth={2.5} />
+              Migrate
+            </span>
           )}
         </h1>
         <p className="text-slate-400 mt-2 text-base max-w-lg mx-auto">
