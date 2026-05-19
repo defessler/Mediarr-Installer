@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowRightLeft, ArrowLeft, ArrowRight, Download, RefreshCw,
-  CheckCircle2, XCircle, Cloud, Eye, ListChecks,
+  CheckCircle2, XCircle, Cloud, Eye, ListChecks, ChevronDown,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 
@@ -593,26 +593,43 @@ export function MigrateScreen() {
               tabIndex={0}
               className="text-xs font-mono space-y-0.5 max-h-64 overflow-y-auto focus:outline-none"
             >
-              {results.map((r, i) => (
-                <li key={i} className={
-                  r.status === 'ok' ? 'text-emerald-300'
-                  : r.status === 'updated' ? 'text-sky-300'
-                  : 'text-rose-300'
-                }>
-                  {r.status === 'ok' ? '✔' : r.status === 'updated' ? '↻' : '✘'} {r.title}
-                  {r.message && <span className="text-slate-500"> — {r.message}</span>}
-                </li>
-              ))}
+              {results.map((r, i) => {
+                const ResultIcon =
+                  r.status === 'ok' ? CheckCircle2 :
+                  r.status === 'updated' ? RefreshCw :
+                  XCircle
+                return (
+                  <li
+                    key={i}
+                    className={
+                      'inline-flex items-start gap-1.5 w-full ' +
+                      (r.status === 'ok' ? 'text-emerald-300'
+                        : r.status === 'updated' ? 'text-sky-300'
+                        : 'text-rose-300')
+                    }
+                  >
+                    <ResultIcon size={11} className="shrink-0 mt-0.5" />
+                    <span>
+                      {r.title}
+                      {r.message && <span className="text-slate-500"> — {r.message}</span>}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
             {arrScroll.stuck && (
-              <button
+              <motion.button
                 type="button"
                 onClick={arrScroll.jumpToBottom}
-                className="absolute bottom-1 right-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40"
+                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                whileTap={{ scale: 0.97 }}
+                className="absolute bottom-1 right-1 inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 title="Resume following — jump to bottom"
               >
-                Jump to bottom ↓
-              </button>
+                Jump to bottom <ChevronDown size={12} />
+              </motion.button>
             )}
           </div>
         </section>
@@ -850,22 +867,38 @@ export function MigrateScreen() {
                 tabIndex={0}
                 className="text-xs font-mono space-y-0.5 max-h-48 overflow-y-auto focus:outline-none"
               >
-                {qbitResults.map((r, i) => (
-                  <li key={i} className={r.status === 'ok' ? 'text-emerald-300' : 'text-rose-300'}>
-                    {r.status === 'ok' ? '✔' : '✘'} {r.title}
-                    {r.message && <span className="text-slate-500"> — {r.message}</span>}
-                  </li>
-                ))}
+                {qbitResults.map((r, i) => {
+                  const Icon = r.status === 'ok' ? CheckCircle2 : XCircle
+                  return (
+                    <li
+                      key={i}
+                      className={
+                        'inline-flex items-start gap-1.5 w-full ' +
+                        (r.status === 'ok' ? 'text-emerald-300' : 'text-rose-300')
+                      }
+                    >
+                      <Icon size={11} className="shrink-0 mt-0.5" />
+                      <span>
+                        {r.title}
+                        {r.message && <span className="text-slate-500"> — {r.message}</span>}
+                      </span>
+                    </li>
+                  )
+                })}
               </ul>
               {qbitScroll.stuck && (
-                <button
+                <motion.button
                   type="button"
                   onClick={qbitScroll.jumpToBottom}
-                  className="absolute bottom-1 right-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40"
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="absolute bottom-1 right-1 inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                   title="Resume following — jump to bottom"
                 >
-                  Jump to bottom ↓
-                </button>
+                  Jump to bottom <ChevronDown size={12} />
+                </motion.button>
               )}
             </div>
           </div>
