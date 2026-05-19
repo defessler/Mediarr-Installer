@@ -449,7 +449,21 @@ export function ConnectScreen() {
         >
           Back
         </BigButton>
-        <div className="flex-1" />
+        {/* Inline status — replaces a silent disabled-button with a
+            sighted-friendly explanation of WHY the next step isn't
+            possible yet. role=status + aria-live='polite' so screen
+            readers pick up state transitions without preemption. */}
+        <div className="flex-1 text-sm text-center text-slate-400" role="status" aria-live="polite">
+          {busy && !testOk && 'Testing connection…'}
+          {!busy && !connection.host && 'Enter a host above to test'}
+          {!busy && connection.host && !result && !testOk && 'Click Test to verify'}
+          {testOk && (
+            <span className="inline-flex items-center gap-1.5 text-emerald-300">
+              <CheckCircle2 size={14} aria-hidden="true" />
+              Connection works — click Continue
+            </span>
+          )}
+        </div>
         <BigButton
           size="md"
           variant={testOk ? 'secondary' : 'primary'}
