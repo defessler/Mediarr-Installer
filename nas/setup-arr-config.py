@@ -1845,26 +1845,44 @@ def configure_qbittorrent(base, username, password, env=None):
     # stop after either 2× upload ratio OR 10 days seeded (qBit takes
     # whichever fires first). Idempotent: skips when the values already
     # match what we'd set, so a power-user who tuned them stays untouched.
+    #
+    # Also pin the Auto Torrent Management Mode (TMM) settings off. Why:
+    # since qBit 4.4 the defaults flip `auto_tmm_enabled` AND the three
+    # `*_changed_tmm_enabled` triggers on for new installs. Sonarr /
+    # Radarr / Lidarr's TestCategory() validator rejects a download client
+    # with a category set when `save_path_changed_tmm_enabled` is true —
+    # it returns HTTP 400 with "Lidarr will be unable to perform Completed
+    # Download Handling as configured. You can fix this in qBittorrent
+    # ('Tools -> Options...')". That aborts setup-arr-config.py mid-Step-7.
+    # Keeping TMM off means qBit obeys the save_path that the arr
+    # dictates when registering a download, and the arr's Completed
+    # Download Handling does the post-import file moves itself. This is
+    # the recommended Sonarr/Radarr/Lidarr setup per their docs.
     desired = {
-        'max_ratio_enabled':         True,
-        'max_ratio':                 2.0,
-        'max_ratio_act':             1,        # 1 = pause (vs 0 = nothing)
-        'max_seeding_time_enabled':  True,
-        'max_seeding_time':          14400,    # minutes = 10 days
+        'max_ratio_enabled':             True,
+        'max_ratio':                     2.0,
+        'max_ratio_act':                 1,        # 1 = pause (vs 0 = nothing)
+        'max_seeding_time_enabled':      True,
+        'max_seeding_time':              14400,    # minutes = 10 days
+        # Arr-compatibility (Completed Download Handling):
+        'auto_tmm_enabled':              False,
+        'torrent_changed_tmm_enabled':   False,
+        'save_path_changed_tmm_enabled': False,
+        'category_changed_tmm_enabled':  False,
     }
     matches = all(prefs.get(k) == v for k, v in desired.items())
     if matches:
-        skip("Seeding limits (already at 2.0 ratio / 10 days)")
+        skip("Seeding limits + TMM defaults (already arr-compatible)")
         AUTOMATED['qbit_prefs'] = True
     else:
         try:
             prefs_json = json.dumps(desired)
             set_data = urlencode({'json': prefs_json}).encode()
             opener.open(f"{base}/api/v2/app/setPreferences", set_data, timeout=10)
-            ok("Seeding limits: ratio 2.0 OR 10 days → pause torrent")
+            ok("Seeding limits + Auto-TMM off (compatible with Sonarr/Radarr/Lidarr Completed Download Handling)")
             AUTOMATED['qbit_prefs'] = True
         except Exception as e:
-            warn(f"qBittorrent: couldn't set seeding defaults ({e}) — set manually in Settings → BitTorrent")
+            warn(f"qBittorrent: couldn't set seeding/TMM defaults ({e}) — set manually in Settings → BitTorrent + Settings → Downloads (Auto TMM off)")
 
 # ── Bazarr ────────────────────────────────────────────────────────────────────
 
@@ -2838,6 +2856,26 @@ def main():
         section("Tautulli")
         print(f"  {DIM}⏭  ENABLE_PLEX=false — Tautulli not deployed.{RESET}")
 
+    # ── qBittorrent ───────────────────────────────────────────────────────────
+    #
+    # Runs BEFORE the arrs configure their qBittorrent download clients.
+    # The arrs' TestCategory() validator reads qBit's live preferences when
+    # we POST /api/v3/downloadclient and rejects the request with HTTP 400
+    # if `save_path_changed_tmm_enabled` is true (the qBit 4.4+ default).
+    # Pinning Auto-TMM off + the three *_changed_tmm flags off here means
+    # Sonarr/Radarr/Lidarr all see arr-compatible prefs by the time they
+    # add their own qBit client further down. Idempotent so a re-run of
+    # this script on an existing install just confirms the values.
+
+    if is_enabled(env, 'ENABLE_QBITTORRENT'):
+        # Pass env in so the gluetun-aware restart path can see
+        # VPN_ENABLED + INSTALL_DIR (read from .env, not the process
+        # environment — setup.sh doesn't export them).
+        configure_qbittorrent(QBIT, QB_USER, QB_PASS, env=env)
+    else:
+        section("qBittorrent")
+        print(f"  {DIM}⏭  ENABLE_QBITTORRENT=false — skipping.{RESET}")
+
     # ── Sonarr ────────────────────────────────────────────────────────────────
 
     section("Sonarr")
@@ -3031,16 +3069,13 @@ def main():
         if ARR_USER and ARR_PASS:
             configure_auth(PROWLARR, PROWLARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 
-    # ── qBittorrent ───────────────────────────────────────────────────────────
-
-    if is_enabled(env, 'ENABLE_QBITTORRENT'):
-        # Pass env in so the gluetun-aware restart path can see
-        # VPN_ENABLED + INSTALL_DIR (read from .env, not the process
-        # environment — setup.sh doesn't export them).
-        configure_qbittorrent(QBIT, QB_USER, QB_PASS, env=env)
-    else:
-        section("qBittorrent")
-        print(f"  {DIM}⏭  ENABLE_QBITTORRENT=false — skipping.{RESET}")
+    # qBittorrent is now configured BEFORE the arrs (see block right
+    # after Tautulli) so its prefs are arr-compatible by the time each
+    # arr POSTs its download client. The block here used to live at the
+    # tail of main(); the move was required by Sonarr/Radarr/Lidarr's
+    # TestCategory() validator, which reads qBit's live prefs at client-
+    # add time and rejects the POST with HTTP 400 when Auto-TMM (or any
+    # *_changed_tmm trigger) is on. See configure_qbittorrent() comment.
 
     # ── Bazarr ────────────────────────────────────────────────────────────────
 

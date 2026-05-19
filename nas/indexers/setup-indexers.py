@@ -98,17 +98,31 @@ PUBLIC_TORRENT_INDEXERS = [
 
 # Newznab-compatible usenet indexers.
 # env_key_name=None → free, added regardless; uses key if present for higher limits.
+#
+# Tiered roughly best-anime / best-anime-with-signup / general-paid so a
+# user reading the file top-to-bottom sees the "no setup needed" entries
+# first. See nas/INDEXERS.md for the full rationale + coverage matrix.
 USENET_INDEXERS = [
-    # ── Free (no account required, or optional key for higher limits) ─────────
+    # ── Free, no account ─────────────────────────────────────────────────────
+    # These all add anonymously — no signup, no API key needed. Prowlarr
+    # treats them as generic Newznab feeds against the public URLs.
+    # Coverage is broad-but-shallow vs. paid indexers; the wizard's
+    # default mix relies on these for unattended installs.
     ("AnimeTosho",     "https://feed.animetosho.org",      None,                    "ANIMETOSHO_API_KEY"),
-    # ── Optional-key (free to register but still require an API key) ─────────
+    # NZBKing — public general index. Newznab API at /nzbking.com is
+    # surfaced by Prowlarr's built-in indexer entry. Best free fallback
+    # for anything AnimeTosho doesn't carry.
+    ("NZBKing",        "https://www.nzbking.com",          None,                    None),
+    # Binsearch — public, scrapes binary articles directly. Useful for
+    # older content + when a release vanished from the indexer DBs.
+    ("Binsearch",      "https://binsearch.info",           None,                    None),
+    # ── Free with free signup (requires API key) ─────────────────────────────
     # ABNzb and Althub historically allowed RSS-only access without a
     # key, but their current backends reject add-attempts without
-    # `Indexer requires an API key`. Treat them like any other Newznab
-    # indexer that needs creds — skip cleanly when the key isn't set.
+    # `Indexer requires an API key`. Skip silently if the key is blank.
     ("ABNzb",          "https://abnzb.com",                "ABNZB_API_KEY",         None),
     ("Althub",         "https://www.althub.co.za",         "ALTHUB_API_KEY",        None),
-    # ── Account required ──────────────────────────────────────────────────────
+    # ── Paid account required ────────────────────────────────────────────────
     ("NZBGeek",        "https://api.nzbgeek.info",         "NZBGEEK_API_KEY",       None),
     ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY",     None),
     ("DrunkenSlug",    "https://api.drunkenslug.com",      "DRUNKENSLUG_API_KEY",   None),

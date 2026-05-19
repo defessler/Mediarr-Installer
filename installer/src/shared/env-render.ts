@@ -113,6 +113,16 @@ export interface EnvFormValues {
 
   // ── Usenet indexers (paste API key to enable)
   ANIMETOSHO_API_KEY?: string
+  // Free, public, no-signup indexers — added automatically. These
+  // env keys are placeholders only (no fields collected), kept here
+  // so the IndexerDef type-check against keyof EnvFormValues passes
+  // and the Configure-screen card renders for documentation.
+  NZBKING_NO_KEY?: string
+  BINSEARCH_NO_KEY?: string
+  // Free-with-signup indexers — API key collected, sent to .env.
+  ABNZB_API_KEY?: string
+  ALTHUB_API_KEY?: string
+  // Paid indexers
   NZBGEEK_API_KEY?: string
   NZBFINDER_API_KEY?: string
   DRUNKENSLUG_API_KEY?: string
@@ -303,6 +313,8 @@ export function renderEnv(v: EnvFormValues): string {
     '',
     '# Usenet indexers',
     line('ANIMETOSHO_API_KEY', v.ANIMETOSHO_API_KEY),
+    line('ABNZB_API_KEY', v.ABNZB_API_KEY),
+    line('ALTHUB_API_KEY', v.ALTHUB_API_KEY),
     line('NZBGEEK_API_KEY', v.NZBGEEK_API_KEY),
     line('NZBFINDER_API_KEY', v.NZBFINDER_API_KEY),
     line('DRUNKENSLUG_API_KEY', v.DRUNKENSLUG_API_KEY),
@@ -403,8 +415,44 @@ export const USENET_INDEXERS: IndexerDef[] = [
   },
   {
     id: 'ANIMETOSHO_API_KEY', name: 'AnimeTosho (optional key)',
-    href: 'https://animetosho.org', note: 'Free without a key; key only raises rate limits.',
+    href: 'https://animetosho.org',
+    note: 'Best free anime indexer. Added automatically; key only raises rate limits.',
     fields: [{ key: 'ANIMETOSHO_API_KEY', label: 'API key (optional)' }],
+    category: 'usenet-free',
+  },
+  // Truly anonymous free indexers — no account needed at all. Added
+  // automatically by setup-indexers.py; the card exists here so the
+  // Configure screen explains what they are, since they show up in
+  // Prowlarr after install. No credentials to collect.
+  {
+    id: 'NZBKING_NO_KEY', name: 'NZBKing (no signup)',
+    href: 'https://nzbking.com',
+    note: 'Free, public, no account. Added automatically — broad general usenet coverage.',
+    fields: [],
+    category: 'usenet-free',
+  },
+  {
+    id: 'BINSEARCH_NO_KEY', name: 'Binsearch (no signup)',
+    href: 'https://binsearch.info',
+    note: 'Free, public, no account. Added automatically — fallback for older articles.',
+    fields: [],
+    category: 'usenet-free',
+  },
+  // Free-with-free-account tier. These need a signup at the indexer's
+  // site to get an API key. The wizard collects the key here; if it's
+  // blank, setup-indexers.py skips them silently.
+  {
+    id: 'ABNZB_API_KEY', name: 'ABNzb (free with signup)',
+    href: 'https://abnzb.com',
+    note: 'Free signup → API key. ~50–100 daily calls — fine for casual use.',
+    fields: [{ key: 'ABNZB_API_KEY', label: 'API key' }],
+    category: 'usenet-free',
+  },
+  {
+    id: 'ALTHUB_API_KEY', name: 'Althub (free with signup)',
+    href: 'https://althub.co.za',
+    note: 'Free signup → API key. South-African-hosted, similar to ABNzb.',
+    fields: [{ key: 'ALTHUB_API_KEY', label: 'API key' }],
     category: 'usenet-free',
   },
 ]

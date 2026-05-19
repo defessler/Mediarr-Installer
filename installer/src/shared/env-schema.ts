@@ -117,6 +117,8 @@ export const envSchema = z.object({
 
   // Indexers (all optional — leave blank to skip)
   ANIMETOSHO_API_KEY: optStr,
+  ABNZB_API_KEY: optStr,
+  ALTHUB_API_KEY: optStr,
   NZBGEEK_API_KEY: optStr,
   NZBFINDER_API_KEY: optStr,
   DRUNKENSLUG_API_KEY: optStr,
