@@ -137,16 +137,19 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
         </div>
 
         <div className="space-y-1">
-          <label className="block text-sm font-semibold flex items-center gap-1.5">
+          <label className="block text-sm font-semibold flex items-center gap-1.5" htmlFor="export-pass">
             <Lock size={13} className="text-emerald-400" />
             Passphrase
           </label>
           <PasswordInput
+            id="export-pass"
             autoFocus
             value={pass}
             onChange={(e) => setPass(e.target.value)}
             className="text-sm py-2"
             placeholder="At least 12 characters; mix letters, numbers, symbols"
+            aria-required="true"
+            aria-describedby="passphrase-strength"
           />
           <div className="flex items-center gap-2 mt-1.5">
             <div className="flex-1 h-1.5 bg-slate-800 rounded overflow-hidden flex gap-0.5">
@@ -159,25 +162,33 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
                 />
               ))}
             </div>
-            <span className={`text-xs tabular-nums font-medium ${
-              score >= 3 ? 'text-emerald-400'
-              : score === 2 ? 'text-yellow-300'
-              : score === 1 ? 'text-amber-300'
-              : pass ? 'text-rose-400' : 'text-slate-600'
-            }`}>
+            <span
+              id="passphrase-strength"
+              role="status"
+              aria-live="polite"
+              className={`text-xs tabular-nums font-medium ${
+                score >= 3 ? 'text-emerald-400'
+                : score === 2 ? 'text-yellow-300'
+                : score === 1 ? 'text-amber-300'
+                : pass ? 'text-rose-400' : 'text-slate-600'
+              }`}
+            >
               {pass ? STRENGTH_LABELS[score] : '—'}
             </span>
           </div>
         </div>
 
         <div className="space-y-1">
-          <label className="block text-sm font-semibold">Confirm passphrase</label>
+          <label className="block text-sm font-semibold" htmlFor="export-confirm">Confirm passphrase</label>
           <PasswordInput
+            id="export-confirm"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') doExport() }}
             className="text-sm py-2"
             placeholder="Re-type to confirm (Enter to export)"
+            aria-required="true"
+            aria-invalid={confirm.length > 0 && confirm !== pass ? true : undefined}
           />
           {confirm && !confirmsMatch && (
             <motion.p
