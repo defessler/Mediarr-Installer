@@ -853,15 +853,21 @@ export function ConfigureScreen() {
           </label>
 
           {usersError && (
-            <div className="text-xs text-rose-300">
-              Couldn&apos;t read users from the NAS: {usersError}
+            <div
+              className="text-xs text-rose-300 inline-flex items-start gap-1.5"
+              role="alert"
+            >
+              <XCircle size={11} className="text-rose-400 shrink-0 mt-0.5" />
+              <span>Couldn&apos;t read users from the NAS: {usersError}</span>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">User</label>
+              <label className="block text-xs text-slate-400 mb-1" htmlFor="cfg-container-user">User</label>
               <select
+                id="cfg-container-user"
+                aria-label="Container user (owns media files)"
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 value={config.PUID ?? ''}
                 onChange={(e) => selectContainerUser(e.target.value)}
@@ -882,8 +888,10 @@ export function ConfigureScreen() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Group</label>
+              <label className="block text-xs text-slate-400 mb-1" htmlFor="cfg-container-group">Group</label>
               <select
+                id="cfg-container-group"
+                aria-label="Container group (owns media files)"
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
                 value={config.PGID ?? ''}
                 onChange={(e) => selectContainerGroup(e.target.value)}
