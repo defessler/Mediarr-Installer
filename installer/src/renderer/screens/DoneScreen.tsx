@@ -4,6 +4,9 @@ import confetti from 'canvas-confetti'
 import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
   FileText, ChevronDown,
+  LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
+  Newspaper, Download, MessageSquare, BarChart3, Shield,
+  type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel, stripAnsi } from '../components/LogPanel.js'
@@ -13,19 +16,30 @@ import { BigButton } from '../components/BigButton.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
 
-const SERVICES: { name: string; port: string; note?: string }[] = [
-  { name: 'Homepage',    port: '3000',  note: 'Start here' },
-  { name: 'Plex',        port: '32400/web' },
-  { name: 'Sonarr',      port: '49152' },
-  { name: 'Radarr',      port: '49151' },
-  { name: 'Lidarr',      port: '49154' },
-  { name: 'Prowlarr',    port: '49150' },
-  { name: 'Bazarr',      port: '49153' },
-  { name: 'SABnzbd',     port: '49155' },
-  { name: 'qBittorrent', port: '49156' },
-  { name: 'Seerr',       port: '5056' },
-  { name: 'Tautulli',    port: '8181' },
-  { name: 'Flaresolverr', port: '8191' },
+// Per-service glyph + accent. Same vocabulary the Configure screen uses
+// for the Services checklist, so a user who learned "Sonarr is the sky-
+// blue TV icon" on Configure recognises it again here. Two new entries
+// for things that don't appear on Configure (Prowlarr always-on, Seerr
+// derived from Plex stack, Tautulli derived, Flaresolverr always-on).
+const SERVICES: {
+  name: string
+  port: string
+  note?: string
+  icon: LucideIcon
+  iconColor: string
+}[] = [
+  { name: 'Homepage',     port: '3000',      note: 'Start here', icon: LayoutDashboard, iconColor: 'text-teal-400' },
+  { name: 'Plex',         port: '32400/web',                     icon: PlaySquare,      iconColor: 'text-amber-400' },
+  { name: 'Sonarr',       port: '49152',                         icon: Tv,              iconColor: 'text-sky-400' },
+  { name: 'Radarr',       port: '49151',                         icon: Film,            iconColor: 'text-yellow-400' },
+  { name: 'Lidarr',       port: '49154',                         icon: Music,           iconColor: 'text-fuchsia-400' },
+  { name: 'Prowlarr',     port: '49150',                         icon: Radar,           iconColor: 'text-indigo-400' },
+  { name: 'Bazarr',       port: '49153',                         icon: Captions,        iconColor: 'text-violet-400' },
+  { name: 'SABnzbd',      port: '49155',                         icon: Newspaper,       iconColor: 'text-orange-400' },
+  { name: 'qBittorrent',  port: '49156',                         icon: Download,        iconColor: 'text-blue-400' },
+  { name: 'Seerr',        port: '5056',                          icon: MessageSquare,   iconColor: 'text-purple-400' },
+  { name: 'Tautulli',     port: '8181',                          icon: BarChart3,       iconColor: 'text-cyan-400' },
+  { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'fail'
@@ -208,8 +222,8 @@ export function DoneScreen() {
         {SERVICES.map((s, i) => {
           const url = `http://${ip}:${s.port}`
           const h = health[s.name] ?? 'unknown'
-          const Icon = h === 'ok' ? CheckCircle2 : h === 'fail' ? XCircle : Circle
-          const iconColor =
+          const StatusIcon = h === 'ok' ? CheckCircle2 : h === 'fail' ? XCircle : Circle
+          const statusColor =
             h === 'ok' ? 'text-emerald-400'
             : h === 'fail' ? 'text-rose-400'
             : 'text-slate-600'
@@ -217,6 +231,7 @@ export function DoneScreen() {
             h === 'ok' ? 'hover:border-emerald-600/40 hover:bg-emerald-950/20'
             : h === 'fail' ? 'hover:border-rose-600/40 hover:bg-rose-950/20'
             : 'hover:border-slate-600 hover:bg-slate-800/70'
+          const ServiceIcon = s.icon
           return (
             <motion.button
               key={s.name}
@@ -229,10 +244,16 @@ export function DoneScreen() {
               whileTap={reduced ? {} : { scale: 0.985 }}
               className={
                 `text-left p-3 bg-slate-800/40 rounded-lg border border-slate-700 ` +
-                `flex items-center gap-3 transition-colors ${ringColor}`
+                `flex items-center gap-3 transition-colors focus:outline-none ` +
+                `focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${ringColor}`
               }
             >
-              <Icon size={20} className={`shrink-0 ${iconColor}`} strokeWidth={2} />
+              {/* Service-specific icon tile — same vocabulary as the
+                  Configure screen so users carry the mental model
+                  across screens. */}
+              <div className="shrink-0 w-9 h-9 rounded-md bg-slate-900/70 border border-slate-700/60 flex items-center justify-center">
+                <ServiceIcon size={18} className={s.iconColor} strokeWidth={1.75} />
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold truncate text-base flex items-center gap-2">
                   {s.name}
@@ -244,6 +265,7 @@ export function DoneScreen() {
                 </div>
                 <div className="text-xs text-slate-400 font-mono truncate">{url}</div>
               </div>
+              <StatusIcon size={16} className={`shrink-0 ${statusColor}`} strokeWidth={2} />
               <ExternalLink size={14} className="text-slate-500 shrink-0" />
             </motion.button>
           )
