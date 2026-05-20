@@ -182,7 +182,7 @@ function ServicesSection({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+      <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
         <Boxes size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
         Services
         <span className="text-xs font-normal text-slate-500">
@@ -311,7 +311,7 @@ function TrashProfilesSection({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+      <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
         <Award size={20} className="text-amber-400" strokeWidth={1.75} aria-hidden="true" />
         TRaSH Guide profiles
         <span className="text-xs font-normal text-slate-500">
@@ -520,7 +520,7 @@ function VpnSection({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+      <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
         <Shield size={20} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
         VPN
       </h2>
@@ -802,12 +802,12 @@ export function ConfigureScreen() {
     <ConfigCtx.Provider value={{ config, update }}>
     <div className="h-full flex flex-col">
     <div className="flex-1 min-h-0 overflow-y-auto">
-    <div className="max-w-3xl mx-auto px-8 py-10 space-y-8">
+    <div className="max-w-3xl mx-auto px-8 py-10 space-y-12">
       <ConfigureHeader />
 
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
           <HardDrive size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
           Install location
         </h2>
@@ -851,7 +851,7 @@ export function ConfigureScreen() {
       <TrashProfilesSection config={config} update={update} />
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
           <UserCircle size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
           Identity
         </h2>
@@ -967,7 +967,7 @@ export function ConfigureScreen() {
       )}
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+        <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
           <KeyRound size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
           Arr Web UI auth
         </h2>
@@ -985,7 +985,7 @@ export function ConfigureScreen() {
           in the stack — same reasoning as the VPN section above. */}
       {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
         <section className="space-y-4">
-          <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
             <Lock size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
             qBittorrent WebUI
           </h2>
@@ -1074,7 +1074,7 @@ export function ConfigureScreen() {
           those affect the install flow itself, not just post-install
           niceties. */}
       <details className="space-y-2">
-        <summary className="cursor-pointer text-lg font-medium border-b border-slate-800 pb-2 hover:text-emerald-300 select-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+        <summary className="cursor-pointer text-xl font-semibold border-b-2 border-slate-800 pb-2 hover:text-emerald-300 select-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
           <Wrench size={20} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
           Advanced
           <span className="text-xs font-normal text-slate-500 ml-2">
