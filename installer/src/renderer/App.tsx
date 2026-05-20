@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
-  Check, Loader2, FlaskConical, Users, Server,
+  Check, Loader2, FlaskConical, Users, Server, RefreshCw,
 } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
@@ -61,6 +61,65 @@ export function App() {
   // a specific screen.
   const [helpOpen, setHelpOpen] = useState(false)
   const targetDir = useWizard((s) => s.targetDir)
+
+  // Manual "Check for updates" button state. The automatic check fires
+  // on app launch (main/index.ts), but a manual recheck is useful when
+  // a user knows we just shipped something and wants to grab it without
+  // restarting the wizard. We track three transient post-click states
+  // so the button text reflects what happened:
+  //   - 'idle'      → "Check for updates"
+  //   - 'checking'  → "Checking…" (spinner)
+  //   - 'up-to-date'→ "Up to date" (sticky 4s, then back to idle)
+  //   - 'error'     → "Check failed" (sticky 4s, then back to idle)
+  // The 'available' / 'downloading' / 'downloaded' states are NOT shown
+  // on this button — they surface in the WhatsNew banner instead, which
+  // owns the actual download + install UI.
+  type CheckState = 'idle' | 'checking' | 'up-to-date' | 'error'
+  const [checkState, setCheckState] = useState<CheckState>('idle')
+
+  // Subscribe to the updater event stream so the button reacts to the
+  // outcome of `updater.check()` calls (both ours and the auto-check at
+  // startup). The CheckState transitions are derived from the
+  // electron-updater event sequence:
+  //   click → 'checking' (immediate UI feedback)
+  //   ↓
+  //   'checking-for-update' (no-op, we already showed it)
+  //   ↓
+  //   'update-not-available'    → 'up-to-date'
+  //   'update-available'        → 'idle' (banner takes over)
+  //   'error'                   → 'error'
+  useEffect(() => {
+    const off = window.installer.updater?.onState?.((s) => {
+      if (s.kind === 'not-available') {
+        setCheckState('up-to-date')
+        setTimeout(() => setCheckState((c) => (c === 'up-to-date' ? 'idle' : c)), 4000)
+      } else if (s.kind === 'available' || s.kind === 'downloading' || s.kind === 'downloaded') {
+        setCheckState('idle')
+      } else if (s.kind === 'error') {
+        setCheckState('error')
+        setTimeout(() => setCheckState((c) => (c === 'error' ? 'idle' : c)), 4000)
+      }
+    })
+    return () => { off?.() }
+  }, [])
+
+  async function checkForUpdates() {
+    if (checkState === 'checking') return
+    setCheckState('checking')
+    try {
+      await window.installer.updater?.check()
+      // The 'not-available' / 'available' / 'error' event handler above
+      // takes over from here. If `updater` is undefined (dev/mock), the
+      // optional-chain short-circuits and we just go back to idle.
+      if (!window.installer.updater) {
+        setCheckState('idle')
+      }
+    } catch (e) {
+      reportError('Check for updates', e)
+      setCheckState('error')
+      setTimeout(() => setCheckState((c) => (c === 'error' ? 'idle' : c)), 4000)
+    }
+  }
 
   // On launch, the persist middleware restores {step, mode,
   // activeProfileId, activeProfileLabel}, but the connection / config /
@@ -441,6 +500,41 @@ export function App() {
                 <ArrowUpCircle size={11} aria-hidden="true" />
                 v{info.updateAvailable.latest} available
               </a>
+            )}
+            {/* Manual recheck. The startup auto-check still runs in
+                main/index.ts; this exists so a user who knows a fix
+                just landed can grab it without restarting the wizard.
+                Hidden when an update is already advertised (the pill
+                above is the real CTA in that case). */}
+            {!info.updateAvailable && (
+              <button
+                type="button"
+                onClick={checkForUpdates}
+                disabled={checkState === 'checking'}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-800 hover:text-slate-200 disabled:opacity-60 disabled:cursor-default transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+                title={
+                  checkState === 'up-to-date'
+                    ? 'You are running the latest published release.'
+                    : checkState === 'error'
+                      ? 'Something went wrong contacting GitHub. Click to retry.'
+                      : 'Ask GitHub if there is a newer release. Auto-runs on launch too.'
+                }
+              >
+                {checkState === 'checking' ? (
+                  <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+                ) : checkState === 'up-to-date' ? (
+                  <Check size={11} className="text-emerald-400" aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={11} aria-hidden="true" />
+                )}
+                {checkState === 'checking'
+                  ? 'Checking…'
+                  : checkState === 'up-to-date'
+                    ? 'Up to date'
+                    : checkState === 'error'
+                      ? 'Check failed'
+                      : 'Check for updates'}
+              </button>
             )}
           </div>
           <div className="flex items-center gap-2">
