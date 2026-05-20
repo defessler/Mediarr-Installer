@@ -69,11 +69,13 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: shellcheck nas/*.sh
+      - name: shellcheck nas/scripts/*.sh + nas/migration/*.sh
         # SC2086 (unquoted vars) and SC2155 (declare+assign on same line)
         # are intentional in many places; suppress them stack-wide so
-        # the real issues stand out.
-        run: shellcheck -e SC2086,SC2155 nas/*.sh nas/migration/*.sh
+        # the real issues stand out. Glob updated: shell scripts moved
+        # under nas/scripts/ in v0.3.22; the old `nas/*.sh` glob silently
+        # matched nothing for a couple of releases.
+        run: shellcheck -e SC2086,SC2155 nas/scripts/*.sh nas/migration/*.sh
 
       - uses: actions/setup-python@v5
         with:

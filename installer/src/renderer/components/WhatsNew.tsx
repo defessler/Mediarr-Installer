@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Sparkles, Download, ExternalLink, ChevronDown, FileText, RefreshCw } from 'lucide-react'
+import { Sparkles, Download, ExternalLink, ChevronDown, FileText, RefreshCw, X } from 'lucide-react'
 import type { AppInfo, UpdaterState } from '../../shared/ipc.js'
 import { useErrors, reportError } from '../store/errors.js'
 import { BigButton } from './BigButton.js'
@@ -145,7 +145,7 @@ function renderNotes(md: string): React.ReactNode {
 }
 
 export function WhatsNew({ info, onChanged }: Props) {
-  const [busy, setBusy] = useState<'download' | 'skip' | 'install' | null>(null)
+  const [busy, setBusy] = useState<'download' | 'skip' | 'install' | 'cancel' | null>(null)
   const reduced = useReducedMotion()
   // Live updater state, subscribed from the main process. Drives whether
   // we show "Install update" (in-place), a progress bar, or the legacy
@@ -246,6 +246,22 @@ export function WhatsNew({ info, onChanged }: Props) {
     }
   }
 
+  async function cancelDownload() {
+    setBusy('cancel')
+    try {
+      await window.installer.updater?.cancel()
+      // The state transition back to 'available' lands via the onState
+      // subscription. Local busy flag clears the moment the IPC returns
+      // — the abort signal fires immediately, the cleanup branch in
+      // main writes the new state, the renderer's setUpdater picks it
+      // up, mode flips to 'download' and the Install button reappears.
+    } catch (e) {
+      reportError('Cancel download', e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-emerald-700/40 bg-gradient-to-b from-emerald-950/30 to-slate-900/30 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -301,6 +317,19 @@ export function WhatsNew({ info, onChanged }: Props) {
               title="Download the update in the background; you'll get a restart prompt when it's ready"
             >
               Install update
+            </BigButton>
+          )}
+          {mode === 'progress' && (
+            <BigButton
+              size="sm"
+              variant="ghost"
+              icon={busy === 'cancel' ? undefined : <X size={14} aria-hidden="true" />}
+              onClick={cancelDownload}
+              disabled={busy !== null}
+              loading={busy === 'cancel'}
+              title="Stop downloading; keep your current version"
+            >
+              {busy === 'cancel' ? 'Cancelling…' : 'Cancel'}
             </BigButton>
           )}
           {mode === 'fallback' && u?.zipUrl && (

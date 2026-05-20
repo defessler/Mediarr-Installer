@@ -155,6 +155,10 @@ const installer = {
     check:    (): Promise<void> => ipcRenderer.invoke('updater:check'),
     download: (): Promise<void> => ipcRenderer.invoke('updater:download'),
     install:  (): Promise<void> => ipcRenderer.invoke('updater:install'),
+    /** Abort the in-flight download. No-op if nothing is downloading.
+     *  The state transition back to 'available' lands via the same
+     *  onState subscription the renderer is already on. */
+    cancel:   (): Promise<void> => ipcRenderer.invoke('updater:cancel'),
     onState:  (cb: (s: import('../shared/ipc.js').UpdaterState) => void) => {
       const handler = (_e: unknown, payload: import('../shared/ipc.js').UpdaterState) => cb(payload)
       ipcRenderer.on('updater:state', handler)

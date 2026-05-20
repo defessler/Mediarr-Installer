@@ -91,6 +91,11 @@ let pendingUpdate: PendingUpdate | null = null
 let installInProgress = false
 let intervalHandle: NodeJS.Timeout | null = null
 let startupTimeoutHandle: NodeJS.Timeout | null = null
+/** AbortController for the in-flight download. Non-null only while
+ *  downloadUpdate() is between fetch() start and pipeline() end. The
+ *  user's "Cancel" button calls cancelDownload(), which signals abort
+ *  and triggers the cleanup branch in downloadUpdate(). */
+let currentDownloadAbort: AbortController | null = null
 
 export function getUpdateState(): UpdaterState {
   return lastState
@@ -250,11 +255,13 @@ async function downloadUpdate(): Promise<void> {
   const stagingDir = join(tmpRoot, 'staging')
 
   // ── Download ─────────────────────────────────────────────────────
+  currentDownloadAbort = new AbortController()
   try {
     log.info(`updater: downloading ${update.downloadUrl}`)
     const res = await fetch(update.downloadUrl, {
       headers: { 'User-Agent': UA, Accept: 'application/octet-stream' },
       redirect: 'follow',
+      signal: currentDownloadAbort.signal,
     })
     if (!res.ok || !res.body) {
       throw new Error(`Download failed: HTTP ${res.status}`)
@@ -299,10 +306,37 @@ async function downloadUpdate(): Promise<void> {
       total: total || received,
     })
   } catch (e) {
-    const msg = (e as Error).message ?? String(e)
+    // AbortError = user cancelled. Don't broadcast 'error' (that would
+    // pin a red banner in the WhatsNew section and require an
+    // explicit dismissal); reset to 'available' so the user can hit
+    // Install again later. fetch() + pipeline() both surface aborts
+    // as e.name === 'AbortError', but Node 20's undici throws errors
+    // whose `name` is 'AbortError' OR whose `code` is 'ABORT_ERR'
+    // depending on whether the abort lands in fetch vs the pipeline
+    // (the writable stream is the latter). Accept either signal.
+    const err = e as Error & { code?: string }
+    const aborted = err.name === 'AbortError' || err.code === 'ABORT_ERR'
+    if (aborted) {
+      log.info('updater: download cancelled by user')
+      // Wipe the partial zip + any prior extraction so retrying gets a
+      // clean slate. We catch+swallow because a half-written file may
+      // still be locked by the OS for a few ms after the pipeline
+      // errors out — best-effort cleanup is fine, %TEMP% gets reaped.
+      try { rmSync(tmpRoot, { recursive: true, force: true }) }
+      catch (cleanupErr) { log.warn('updater: cleanup after cancel failed (non-fatal):', cleanupErr) }
+      broadcast({
+        kind: 'available',
+        version: update.version,
+        releaseNotes: update.releaseNotes,
+      })
+      return
+    }
+    const msg = err.message ?? String(err)
     log.error('updater: download failed:', msg)
     broadcast({ kind: 'error', message: `Download failed: ${msg}` })
     return
+  } finally {
+    currentDownloadAbort = null
   }
 
   // ── Extract ──────────────────────────────────────────────────────
@@ -338,6 +372,19 @@ async function downloadUpdate(): Promise<void> {
     version: update.version,
     releaseNotes: update.releaseNotes,
   })
+}
+
+/** Abort the in-flight download (if any). Safe to call when no
+ *  download is running — it's just a no-op. The actual cleanup
+ *  (partial zip removal + state reset to `available`) happens inside
+ *  downloadUpdate's catch block when the abort lands. */
+function cancelDownload(): void {
+  if (currentDownloadAbort) {
+    log.info('updater: cancel requested')
+    currentDownloadAbort.abort()
+  } else {
+    log.info('updater: cancel requested but no download in flight')
+  }
 }
 
 /** Phase 2: write a hidden swap helper that waits for our PID + exe
@@ -528,6 +575,7 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
   ipcMain.handle('updater:check',    async () => { await checkForUpdates({ silent: false }) })
   ipcMain.handle('updater:download', async () => { await downloadUpdate() })
   ipcMain.handle('updater:install',  async () => { await installUpdate() })
+  ipcMain.handle('updater:cancel',   () => { cancelDownload() })
 
   // Stagger the initial check so app launch stays snappy — the
   // wizard's Welcome screen renders before we hit GitHub.
