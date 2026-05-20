@@ -71,11 +71,46 @@ STAMP_FILE = '/recyclarr-config/.last-sync'
 
 # Install dir mounted writable at /install-dir so we can update .env
 # and re-run setup-arr-config.py --recyclarr-only when the user picks
-# a different profile. Path constants live here so a future remount
-# rename touches one spot.
-INSTALL_DIR    = '/install-dir'
-ENV_FILE       = f'{INSTALL_DIR}/.env'
-SETUP_SCRIPT   = f'{INSTALL_DIR}/setup-arr-config.py'
+# a different profile.
+#
+# v0.3.22 moved setup-arr-config.py under scripts/; v0.3.23 also moved
+# .env into scripts/. Resolve both paths at runtime so we keep working
+# under all three historical layouts:
+#   - v0.3.23+: /install-dir/scripts/.env + /install-dir/scripts/setup-arr-config.py
+#   - v0.3.22:  /install-dir/.env + /install-dir/scripts/setup-arr-config.py
+#   - legacy:   /install-dir/.env + /install-dir/setup-arr-config.py
+INSTALL_DIR = '/install-dir'
+
+
+def _resolve_path(*candidates):
+    """Return the first existing path from `candidates`, falling back to
+    the last entry so callers get a stable string even when nothing
+    exists yet (they handle the missing-file case themselves)."""
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[-1] if candidates else ''
+
+
+def _env_file():
+    return _resolve_path(
+        f'{INSTALL_DIR}/scripts/.env',           # v0.3.23+
+        f'{INSTALL_DIR}/.env',                   # legacy / v0.3.22
+    )
+
+
+def _setup_script():
+    return _resolve_path(
+        f'{INSTALL_DIR}/scripts/setup-arr-config.py',   # v0.3.22+
+        f'{INSTALL_DIR}/setup-arr-config.py',           # legacy
+    )
+
+
+# Resolved once at module import. Each handler re-reads via the helpers
+# if a path could change between requests (so far they're install-time
+# stable).
+ENV_FILE = _env_file()
+SETUP_SCRIPT = _setup_script()
 
 # Profile picks shown in the dropdowns. MUST match the recipes table in
 # setup-arr-config.py (which is the source of truth) — when a new TRaSH
@@ -702,6 +737,108 @@ def docker_pull_image(image_ref, timeout_seconds=600):
         return ('error', f'Pull request failed: {e}')
 
 
+def _compose_up_after_pull():
+    """Run `docker compose up -d` against the media stack so containers
+    whose image hash changed during the pull get recreated. Returns
+    (ok, captured_output).
+
+    Compose project name is hard-coded to `media` (matches the
+    docker-compose.yml `name: media` directive). cwd needs to be where
+    docker-compose.yml + .env live — that's /install-dir/scripts in
+    v0.3.23+, /install-dir in earlier layouts. We try the v0.3.23
+    location first because it's the canonical place going forward.
+
+    Compose-file picking mirrors setup.sh's logic: docker-compose.yml
+    is always loaded; docker-compose.no-vpn.yml is layered on top when
+    VPN_ENABLED is anything but a truthy value. COMPOSE_PROFILES gets
+    rebuilt from the same ENABLE_* keys setup.sh uses, so disabled
+    services don't get accidentally re-spawned by a `compose up -d`.
+
+    We invoke via docker-cli (`docker compose`) because that's what
+    the sidecar already has via `apk add docker-cli docker-cli-compose`.
+    Docker-API-level container recreate would require us to re-implement
+    compose's image-hash-diff + dependency-order logic by hand."""
+    # Locate the compose root inside the /install-dir mount.
+    if os.path.isfile(f'{INSTALL_DIR}/scripts/docker-compose.yml'):
+        cwd = f'{INSTALL_DIR}/scripts'
+    elif os.path.isfile(f'{INSTALL_DIR}/docker-compose.yml'):
+        cwd = INSTALL_DIR
+    else:
+        return (False, (
+            '  ✘ Couldn\'t find docker-compose.yml under /install-dir '
+            'or /install-dir/scripts. Recreate the containers manually:\n'
+            '    cd <install-dir> && docker compose up -d'
+        ))
+
+    # Read .env minimally to rebuild COMPOSE_PROFILES + figure out
+    # which compose-files to load. We don't `source` it (which would
+    # execute any embedded shell expansions) — grep + cut is safer.
+    env_file = os.path.join(cwd, '.env')
+    env_dict = {}
+    try:
+        with open(env_file, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, _, v = line.partition('=')
+                env_dict[k.strip()] = (v.split('#')[0].strip()
+                                       .strip('"').strip("'"))
+    except Exception as e:
+        return (False, f'  ✘ Could not read {env_file}: {e}')
+
+    def is_on(key, default_on=True):
+        v = (env_dict.get(key) or '').strip().lower()
+        if not v:
+            return default_on
+        return v not in ('false', '0', 'no', 'off')
+
+    files = ['-f', 'docker-compose.yml']
+    if not is_on('VPN_ENABLED', default_on=False):
+        files += ['-f', 'docker-compose.no-vpn.yml']
+
+    profiles = []
+    if is_on('ENABLE_PLEX'):        profiles.append('plex')
+    if is_on('ENABLE_SONARR'):      profiles.append('sonarr')
+    if is_on('ENABLE_RADARR'):      profiles.append('radarr')
+    if is_on('ENABLE_LIDARR'):      profiles.append('lidarr')
+    if is_on('ENABLE_BAZARR'):      profiles.append('bazarr')
+    if is_on('ENABLE_SABNZBD'):     profiles.append('usenet')
+    if is_on('ENABLE_HOMEPAGE'):    profiles.append('homepage')
+    if is_on('ENABLE_RECYCLARR'):   profiles.append('recyclarr')
+    if is_on('ENABLE_UNPACKERR'):   profiles.append('unpackerr')
+    if is_on('ENABLE_QBITTORRENT'):
+        profiles.append('torrenting')
+        if is_on('VPN_ENABLED', default_on=False):
+            profiles.append('vpn')
+
+    sub_env = os.environ.copy()
+    if profiles:
+        sub_env['COMPOSE_PROFILES'] = ','.join(profiles)
+    sub_env['COMPOSE_PROGRESS'] = 'plain'
+    sub_env['COMPOSE_ANSI']     = 'never'
+    sub_env['DOCKER_CLI_HINTS'] = 'false'
+
+    try:
+        r = subprocess.run(
+            ['docker', 'compose', *files,
+             '--progress', 'plain', '--ansi', 'never',
+             'up', '-d'],
+            capture_output=True, text=True, timeout=600, cwd=cwd, env=sub_env,
+        )
+        out = (r.stdout or '') + (r.stderr or '')
+        return (r.returncode == 0, out)
+    except subprocess.TimeoutExpired:
+        return (False, '  ✘ `docker compose up -d` timed out after 10 min.')
+    except FileNotFoundError:
+        return (False, (
+            '  ✘ docker CLI missing in trigger container — `apk add docker-cli '
+            'docker-cli-compose` should have run at boot. Check logs.'
+        ))
+    except Exception as e:
+        return (False, f'  ✘ Recreate failed: {e}')
+
+
 def run_pull():
     """Worker function — runs in a background thread. Pulls every image
     referenced by a running container in the `media` compose project.
@@ -781,14 +918,41 @@ def run_pull():
             elif kind == 'error':
                 error_count += 1
 
+        # ── Recreate containers whose image hash changed ─────────────
+        # Without this step, the daemon has the new layers on disk but
+        # every container keeps running on its OLD image (the one its
+        # process was started against). Original user report:
+        #   "the docker update feature on homepage downloaded the
+        #    updated image but left the docker container on the old one"
+        # `docker compose up -d` is the right tool: containers whose
+        # image config matches stay running (cheap no-op); containers
+        # whose image hash differs get stopped, removed, and recreated
+        # on the new image. This is exactly the "Pull + recreate"
+        # pattern from the installer's Update Stack screen.
+        recreate_summary = ''
+        if updated_count > 0:
+            with PULL_LOCK:
+                output_lines.append('')
+                output_lines.append('→ Recreating containers onto the new images...')
+                PULL_STATE['output'] = '\n'.join(output_lines)
+            ok_recreate, recreate_out = _compose_up_after_pull()
+            output_lines.append(recreate_out.rstrip() or
+                                ('  ✔ done' if ok_recreate else '  ✘ failed'))
+            with PULL_LOCK:
+                PULL_STATE['output'] = '\n'.join(output_lines)
+            recreate_summary = (
+                ' Containers recreated onto the new images.' if ok_recreate else
+                ' Image pull succeeded but `docker compose up -d` failed — '
+                'see log below; run it manually to apply the new images.'
+            )
+
         with PULL_LOCK:
             if error_count == 0 and updated_count > 0:
                 PULL_STATE['kind'] = 'ok'
                 PULL_STATE['msg']  = (
                     f'Pulled {pulled_count} images — {updated_count} updated, '
-                    f'{pulled_count - updated_count} already current. '
-                    f'Run `docker compose up -d` (or the installer\'s "Pull + '
-                    f'recreate" button) to swap containers onto the new images.'
+                    f'{pulled_count - updated_count} already current.' +
+                    recreate_summary
                 )
             elif error_count == 0:
                 PULL_STATE['kind'] = 'ok'
@@ -799,7 +963,8 @@ def run_pull():
                 PULL_STATE['kind'] = 'warn'
                 PULL_STATE['msg']  = (
                     f'Pulled {pulled_count - error_count} OK, {error_count} '
-                    f'failed — see the per-image status below.'
+                    f'failed — see the per-image status below.' +
+                    recreate_summary
                 )
             else:
                 PULL_STATE['kind'] = 'err'
@@ -929,10 +1094,77 @@ def render_pull():
     )
 
 
+def _ensure_recyclarr_settings_yml():
+    """Make sure ${INSTALL_DIR}/recyclarr/config/settings.yml exists with
+    the config-templates provider pinned to master.
+
+    Background: Recyclarr v8.x defaults to checking out the `v8` branch
+    of github.com/recyclarr/config-templates, which was reshaped in
+    mid-May 2026 into a FULL-templates-only schema. The wizard's
+    generated recyclarr.yml still uses granular includes
+    (radarr-quality-definition-movie, etc.) that live only on the
+    `master` branch now. Without a settings.yml that pins to master,
+    every recyclarr sync exits with:
+      [ERR] Unable to find include template with name
+            'radarr-quality-definition-movie'
+
+    setup-arr-config.py writes this same settings.yml at install time,
+    but the user might hit Sync from the trigger's web UI BEFORE
+    they've re-run a full install on the new wizard build — so we
+    re-assert it from here as a belt-and-suspenders. Idempotent:
+    skips when the file is already current. Returns True if the file
+    is in the expected wizard-written state at exit, False on a
+    write failure (sync will likely still fail with the template
+    error in that case, but we don't make it worse)."""
+    settings_path = '/install-dir/recyclarr/config/settings.yml'
+    body = (
+        '# Generated by Mediarr Installer (recyclarr-trigger)\n'
+        '# Pins config-templates to master so the wizard\'s granular\n'
+        '# include references (radarr-quality-definition-movie, etc.)\n'
+        '# keep resolving under Recyclarr v8.x which prefers the v8\n'
+        '# branch by default. Safe to delete if you migrate recyclarr.yml\n'
+        '# to v8 full templates by hand.\n'
+        'resource_providers:\n'
+        '  - name: config-templates-master\n'
+        '    type: config-templates\n'
+        '    clone_url: https://github.com/recyclarr/config-templates.git\n'
+        '    reference: master\n'
+        '    replace_default: true\n'
+    )
+    try:
+        existing = None
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, encoding='utf-8') as f:
+                    existing = f.read()
+            except Exception:
+                pass
+        # Skip writes if a HAND-CUSTOMISED settings.yml is in place
+        # (anything without our marker header). The user clearly
+        # knows what they're doing; we don't overwrite their config.
+        if existing and 'Generated by Mediarr Installer' not in existing:
+            return True
+        if existing == body:
+            return True
+        os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            f.write(body)
+        return True
+    except Exception as e:
+        print(f'[sync] settings.yml write failed: {e}', flush=True)
+        return False
+
+
 def run_sync():
     """`docker exec recyclarr recyclarr sync`. Returns
     (status_kind, message, output) — status_kind one of ok/warn/err for
     the banner styling. Caller holds SYNC_LOCK; this function doesn't."""
+    # Belt-and-suspenders settings.yml write so users who clicked Sync
+    # before running the latest setup-arr-config.py still get a
+    # working sync. Non-fatal on failure — recyclarr-trigger doesn't
+    # control whether the user's stack has the new layout, just makes
+    # sure that when it CAN write the file it does.
+    _ensure_recyclarr_settings_yml()
     try:
         r = subprocess.run(
             ['docker', 'exec', 'recyclarr', 'recyclarr', 'sync'],

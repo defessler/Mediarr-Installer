@@ -7,12 +7,21 @@
 # Usage:
 #   sudo bash /volume1/docker/media/scripts/setup.sh
 
-# SCRIPT_DIR holds setup.sh + all its helper scripts. As of v0.3.22 the
-# wizard drops these in a `scripts/` subfolder under INSTALL_DIR so the
-# compose root stays tidy (no more dozens of loose .sh / .py files
-# sitting next to docker-compose.yml). Compute INSTALL_DIR as the
-# parent when SCRIPT_DIR ends in `/scripts`; fall back to SCRIPT_DIR
-# itself for legacy layouts where setup.sh lives loose at INSTALL_DIR.
+# As of v0.3.23 the wizard drops EVERYTHING (scripts, .env, .env.example,
+# docker-compose.yml + overrides, INDEXERS.md) into a `scripts/`
+# subfolder under INSTALL_DIR — leaving INSTALL_DIR root with only the
+# service config dirs (sonarr/, radarr/, plex/, etc.) and migration/.
+#
+# Therefore:
+#   SCRIPT_DIR  = where this script + .env + docker-compose.yml live.
+#                 The "compose root" — we cd here for `docker compose`.
+#   INSTALL_DIR = parent of SCRIPT_DIR, where the service config dirs
+#                 live. Used for ${INSTALL_DIR}/<svc>/config compose-
+#                 file mount substitutions.
+#
+# Legacy: pre-v0.3.22 had everything loose at INSTALL_DIR root; v0.3.22
+# had scripts/ as a subfolder but compose + .env at the root. Both
+# layouts still work — the basename check distinguishes the new one.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
     INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -21,15 +30,11 @@ else
 fi
 
 # Mutex against concurrent runs (installer wizard + manual SSH session,
-# or two SSH sessions racing). The lock is a flock on a fixed file in
-# the install dir; if flock isn't available (busybox-only systems) we
-# fall back to PID-file detection. Best-effort: a stale PID after a
-# crashed setup.sh is detected via `kill -0` and reaped.
-#
-# Lock lives at INSTALL_DIR/.setup.lock (compose root) — not SCRIPT_DIR —
-# so a legacy run from loose-scripts AND a new run from scripts/ can't
-# both think they hold the lock independently.
-LOCK_FILE="$INSTALL_DIR/.setup.lock"
+# or two SSH sessions racing). Lock lives alongside setup.sh in the
+# scripts dir; if flock isn't available (busybox-only systems) we fall
+# back to PID-file detection. Best-effort: a stale PID after a crashed
+# setup.sh is detected via `kill -0` and reaped.
+LOCK_FILE="$SCRIPT_DIR/.setup.lock"
 if command -v flock >/dev/null 2>&1; then
     # Open FD 200 onto the lock file and try a non-blocking exclusive
     # lock. The lock auto-releases when this shell exits, no trap
@@ -65,10 +70,17 @@ fi
 # The Mediarr Installer wizard always writes these vars. They'd only be
 # missing if someone hand-edited .env or copied an older one over the
 # top. Back-compat: if INSTALL_DIR is missing but a .env exists, we
-# auto-fill it with the path we just computed above (which is the
-# compose root regardless of whether scripts/ exists or not). DATA_ROOT
-# has no portable default — bail with a clear message rather than guess.
-ENV_FILE="$INSTALL_DIR/.env"
+# auto-fill it with the computed install dir (parent of scripts/ in
+# the v0.3.23+ layout). DATA_ROOT has no portable default — bail with
+# a clear message rather than guess.
+#
+# v0.3.23+ layout: .env lives in scripts/ alongside docker-compose.yml.
+# Legacy: .env was at INSTALL_DIR root — fall back to that path if the
+# scripts/.env doesn't exist (handles the in-place upgrade window).
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ ! -f "$ENV_FILE" ] && [ -f "$INSTALL_DIR/.env" ]; then
+    ENV_FILE="$INSTALL_DIR/.env"
+fi
 if [ -f "$ENV_FILE" ]; then
     if ! grep -q '^INSTALL_DIR=' "$ENV_FILE"; then
         echo "INSTALL_DIR was missing from .env — auto-filling with $INSTALL_DIR."
@@ -135,7 +147,7 @@ fi
 # Small helper for reading a value out of .env, strips inline comments
 # and surrounding whitespace. Returns empty string if the key is absent.
 env_val() {
-    grep -m1 "^$1=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
 }
 
 # Default-ON semantics: missing or empty key counts as enabled, only
@@ -467,6 +479,15 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
         setup-arr-config.py recyclarr-trigger.py recyclarr-sync.sh
         restart-qbit.sh tune-arrs.sh fix-imports.sh stop-all.sh
         boot-orchestrator.sh boot-orchestrator.log
+        # v0.3.23 also moved the compose files + .env + docs into
+        # scripts/. Pre-v0.3.23 installs leave these orphaned at the
+        # root after sync — clean them up too, but only when the
+        # canonical copy exists under scripts/ AND (for .env, the
+        # contents differ, otherwise we'd nuke the only copy if the
+        # wizard hasn't re-written it yet).
+        docker-compose.yml docker-compose.no-vpn.yml
+        docker-compose.test-override.yml
+        INDEXERS.md .env.example .setup.lock .payload-sha
     )
     removed=0
     for f in "${LEGACY_LOOSE[@]}"; do
@@ -483,8 +504,26 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
     if [ -d "$INSTALL_DIR/indexers" ] && [ -d "$SCRIPT_DIR/indexers" ]; then
         rm -rf "$INSTALL_DIR/indexers" && removed=$((removed+1))
     fi
+    # .env handling: this file holds the user's secrets, so migrate
+    # rather than delete. If the root .env exists AND scripts/.env
+    # doesn't, MOVE it (so docker compose still picks up the right
+    # values on the next compose call from scripts/). If both exist,
+    # the wizard already wrote the canonical scripts/.env on Sync;
+    # delete the now-stale root copy. Skip both cases when the
+    # contents are byte-identical (cleaner = no migration needed).
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        if [ ! -f "$SCRIPT_DIR/.env" ]; then
+            mv "$INSTALL_DIR/.env" "$SCRIPT_DIR/.env" \
+                && echo "  ℹ Moved your existing .env into scripts/ (compose root)." \
+                && removed=$((removed+1))
+        elif ! cmp -s "$INSTALL_DIR/.env" "$SCRIPT_DIR/.env"; then
+            rm -f "$INSTALL_DIR/.env" && removed=$((removed+1))
+        else
+            rm -f "$INSTALL_DIR/.env" && removed=$((removed+1))
+        fi
+    fi
     if [ "$removed" -gt 0 ]; then
-        echo "  ℹ Migrated $removed legacy loose script(s) out of $INSTALL_DIR — canonical copies live under scripts/ now."
+        echo "  ℹ Migrated $removed legacy loose file(s) out of $INSTALL_DIR — canonical copies live under scripts/ now."
     fi
 fi
 
@@ -558,7 +597,7 @@ fi
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
 run_step 6 "Start the stack" \
-    bash -c "cd '$INSTALL_DIR' && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d"
+    bash -c "cd '$SCRIPT_DIR' && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d"
 
 abort_if_failed
 
@@ -697,7 +736,7 @@ echo "  on the Homepage dashboard, or:"
 echo "     http://${IP}:8889/pull                    # web UI with Pull Now button"
 echo ""
 echo "  Full pull + recreate (swaps containers onto the new images):"
-echo "  cd $INSTALL_DIR"
+echo "  cd $SCRIPT_DIR"
 # Surface the active profile set so a copy-pasted update command will
 # actually update the user's selected services. Without COMPOSE_PROFILES
 # the only services compose touches are the no-profile ones (Prowlarr +
@@ -713,7 +752,7 @@ echo ""
 echo "  To schedule monthly updates via Synology Task Scheduler:"
 echo "    Control Panel → Task Scheduler → Create → Scheduled Task →"
 echo "    User-defined script → run as root, schedule = monthly:"
-echo "      cd $INSTALL_DIR && $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"
+echo "      cd $SCRIPT_DIR && $COMPOSE $COMPOSE_FILES pull && $COMPOSE $COMPOSE_FILES up -d"
 if [ -n "${COMPOSE_PROFILES:-}" ]; then
     echo "    (prepend: export COMPOSE_PROFILES=$COMPOSE_PROFILES; )"
 fi

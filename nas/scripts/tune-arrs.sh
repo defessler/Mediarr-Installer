@@ -34,16 +34,22 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
-# itself in legacy loose-scripts installs. tune-arrs.sh reads service
-# config DBs at $INSTALL_DIR/<service>/config/<service>.db, and runs
-# `docker compose stop` from $INSTALL_DIR.
-if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
+# COMPOSE_DIR (compose root — has docker-compose.yml + .env) varies by
+# wizard version; see restart-qbit.sh comment block for the dance.
+# INSTALL_DIR (semantic — where the service config dirs live) is the
+# COMPOSE_DIR parent in v0.3.23+, or COMPOSE_DIR itself in earlier
+# layouts. tune-arrs reads service DBs at $INSTALL_DIR/<svc>/config/.
+if [ -f "$SCRIPT_DIR/docker-compose.yml" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+    COMPOSE_DIR="$SCRIPT_DIR"            # v0.3.23+
     INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+elif [ "$(basename "$SCRIPT_DIR")" = "scripts" ] && [ -f "$(dirname "$SCRIPT_DIR")/.env" ]; then
+    COMPOSE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # v0.3.22
+    INSTALL_DIR="$COMPOSE_DIR"
 else
+    COMPOSE_DIR="$SCRIPT_DIR"            # legacy
     INSTALL_DIR="$SCRIPT_DIR"
 fi
-cd "$INSTALL_DIR"
+cd "$COMPOSE_DIR"
 
 DRY_RUN=0
 SKIP_VACUUM=0
@@ -64,7 +70,7 @@ for arg in "$@"; do
 done
 
 if [ ! -f .env ]; then
-    echo "✘ .env not found at $INSTALL_DIR/.env"
+    echo "✘ .env not found at $COMPOSE_DIR/.env"
     echo "  This script expects to find docker-compose.yml + .env in the install dir."
     exit 1
 fi

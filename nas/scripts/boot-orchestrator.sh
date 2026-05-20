@@ -42,16 +42,20 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR itself
-# in legacy loose-scripts installs. The orchestrator needs INSTALL_DIR
-# for .env + `docker compose` cwd; the lock + log files stay alongside
-# the script itself so they're discoverable in either layout.
-if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
-    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Compose root depends on layout:
+#   v0.3.23+ → .env + compose live next to this script in scripts/
+#   v0.3.22  → at parent (scripts/ subfolder, compose at root)
+#   legacy   → SCRIPT_DIR IS the install root (no scripts/)
+# Lock + log files stay alongside the script itself so they're
+# discoverable in either layout.
+if [ -f "$SCRIPT_DIR/docker-compose.yml" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+    COMPOSE_DIR="$SCRIPT_DIR"            # v0.3.23+
+elif [ "$(basename "$SCRIPT_DIR")" = "scripts" ] && [ -f "$(dirname "$SCRIPT_DIR")/.env" ]; then
+    COMPOSE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # v0.3.22
 else
-    INSTALL_DIR="$SCRIPT_DIR"
+    COMPOSE_DIR="$SCRIPT_DIR"            # legacy
 fi
-cd "$INSTALL_DIR"
+cd "$COMPOSE_DIR"
 
 LOG="$SCRIPT_DIR/boot-orchestrator.log"
 log() { echo "[$(date -Is)] $*" | tee -a "$LOG"; }
@@ -73,7 +77,7 @@ fi
 log "════ boot-orchestrator starting ════"
 
 if [ ! -f .env ]; then
-    log "✘ .env not found at $INSTALL_DIR/.env — aborting"
+    log "✘ .env not found at $COMPOSE_DIR/.env — aborting"
     exit 1
 fi
 

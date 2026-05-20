@@ -65,24 +65,37 @@ done
 
 echo ""
 echo "Setting permissions on config files..."
-if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
-    chmod 644 "$INSTALL_DIR/docker-compose.yml"
-    echo "  ✔ docker-compose.yml"
-fi
-if [ -f "$INSTALL_DIR/docker-compose.no-vpn.yml" ]; then
-    chmod 644 "$INSTALL_DIR/docker-compose.no-vpn.yml"
-    echo "  ✔ docker-compose.no-vpn.yml"
-fi
-
-if [ -f "$INSTALL_DIR/.env" ]; then
-    chmod 600 "$INSTALL_DIR/.env"
-    echo "  ✔ .env (owner read-only — contains secrets)"
-fi
-
-if [ -f "$INSTALL_DIR/.env.example" ]; then
-    chmod 644 "$INSTALL_DIR/.env.example"
-    echo "  ✔ .env.example"
-fi
+# v0.3.23+ puts docker-compose.* + .env under SCRIPT_DIR; v0.3.22 had
+# them at INSTALL_DIR root. Loop both directories so this works in
+# either layout — chmod is idempotent and only fails on missing files.
+for cfg_dir in "$SCRIPT_DIR" "$INSTALL_DIR"; do
+    [ -z "$cfg_dir" ] && continue
+    if [ -f "$cfg_dir/docker-compose.yml" ]; then
+        chmod 644 "$cfg_dir/docker-compose.yml"
+        echo "  ✔ $cfg_dir/docker-compose.yml"
+    fi
+    if [ -f "$cfg_dir/docker-compose.no-vpn.yml" ]; then
+        chmod 644 "$cfg_dir/docker-compose.no-vpn.yml"
+        echo "  ✔ $cfg_dir/docker-compose.no-vpn.yml"
+    fi
+    if [ -f "$cfg_dir/docker-compose.test-override.yml" ]; then
+        chmod 644 "$cfg_dir/docker-compose.test-override.yml"
+        echo "  ✔ $cfg_dir/docker-compose.test-override.yml"
+    fi
+    if [ -f "$cfg_dir/.env" ]; then
+        chmod 600 "$cfg_dir/.env"
+        echo "  ✔ $cfg_dir/.env (owner read-only — contains secrets)"
+    fi
+    if [ -f "$cfg_dir/.env.example" ]; then
+        chmod 644 "$cfg_dir/.env.example"
+        echo "  ✔ $cfg_dir/.env.example"
+    fi
+    if [ -f "$cfg_dir/INDEXERS.md" ]; then
+        chmod 644 "$cfg_dir/INDEXERS.md"
+        echo "  ✔ $cfg_dir/INDEXERS.md"
+    fi
+    [ "$cfg_dir" = "$SCRIPT_DIR" ] && [ "$INSTALL_DIR" = "$SCRIPT_DIR" ] && break
+done
 
 echo ""
 echo "Done."

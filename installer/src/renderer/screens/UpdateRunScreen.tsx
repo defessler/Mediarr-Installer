@@ -194,6 +194,17 @@ export function UpdateRunScreen() {
       'stop-all.sh',
       '.setup.lock',
       '.boot-orchestrator.lock',
+      // v0.3.23 moved the compose files + docs + .env.example into
+      // scripts/. Add those to the cleanup so an upgrade from v0.3.22
+      // doesn't leave them orphaned at the root. Note .env itself is
+      // handled separately below — we MIGRATE it (preserve user's
+      // secrets) instead of deleting.
+      'docker-compose.yml',
+      'docker-compose.no-vpn.yml',
+      'docker-compose.test-override.yml',
+      'INDEXERS.md',
+      '.env.example',
+      '.payload-sha',
     ]
     // Only run if scripts/ exists (i.e., the new layout actually
     // landed). Otherwise we'd nuke the live setup.sh and leave the
@@ -217,6 +228,13 @@ export function UpdateRunScreen() {
     }
     // Two more entries: the indexers/ subfolder (legacy) and migration/
     // stays put — only delete indexers/ since it moved under scripts/.
+    //
+    // .env handling is special: it holds the user's secrets, so we
+    // MIGRATE rather than nuke. If a root .env exists and scripts/.env
+    // doesn't (Sync wrote it AFTER cleanup, or .env wasn't part of
+    // the payload), move the file across so docker compose still has
+    // its substitutions. If both exist, the canonical copy is
+    // scripts/.env (Sync just landed it) — delete the stale root copy.
     const rmList = LEGACY_LOOSE.map((f) => shellQuote(f)).join(' ')
     try {
       const r = await window.installer.ssh.exec({
@@ -225,13 +243,24 @@ export function UpdateRunScreen() {
         cmd:
           PATH_PREFIX +
           `cd ${shellQuote(targetDir)} && ` +
-          // Loose .sh / .py files: delete by exact name. Old indexers/
-          // dir gets `rm -rf` because it's now scripts/indexers/.
-          `removed=0; for f in ${rmList}; do ` +
+          `removed=0; ` +
+          // .env migration (preserve user's secrets):
+          `if [ -f .env ]; then ` +
+          `  if [ -f scripts/.env ]; then ` +
+          `    rm -f .env && removed=$((removed+1)); ` +
+          `  else ` +
+          `    mv .env scripts/.env && removed=$((removed+1)); ` +
+          `  fi; ` +
+          `fi; ` +
+          // Loose .sh / .py files: delete by exact name when present.
+          // No fallback — we just bulk-removed them all from the source
+          // so anything left at root is stale.
+          `for f in ${rmList}; do ` +
           `  if [ -f "$f" ]; then rm -f "$f" && removed=$((removed+1)); fi; ` +
           `done; ` +
+          // Old indexers/ at root moved under scripts/indexers/.
           `if [ -d indexers ]; then rm -rf indexers && removed=$((removed+1)); fi; ` +
-          `echo "[cleanup] removed $removed legacy loose entries"`,
+          `echo "[cleanup] migrated/removed $removed legacy loose entries"`,
       })
       const out = r.stdout.trim()
       if (out) wlog(out)
@@ -271,7 +300,10 @@ export function UpdateRunScreen() {
           sudo: true,
           cmd:
             PATH_PREFIX +
+            // v0.3.23+: docker-compose.yml + .env live in scripts/.
+            // Fall back to targetDir root for pre-v0.3.23 layouts.
             `cd ${shellQuote(targetDir)} && ` +
+            `if [ -f scripts/docker-compose.yml ]; then cd scripts; fi && ` +
             `if docker ps --filter name=^${name}$ --format '{{.Names}}' ` +
             `  | grep -qx ${shellQuote(name)}; then ` +
             // Detect VPN to pick the right override-file. Mirrors the
@@ -357,7 +389,10 @@ docker compose $FILES --progress plain --ansi never up -d`
         sessionId,
         cmd:
           PATH_PREFIX +
+          // v0.3.23+: compose lives in scripts/. Fall back to root for
+          // pre-v0.3.23 installs that haven't migrated yet.
           `cd ${shellQuote(targetDir)} && ` +
+          `if [ -f scripts/docker-compose.yml ]; then cd scripts; fi && ` +
           `bash -c ${shellQuote(composeUpdate)}`,
         sudo: true,
         channelId: CHANNEL_ID,
@@ -496,13 +531,21 @@ fi
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never up -d`
-      cmd = PATH_PREFIX + `cd ${shellQuote(targetDir)} && bash -c ${shellQuote(composeUp)}`
+      // v0.3.23+: compose lives in scripts/; cd there for the
+      // docker-compose.yml / docker-compose.no-vpn.yml + .env to be
+      // picked up correctly. Fall back to targetDir root for older
+      // layouts.
+      cmd =
+        PATH_PREFIX +
+        `cd ${shellQuote(targetDir)} && ` +
+        `if [ -f scripts/docker-compose.yml ]; then cd scripts; fi && ` +
+        `bash -c ${shellQuote(composeUp)}`
     } else {
-      // step.rerun uses the v0.3.22 layout paths (scripts/...). Wrap
-      // in a one-shot bash that falls back to the legacy loose-scripts
-      // location if scripts/ doesn't exist — that way an upgrade
-      // through this very screen works on installs that haven't run
-      // Sync wizard scripts yet.
+      // step.rerun uses scripts/... paths (v0.3.22+ layout). Wrap in
+      // a layout-aware guard so the same command works against
+      // pre-v0.3.22 (loose scripts at root) AND v0.3.23+ where the
+      // SCRIPT cwd matters less because step.rerun has the path
+      // baked in.
       const legacyRerun = step.rerun
         .replace(/^bash scripts\//, 'bash ')
         .replace(/^python3 scripts\//, 'python3 ')

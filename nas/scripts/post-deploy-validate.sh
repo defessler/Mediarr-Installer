@@ -15,7 +15,13 @@ if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
 else
     INSTALL_DIR="$SCRIPT_DIR"
 fi
-ENV_FILE="$INSTALL_DIR/.env"
+# v0.3.23+: prefer SCRIPT_DIR/.env (lives in scripts/ now).
+# Fall back to INSTALL_DIR/.env (v0.3.22 layout) where applicable.
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    ENV_FILE="$SCRIPT_DIR/.env"
+else
+    ENV_FILE="$INSTALL_DIR/.env"
+fi
 
 PASS=0
 FAIL=0

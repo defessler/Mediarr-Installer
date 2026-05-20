@@ -28,18 +28,21 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Compose root = scripts/ parent in the new layout, or SCRIPT_DIR itself
-# in legacy loose-scripts installs. `docker compose` needs the compose
-# root as cwd to find docker-compose.yml + .env.
-if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
-    INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Pick the dir docker compose runs from:
+#   v0.3.23+   → .env + docker-compose.yml live next to this script.
+#   v0.3.22    → they're at SCRIPT_DIR's parent (scripts/ subfolder).
+#   pre-v0.3.22 → SCRIPT_DIR IS the install root (loose layout).
+if [ -f "$SCRIPT_DIR/docker-compose.yml" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+    COMPOSE_DIR="$SCRIPT_DIR"
+elif [ "$(basename "$SCRIPT_DIR")" = "scripts" ] && [ -f "$(dirname "$SCRIPT_DIR")/.env" ]; then
+    COMPOSE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 else
-    INSTALL_DIR="$SCRIPT_DIR"
+    COMPOSE_DIR="$SCRIPT_DIR"
 fi
-cd "$INSTALL_DIR"
+cd "$COMPOSE_DIR"
 
 if [ ! -f .env ]; then
-    echo "✘ .env not found at $INSTALL_DIR/.env"
+    echo "✘ .env not found at $COMPOSE_DIR/.env"
     echo "  This script expects to find docker-compose.yml + .env in the install dir."
     exit 1
 fi

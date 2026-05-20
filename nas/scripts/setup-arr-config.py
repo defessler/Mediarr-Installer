@@ -62,6 +62,27 @@ def _find_install_dir():
 
 INSTALL_DIR_DEFAULT = _find_install_dir()
 
+
+def _find_env_file():
+    """Locate the .env file. v0.3.23+ keeps it next to this script in
+    scripts/; v0.3.22 had it at the install-dir root (one level up);
+    legacy loose-script installs had it at the script's own dir.
+    Prefer the new location; fall back to the legacy one if missing
+    so an in-place upgrade window doesn't fail to find .env."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    same_dir = os.path.join(here, '.env')
+    if os.path.exists(same_dir):
+        return same_dir
+    install_root = os.path.join(INSTALL_DIR_DEFAULT, '.env')
+    if os.path.exists(install_root):
+        return install_root
+    # Fall through to the new location even when nothing exists yet —
+    # downstream code creates it.
+    return same_dir
+
+
+ENV_FILE_DEFAULT = _find_env_file()
+
 # When stdout is piped (i.e. running from setup.sh via SSH/SFTP rather
 # than a tty), Python defaults to BLOCK buffering with an 8 KB window.
 # In a long-running config step that prints small status lines, output
@@ -148,8 +169,15 @@ def read_env(path):
     return env
 
 def read_env_merged(script_dir):
-    """.env holds real values (gitignored). Copy from .env.example to create it."""
-    return read_env(os.path.join(script_dir, '.env'))
+    """.env holds real values (gitignored). Copy from .env.example to create it.
+    Looks in `script_dir/.env` first (v0.3.23+ where .env lives with the
+    scripts), then `script_dir/../.env` (v0.3.22 where .env was at the
+    install-dir root above scripts/). Returns the first one found."""
+    here = read_env(os.path.join(script_dir, '.env'))
+    if here:
+        return here
+    parent = read_env(os.path.join(script_dir, '..', '.env'))
+    return parent
 
 def read_arr_key(config_xml):
     """Read API key from a *arr config.xml file."""
@@ -1785,7 +1813,7 @@ def configure_qbittorrent(base, username, password, env=None):
     # post-install; the next setup.sh re-run finds qBit responsive
     # and finishes its config.
     if env is None:
-        env = read_env_merged(INSTALL_DIR_DEFAULT)
+        env = read_env_merged(os.path.dirname(os.path.abspath(__file__)))
     install_dir = env.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
     restarted = False  # kept for the success branch below to compile cleanly
 
@@ -2698,7 +2726,12 @@ def is_enabled(env, key):
 
 
 def main():
-    script_dir = INSTALL_DIR_DEFAULT
+    # script_dir = the dir THIS file lives in (scripts/ under v0.3.23+).
+    # read_env_merged looks there first, then walks up to the install
+    # root for legacy layouts. Don't pass INSTALL_DIR_DEFAULT here —
+    # that's the SERVICE-CONFIG root (parent of scripts/) and would
+    # miss the v0.3.23 .env location.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     env        = read_env_merged(script_dir)
 
     LAN_IP   = env.get('LAN_IP', '')
@@ -3557,7 +3590,9 @@ def homepage_only_main():
     widgets.yaml stays whatever the user set it to — that file is for
     the datetime + search widgets and isn't generated from .env.
     """
-    script_dir = INSTALL_DIR_DEFAULT
+    # Look for .env where THIS file lives (scripts/ in v0.3.23+);
+    # read_env_merged falls back to the parent dir for legacy layouts.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     env        = read_env_merged(script_dir)
     LAN_IP     = env.get('LAN_IP', '')
     if not LAN_IP:
@@ -3622,7 +3657,9 @@ def recyclarr_only_main():
     sentinel — same as main() — which the next full wizard run will
     fix up.
     """
-    script_dir = INSTALL_DIR_DEFAULT
+    # Look for .env where THIS file lives (scripts/ in v0.3.23+);
+    # read_env_merged falls back to the parent dir for legacy layouts.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     env        = read_env_merged(script_dir)
     if not is_enabled(env, 'ENABLE_RECYCLARR'):
         print("ENABLE_RECYCLARR=false in .env — nothing to regenerate.")
