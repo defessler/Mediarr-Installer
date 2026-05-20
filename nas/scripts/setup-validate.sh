@@ -44,8 +44,19 @@ echo "============================================="
 
 section "Files"
 
-[ -f "$INSTALL_DIR_DEFAULT/docker-compose.yml" ] && ok "docker-compose.yml exists" || fail "docker-compose.yml not found"
-[ -r "$INSTALL_DIR_DEFAULT/docker-compose.yml" ] && ok "docker-compose.yml is readable" || fail "docker-compose.yml is not readable — run setup-chmod.sh"
+# v0.3.24+ moved docker-compose.yml into scripts/ (alongside .env).
+# Pre-v0.3.24 had it at INSTALL_DIR root. Check the scripts/ location
+# first (canonical for new installs), fall back to the root for legacy
+# layouts that haven't migrated yet.
+if [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
+    COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+elif [ -f "$INSTALL_DIR_DEFAULT/docker-compose.yml" ]; then
+    COMPOSE_FILE="$INSTALL_DIR_DEFAULT/docker-compose.yml"
+else
+    COMPOSE_FILE=""
+fi
+[ -n "$COMPOSE_FILE" ] && ok "docker-compose.yml exists ($COMPOSE_FILE)" || fail "docker-compose.yml not found at $SCRIPT_DIR/ or $INSTALL_DIR_DEFAULT/"
+[ -n "$COMPOSE_FILE" ] && [ -r "$COMPOSE_FILE" ] && ok "docker-compose.yml is readable" || fail "docker-compose.yml is not readable — run setup-chmod.sh"
 
 [ -f "$ENV_FILE" ]  && ok ".env exists"       || fail ".env not found — copy .env.example to .env and fill in your values"
 [ -r "$ENV_FILE" ]  && ok ".env is readable"  || fail ".env is not readable — run setup-chmod.sh"
