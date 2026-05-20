@@ -129,8 +129,10 @@ scan() {
         "$url/command" \
         -d "{\"name\": \"$cmd\", \"path\": \"$path\"}" 2>/dev/null)
     case "$http" in
-        20*|201) echo "    ✔ $name $cmd  ($path)" ;;
-        *)       echo "    ✘ $name $cmd  ($path) — HTTP $http" ;;
+        # `20*` already matches every 2xx response — earlier versions
+        # listed `20*|201` redundantly and shellcheck flagged it (SC2221).
+        20*) echo "    ✔ $name $cmd  ($path)" ;;
+        *)   echo "    ✘ $name $cmd  ($path) — HTTP $http" ;;
     esac
 }
 

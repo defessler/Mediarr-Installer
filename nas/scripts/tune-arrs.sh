@@ -49,7 +49,7 @@ else
     COMPOSE_DIR="$SCRIPT_DIR"            # legacy
     INSTALL_DIR="$SCRIPT_DIR"
 fi
-cd "$COMPOSE_DIR"
+cd "$COMPOSE_DIR" || { echo "tune-arrs: cannot cd to $COMPOSE_DIR — aborting." >&2; exit 1; }
 
 DRY_RUN=0
 SKIP_VACUUM=0
@@ -171,7 +171,9 @@ vacuum_arr() {
         # needs to be a real path with no spaces (true in our standard
         # NAS install dirs). The DB path passed to sqlite3 is the
         # container-side relative path, computed below.
-        rel_db="${full_path#$INSTALL_DIR/}"
+        # Quote $INSTALL_DIR inside the pattern so the strip is treated
+        # as a literal prefix rather than a glob (SC2295).
+        rel_db="${full_path#"$INSTALL_DIR"/}"
         sqlite3_result=0
         docker run --rm -v "$INSTALL_DIR:/wd" -w /wd alpine:latest \
             sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 "$1" "VACUUM; REINDEX;"' \

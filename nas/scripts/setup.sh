@@ -57,7 +57,12 @@ else
         # Stale lock from a crashed run — overwrite and continue.
     fi
     echo "$$" > "$LOCK_FILE"
-    trap "rm -f '$LOCK_FILE'" EXIT
+    # Single-quote the trap body so $LOCK_FILE expands when the trap
+    # fires, not when it's registered — defensive against later code
+    # paths reassigning LOCK_FILE. Functionally identical in this script
+    # (LOCK_FILE is set above and never reassigned) but the single-quoted
+    # form is what shellcheck recommends (SC2064).
+    trap 'rm -f "$LOCK_FILE"' EXIT
 fi
 
 # ── Required .env vars ───────────────────────────────────────────────────────
@@ -308,24 +313,28 @@ check_port_conflicts() {
     # Build a port-list paired with the service name. The list ONLY
     # includes services the user actually opted into for this install;
     # always-on services (prowlarr / flaresolverr) are added too.
-    local pairs="prowlarr:49150 flaresolverr:8191"
-    is_enabled ENABLE_PLEX        && pairs="$pairs plex:32400 seerr:5056 tautulli:8181"
-    is_enabled ENABLE_SONARR      && pairs="$pairs sonarr:49152"
-    is_enabled ENABLE_RADARR      && pairs="$pairs radarr:49151"
-    is_enabled ENABLE_LIDARR      && pairs="$pairs lidarr:49154"
-    is_enabled ENABLE_BAZARR      && pairs="$pairs bazarr:49153"
-    is_enabled ENABLE_QBITTORRENT && pairs="$pairs qbittorrent:49156"
+    # Real bash array — earlier versions stored this as a space-separated
+    # string and relied on word-splitting in `for pair in $pairs`, which
+    # works but trips shellcheck (SC2178/SC2128) and silently breaks the
+    # moment a service name ever contains whitespace.
+    local pairs=("prowlarr:49150" "flaresolverr:8191")
+    is_enabled ENABLE_PLEX        && pairs+=("plex:32400" "seerr:5056" "tautulli:8181")
+    is_enabled ENABLE_SONARR      && pairs+=("sonarr:49152")
+    is_enabled ENABLE_RADARR      && pairs+=("radarr:49151")
+    is_enabled ENABLE_LIDARR      && pairs+=("lidarr:49154")
+    is_enabled ENABLE_BAZARR      && pairs+=("bazarr:49153")
+    is_enabled ENABLE_QBITTORRENT && pairs+=("qbittorrent:49156")
     # 6881 (BT default) is also bound by gluetun/qbittorrent on the host
     # but we don't pre-check it here — it's owned by gluetun-or-qbit
     # depending on VPN_ENABLED, and the simple svc-name match below would
     # false-positive that ownership. The compose-up error is clear enough
     # if another torrent client on the NAS already holds 6881.
-    is_enabled ENABLE_SABNZBD     && pairs="$pairs sabnzbd:49155"
-    is_enabled ENABLE_HOMEPAGE    && pairs="$pairs homepage:3000"
+    is_enabled ENABLE_SABNZBD     && pairs+=("sabnzbd:49155")
+    is_enabled ENABLE_HOMEPAGE    && pairs+=("homepage:3000")
 
     local conflicts=""
     local pair port svc
-    for pair in $pairs; do
+    for pair in "${pairs[@]}"; do
         svc="${pair%:*}"
         port="${pair#*:}"
         # netstat present on every supported NAS family. Match :PORT

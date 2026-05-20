@@ -55,7 +55,7 @@ elif [ "$(basename "$SCRIPT_DIR")" = "scripts" ] && [ -f "$(dirname "$SCRIPT_DIR
 else
     COMPOSE_DIR="$SCRIPT_DIR"            # legacy
 fi
-cd "$COMPOSE_DIR"
+cd "$COMPOSE_DIR" || { echo "boot-orchestrator: cannot cd to $COMPOSE_DIR — aborting." >&2; exit 1; }
 
 LOG="$SCRIPT_DIR/boot-orchestrator.log"
 log() { echo "[$(date -Is)] $*" | tee -a "$LOG"; }

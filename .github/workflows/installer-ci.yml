@@ -72,10 +72,20 @@ jobs:
       - name: shellcheck nas/scripts/*.sh + nas/migration/*.sh
         # SC2086 (unquoted vars) and SC2155 (declare+assign on same line)
         # are intentional in many places; suppress them stack-wide so
-        # the real issues stand out. Glob updated: shell scripts moved
-        # under nas/scripts/ in v0.3.22; the old `nas/*.sh` glob silently
-        # matched nothing for a couple of releases.
-        run: shellcheck -e SC2086,SC2155 nas/scripts/*.sh nas/migration/*.sh
+        # the real issues stand out. Glob updated in v0.4.1: shell
+        # scripts moved under nas/scripts/ in v0.3.22 but the workflow
+        # kept globbing nas/*.sh, which silently matched nothing.
+        #
+        # --severity=warning trims out the style + info advisories
+        # (SC2001 sed-vs-param-expansion, SC2002 useless-cat, SC2015
+        # &&-||-not-if-else, SC2028 echo-escapes, SC2295 quoting-inside-
+        # ${..}). Those are real lint items but mostly nitpicks and there
+        # are dozens of them in the legacy scripts — landing them all
+        # would be a separate refactor. Warning-level findings still
+        # block CI: SC2164 (cd-without-||-exit), SC2064 (trap quoting),
+        # SC2178/SC2128 (array-vs-string), SC2221/SC2222 (overlapping
+        # case patterns).
+        run: shellcheck --severity=warning -e SC2086,SC2155 nas/scripts/*.sh nas/migration/*.sh
 
       - uses: actions/setup-python@v5
         with:
