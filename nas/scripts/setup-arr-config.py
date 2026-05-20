@@ -3399,6 +3399,12 @@ def main():
         configure_media_management(LIDARR, LIDARR_KEY, "api/v1", recycle_label="lidarr")
         configure_bind_address(LIDARR, LIDARR_KEY, "api/v1")
         configure_backup_schedule(LIDARR, LIDARR_KEY, "api/v1")
+        # Plex Connect notification — same rationale as Sonarr/Radarr blocks above.
+        # on_episode_file=False: Lidarr's schema has no onEpisodeFileDelete /
+        # onSeriesDelete fields (those are Sonarr-only), and the helper only
+        # uses that flag to set those two fields, so False is the safe choice.
+        if is_enabled(env, 'ENABLE_PLEX'):
+            configure_plex_notification(LIDARR, LIDARR_KEY, "api/v1", plex_token, on_episode_file=False)
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 
