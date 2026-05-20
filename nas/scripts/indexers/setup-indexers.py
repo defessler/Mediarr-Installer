@@ -75,6 +75,47 @@ def section(title):
 #   env_key_name=None means free — added without a key (uses key if available)
 # PRIVATE_TORRENT_INDEXERS: (display_name, implementation, {field: env_var})
 
+# Per-indexer overrides for problem children. Two knobs:
+#   aliases   — additional schema names to try if Prowlarr's bundled
+#               definitions don't include the canonical name (the
+#               indexer's been renamed upstream, or the user's
+#               Prowlarr build is older than the definition).
+#   base_url  — override the BaseUrl field in the schema before POSTing.
+#               For indexers whose Prowlarr-bundled URL points at a
+#               domain that's been redirected away or gone dark.
+#   skip_if_missing — when True, missing schema is logged as info()
+#                     rather than fail(). Use for indexers we know
+#                     have flaky/in-flux upstream definitions where
+#                     the user can't usefully fix anything.
+INDEXER_OVERRIDES = {
+    # TheRARBG — Prowlarr added the definition in v1.20 (Feb 2024).
+    # Older Prowlarr builds (linuxserver image not yet rebuilt) won't
+    # have it in their schemas list. No good alias; "RARBG" itself
+    # was the discontinued original tracker, not a current schema in
+    # Prowlarr. If Prowlarr doesn't have TheRARBG, the user needs a
+    # newer Prowlarr build — not something the wizard can patch over.
+    'TheRARBG': {
+        'skip_if_missing': True,
+    },
+    # TorrentGalaxy moves its canonical domain every few months as
+    # mirrors rotate (.to → .mx → .lol → .info → ...). Prowlarr's
+    # bundled BaseUrl goes stale fast. Setting a fresher current
+    # mirror reduces the rate of "Redirected to ..." reachability
+    # failures. Prowlarr's reachability test rejects 30x redirects
+    # so we want a domain that serves 200 directly. As of 2025-Q4 the
+    # torrentgalaxy.to mirror has been the most stable.
+    'TorrentGalaxy': {
+        'base_url': 'https://torrentgalaxy.to',
+    },
+    # AniDex — same pattern; bundled URL has been 502'ing intermittently.
+    # Their primary domain is anidex.info; if Prowlarr's bundled URL
+    # has drifted we'll pin it.
+    'AniDex': {
+        'base_url': 'https://anidex.info',
+    },
+}
+
+
 PUBLIC_TORRENT_INDEXERS = [
     # ── General ───────────────────────────────────────────────────────────────
     "1337x",
@@ -453,14 +494,35 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
     if name.lower() in existing_names:
         skip(f"{name} (already added)"); return
 
+    overrides = INDEXER_OVERRIDES.get(name, {})
     schema, resolved_name = _find_schema(name, schemas)
+
+    # Aliases — if the canonical name isn't in the schemas list, try
+    # known historical / alternate names before giving up. Lets us
+    # ride out an upstream rename without breaking the install for
+    # users on a stale Prowlarr build.
+    if schema is None:
+        for alias in overrides.get('aliases', []):
+            schema, resolved_name = _find_schema(alias, schemas)
+            if schema is not None:
+                info(f"{name}: matched via alias '{alias}' (Prowlarr's bundled definition uses the older name)")
+                break
+
     if schema is None:
         needle = name.lower()
         suggestions = [s['name'] for s in schemas
                        if needle in s.get('name', '').lower()
                        or s.get('name', '').lower() in needle]
         hint = f" — did you mean: {', '.join(suggestions[:5])}" if suggestions else ""
-        fail(f"{name}: not found in Prowlarr{hint}")
+        # skip_if_missing demotes "Prowlarr doesn't ship this definition
+        # yet" to an info() rather than fail() — there's no code fix
+        # available for the user, the wizard log already covers what
+        # to do (update Prowlarr or add manually). Keeps the install's
+        # Issues panel clean.
+        if overrides.get('skip_if_missing'):
+            info(f"{name}: not in this Prowlarr build's definitions{hint} — skip (update Prowlarr or add via its UI)")
+        else:
+            fail(f"{name}: not found in Prowlarr{hint}")
         return
 
     if resolved_name != name and resolved_name.lower() in existing_names:
@@ -471,6 +533,24 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
     schema['appProfileId'] = 1
     if flaresolverr_tag_id is not None:
         schema['tags'] = list(set(schema.get('tags') or []) | {flaresolverr_tag_id})
+
+    # Apply BaseUrl override AFTER tags so an override-induced field
+    # match doesn't clash with a tag we just added. Some Prowlarr
+    # schemas expose BaseUrl as a select-box (a `baseUrl` field with
+    # a list of `selectOptions` values); for those we override the
+    # `value` directly, which Prowlarr accepts as a custom string
+    # outside the dropdown options. Falls back to setting `baseUrl`
+    # at the top level if no field is found (older Cardigann path).
+    bu = overrides.get('base_url')
+    if bu:
+        bu_field = next((f for f in schema.get('fields', [])
+                        if f.get('name', '').lower() == 'baseurl'), None)
+        if bu_field is not None:
+            bu_field['value'] = bu
+        else:
+            schema['baseUrl'] = bu
+        info(f"{name}: overriding bundled BaseUrl → {bu} (the Prowlarr-shipped URL was rejecting reachability tests due to upstream domain rotation)")
+
     display = f"{name} → {resolved_name}" if resolved_name != name else name
     _post_indexer(base, key, display, schema)
 
