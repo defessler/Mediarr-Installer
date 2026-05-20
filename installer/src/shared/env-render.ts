@@ -481,22 +481,12 @@ export function indexerTags(def: IndexerDef): IndexerTag[] {
 
 export const USENET_INDEXERS: IndexerDef[] = [
   // ── Free / no-signup public usenet ────────────────────────────
-  {
-    id: 'NZBKING_NO_KEY', name: 'NZBKing',
-    href: 'https://nzbking.com',
-    note: 'Free, public, no account. Broad general usenet coverage.',
-    fields: [],
-    category: 'usenet-free',
-    tags: ['general', 'no-signup'],
-  },
-  {
-    id: 'BINSEARCH_NO_KEY', name: 'Binsearch',
-    href: 'https://binsearch.info',
-    note: 'Free, public, no account. Good fallback for older articles.',
-    fields: [],
-    category: 'usenet-free',
-    tags: ['general', 'no-signup'],
-  },
+  // NZBKing + Binsearch removed in v0.3.29 — both consistently failed
+  // Prowlarr's reachability probe (NZBKing went read-only late 2024;
+  // Binsearch's bundled URL drift across mirrors had no stable pin).
+  // Their *_NO_KEY env-key types stay in EnvFormValues for back-compat
+  // with .env files written by older installer versions — the schema
+  // ignores them on read.
   {
     id: 'ANIMETOSHO_API_KEY', name: 'AnimeTosho',
     href: 'https://animetosho.org',

@@ -154,13 +154,17 @@ USENET_INDEXERS = [
     # Coverage is broad-but-shallow vs. paid indexers; the wizard's
     # default mix relies on these for unattended installs.
     ("AnimeTosho",     "https://feed.animetosho.org",      None,                    "ANIMETOSHO_API_KEY"),
-    # NZBKing — public general index. Newznab API at /nzbking.com is
-    # surfaced by Prowlarr's built-in indexer entry. Best free fallback
-    # for anything AnimeTosho doesn't carry.
-    ("NZBKing",        "https://www.nzbking.com",          None,                    None),
-    # Binsearch — public, scrapes binary articles directly. Useful for
-    # older content + when a release vanished from the indexer DBs.
-    ("Binsearch",      "https://binsearch.info",           None,                    None),
+    # NZBKing + Binsearch — both removed from the default builtin list
+    # in v0.3.29. The wizard log was consistently showing
+    # "Unable to connect to indexer, ... Unexpected XML" for both:
+    #   - NZBKing went read-only late 2024 and the Newznab endpoint no
+    #     longer returns a valid response to Prowlarr's reachability
+    #     probe (HTML error page instead of XML).
+    #   - Binsearch's bundled URL has been drifting between mirrors;
+    #     no single replacement BaseUrl has been stable enough to pin.
+    # Neither has a code-side fix the wizard can reliably maintain.
+    # Users who want them can still add via Prowlarr's UI (where they
+    # can paste a working mirror by hand).
     # ── Free with free signup (requires API key) ─────────────────────────────
     # ABNzb and Althub historically allowed RSS-only access without a
     # key, but their current backends reject add-attempts without

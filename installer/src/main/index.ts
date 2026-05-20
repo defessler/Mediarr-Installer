@@ -1,7 +1,7 @@
 // Electron main entry. Boots the BrowserWindow, wires services, and
 // owns the app lifecycle.
 
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, dialog, screen, shell } from 'electron'
 import { createWriteStream, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, basename } from 'node:path'
@@ -256,11 +256,31 @@ function createWindow() {
         ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 11 } }
         : {}
 
+  // Default window size targets the most common modern desktop resolution
+  // (1920×1080 minus taskbar/dock) — 1440×920 leaves a comfortable margin on
+  // all sides and gives our two-pane Configure / Run screens room to
+  // breathe (the log panel + stepper rail were getting cramped at 1100×780).
+  //
+  // For smaller screens (laptops at 1366×768, the floor we still actively
+  // support) we cap the default to the available work area minus 80px so
+  // the window doesn't spawn larger than the desktop. minWidth/minHeight
+  // stay at 900×640 — that's the smallest the layout still works at;
+  // anything smaller and the stepper rail collapses awkwardly.
+  const DESIRED_W = 1440
+  const DESIRED_H = 920
+  const MIN_W = 900
+  const MIN_H = 640
+  const MARGIN = 80
+  const { workAreaSize } = screen.getPrimaryDisplay()
+  const initialW = Math.max(MIN_W, Math.min(DESIRED_W, workAreaSize.width  - MARGIN))
+  const initialH = Math.max(MIN_H, Math.min(DESIRED_H, workAreaSize.height - MARGIN))
+  log.info(`Window: workArea=${workAreaSize.width}×${workAreaSize.height} → initial=${initialW}×${initialH}`)
+
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 780,
-    minWidth: 900,
-    minHeight: 640,
+    width: initialW,
+    height: initialH,
+    minWidth: MIN_W,
+    minHeight: MIN_H,
     show: true, // show immediately so we don't hide failures behind ready-to-show
     autoHideMenuBar: true,
     backgroundColor: '#020617', // slate-950 — matches the renderer chrome
