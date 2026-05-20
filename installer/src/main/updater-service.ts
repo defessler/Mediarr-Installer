@@ -112,25 +112,59 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
   const mod = await loadUpdater()
   if (!mod) return
 
-  const { autoUpdater } = mod
+  // electron-updater is a CommonJS module. When dynamic-imported from
+  // ESM (this file is ESM — package.json has "type": "module"), Node
+  // wraps module.exports into the namespace's `default` property. That
+  // means a plain `const { autoUpdater } = mod` produces undefined and
+  // the next line crashes with:
+  //   TypeError: Cannot set properties of undefined (setting 'logger')
+  //   at initUpdater (resources/app.asar/out/main/index.js:NNNN)
+  // which is exactly what shipped in v0.3.30 + v0.3.31, leaving in-place
+  // auto-update silently broken — the "Check for updates" button would
+  // get its result via GitHub's releases API fallback, but the actual
+  // electron-updater download/install pipeline never initialised.
+  //
+  // Bundlers also vary: electron-vite's CJS interop sometimes re-exposes
+  // the named export at the namespace root, so we accept either shape.
+  const autoUpdater =
+    (mod as { autoUpdater?: unknown }).autoUpdater
+    ?? (mod as { default?: { autoUpdater?: unknown } }).default?.autoUpdater
+  if (!autoUpdater) {
+    log.warn(
+      'electron-updater loaded but autoUpdater export not found — auto-update disabled',
+    )
+    return
+  }
+  // Cast to the runtime shape now that we've validated it's present.
+  // The eslint-disable lets us keep `any` here without polluting the
+  // rest of the file; downstream code uses the same callsite-derived
+  // shape it always did.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const au = autoUpdater as any
 
   // Route electron-updater's own logging through electron-log so its
   // chatter ends up in main.log alongside ours. Without this you get a
   // separate file that's easy to miss when debugging an update issue.
-  autoUpdater.logger = log
+  au.logger = log
 
   // We want explicit control over when downloads happen — auto-download
   // means the user sees the "ready to install" banner without warning.
   // Renderer triggers the actual download via the IPC handler below.
-  autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
+  au.autoDownload = false
+  au.autoInstallOnAppQuit = true
 
-  autoUpdater.on('checking-for-update', () => {
+  au.on('checking-for-update', () => {
     log.info('updater: checking for update')
     broadcast({ kind: 'checking' })
   })
 
-  autoUpdater.on('update-available', (info) => {
+  // Local types for the same reason as the update-downloaded / error
+  // handlers below — `au: any` strips inference from the event
+  // callbacks, but we don't want full implicit-any either.
+  interface AvailableInfo { version: string; releaseNotes?: string | unknown }
+  interface ProgressInfo { percent: number; bytesPerSecond: number; transferred: number; total: number }
+
+  au.on('update-available', (info: AvailableInfo) => {
     log.info('updater: update available', info.version)
     broadcast({
       kind: 'available',
@@ -139,12 +173,12 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
     })
   })
 
-  autoUpdater.on('update-not-available', (info) => {
+  au.on('update-not-available', (info: AvailableInfo) => {
     log.info('updater: up to date', info.version)
     broadcast({ kind: 'not-available' })
   })
 
-  autoUpdater.on('download-progress', (p) => {
+  au.on('download-progress', (p: ProgressInfo) => {
     broadcast({
       kind: 'downloading',
       percent: Math.round(p.percent),
@@ -154,7 +188,13 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
     })
   })
 
-  autoUpdater.on('update-downloaded', (info) => {
+  // The `info` / `err` callbacks lose their typed inference because
+  // `au` is typed as `any` (electron-updater's CJS export defeats the
+  // namespace's type info — see the destructure comment above). Light
+  // local types keep the call-sites honest without re-importing
+  // electron-updater's full UpdateInfo / ProgressInfo shapes.
+  interface UpdateInfo { version: string; releaseNotes?: string | unknown }
+  au.on('update-downloaded', (info: UpdateInfo) => {
     log.info('updater: update downloaded', info.version)
     broadcast({
       kind: 'downloaded',
@@ -163,7 +203,7 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
     })
   })
 
-  autoUpdater.on('error', (err) => {
+  au.on('error', (err: Error) => {
     log.error('updater error:', err)
     broadcast({ kind: 'error', message: err?.message ?? String(err) })
   })
@@ -176,7 +216,7 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
 
   ipcMain.handle('updater:check', async () => {
     try {
-      await autoUpdater.checkForUpdates()
+      await au.checkForUpdates()
     } catch (e) {
       log.error('updater: check failed:', e)
       broadcast({ kind: 'error', message: (e as Error).message })
@@ -189,7 +229,7 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
       return
     }
     try {
-      await autoUpdater.downloadUpdate()
+      await au.downloadUpdate()
     } catch (e) {
       log.error('updater: download failed:', e)
       broadcast({ kind: 'error', message: (e as Error).message })
@@ -207,15 +247,15 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
     //   they don't understand.
     // isForceRunAfter=true → relaunch the app immediately after the
     //   install completes.
-    autoUpdater.quitAndInstall(false, true)
+    au.quitAndInstall(false, true)
   })
 
   // Fire the initial check. Non-blocking — the result lands in
   // lastState and the renderer picks it up on its next get-state call
   // or via the broadcast event.
   log.info('updater: kicking off initial check')
-  autoUpdater.checkForUpdates().catch((e) => {
+  au.checkForUpdates().catch((e: Error) => {
     log.error('updater: initial check failed:', e)
-    broadcast({ kind: 'error', message: (e as Error).message })
+    broadcast({ kind: 'error', message: e.message })
   })
 }
