@@ -95,8 +95,11 @@ jobs:
         # Compile-only — catches syntax errors without importing (so
         # we don't need to install deps). The runtime imports
         # (urllib, xml.etree, configparser) are all stdlib.
+        # Glob updated in v0.4.2 alongside the shellcheck fix: same
+        # v0.3.22-era layout migration moved scripts under nas/scripts/,
+        # so the old `nas/*.py nas/indexers/*.py` globs matched nothing.
         run: |
           set -e
-          for f in nas/*.py nas/indexers/*.py nas/migration/*.py; do
+          for f in nas/scripts/*.py nas/scripts/indexers/*.py nas/migration/*.py; do
             python -m py_compile "$f"
           done
