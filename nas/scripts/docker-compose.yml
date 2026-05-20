@@ -582,9 +582,15 @@ services:
     # failures (e.g., no DNS during a NAS reboot) silent + crash-loop
     # invisibly. Quote-passing of the sleep keeps the apk retry from
     # hammering the package mirror if it fails the first try.
+    # docker-cli-compose installs the `docker compose` subcommand which
+    # the /pull endpoint uses to recreate containers onto freshly-pulled
+    # images. Without it the pull lands new layers on disk but every
+    # container keeps running on its old image. Both packages live in
+    # alpine's community repo — install in one apk add so we make one
+    # network round trip instead of two.
     command: >-
-      sh -c "apk add --no-cache docker-cli ||
-             { echo 'apk add docker-cli failed; sleeping 60s before exit so we don'\\''t hammer the mirror'; sleep 60; exit 1; };
+      sh -c "apk add --no-cache docker-cli docker-cli-compose ||
+             { echo 'apk add docker-cli + docker-cli-compose failed; sleeping 60s before exit so we don'\\''t hammer the mirror'; sleep 60; exit 1; };
              exec python3 /app/server.py"
     logging: *logging
     # restart: on-failure:5 instead of unless-stopped so a persistent

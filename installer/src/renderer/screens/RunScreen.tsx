@@ -670,22 +670,32 @@ export function RunScreen() {
       // user might have hand-added something custom).
       setPhase('writing-env')
       const ts = new Date().toISOString().replace(/[:.]/g, '-')
-      wlog('Backing up any existing .env...')
+      // v0.3.23+: .env lives next to docker-compose.yml under scripts/.
+      // Back up BOTH possible legacy locations (root and scripts/) so
+      // an in-place upgrade across the layout migration doesn't lose
+      // either copy. Backup files land where their source was found.
+      const envScripts = `${targetDir}/scripts/.env`
+      const envLegacy  = `${targetDir}/.env`
+      wlog('Backing up any existing .env (root + scripts/)...')
       await window.installer.ssh.exec({
         sessionId,
-        cmd: `[ -f ${shellQuote(`${targetDir}/.env`)} ] && cp -p ${shellQuote(`${targetDir}/.env`)} ${shellQuote(`${targetDir}/.env.backup-${ts}`)} && echo "backed up to .env.backup-${ts}" || echo "(no prior .env)"`,
+        cmd:
+          `mkdir -p ${shellQuote(`${targetDir}/scripts`)}; ` +
+          `[ -f ${shellQuote(envLegacy)} ] && cp -p ${shellQuote(envLegacy)} ${shellQuote(`${envLegacy}.backup-${ts}`)} && echo "backed up legacy .env"; ` +
+          `[ -f ${shellQuote(envScripts)} ] && cp -p ${shellQuote(envScripts)} ${shellQuote(`${envScripts}.backup-${ts}`)} && echo "backed up scripts/.env"; ` +
+          `echo "(done)"`,
         sudo: true,
       }).then((r) => wlog(r.stdout.trim() || '(done)'))
 
-      wlog(`Writing ${targetDir}/.env (${Object.keys(config).filter((k) => (config as Record<string, unknown>)[k]).length} populated keys)...`)
+      wlog(`Writing ${envScripts} (${Object.keys(config).filter((k) => (config as Record<string, unknown>)[k]).length} populated keys)...`)
       const envText = renderEnv(config as EnvFormValues)
       await window.installer.sftp.writeFile({
         sessionId,
-        remotePath: `${targetDir}/.env`,
+        remotePath: envScripts,
         content: envText,
         mode: 0o600,
       })
-      wlog('.env written (mode 0600)')
+      wlog('.env written under scripts/ (mode 0600)')
 
       wlog('Starting setup.sh — output will stream below ↓')
 

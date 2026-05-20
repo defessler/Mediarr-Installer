@@ -118,7 +118,16 @@ export function DoneScreen() {
     try {
       await window.installer.ssh.execStream({
         sessionId,
-        cmd: PATH_PREFIX + `bash '${targetDir}/post-deploy-validate.sh'`,
+        // v0.3.22+ moved post-deploy-validate.sh under scripts/. Try
+        // the new path; fall back to the legacy root location so this
+        // still works on installs that haven't run Sync yet.
+        cmd:
+          PATH_PREFIX +
+          `if [ -f '${targetDir}/scripts/post-deploy-validate.sh' ]; then ` +
+          `  bash '${targetDir}/scripts/post-deploy-validate.sh'; ` +
+          `else ` +
+          `  bash '${targetDir}/post-deploy-validate.sh'; ` +
+          `fi`,
         sudo: true,
         channelId: VALIDATE_CHANNEL,
       })

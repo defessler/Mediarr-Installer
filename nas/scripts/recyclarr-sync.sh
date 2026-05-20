@@ -32,18 +32,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Compose root (INSTALL_DIR) is the scripts/ parent when this lives in
-# the new layout, or SCRIPT_DIR itself in legacy loose-scripts installs.
-if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
-    INSTALL_DIR_FALLBACK="$(cd "$SCRIPT_DIR/.." && pwd)"
+# v0.3.23+ layout: docker-compose.yml + .env live next to this script
+# in scripts/. Legacy (v0.3.22): .env was at INSTALL_DIR root (the
+# parent dir) — find it there as fallback. Anything earlier had the
+# script itself loose at INSTALL_DIR, so SCRIPT_DIR IS the compose
+# root. The COMPOSE_DIR var collapses all three cases.
+if [ -f "$SCRIPT_DIR/.env" ] && [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
+    COMPOSE_DIR="$SCRIPT_DIR"            # v0.3.23+ (.env + compose under scripts/)
+elif [ "$(basename "$SCRIPT_DIR")" = "scripts" ] && [ -f "$(dirname "$SCRIPT_DIR")/.env" ]; then
+    COMPOSE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # v0.3.22 (.env at install root)
 else
-    INSTALL_DIR_FALLBACK="$SCRIPT_DIR"
+    COMPOSE_DIR="$SCRIPT_DIR"            # legacy loose-scripts
 fi
-cd "$INSTALL_DIR_FALLBACK"
+cd "$COMPOSE_DIR"
 
 if [ ! -f .env ]; then
-    echo "✘ .env not found at $INSTALL_DIR_FALLBACK/.env"
-    echo "  This script expects to live next to docker-compose.yml in the install dir."
+    echo "✘ .env not found at $COMPOSE_DIR/.env"
+    echo "  This script expects to find docker-compose.yml + .env in the install dir."
     exit 1
 fi
 
@@ -56,7 +61,7 @@ set -a
 . ./.env
 set +a
 
-INSTALL_DIR="${INSTALL_DIR:-$INSTALL_DIR_FALLBACK}"
+INSTALL_DIR="${INSTALL_DIR:-$COMPOSE_DIR}"
 RECYCLARR_CONFIG_DIR="$INSTALL_DIR/recyclarr/config"
 STAMP_FILE="$RECYCLARR_CONFIG_DIR/.last-sync"
 LOG_FILE="$RECYCLARR_CONFIG_DIR/sync.log"

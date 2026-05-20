@@ -51,7 +51,13 @@ async function recordSha() {
   } catch {
     // Not in a git repo or nas/ not committed — that's fine for dev.
   }
-  await writeFile(join(DST, '.payload-sha'), sha + '\n', 'utf8')
+  // v0.3.23+: .payload-sha lives under scripts/ alongside everything
+  // else the wizard ships. Was at payload root for pre-v0.3.23 builds.
+  // The dashboard's payload-sha display reads from app data so the
+  // path change is transparent to the renderer.
+  const scriptsDir = join(DST, 'scripts')
+  await mkdir(scriptsDir, { recursive: true })
+  await writeFile(join(scriptsDir, '.payload-sha'), sha + '\n', 'utf8')
 }
 
 async function main() {

@@ -18,11 +18,19 @@ export function payloadDir(): string {
 }
 
 export function payloadSha(): string | null {
-  const f = join(payloadDir(), '.payload-sha')
-  if (!existsSync(f)) return null
-  try {
-    return readFileSync(f, 'utf8').trim()
-  } catch {
-    return null
+  // v0.3.23+ ships .payload-sha under scripts/. Older builds had it at
+  // the payload root. Check both so the footer SHA chip stays populated
+  // when the user upgrades through the new layout.
+  for (const f of [
+    join(payloadDir(), 'scripts', '.payload-sha'),
+    join(payloadDir(), '.payload-sha'),
+  ]) {
+    if (!existsSync(f)) continue
+    try {
+      return readFileSync(f, 'utf8').trim()
+    } catch {
+      // try the next candidate
+    }
   }
+  return null
 }
