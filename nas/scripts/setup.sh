@@ -479,12 +479,10 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
         setup-arr-config.py recyclarr-trigger.py recyclarr-sync.sh
         restart-qbit.sh tune-arrs.sh fix-imports.sh stop-all.sh
         boot-orchestrator.sh boot-orchestrator.log
-        # v0.3.23 also moved the compose files + .env + docs into
-        # scripts/. Pre-v0.3.23 installs leave these orphaned at the
-        # root after sync — clean them up too, but only when the
-        # canonical copy exists under scripts/ AND (for .env, the
-        # contents differ, otherwise we'd nuke the only copy if the
-        # wizard hasn't re-written it yet).
+        # v0.3.24 also moved the compose files + .env.example + docs +
+        # .payload-sha into scripts/. Pre-v0.3.24 installs leave these
+        # orphaned at the root after sync — clean them up too. (.env
+        # is migrated separately below — it holds the user's secrets.)
         docker-compose.yml docker-compose.no-vpn.yml
         docker-compose.test-override.yml
         INDEXERS.md .env.example .setup.lock .payload-sha
@@ -509,15 +507,12 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
     # doesn't, MOVE it (so docker compose still picks up the right
     # values on the next compose call from scripts/). If both exist,
     # the wizard already wrote the canonical scripts/.env on Sync;
-    # delete the now-stale root copy. Skip both cases when the
-    # contents are byte-identical (cleaner = no migration needed).
+    # delete the now-stale root copy.
     if [ -f "$INSTALL_DIR/.env" ]; then
         if [ ! -f "$SCRIPT_DIR/.env" ]; then
             mv "$INSTALL_DIR/.env" "$SCRIPT_DIR/.env" \
                 && echo "  ℹ Moved your existing .env into scripts/ (compose root)." \
                 && removed=$((removed+1))
-        elif ! cmp -s "$INSTALL_DIR/.env" "$SCRIPT_DIR/.env"; then
-            rm -f "$INSTALL_DIR/.env" && removed=$((removed+1))
         else
             rm -f "$INSTALL_DIR/.env" && removed=$((removed+1))
         fi

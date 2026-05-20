@@ -122,7 +122,7 @@ export interface EnvFormValues {
   // Free-with-signup indexers — API key collected, sent to .env.
   ABNZB_API_KEY?: string
   ALTHUB_API_KEY?: string
-  // Paid indexers
+  // Paid usenet indexers
   NZBGEEK_API_KEY?: string
   NZBFINDER_API_KEY?: string
   DRUNKENSLUG_API_KEY?: string
@@ -131,6 +131,42 @@ export interface EnvFormValues {
   DOGNZB_API_KEY?: string
   NINJACZENTRAL_API_KEY?: string
   TABULARASA_API_KEY?: string
+  NZBSU_API_KEY?: string
+
+  // ── Public torrent trackers — placeholders, no key collected.
+  // Added automatically by setup-indexers.py; presence in EnvFormValues
+  // lets the IndexerDef.fields type-check passes uniformly.
+  NYAA_NO_KEY?: string
+  SUBSPLEASE_NO_KEY?: string
+  ANIDEX_NO_KEY?: string
+  TOKYOTOSHO_NO_KEY?: string
+  X1337_NO_KEY?: string
+  TGX_NO_KEY?: string
+  THEPIRATEBAY_NO_KEY?: string
+  LIMETORRENTS_NO_KEY?: string
+  EZTV_NO_KEY?: string
+  THERARBG_NO_KEY?: string
+  BITSEARCH_NO_KEY?: string
+  YTS_NO_KEY?: string
+
+  // ── Additional private trackers (TV / movies / music / general)
+  BTN_API_KEY?: string
+  MTV_API_KEY?: string
+  PTP_USER?: string
+  PTP_KEY?: string
+  RED_API_KEY?: string
+  ORPHEUS_API_KEY?: string
+  TORRENTLEECH_RSSKEY?: string
+  HDTORRENTS_USER?: string
+  HDTORRENTS_PASS?: string
+
+  // ── Custom user-defined indexers (JSON catalogue)
+  // The wizard exposes an in-app editor for one or more user-supplied
+  // Newznab-compatible indexers. Serialised as a JSON string in .env
+  // so setup-indexers.py can read it without an extra IPC round-trip;
+  // the wizard parses + edits it via its native object form. Empty /
+  // unset = no custom entries (the default).
+  CUSTOM_INDEXERS_JSON?: string
 
   // ── Private torrent trackers
   AVISTAZ_USER?: string
@@ -323,6 +359,7 @@ export function renderEnv(v: EnvFormValues): string {
     line('DOGNZB_API_KEY', v.DOGNZB_API_KEY),
     line('NINJACZENTRAL_API_KEY', v.NINJACZENTRAL_API_KEY),
     line('TABULARASA_API_KEY', v.TABULARASA_API_KEY),
+    line('NZBSU_API_KEY', v.NZBSU_API_KEY),
     '',
     '# Private torrent trackers',
     line('AVISTAZ_USER', v.AVISTAZ_USER),
@@ -334,6 +371,18 @@ export function renderEnv(v: EnvFormValues): string {
     line('ANIMETORRENTS_USER', v.ANIMETORRENTS_USER),
     line('ANIMETORRENTS_PASS', v.ANIMETORRENTS_PASS),
     line('IPTORRENTS_COOKIE', v.IPTORRENTS_COOKIE),
+    line('TORRENTLEECH_RSSKEY', v.TORRENTLEECH_RSSKEY),
+    line('HDTORRENTS_USER', v.HDTORRENTS_USER),
+    line('HDTORRENTS_PASS', v.HDTORRENTS_PASS),
+    line('BTN_API_KEY', v.BTN_API_KEY),
+    line('MTV_API_KEY', v.MTV_API_KEY),
+    line('PTP_USER', v.PTP_USER),
+    line('PTP_KEY', v.PTP_KEY),
+    line('RED_API_KEY', v.RED_API_KEY),
+    line('ORPHEUS_API_KEY', v.ORPHEUS_API_KEY),
+    '',
+    '# Custom user-defined indexers (JSON-blob managed by the wizard editor)',
+    line('CUSTOM_INDEXERS_JSON', v.CUSTOM_INDEXERS_JSON),
     '',
     '# Bazarr subtitle providers',
     line('OPENSUBTITLES_USER', v.OPENSUBTITLES_USER),
@@ -348,7 +397,43 @@ export function renderEnv(v: EnvFormValues): string {
 
 // ── Indexer + provider catalogue (drives the toggle-card UI) ────────────────
 
-export type IndexerCat = 'usenet-free' | 'usenet-paid' | 'tracker-private'
+/** High-level group used by the legacy section headers. The Configure
+ *  screen now layers a unified search + chip-filter view over the whole
+ *  catalogue, but downstream consumers (setup-indexers.py mapping,
+ *  legacy renderers) still key off these category strings. */
+export type IndexerCat =
+  | 'usenet-free'           // no signup OR free signup
+  | 'usenet-paid'           // paid account / invite-only
+  | 'tracker-public'        // anyone can grab feeds; no account
+  | 'tracker-private'       // paid / invite-only private tracker
+
+/** Tag taxonomy for the search/filter UI. An indexer can carry
+ *  multiple tags — e.g. AnimeBytes is both 'anime' and 'tracker-private'.
+ *  Filter chips on the Configure screen offer one selection per
+ *  semantic axis (content / cost / signup); a card is shown when it
+ *  matches EVERY active filter (AND across axes, OR within an axis
+ *  when we add multi-pick later). */
+export type IndexerTag =
+  // Content
+  | 'general'   // catchall — TV + movies + everything
+  | 'tv'        // TV-focused
+  | 'movies'    // movie-focused
+  | 'anime'     // anime / animation
+  | 'kdrama'    // Korean drama specifically
+  | 'asian'     // Korean / Chinese / Japanese live action (broader)
+  | 'music'     // FLAC / lossless audio focus
+  | 'books'     // ebooks / audiobooks
+  // Kind
+  | 'usenet'
+  | 'torrent'
+  // Cost
+  | 'free'
+  | 'paid'
+  // Signup gating
+  | 'no-signup'      // public, anyone
+  | 'free-signup'    // free account, anyone can register
+  | 'invite-only'    // need an existing member to invite you
+  | 'application'    // open application / interview gates entry
 
 export interface IndexerDef {
   /** Form key */
@@ -362,118 +447,275 @@ export interface IndexerDef {
   /** Auth fields the indexer needs */
   fields: { key: keyof EnvFormValues; label: string; password?: boolean }[]
   category: IndexerCat
+  /** Filter tags consumed by the Configure-screen search UI. Older
+   *  entries auto-derive content tags from `category` when this is
+   *  omitted; new entries should always set this explicitly so the
+   *  filter chips have meaningful options. */
+  tags?: IndexerTag[]
+}
+
+/** Build the effective tag set for an indexer — explicit `tags` PLUS
+ *  derived ones from `category` so legacy entries still filter
+ *  sensibly. Helper so the UI doesn't have to redo this logic per
+ *  render, and so setup-indexers.py-side TS code (if we add it
+ *  someday) shares the same derivation rule. */
+export function indexerTags(def: IndexerDef): IndexerTag[] {
+  const tags = new Set<IndexerTag>(def.tags ?? [])
+  // Derive from category — never override explicit tags.
+  if (def.category === 'usenet-free') {
+    tags.add('usenet')
+    tags.add('free')
+  } else if (def.category === 'usenet-paid') {
+    tags.add('usenet')
+    if (!tags.has('free')) tags.add('paid')
+  } else if (def.category === 'tracker-public') {
+    tags.add('torrent')
+    tags.add('free')
+    if (!tags.has('free-signup')) tags.add('no-signup')
+  } else if (def.category === 'tracker-private') {
+    tags.add('torrent')
+    if (!tags.has('free')) tags.add('paid')
+  }
+  return Array.from(tags)
 }
 
 export const USENET_INDEXERS: IndexerDef[] = [
+  // ── Free / no-signup public usenet ────────────────────────────
+  {
+    id: 'NZBKING_NO_KEY', name: 'NZBKing',
+    href: 'https://nzbking.com',
+    note: 'Free, public, no account. Broad general usenet coverage.',
+    fields: [],
+    category: 'usenet-free',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'BINSEARCH_NO_KEY', name: 'Binsearch',
+    href: 'https://binsearch.info',
+    note: 'Free, public, no account. Good fallback for older articles.',
+    fields: [],
+    category: 'usenet-free',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'ANIMETOSHO_API_KEY', name: 'AnimeTosho',
+    href: 'https://animetosho.org',
+    note: 'Best free anime indexer. Added automatically; key only raises rate limits.',
+    fields: [{ key: 'ANIMETOSHO_API_KEY', label: 'API key (optional)' }],
+    category: 'usenet-free',
+    tags: ['anime', 'no-signup'],
+  },
+  // ── Free-with-signup usenet ───────────────────────────────────
+  {
+    id: 'ABNZB_API_KEY', name: 'ABNzb',
+    href: 'https://abnzb.com',
+    note: 'Free signup → API key. ~50–100 daily calls — fine for casual use.',
+    fields: [{ key: 'ABNZB_API_KEY', label: 'API key' }],
+    category: 'usenet-free',
+    tags: ['general', 'free-signup'],
+  },
+  {
+    id: 'ALTHUB_API_KEY', name: 'Althub',
+    href: 'https://althub.co.za',
+    note: 'Free signup → API key. South-African-hosted, similar to ABNzb.',
+    fields: [{ key: 'ALTHUB_API_KEY', label: 'API key' }],
+    category: 'usenet-free',
+    tags: ['general', 'free-signup'],
+  },
+  // ── Paid usenet — well-established indexers ───────────────────
   {
     id: 'NZBGEEK_API_KEY', name: 'NZBGeek',
-    href: 'https://nzbgeek.info', note: 'Paid account.',
+    href: 'https://nzbgeek.info', note: 'Paid account. Excellent retention + categorisation.',
     fields: [{ key: 'NZBGEEK_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
   {
     id: 'NZBFINDER_API_KEY', name: 'NZBFinder',
-    href: 'https://nzbfinder.ws', note: 'Paid account.',
+    href: 'https://nzbfinder.ws', note: 'Paid account. Strong general coverage.',
     fields: [{ key: 'NZBFINDER_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
   {
     id: 'NZBPLANET_API_KEY', name: 'NZBPlanet',
     href: 'https://nzbplanet.net', note: 'Paid account.',
     fields: [{ key: 'NZBPLANET_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
   {
     id: 'NZBCAT_API_KEY', name: 'NZB.cat',
     href: 'https://nzb.cat', note: 'Paid account.',
     fields: [{ key: 'NZBCAT_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
   {
     id: 'DRUNKENSLUG_API_KEY', name: 'DrunkenSlug',
     href: 'https://drunkenslug.com', note: 'Invite-only.',
     fields: [{ key: 'DRUNKENSLUG_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'invite-only'],
   },
   {
     id: 'DOGNZB_API_KEY', name: 'DogNZB',
     href: 'https://dognzb.cr', note: 'Invite-only.',
     fields: [{ key: 'DOGNZB_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'invite-only'],
   },
   {
     id: 'NINJACZENTRAL_API_KEY', name: 'NinjaCentral',
     href: 'https://ninjacentral.co.za',
+    note: 'Paid account.',
     fields: [{ key: 'NINJACZENTRAL_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
   {
     id: 'TABULARASA_API_KEY', name: 'Tabula Rasa',
     href: 'https://tabula-rasa.pw',
+    note: 'Paid account.',
     fields: [{ key: 'TABULARASA_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
   {
-    id: 'ANIMETOSHO_API_KEY', name: 'AnimeTosho (optional key)',
-    href: 'https://animetosho.org',
-    note: 'Best free anime indexer. Added automatically; key only raises rate limits.',
-    fields: [{ key: 'ANIMETOSHO_API_KEY', label: 'API key (optional)' }],
-    category: 'usenet-free',
+    id: 'NZBSU_API_KEY', name: 'NZB.su',
+    href: 'https://nzb.su',
+    note: 'Paid account. General-purpose, long-running indexer.',
+    fields: [{ key: 'NZBSU_API_KEY', label: 'API key' }],
+    category: 'usenet-paid',
+    tags: ['general', 'free-signup'],
   },
-  // Truly anonymous free indexers — no account needed at all. Added
-  // automatically by setup-indexers.py; the card exists here so the
-  // Configure screen explains what they are, since they show up in
-  // Prowlarr after install. No credentials to collect.
+]
+
+/** Public torrent trackers — no account needed. Each is added with
+ *  no auth fields; setup-indexers.py just registers them by name. */
+export const PUBLIC_TRACKERS: IndexerDef[] = [
+  // ── Anime / Asian focused public ──────────────────────────────
   {
-    id: 'NZBKING_NO_KEY', name: 'NZBKing (no signup)',
-    href: 'https://nzbking.com',
-    note: 'Free, public, no account. Added automatically — broad general usenet coverage.',
+    id: 'NYAA_NO_KEY', name: 'Nyaa',
+    href: 'https://nyaa.si',
+    note: 'The anime torrent index — fansubs, manga, music. Free, public, no account.',
     fields: [],
-    category: 'usenet-free',
+    category: 'tracker-public',
+    tags: ['anime', 'no-signup'],
   },
   {
-    id: 'BINSEARCH_NO_KEY', name: 'Binsearch (no signup)',
-    href: 'https://binsearch.info',
-    note: 'Free, public, no account. Added automatically — fallback for older articles.',
+    id: 'SUBSPLEASE_NO_KEY', name: 'SubsPlease',
+    href: 'https://subsplease.org',
+    note: 'Weekly anime fansubs (HorribleSubs successor). RSS-based, no account.',
     fields: [],
-    category: 'usenet-free',
-  },
-  // Free-with-free-account tier. These need a signup at the indexer's
-  // site to get an API key. The wizard collects the key here; if it's
-  // blank, setup-indexers.py skips them silently.
-  {
-    id: 'ABNZB_API_KEY', name: 'ABNzb (free with signup)',
-    href: 'https://abnzb.com',
-    note: 'Free signup → API key. ~50–100 daily calls — fine for casual use.',
-    fields: [{ key: 'ABNZB_API_KEY', label: 'API key' }],
-    category: 'usenet-free',
+    category: 'tracker-public',
+    tags: ['anime', 'no-signup'],
   },
   {
-    id: 'ALTHUB_API_KEY', name: 'Althub (free with signup)',
-    href: 'https://althub.co.za',
-    note: 'Free signup → API key. South-African-hosted, similar to ABNzb.',
-    fields: [{ key: 'ALTHUB_API_KEY', label: 'API key' }],
-    category: 'usenet-free',
+    id: 'ANIDEX_NO_KEY', name: 'AniDex',
+    href: 'https://anidex.info',
+    note: 'Anime / manga / Asian video. Free, public, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['anime', 'no-signup'],
+  },
+  {
+    id: 'TOKYOTOSHO_NO_KEY', name: 'Tokyo Toshokan',
+    href: 'https://www.tokyotosho.info',
+    note: 'Long-running anime + Japanese torrent index. Free, public, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['anime', 'asian', 'no-signup'],
+  },
+  // ── General public ────────────────────────────────────────────
+  {
+    id: 'X1337_NO_KEY', name: '1337x',
+    href: 'https://1337x.to',
+    note: 'General-purpose public tracker — movies, TV, software. No account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'TGX_NO_KEY', name: 'TorrentGalaxy',
+    href: 'https://torrentgalaxy.to',
+    note: 'General-purpose public tracker. Good UI, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'THEPIRATEBAY_NO_KEY', name: 'The Pirate Bay',
+    href: 'https://thepiratebay.org',
+    note: 'The original public tracker. Catch-all coverage, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'LIMETORRENTS_NO_KEY', name: 'LimeTorrents',
+    href: 'https://www.limetorrents.lol',
+    note: 'General-purpose public tracker. No account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'EZTV_NO_KEY', name: 'EZTV',
+    href: 'https://eztvx.to',
+    note: 'TV-shows-only public tracker. RSS-based, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['tv', 'no-signup'],
+  },
+  {
+    id: 'THERARBG_NO_KEY', name: 'TheRARBG',
+    href: 'https://therarbg.com',
+    note: 'RARBG community successor. General-purpose, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['general', 'no-signup'],
+  },
+  {
+    id: 'BITSEARCH_NO_KEY', name: 'BitSearch',
+    href: 'https://bitsearch.to',
+    note: 'Federated torrent search engine. No account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['general', 'no-signup'],
+  },
+  // ── Specialty public ──────────────────────────────────────────
+  {
+    id: 'YTS_NO_KEY', name: 'YTS (movies)',
+    href: 'https://yts.mx',
+    note: 'Small-size movie torrents (mostly x265/HEVC). Free, public, no account.',
+    fields: [],
+    category: 'tracker-public',
+    tags: ['movies', 'no-signup'],
   },
 ]
 
 export const PRIVATE_TRACKERS: IndexerDef[] = [
+  // ── Asian / K-drama focused ───────────────────────────────────
   {
     id: 'AVISTAZ_USER', name: 'AvistaZ', href: 'https://avistaz.to',
-    note: 'Korean/Asian movies and TV. Passkey (PID) is on your AvistaZ Profile page.',
+    note: 'Korean / Chinese / Japanese live action. Passkey (PID) is on your AvistaZ Profile page.',
     fields: [
       { key: 'AVISTAZ_USER', label: 'Username' },
       { key: 'AVISTAZ_PASS', label: 'Password', password: true },
       { key: 'AVISTAZ_PID',  label: 'PID / Passkey' },
     ],
     category: 'tracker-private',
+    tags: ['asian', 'kdrama', 'movies', 'tv', 'application'],
   },
   {
     id: 'HHD_API_KEY', name: 'HomieHelpDesk', href: 'https://homiehelpdesk.net',
-    note: 'Korean movies/dramas.',
+    note: 'Korean movies / dramas.',
     fields: [{ key: 'HHD_API_KEY', label: 'API key' }],
     category: 'tracker-private',
+    tags: ['kdrama', 'asian', 'movies', 'tv', 'free-signup'],
   },
+  // ── Anime ─────────────────────────────────────────────────────
   {
     id: 'ANIMEBYTES_USER', name: 'AnimeBytes', href: 'https://animebytes.tv',
     note: 'Highest-quality anime tracker (invite-only).',
@@ -482,6 +724,7 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
       { key: 'ANIMEBYTES_PASS', label: 'Password', password: true },
     ],
     category: 'tracker-private',
+    tags: ['anime', 'invite-only'],
   },
   {
     id: 'ANIMETORRENTS_USER', name: 'AnimeTorrents', href: 'https://animetorrents.me',
@@ -491,7 +734,9 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
       { key: 'ANIMETORRENTS_PASS', label: 'Password', password: true },
     ],
     category: 'tracker-private',
+    tags: ['anime', 'application'],
   },
+  // ── General private ───────────────────────────────────────────
   {
     id: 'IPTORRENTS_COOKIE', name: 'IPTorrents', href: 'https://iptorrents.com',
     note: 'General-purpose private tracker. Cookie-only auth: log in to IPT in your browser, open DevTools → Application → Cookies → iptorrents.com, copy the entire cookie string (uid=...; pass=...; etc).',
@@ -499,6 +744,67 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
       { key: 'IPTORRENTS_COOKIE', label: 'Browser cookie string' },
     ],
     category: 'tracker-private',
+    tags: ['general', 'paid'],
+  },
+  {
+    id: 'TORRENTLEECH_RSSKEY', name: 'TorrentLeech', href: 'https://www.torrentleech.org',
+    note: 'General-purpose private tracker. RSS key from your Profile → RSS feed page.',
+    fields: [
+      { key: 'TORRENTLEECH_RSSKEY', label: 'RSS feed key' },
+    ],
+    category: 'tracker-private',
+    tags: ['general', 'paid'],
+  },
+  {
+    id: 'HDTORRENTS_USER', name: 'HD-Torrents', href: 'https://hd-torrents.org',
+    note: 'High-definition movies + TV, private tracker.',
+    fields: [
+      { key: 'HDTORRENTS_USER', label: 'Username' },
+      { key: 'HDTORRENTS_PASS', label: 'Password', password: true },
+    ],
+    category: 'tracker-private',
+    tags: ['movies', 'tv', 'application'],
+  },
+  // ── TV focused ────────────────────────────────────────────────
+  {
+    id: 'BTN_API_KEY', name: 'BroadcasTheNet (BTN)', href: 'https://broadcasthe.net',
+    note: 'The premier TV-only private tracker. Invite-only; API key from Profile → Edit → Authentication keys.',
+    fields: [{ key: 'BTN_API_KEY', label: 'API key' }],
+    category: 'tracker-private',
+    tags: ['tv', 'invite-only'],
+  },
+  {
+    id: 'MTV_API_KEY', name: 'MoreThanTV (MTV)', href: 'https://www.morethantv.me',
+    note: 'TV-focused private tracker. Open signups sometimes; API key from Settings → Access.',
+    fields: [{ key: 'MTV_API_KEY', label: 'API key' }],
+    category: 'tracker-private',
+    tags: ['tv', 'invite-only'],
+  },
+  // ── Movie focused ─────────────────────────────────────────────
+  {
+    id: 'PTP_USER', name: 'PassThePopcorn (PTP)', href: 'https://passthepopcorn.me',
+    note: 'The premier movies-only private tracker. Invite/interview-only; pass key is on Profile → Security.',
+    fields: [
+      { key: 'PTP_USER', label: 'Username' },
+      { key: 'PTP_KEY', label: 'Passkey' },
+    ],
+    category: 'tracker-private',
+    tags: ['movies', 'application'],
+  },
+  // ── Music focused ─────────────────────────────────────────────
+  {
+    id: 'RED_API_KEY', name: 'Redacted (RED)', href: 'https://redacted.sh',
+    note: 'High-quality music private tracker. Invite/interview-only; API key from Profile → Access settings.',
+    fields: [{ key: 'RED_API_KEY', label: 'API key' }],
+    category: 'tracker-private',
+    tags: ['music', 'application'],
+  },
+  {
+    id: 'ORPHEUS_API_KEY', name: 'Orpheus Network (OPS)', href: 'https://orpheus.network',
+    note: 'Music private tracker (What.CD-style). Invite-only; API key from User → Settings → Access.',
+    fields: [{ key: 'ORPHEUS_API_KEY', label: 'API key' }],
+    category: 'tracker-private',
+    tags: ['music', 'invite-only'],
   },
 ]
 

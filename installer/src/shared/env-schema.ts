@@ -127,6 +127,22 @@ export const envSchema = z.object({
   DOGNZB_API_KEY: optStr,
   NINJACZENTRAL_API_KEY: optStr,
   TABULARASA_API_KEY: optStr,
+  NZBSU_API_KEY: optStr,
+
+  // Public torrent placeholders (no creds collected; presence in the
+  // schema lets the .env round-trip include them as empty values).
+  NYAA_NO_KEY: optStr,
+  SUBSPLEASE_NO_KEY: optStr,
+  ANIDEX_NO_KEY: optStr,
+  TOKYOTOSHO_NO_KEY: optStr,
+  X1337_NO_KEY: optStr,
+  TGX_NO_KEY: optStr,
+  THEPIRATEBAY_NO_KEY: optStr,
+  LIMETORRENTS_NO_KEY: optStr,
+  EZTV_NO_KEY: optStr,
+  THERARBG_NO_KEY: optStr,
+  BITSEARCH_NO_KEY: optStr,
+  YTS_NO_KEY: optStr,
 
   // Private trackers
   AVISTAZ_USER: optStr,
@@ -138,6 +154,22 @@ export const envSchema = z.object({
   ANIMETORRENTS_USER: optStr,
   ANIMETORRENTS_PASS: optStr,
   IPTORRENTS_COOKIE: optStr,
+  TORRENTLEECH_RSSKEY: optStr,
+  HDTORRENTS_USER: optStr,
+  HDTORRENTS_PASS: optStr,
+  BTN_API_KEY: optStr,
+  MTV_API_KEY: optStr,
+  PTP_USER: optStr,
+  PTP_KEY: optStr,
+  RED_API_KEY: optStr,
+  ORPHEUS_API_KEY: optStr,
+
+  // Custom user-defined indexers — JSON-string blob managed by an
+  // in-app editor on the Configure screen. setup-indexers.py parses
+  // this at install time and registers each entry against Prowlarr.
+  // Optional fields (note, tags) tolerated as missing; only `name`
+  // + `url` + `apiKey` are required by the runtime validator.
+  CUSTOM_INDEXERS_JSON: optStr,
 
   // Bazarr providers
   OPENSUBTITLES_USER: optStr,

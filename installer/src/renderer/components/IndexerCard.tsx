@@ -6,8 +6,48 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { ExternalLink } from 'lucide-react'
-import type { EnvFormValues, IndexerDef } from '../../shared/env-render.js'
+import {
+  type EnvFormValues,
+  type IndexerDef,
+  type IndexerTag,
+  indexerTags,
+} from '../../shared/env-render.js'
 import { PasswordInput } from './PasswordInput.js'
+
+/** Visual style per tag for the at-a-glance pill row on each card.
+ *  Content-type tags get accent colours; cost/signup/kind tags use a
+ *  muted slate so the card doesn't turn into a rainbow. Hard-coded
+ *  Tailwind class names so the production build doesn't purge them. */
+const TAG_STYLE: Partial<Record<IndexerTag, { label: string; cls: string }>> = {
+  anime:        { label: 'anime',        cls: 'bg-pink-500/15 text-pink-200 border-pink-500/30' },
+  kdrama:       { label: 'k-drama',      cls: 'bg-rose-500/15 text-rose-200 border-rose-500/30' },
+  asian:        { label: 'asian',        cls: 'bg-rose-500/15 text-rose-200 border-rose-500/30' },
+  tv:           { label: 'tv',           cls: 'bg-sky-500/15 text-sky-200 border-sky-500/30' },
+  movies:       { label: 'movies',       cls: 'bg-violet-500/15 text-violet-200 border-violet-500/30' },
+  music:        { label: 'music',        cls: 'bg-amber-500/15 text-amber-200 border-amber-500/30' },
+  books:        { label: 'books',        cls: 'bg-teal-500/15 text-teal-200 border-teal-500/30' },
+  general:      { label: 'general',      cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  // Cost / signup / kind use a single muted style so the row stays
+  // readable. The labels carry the info; colour is reserved for content.
+  free:         { label: 'free',         cls: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30' },
+  paid:         { label: 'paid',         cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  'no-signup':   { label: 'no signup',    cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  'free-signup': { label: 'free signup',  cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  'invite-only': { label: 'invite-only',  cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  application:  { label: 'application',  cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  usenet:       { label: 'usenet',       cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+  torrent:      { label: 'torrent',      cls: 'bg-slate-700/40 text-slate-300 border-slate-600/40' },
+}
+
+/** Tags worth surfacing on the card — content first (most useful),
+ *  then signup, then kind. We deliberately drop redundant cost tags
+ *  ("paid" is implied by "invite-only" / "application") to keep the
+ *  row short on small cards. */
+const DISPLAY_ORDER: IndexerTag[] = [
+  'anime', 'kdrama', 'asian', 'tv', 'movies', 'music', 'books', 'general',
+  'no-signup', 'free-signup', 'invite-only', 'application',
+  'usenet', 'torrent',
+]
 
 interface Props {
   def: IndexerDef
@@ -92,6 +132,35 @@ export function IndexerCard({ def, values, onChange }: Props) {
           {def.note && (
             <div className="text-xs text-slate-400 truncate">{def.note}</div>
           )}
+          {/* Tag pill row — at-a-glance metadata so the user can tell
+              "anime + invite-only" without reading the note. Only
+              renders when there's at least one tag worth showing; the
+              IndexerBrowser filter chips key off the same taxonomy so
+              the on-card pills double as filter affordances later. */}
+          {(() => {
+            const tagSet = new Set<IndexerTag>(indexerTags(def))
+            const display = DISPLAY_ORDER.filter((t) => tagSet.has(t))
+            if (display.length === 0) return null
+            return (
+              <div className="flex items-center flex-wrap gap-1 mt-1.5">
+                {display.map((t) => {
+                  const style = TAG_STYLE[t]
+                  if (!style) return null
+                  return (
+                    <span
+                      key={t}
+                      className={
+                        `inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ` +
+                        `font-medium border ${style.cls}`
+                      }
+                    >
+                      {style.label}
+                    </span>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </div>
       </div>
 

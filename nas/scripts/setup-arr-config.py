@@ -63,10 +63,11 @@ def _find_install_dir():
 INSTALL_DIR_DEFAULT = _find_install_dir()
 
 
+# ── .env file location ───────────────────────────────────────────────
 def _find_env_file():
-    """Locate the .env file. v0.3.23+ keeps it next to this script in
-    scripts/; v0.3.22 had it at the install-dir root (one level up);
-    legacy loose-script installs had it at the script's own dir.
+    """Locate the .env file. v0.3.24+ keeps it next to this script in
+    scripts/; v0.3.22-3.23 had it at the install-dir root (one level
+    up); legacy loose-script installs had it at the script's own dir.
     Prefer the new location; fall back to the legacy one if missing
     so an in-place upgrade window doesn't fail to find .env."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -76,12 +77,83 @@ def _find_env_file():
     install_root = os.path.join(INSTALL_DIR_DEFAULT, '.env')
     if os.path.exists(install_root):
         return install_root
-    # Fall through to the new location even when nothing exists yet —
-    # downstream code creates it.
     return same_dir
 
 
 ENV_FILE_DEFAULT = _find_env_file()
+
+
+# ── Reinstall detection ──────────────────────────────────────────────
+# Drops a marker file under INSTALL_DIR after the first successful
+# install. Subsequent runs see the marker and switch into "preserve"
+# mode for settings the user might have customised in the UI (auth,
+# media-management baselines, backup schedule, Plex prefs). Stack-
+# essential settings — bindAddress, indexer connections, root folders,
+# Flaresolverr proxy, Plex Connect notification — still get re-applied
+# every run because they're what holds the stack together.
+#
+# Why a marker instead of comparing to a stored fingerprint:
+#   - A fingerprint file would need to track every setting we touched
+#     across every service, and refresh on every run. The cost/benefit
+#     against the marker approach is poor — false positives (user
+#     "changed" a setting just by clicking Save with the same value)
+#     would be unavoidable.
+#   - The marker matches the user's mental model: "did the wizard run
+#     here before?" If yes, the wizard treats the stack as established
+#     and stops opining on cosmetic settings.
+#
+# REINSTALL_PRESERVE is set in main() once, then read by individual
+# configure_* helpers. Defaults to False so a stale module import
+# (e.g. from tests) doesn't accidentally preserve when nothing was
+# installed.
+INSTALL_MARKER_NAME = '.wizard-stack-installed'
+REINSTALL_PRESERVE = False
+
+
+def _stack_marker_path(install_dir):
+    """Path to the wizard's install marker. Lives at INSTALL_DIR root
+    (not under scripts/) so it's visible to users browsing the install
+    dir, and survives the v0.3.22-3.24 layout migrations."""
+    return os.path.join(install_dir, INSTALL_MARKER_NAME)
+
+
+def is_reinstall(install_dir):
+    """True when the marker file exists — i.e. setup-arr-config.py has
+    successfully completed a previous install on this stack."""
+    return os.path.exists(_stack_marker_path(install_dir))
+
+
+def write_install_marker(install_dir):
+    """Write the marker after a successful main() run. Failures here
+    are non-fatal — the install completed; we just won't know it on
+    next run, which means we'll re-apply (already-correct) wizard
+    defaults. Worst case: cosmetic settings get re-PUT'd. Best case
+    (file written): every subsequent run preserves user changes."""
+    path = _stack_marker_path(install_dir)
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(
+                '# Mediarr Installer — first-install marker\n'
+                '#\n'
+                '# Created by setup-arr-config.py after the first successful\n'
+                '# install. Subsequent runs see this file and switch to\n'
+                '# "preserve user changes" mode for settings the user might\n'
+                '# have edited in the Sonarr / Radarr / etc. UI:\n'
+                '#   - Auth (username / password / method)\n'
+                '#   - Media-management TRaSH baselines\n'
+                '#   - Backup schedule\n'
+                '#   - Plex preferences\n'
+                '#\n'
+                '# Delete this file to force a fresh-install treatment on\n'
+                '# the next run (will overwrite any user-tweaked settings\n'
+                '# back to wizard defaults).\n'
+                f'timestamp={int(time.time())}\n'
+            )
+        return True
+    except Exception as e:
+        print(f"  – Couldn't write install marker {path}: {e}")
+        return False
+
 
 # When stdout is piped (i.e. running from setup.sh via SSH/SFTP rather
 # than a tty), Python defaults to BLOCK buffering with an 8 KB window.
@@ -686,13 +758,45 @@ def configure_auth(base, key, api, username, password):
     config = GET(base, key, f"/{api}/config/host")
     if config is None:
         fail("Auth: can't get host config"); return
+    current_method   = (config.get('authenticationMethod', '') or '').lower()
+    current_required = (config.get('authenticationRequired', '') or '').lower()
+    current_user     = config.get('username') or ''
+
+    # Already exactly what we'd set — nothing to do regardless of mode.
     already_set = (
-        config.get('authenticationMethod', '').lower() not in ('none', '')
-        and config.get('username') == username
-        and config.get('authenticationRequired') == 'DisabledForLocalAddresses'
+        current_method not in ('none', '')
+        and current_user == username
+        and current_required == 'disabledforlocaladdresses'
     )
     if already_set:
         skip(f"Auth: {username} (already set)"); return
+
+    # Re-install + user has customised auth in the UI → preserve. Any
+    # one of these signals counts:
+    #   - authenticationMethod is set to something other than None/Forms
+    #     (user explicitly picked Basic, or whatever the arr supports)
+    #   - username differs from the wizard's ARR_USERNAME value (user
+    #     created their own admin account)
+    #   - authenticationRequired is in a non-default state (e.g. user
+    #     turned on Enabled for All Addresses for an exposed arr)
+    # Forms+wizard-username is exactly the wizard's default, so if those
+    # both still match we know the user hasn't touched it — safe to
+    # re-apply the wizard credentials (handles password rotation via
+    # .env edit).
+    if REINSTALL_PRESERVE:
+        wizard_owned = (
+            current_method in ('forms', 'none', '')
+            and (current_user == '' or current_user == username)
+            and current_required in ('disabledforlocaladdresses', 'disabled', '')
+        )
+        if not wizard_owned:
+            skip(
+                f"Auth: preserving user-customised credentials on {api} "
+                f"(method={current_method or '?'}, user={current_user or '?'}) "
+                f"— delete {INSTALL_MARKER_NAME} to force the wizard back"
+            )
+            return
+
     config['authenticationMethod'] = 'Forms'
     config['authenticationRequired'] = 'DisabledForLocalAddresses'
     config['username'] = username
@@ -794,6 +898,46 @@ def configure_media_management(base, key, api, recycle_label):
     if not changes:
         skip(f"Media management settings (all {len(desired)} already correct)")
         return
+
+    # Re-install + user has tweaked these settings in the UI → preserve.
+    # Each entry in `desired` is something the wizard would set on fresh
+    # install; if the CURRENT value isn't the wizard's value AND isn't
+    # the API's documented default, that means the user changed it
+    # deliberately. We keep those as-is and only apply settings the user
+    # never touched. Practical effect: a user who bumped
+    # recycleBinCleanupDays from 30 → 60 keeps their 60 across reinstalls
+    # instead of getting it reset.
+    if REINSTALL_PRESERVE:
+        # Documented API defaults — anything outside this set + outside
+        # our desired set is "user has a strong opinion, leave alone".
+        # Sourced from Sonarr/Radarr/Lidarr's openapi specs.
+        api_defaults = {
+            'copyUsingHardlinks':                     False,
+            'setPermissionsLinux':                    False,
+            'chmodFolder':                            '755',
+            'extraFileExtensions':                    '',
+            'recycleBin':                             '',
+            'recycleBinCleanupDays':                  7,
+            'autoUnmonitorPreviouslyDownloadedEpisodes': False,
+            'autoUnmonitorPreviouslyDownloadedMovies':   False,
+        }
+        preserved = []
+        for k in list(changes.keys()):
+            current = config.get(k)
+            default = api_defaults.get(k)
+            # Current value isn't our desired AND isn't the API default
+            # → user customised it. Drop from the change set.
+            if current != default:
+                preserved.append(k)
+                changes.pop(k)
+        if preserved:
+            skip(
+                f"Media management: preserved {', '.join(sorted(preserved))} "
+                f"on {api} (user changed in UI — delete "
+                f"{INSTALL_MARKER_NAME} to force wizard defaults)"
+            )
+        if not changes:
+            return
 
     for k, v in changes.items():
         config[k] = v
@@ -910,6 +1054,19 @@ def configure_backup_schedule(base, key, api):
     changes = {k: v for k, v in desired.items() if config.get(k) != v}
     if not changes:
         skip(f"{api} backup schedule (already at 7d / 28d retention)"); return
+
+    # Re-install: backup schedule is squarely a user preference. If
+    # they bumped retention to 60 days because they don't trust their
+    # main backup, the wizard shouldn't claw that back to 28.
+    if REINSTALL_PRESERVE:
+        skip(
+            f"{api} backup schedule: preserving user values "
+            f"(interval={config.get('backupInterval')}, "
+            f"retention={config.get('backupRetention')}) — "
+            f"delete {INSTALL_MARKER_NAME} to force 7d/28d"
+        )
+        return
+
     for k, v in changes.items():
         config[k] = v
     result = PUT(base, key, f"/{api}/config/host", config)
@@ -1361,6 +1518,20 @@ def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
         ('GenerateBIFBehavior',           'never',  'Video preview thumbnails (BIF)'),
         ('ScheduledLibraryUpdatesEnabled','0',      'Scheduled library scans'),
     ]
+    # Re-install: these are squarely user preferences (some users want
+    # video previews back, some keep scheduled scans for a reason). We
+    # set them on the first install as a "good default" then leave
+    # them alone. The Manual Port Mapping above is NOT in this list
+    # because it's plumbing for external reachability, not a
+    # preference — keep re-applying it.
+    if REINSTALL_PRESERVE:
+        info(
+            "Plex QoL prefs skipped on this re-install — preserving "
+            f"any user choices. Delete {INSTALL_MARKER_NAME} to force "
+            "wizard defaults back."
+        )
+        return
+
     applied = 0
     for setting, value, label in qol:
         if _plex_prefs_put(label, {setting: value}):
@@ -1910,28 +2081,62 @@ def configure_qbittorrent(base, username, password, env=None):
     # dictates when registering a download, and the arr's Completed
     # Download Handling does the post-import file moves itself. This is
     # the recommended Sonarr/Radarr/Lidarr setup per their docs.
-    desired = {
-        'max_ratio_enabled':             True,
-        'max_ratio':                     2.0,
-        'max_ratio_act':                 1,        # 1 = pause (vs 0 = nothing)
-        'max_seeding_time_enabled':      True,
-        'max_seeding_time':              14400,    # minutes = 10 days
-        # Arr-compatibility (Completed Download Handling):
+    # Split into two buckets: stack-essential vs. user-preference.
+    # Stack-essential settings always get re-applied (the arrs need TMM
+    # off or Completed Download Handling fails). User-preference settings
+    # ship as sensible defaults on fresh install, then we leave the user
+    # alone on reinstall so they keep whatever ratio / seed-time they
+    # tuned to.
+    stack_essential = {
+        # Arr-compatibility (Completed Download Handling): the arrs
+        # 400 with "Sonarr will be unable to perform Completed
+        # Download Handling as configured" when any TMM flip is on,
+        # so the wizard re-enforces these every run.
         'auto_tmm_enabled':              False,
         'torrent_changed_tmm_enabled':   False,
         'save_path_changed_tmm_enabled': False,
         'category_changed_tmm_enabled':  False,
     }
+    user_preference = {
+        'max_ratio_enabled':             True,
+        'max_ratio':                     2.0,
+        'max_ratio_act':                 1,        # 1 = pause (vs 0 = nothing)
+        'max_seeding_time_enabled':      True,
+        'max_seeding_time':              14400,    # minutes = 10 days
+    }
+
+    # On re-install: preserve the user's seeding preferences. Stack-
+    # essential settings still get applied. On fresh install: both sets
+    # get applied so the user gets a sensible starting point.
+    desired = dict(stack_essential)
+    if not REINSTALL_PRESERVE:
+        desired.update(user_preference)
+    else:
+        # Diagnose what we're preserving so the user sees it in the log.
+        kept = {k: prefs.get(k) for k in user_preference if prefs.get(k) != user_preference[k]}
+        if kept:
+            info(
+                f"qBittorrent seeding limits: preserving user values "
+                f"({', '.join(f'{k}={v}' for k, v in kept.items())}) — "
+                f"delete {INSTALL_MARKER_NAME} to force wizard defaults back."
+            )
+
     matches = all(prefs.get(k) == v for k, v in desired.items())
     if matches:
-        skip("Seeding limits + TMM defaults (already arr-compatible)")
+        if REINSTALL_PRESERVE:
+            skip("qBittorrent TMM defaults (already arr-compatible)")
+        else:
+            skip("Seeding limits + TMM defaults (already arr-compatible)")
         AUTOMATED['qbit_prefs'] = True
     else:
         try:
             prefs_json = json.dumps(desired)
             set_data = urlencode({'json': prefs_json}).encode()
             opener.open(f"{base}/api/v2/app/setPreferences", set_data, timeout=10)
-            ok("Seeding limits + Auto-TMM off (compatible with Sonarr/Radarr/Lidarr Completed Download Handling)")
+            if REINSTALL_PRESERVE:
+                ok("qBittorrent TMM defaults re-applied (seeding limits left at your values)")
+            else:
+                ok("Seeding limits + Auto-TMM off (compatible with Sonarr/Radarr/Lidarr Completed Download Handling)")
             AUTOMATED['qbit_prefs'] = True
         except Exception as e:
             warn(f"qBittorrent: couldn't set seeding/TMM defaults ({e}) — set manually in Settings → BitTorrent + Settings → Downloads (Auto TMM off)")
@@ -2793,6 +2998,22 @@ def main():
     if env.get('DATA_ROOT'):
         os.environ['DATA_ROOT'] = env['DATA_ROOT']
 
+    # Detect re-install: the marker file is written at the END of
+    # main() on success, so its presence tells us "a previous wizard
+    # run completed cleanly on this stack." When set, configure_*
+    # helpers preserve user-modified settings instead of stamping
+    # over them. See the REINSTALL_PRESERVE block at the top of the
+    # file for the full rationale.
+    global REINSTALL_PRESERVE
+    REINSTALL_PRESERVE = is_reinstall(B)
+    if REINSTALL_PRESERVE:
+        info(
+            "Re-install detected — preserving user-modified settings "
+            "(auth, media-management, backup schedule, Plex prefs). "
+            f"Delete {B}/{INSTALL_MARKER_NAME} to force fresh-install "
+            "treatment that overwrites those back to wizard defaults."
+        )
+
     # Poll all config files together until available (up to 120s)
     arr_configs = {
         'sonarr':   (env.get('SONARR_API_KEY'),   f"{B}/sonarr/config/config.xml"),
@@ -3564,6 +3785,23 @@ def main():
     else:
         print(f"\n  {GREEN}Everything's wired up — no manual steps required.{RESET}\n")
     print('═' * 52)
+
+    # Drop the marker if this run cleared cleanly. Even on fresh
+    # installs we ONLY write when errors == 0 — a half-broken first
+    # install shouldn't lock the script into "preserve" mode on the
+    # next run, because the user almost certainly needs the wizard to
+    # take another stab at the settings it failed to write the first
+    # time. Idempotent: writing the same marker on re-install is a
+    # cheap no-op.
+    if errors == 0:
+        if write_install_marker(B):
+            if not REINSTALL_PRESERVE:
+                info(
+                    f"Dropped install marker at {B}/{INSTALL_MARKER_NAME} — "
+                    "future runs of this script will preserve any settings "
+                    "you've customised in the Sonarr / Radarr / Plex UIs."
+                )
+
     sys.exit(0 if errors == 0 else 1)
 
 
