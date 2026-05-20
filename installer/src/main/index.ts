@@ -13,7 +13,7 @@ import * as ssh from './ssh-service.js'
 import * as sftp from './sftp-service.js'
 import * as mock from './mock-services.js'
 import * as installLog from './install-log.js'
-import { initUpdater } from './updater-service.js'
+import { initUpdater, stopUpdater } from './updater-service.js'
 
 const __dirname_main = dirname(fileURLToPath(import.meta.url))
 
@@ -380,6 +380,7 @@ app.whenReady().then(() => {
 function tearDown() {
   try { ssh.shutdown() } catch (e) { log.error('ssh.shutdown failed:', e) }
   try { installLog.closeInstallLog() } catch (e) { log.error('installLog.closeInstallLog failed:', e) }
+  try { stopUpdater() } catch (e) { log.error('stopUpdater failed:', e) }
   if (isMockMode()) try { mock.shutdown() } catch (e) { log.error('mock.shutdown failed:', e) }
 }
 

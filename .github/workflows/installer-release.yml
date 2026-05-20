@@ -1,21 +1,19 @@
 name: Installer Release
 
-# Triggers on tag push matching `installer-v*` (e.g. installer-v0.1.0).
-# Builds:
-#   - Windows: NSIS .exe installer + latest.yml + .blockmap (for in-place
-#     auto-update via electron-updater) AND the historical win-unpacked.zip
-#     (extract-anywhere alternative for users who prefer no installer).
-#   - macOS:   .dmg per arch + latest-mac.yml + .blockmap.
-#   - Linux:   .AppImage + latest-linux.yml + .blockmap.
+# Triggers on tag push matching `installer-v*` (e.g. installer-v0.4.0).
+# Builds the portable Windows zip — single artifact, no NSIS .exe, no
+# mac/linux. The in-app updater (src/main/updater-service.ts) downloads
+# this zip from GitHub Releases on its 6h cadence (or on demand) and
+# applies it via a hidden cmd+vbs swap helper. See updater-service.ts
+# for the full update flow.
 #
-# Publishes the release (not draft) so existing installs auto-discover the
-# new version via electron-updater's manifest lookup. To draft an off-cycle
-# build instead, delete the tag locally + re-tag, OR push a tag matching
-# 'installer-vXXX-draft' (not implemented yet, just a future hook).
+# Publishes the release (not draft) so existing installs auto-discover
+# the new version. To draft an off-cycle build instead, push a tag and
+# manually edit the release to draft via the GitHub UI.
 #
 # Tag a release:
-#   git tag installer-v0.1.0
-#   git push origin installer-v0.1.0
+#   git tag installer-v0.4.0
+#   git push origin installer-v0.4.0
 
 on:
   push:
@@ -24,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to attach the release to (e.g. installer-v0.1.0)'
+        description: 'Tag to attach the release to (e.g. installer-v0.4.0)'
         required: false
 
 permissions:
@@ -32,27 +30,8 @@ permissions:
 
 jobs:
   build:
-    name: Build (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Windows: NSIS .exe (for true in-place updates) + matching
-          # latest.yml + .blockmap (electron-updater needs all three). We
-          # ALSO keep the unpacked zip so users who don't want to run an
-          # installer have a portable option, and so the legacy
-          # "Download zip" fallback in WhatsNew.tsx keeps working.
-          - os: windows-latest
-            target: win
-            # Multiple globs in a single setting — actions/upload-artifact
-            # supports newline-separated patterns under `path:`. See the
-            # `path:` line in the upload step below for the actual list.
-          - os: macos-latest
-            target: mac
-          - os: ubuntu-latest
-            target: linux
-
-    runs-on: ${{ matrix.os }}
+    name: Build Windows zip
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: installer
@@ -73,51 +52,37 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Build (${{ matrix.target }})
-        run: npm run build:${{ matrix.target }}
+      - name: Build (Windows dir target)
+        run: npm run build:win
         env:
-          # electron-builder auto-publishes if GH_TOKEN is set. We do the
-          # release step manually below so each platform's artifacts
-          # gather into one release; clear it here.
+          # electron-builder auto-publishes if GH_TOKEN is set. We create
+          # the release manually in the release job below.
           GH_TOKEN: ''
 
       - name: List dist contents (debug)
         if: always()
         run: |
           echo "Contents of installer/dist:"
-          ls -la dist || dir dist
-        shell: bash
+          dir dist
+        shell: cmd
 
-      # The legacy "extract anywhere" zip stays alongside the NSIS .exe
-      # so users who don't want to run an installer still have a copy,
-      # and the WhatsNew banner's fallback "Download zip" button keeps
-      # working on older builds that don't have the in-place updater.
-      # The filename MUST contain "win-unpacked" — main/index.ts'
-      # asset-finder matches on that substring.
-      - name: Zip win-unpacked (Windows only)
-        if: matrix.target == 'win'
+      # Zip electron-builder's win-unpacked/ output. The in-app updater
+      # asset matcher (src/main/updater-service.ts:checkForUpdates)
+      # requires the filename to match /win-unpacked.*\.zip$/i — keep
+      # "win-unpacked" in the name when changing this.
+      - name: Zip win-unpacked
         run: |
           cd dist
           7z a -tzip mediarr-installer-win-unpacked.zip win-unpacked
-          ls -la mediarr-installer-win-unpacked.zip
-        shell: bash
+          dir mediarr-installer-win-unpacked.zip
+        shell: cmd
 
-      # Upload EVERYTHING electron-updater needs plus the legacy zip.
-      # Newline-separated globs are matched independently; missing
-      # globs are fine (if-no-files-found: warn) because mac/linux
-      # don't have .exe and win doesn't have .dmg/.AppImage.
-      - name: Upload installer artifacts
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mediarr-installer-${{ matrix.target }}
-          path: |
-            installer/dist/*.exe
-            installer/dist/*.dmg
-            installer/dist/*.AppImage
-            installer/dist/*.zip
-            installer/dist/latest*.yml
-            installer/dist/*.blockmap
-          if-no-files-found: warn
+          name: mediarr-installer-win
+          path: installer/dist/*win-unpacked*.zip
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release
@@ -130,33 +95,19 @@ jobs:
         with:
           fetch-depth: 0    # for changelog generation
 
-      - name: Download all artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: mediarr-installer-win
+          path: release-files
 
-      - name: Flatten artifacts directory
-        run: |
-          mkdir -p release-files
-          # Whitelist of extensions/patterns. The latest*.yml + .blockmap
-          # are critical for electron-updater's in-place flow — without
-          # them, the auto-updater fails the manifest lookup and the
-          # user is stuck on whatever version they originally installed.
-          find artifacts -type f \
-            \( -name '*.exe' \
-            -o -name '*.dmg' \
-            -o -name '*.AppImage' \
-            -o -name '*win-unpacked*.zip' \
-            -o -name 'latest*.yml' \
-            -o -name '*.blockmap' \
-            \) \
-            -exec cp -v {} release-files/ \;
-          ls -la release-files/
+      - name: List release files
+        run: ls -la release-files/
 
-      # draft: false so electron-updater discovers the release on the
-      # first poll. The GitHub `/releases/latest` REST endpoint skips
-      # draft releases entirely — a drafted release is invisible to
-      # the auto-updater and to the in-app GitHub fetch in main/index.ts.
+      # draft: false so the in-app updater (which hits
+      # /repos/.../releases?per_page=10 — which DOES include drafts in
+      # the response but we filter them out at the client) discovers
+      # the release on the first poll.
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -171,15 +122,36 @@ jobs:
             Desktop wizard that installs the Arr stack onto your Synology
             NAS over SSH. Wraps the bash + Python automation in `nas/`.
 
-            ### Downloads
-            - **Windows (recommended)**: `Mediarr Installer Setup *.exe` — NSIS installer; in-place auto-update from this version onwards.
-            - **Windows (portable)**: `mediarr-installer-win-unpacked.zip` — extract anywhere, run `Mediarr Installer.exe`; manual update via Download-zip button.
-            - **macOS**: `*.dmg` — separate dmgs for arm64 and x64 (unsigned)
-            - **Linux**: `*.AppImage` — universal x64 build
+            ### Download
 
-            ### Updating from an older version
-            - If you currently have v0.3.23 or earlier (installed from the zip): download the NSIS `.exe` below and run it once. After that, future updates appear inside the wizard via the WhatsNew banner — one click, no redownload.
-            - If you installed via NSIS already: nothing to do — open the wizard and it'll prompt to install this version automatically.
+            **`mediarr-installer-win-unpacked.zip`** — extract anywhere
+            on your Windows machine and run `Mediarr Installer.exe`.
+
+            ### Updates
+
+            Future updates apply themselves automatically:
+            1. The wizard polls GitHub Releases every 6 hours.
+            2. When a new release is found, you'll see a "New version"
+               banner on the Welcome screen.
+            3. Click **Install update** to download in the background,
+               then **Restart & install** when prompted — the wizard
+               swaps itself in place and relaunches.
+
+            ### Migrating from v0.3.x or earlier
+
+            v0.4.0 drops the NSIS installer. If you currently have an
+            NSIS-installed copy (Start Menu shortcut → "Mediarr
+            Installer"), do this once:
+
+            1. Download the zip below, extract to a new folder of your
+               choice (e.g. `C:\Tools\Mediarr Installer\`).
+            2. Run `Mediarr Installer.exe`.
+            3. Uninstall the old NSIS install via Settings → Apps →
+               "Mediarr Installer". Your saved profiles live in
+               `%APPDATA%\mediarr-installer\` and survive the swap.
+
+            From then on, in-place updates keep you current with one
+            click — no more downloads.
 
             See [installer/PLAN.md](https://github.com/${{ github.repository }}/blob/master/installer/PLAN.md)
             for the architecture and roadmap.

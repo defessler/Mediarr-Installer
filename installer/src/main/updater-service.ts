@@ -1,102 +1,510 @@
-// In-place auto-updater wrapper around electron-updater.
+// In-place auto-updater for the portable Windows zip distribution.
 //
-// Why electron-updater (not the older squirrel.windows / autoUpdater):
-// - Works against electron-builder's NSIS / DMG / AppImage outputs out
-//   of the box. We already use electron-builder for packaging.
-// - Reads the publish config from electron-builder.yml at runtime, so
-//   the "where do I look?" URL is configured in one place.
-// - Handles delta updates on Windows when block-mapping is available
-//   (cuts download size for small version bumps). The auto-update file
-//   format (latest.yml + .blockmap) is published by electron-builder
-//   alongside the release artifacts.
+// Why custom (not electron-updater): we ship as a portable .zip (no
+// NSIS, no code signing, no MSI), which rules out electron-updater's
+// NSIS / Squirrel update paths. Rather than wrap a portable .exe with
+// electron-builder's `portable` target (which itself has rough edges
+// around auto-update on Windows), we keep the build dead simple — the
+// CI workflow zips electron-builder's `win-unpacked/` folder — and own
+// the update logic ourselves. Pattern lifted from defessler's
+// WindowLayoutManager updater.js, adapted to TypeScript + this
+// project's IPC contract + electron-log.
 //
-// The flow we expose to the renderer:
+// The flow:
 //
 //   ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-//   │  app starts  │ ──auto─▶│ check-for-   │ ──found─▶│  download    │
-//   │              │         │ update       │         │  in background│
+//   │  app starts  │ ──auto─▶│ GitHub poll  │ ──found─▶│  download &  │
+//   │              │         │ /releases    │         │  extract zip │
 //   └──────────────┘         └──────────────┘         └──────┬───────┘
 //                                                            │
 //                                       ┌──── download-progress events ───┘
 //                                       ▼
 //                              ┌──────────────────┐
-//                              │ update-downloaded │ ──▶ user clicks "Install"
+//                              │ extracted to     │ ──▶ user clicks "Restart"
+//                              │ staging dir      │
 //                              └──────────────────┘                    │
 //                                                                       ▼
-//                                                              quitAndInstall()
+//                                                              install():
+//                                                              write swap .cmd + .vbs,
+//                                                              spawn helper, quit app
 //                                                                       │
 //                                                       ┌───────────────┴──────┐
-//                                                       │ app closes, installer │
-//                                                       │ swaps in new version, │
-//                                                       │ relaunches            │
+//                                                       │ helper waits for     │
+//                                                       │ our PID, robocopies  │
+//                                                       │ staging → installDir,│
+//                                                       │ relaunches new exe   │
 //                                                       └───────────────────────┘
 //
-// All update events are mirrored to the renderer via IPC so the
-// WhatsNew banner can show real-time download progress + an install
-// button when ready. The renderer can also trigger a re-check or
-// dismiss the available update.
+// Two-phase split (download vs install) preserves the existing UX:
+// the WhatsNew banner shows "Install update" → progress bar →
+// "Restart & install", letting the user keep working while the zip
+// extracts. The single-button alternative would have the app quit
+// the moment the user clicked anywhere in the banner.
 //
-// Mock mode: skip entirely. There's no GitHub release to update from
-// in dev / mock environments, and the updater spamming "no
-// publish provider" errors in main.log would obscure real issues.
+// All update events are mirrored to the renderer via the
+// `updater:state` IPC event so the WhatsNew banner can show real-time
+// download progress + an install button when ready.
+//
+// Mock + dev short-circuit early — no GitHub release to update from in
+// either environment, and the updater spamming "no publish provider"
+// errors in main.log would obscure real issues.
 
 import { app, BrowserWindow, ipcMain } from 'electron'
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { spawn } from 'node:child_process'
 import log from 'electron-log/main.js'
+import type { UpdaterState } from '../shared/ipc.js'
 
-// We dynamic-import electron-updater so this module is safe to load
-// even when the dep isn't installed (dev sometimes has stale
-// node_modules). The static import is the canonical path; the fallback
-// just logs and no-ops.
-//
-// Note: electron-updater publishes a CommonJS default export.
-type ElectronUpdater = typeof import('electron-updater')
-let updater: ElectronUpdater | null = null
-async function loadUpdater(): Promise<ElectronUpdater | null> {
-  if (updater) return updater
-  try {
-    updater = (await import('electron-updater')) as ElectronUpdater
-    return updater
-  } catch (e) {
-    log.warn('electron-updater not available — auto-update disabled:', e)
-    return null
-  }
+const REPO = 'defessler/Mediarr-Installer'
+const STARTUP_DELAY_MS = 30 * 1000
+const PERIODIC_INTERVAL_MS = 6 * 60 * 60 * 1000  // 6 hours
+const UA = 'Mediarr-Installer-Updater'
+
+interface PendingUpdate {
+  version: string
+  tagName: string
+  downloadUrl: string
+  sizeBytes: number
+  releaseNotes: string
+  htmlUrl: string
+  /** Set after download() finishes — absolute path to the extracted
+   *  build that install() will robocopy from. Null between check()
+   *  and download(). */
+  stagingDir: string | null
 }
 
-export type UpdateState =
-  | { kind: 'idle' }
-  | { kind: 'checking' }
-  | { kind: 'available'; version: string; releaseNotes?: string }
-  | { kind: 'not-available' }
-  | { kind: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
-  | { kind: 'downloaded'; version: string; releaseNotes?: string }
-  | { kind: 'error'; message: string }
-
-let lastState: UpdateState = { kind: 'idle' }
 let mainWindow: BrowserWindow | null = null
+let lastState: UpdaterState = { kind: 'idle' }
+let pendingUpdate: PendingUpdate | null = null
+let installInProgress = false
+let intervalHandle: NodeJS.Timeout | null = null
+let startupTimeoutHandle: NodeJS.Timeout | null = null
 
-export function getUpdateState(): UpdateState {
+export function getUpdateState(): UpdaterState {
   return lastState
 }
 
-function broadcast(state: UpdateState): void {
+function broadcast(state: UpdaterState): void {
   lastState = state
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('updater:state', state)
   }
 }
 
-/** Configure electron-updater's runtime behaviour. Called once at app
- *  start (after we have a window to broadcast to). Listens to every
- *  lifecycle event the updater emits and translates them into our
- *  flat UpdateState + IPC broadcast.
+/** Compare two version strings (a, b) — returns negative, zero, or
+ *  positive like a-b. Strips optional "v" / "installer-v" prefix, then
+ *  numeric triple compare. No pre-release support — Mediarr doesn't
+ *  ship pre-release tags. */
+function compareVersions(a: string, b: string): number {
+  const parse = (s: string): number[] =>
+    s.replace(/^[a-zA-Z-]*v?/, '').split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0)
+  const [a1, a2, a3] = parse(a)
+  const [b1, b2, b3] = parse(b)
+  if (a1 !== b1) return a1 - b1
+  if (a2 !== b2) return a2 - b2
+  return a3 - b3
+}
+
+interface GithubAsset { name?: string; browser_download_url?: string; size?: number }
+interface GithubRelease {
+  tag_name?: string
+  html_url?: string
+  body?: string
+  draft?: boolean
+  prerelease?: boolean
+  assets?: GithubAsset[]
+}
+
+/** Poll GitHub Releases. Returns the newest release strictly newer
+ *  than the running version that has a matching win-unpacked zip
+ *  asset. Broadcasts state transitions: checking → available |
+ *  not-available | error. Silent mode swallows errors (initial check
+ *  / periodic poll); non-silent surfaces them via the error state. */
+async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Promise<PendingUpdate | null> {
+  broadcast({ kind: 'checking' })
+  try {
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), 10_000)
+    const res = await fetch(
+      `https://api.github.com/repos/${REPO}/releases?per_page=10`,
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': UA,
+        },
+        signal: ac.signal,
+      },
+    )
+    clearTimeout(t)
+    if (!res.ok) {
+      log.warn(`updater: GitHub releases fetch returned HTTP ${res.status}`)
+      if (!silent) broadcast({ kind: 'error', message: `GitHub HTTP ${res.status}` })
+      else broadcast({ kind: 'not-available' })
+      return null
+    }
+    const releases = (await res.json()) as GithubRelease[]
+    if (!Array.isArray(releases)) {
+      if (!silent) broadcast({ kind: 'error', message: 'Unexpected response from GitHub API' })
+      else broadcast({ kind: 'not-available' })
+      return null
+    }
+    const current = app.getVersion()
+    // Walk in publication order; pick the newest non-draft strictly
+    // newer than `current` that has a matching zip asset.
+    let best: GithubRelease | null = null
+    for (const r of releases) {
+      if (r.draft) continue
+      const tag = (r.tag_name ?? '').replace(/^[a-zA-Z-]*v?/, '')
+      if (!tag) continue
+      if (compareVersions(tag, current) <= 0) continue
+      if (best && compareVersions(tag, (best.tag_name ?? '').replace(/^[a-zA-Z-]*v?/, '')) <= 0) continue
+      best = r
+    }
+    if (!best) {
+      pendingUpdate = null
+      broadcast({ kind: 'not-available' })
+      return null
+    }
+    // Match electron-builder's "win-unpacked" zip naming convention.
+    const asset = (best.assets ?? []).find((a) =>
+      /win-unpacked.*\.zip$/i.test(a.name ?? ''),
+    )
+    if (!asset || !asset.browser_download_url) {
+      pendingUpdate = null
+      broadcast({ kind: 'not-available' })
+      log.warn(`updater: release ${best.tag_name} found but no matching win-unpacked zip asset`)
+      return null
+    }
+    pendingUpdate = {
+      version: (best.tag_name ?? '').replace(/^[a-zA-Z-]*v?/, ''),
+      tagName: best.tag_name ?? '',
+      downloadUrl: asset.browser_download_url,
+      sizeBytes: asset.size ?? 0,
+      releaseNotes: best.body ?? '',
+      htmlUrl: best.html_url ?? '',
+      stagingDir: null,
+    }
+    log.info(`updater: update available v${pendingUpdate.version} (current v${current})`)
+    broadcast({
+      kind: 'available',
+      version: pendingUpdate.version,
+      releaseNotes: pendingUpdate.releaseNotes,
+    })
+    return pendingUpdate
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e)
+    if (silent) {
+      log.info('updater: check failed (silent):', msg)
+      broadcast({ kind: 'not-available' })
+    } else {
+      log.error('updater: check failed:', msg)
+      broadcast({ kind: 'error', message: msg })
+    }
+    return null
+  }
+}
+
+/** Phase 1: download the zip into a fresh tmp dir, then extract to a
+ *  staging subdir. Sets pendingUpdate.stagingDir on success and
+ *  broadcasts the `downloaded` state — the renderer's "Restart &
+ *  install" button is gated on that state. Progress events stream the
+ *  byte count to the renderer's progress bar.
  *
- *  Skips on:
+ *  The zip layout from CI is `win-unpacked/<files>` (the workflow's
+ *  `7z a` step zips the win-unpacked folder by name), so after
+ *  extraction we resolve down into the single wrapping directory.
+ *  We tolerate a flat layout too in case the workflow ever changes. */
+async function downloadUpdate(): Promise<void> {
+  if (installInProgress) {
+    log.warn('updater: download requested while install already in progress')
+    return
+  }
+  if (!pendingUpdate) {
+    log.warn('updater: download requested but no pending update')
+    broadcast({ kind: 'error', message: 'No update available — check again first.' })
+    return
+  }
+  const update = pendingUpdate
+
+  // Fresh staging root per call — wipe any previous attempt to avoid
+  // accumulating ~200 MB extracted builds in %TEMP%.
+  const tmpRoot = join(tmpdir(), 'mediarr-update')
+  if (existsSync(tmpRoot)) {
+    try { rmSync(tmpRoot, { recursive: true, force: true }) }
+    catch (e) { log.warn('updater: tmpRoot rm failed (non-fatal):', e) }
+  }
+  mkdirSync(tmpRoot, { recursive: true })
+  const zipPath = join(tmpRoot, `update-${update.version}.zip`)
+  const stagingDir = join(tmpRoot, 'staging')
+
+  // ── Download ─────────────────────────────────────────────────────
+  try {
+    log.info(`updater: downloading ${update.downloadUrl}`)
+    const res = await fetch(update.downloadUrl, {
+      headers: { 'User-Agent': UA, Accept: 'application/octet-stream' },
+      redirect: 'follow',
+    })
+    if (!res.ok || !res.body) {
+      throw new Error(`Download failed: HTTP ${res.status}`)
+    }
+    const total = update.sizeBytes
+      || parseInt(res.headers.get('content-length') ?? '0', 10)
+    let received = 0
+    let lastBroadcastAt = Date.now()
+    const startedAt = Date.now()
+
+    const out = createWriteStream(zipPath)
+    const reader = Readable.fromWeb(
+      res.body as unknown as import('stream/web').ReadableStream,
+    )
+    reader.on('data', (chunk: Buffer) => {
+      received += chunk.length
+      // Throttle progress broadcasts to ~6/s (every 150ms) — anything
+      // higher just floods IPC and the renderer's spring-easing
+      // animation can't keep up anyway.
+      const now = Date.now()
+      if (now - lastBroadcastAt >= 150) {
+        const elapsed = (now - startedAt) / 1000
+        const bps = elapsed > 0 ? received / elapsed : 0
+        broadcast({
+          kind: 'downloading',
+          percent: total > 0 ? Math.round((received / total) * 100) : 0,
+          bytesPerSecond: Math.round(bps),
+          transferred: received,
+          total,
+        })
+        lastBroadcastAt = now
+      }
+    })
+    await pipeline(reader, out)
+    // One final 100% tick so the bar visibly fills before we flip to
+    // the extracting state.
+    broadcast({
+      kind: 'downloading',
+      percent: 100,
+      bytesPerSecond: 0,
+      transferred: received,
+      total: total || received,
+    })
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e)
+    log.error('updater: download failed:', msg)
+    broadcast({ kind: 'error', message: `Download failed: ${msg}` })
+    return
+  }
+
+  // ── Extract ──────────────────────────────────────────────────────
+  try {
+    log.info(`updater: extracting to ${stagingDir}`)
+    await extractZip(zipPath, stagingDir)
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e)
+    log.error('updater: extract failed:', msg)
+    broadcast({ kind: 'error', message: `Extract failed: ${msg}` })
+    return
+  }
+
+  // The workflow zips the `win-unpacked` directory by name, so the
+  // staging dir contains exactly one wrapping folder. Resolve into
+  // it so robocopy points at the actual app files, not at a parent
+  // folder that would create `installDir/win-unpacked/Mediarr Installer.exe`
+  // instead of overwriting in place.
+  let resolved = stagingDir
+  try {
+    const entries = readdirSync(stagingDir)
+    if (entries.length === 1) {
+      const inner = join(stagingDir, entries[0])
+      if (statSync(inner).isDirectory()) resolved = inner
+    }
+  } catch (e) {
+    log.warn('updater: staging dir resolve failed (using flat layout):', e)
+  }
+  pendingUpdate = { ...update, stagingDir: resolved }
+  log.info(`updater: download complete, staging=${resolved}`)
+  broadcast({
+    kind: 'downloaded',
+    version: update.version,
+    releaseNotes: update.releaseNotes,
+  })
+}
+
+/** Phase 2: write a hidden swap helper that waits for our PID + exe
+ *  name combination to exit, robocopies staging over the install dir,
+ *  and relaunches the new exe. Spawn it detached, then quit ourselves
+ *  ~500ms later so the helper has time to fire before we release the
+ *  file locks on our own binary.
+ *
+ *  Why we filter on PID *and* exe name in the wait loop: Windows
+ *  recycles PIDs quickly. A recycled PID landing on, say, chrome.exe
+ *  would hang the loop forever. Filtering on IMAGENAME too means a
+ *  recycled PID for any other process correctly signals "Mediarr
+ *  Installer is gone, swap now." */
+async function installUpdate(): Promise<void> {
+  if (installInProgress) {
+    log.warn('updater: install requested but already in progress')
+    return
+  }
+  if (!pendingUpdate?.stagingDir) {
+    log.warn('updater: install requested without a downloaded update')
+    broadcast({ kind: 'error', message: 'Download an update first.' })
+    return
+  }
+  installInProgress = true
+  try {
+    const exePath = app.getPath('exe')
+    const installDir = dirname(exePath)
+    const exeName = basename(exePath)
+    const { vbsPath } = writeSwapScript({
+      pid: process.pid,
+      stagingDir: pendingUpdate.stagingDir,
+      installDir,
+      exeName,
+    })
+    log.info(`updater: spawning swap helper ${vbsPath}`)
+    const child = spawn('wscript.exe', [vbsPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.unref()
+    // Give the OS a beat to actually spawn the helper before we exit
+    // and release the file lock on our binary — the helper's
+    // tasklist-based wait loop tolerates a slow exit, but the spawn
+    // itself needs to land first.
+    setTimeout(() => app.exit(0), 500)
+  } catch (e) {
+    installInProgress = false
+    const msg = (e as Error).message ?? String(e)
+    log.error('updater: install failed:', msg)
+    broadcast({ kind: 'error', message: `Install failed: ${msg}` })
+  }
+}
+
+/** Extract a .zip via PowerShell's System.IO.Compression.FileSystem
+ *  — present on every Win10/11 host, no external deps. Faster than
+ *  Expand-Archive for the ~200 MB Electron build (Expand-Archive
+ *  parses the zip in PowerShell space and is noticeably slower). */
+function extractZip(zipPath: string, destDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+    // PowerShell single-quoted strings need '' for an embedded apostrophe.
+    const psZip = zipPath.replace(/'/g, "''")
+    const psDest = destDir.replace(/'/g, "''")
+    const script =
+      `$ErrorActionPreference='Stop';` +
+      `Add-Type -Assembly System.IO.Compression.FileSystem;` +
+      `[System.IO.Compression.ZipFile]::ExtractToDirectory('${psZip}', '${psDest}')`
+    const ps = spawn('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { windowsHide: true })
+    let stderr = ''
+    ps.stderr.on('data', (c: Buffer) => { stderr += c.toString() })
+    ps.on('error', reject)
+    ps.on('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`PowerShell extract exited ${code}: ${stderr.trim() || 'no error output'}`))
+    })
+  })
+}
+
+/** Write the swap helper as two files:
+ *    - `<tmp>/mediarr-swap-<pid>.cmd`  — the swap logic (wait for our
+ *      PID + image name to exit, robocopy staging into installDir,
+ *      relaunch new build).
+ *    - `<tmp>/mediarr-swap-<pid>.vbs`  — a tiny wscript wrapper that
+ *      runs the .cmd hidden.
+ *
+ *  Why the .vbs wrapper: spawning cmd.exe with windowsHide=true works
+ *  when the user's default terminal is the legacy conhost.exe but
+ *  breaks when Windows Terminal is the default (Win11 default for
+ *  fresh installs) — WT honours its own visibility, not the spawn
+ *  flag. wscript.exe is a non-console process, so its WshShell.Run
+ *  with intWindowStyle=0 reliably hides the launched cmd.exe
+ *  regardless of the user's terminal default.
+ *
+ *  Both files use CRLF line endings — cmd.exe is finicky about lone
+ *  \n in batch files. */
+function writeSwapScript(opts: {
+  pid: number
+  stagingDir: string
+  installDir: string
+  exeName: string
+}): { cmdPath: string; vbsPath: string } {
+  const { pid, stagingDir, installDir, exeName } = opts
+  const swapPath = join(tmpdir(), `mediarr-swap-${pid}.cmd`)
+  const vbsPath  = join(tmpdir(), `mediarr-swap-${pid}.vbs`)
+  const logPath  = join(tmpdir(), 'mediarr-update.log')
+
+  const cmdLines = [
+    '@echo off',
+    'setlocal',
+    `>>"${logPath}" echo [%date% %time%] swap start pid=${pid} exe=${exeName}`,
+    `set TARGET_PID=${pid}`,
+    `set TARGET_EXE=${exeName}`,
+    ':wait',
+    // Filter on PID *and* image name — Windows recycles PIDs quickly
+    // and a recycled PID hitting, say, chrome.exe would spin this
+    // loop forever. /FI flags are AND-combined.
+    'tasklist /FI "PID eq %TARGET_PID%" /FI "IMAGENAME eq %TARGET_EXE%" /NH 2>NUL | find /I "%TARGET_EXE%" >NUL',
+    'if not errorlevel 1 (',
+    '    timeout /t 1 /nobreak >NUL',
+    '    goto wait',
+    ')',
+    `>>"${logPath}" echo [%date% %time%] target gone, copying`,
+    // robocopy exit codes: 0..7 = success (various flavors of "copied
+    // some / nothing / mismatch but ok"), 8+ = actual failure. So we
+    // test `LSS 8`.
+    `robocopy "${stagingDir}" "${installDir}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logPath}"`,
+    'set RC=%ERRORLEVEL%',
+    `>>"${logPath}" echo [%date% %time%] robocopy rc=%RC%`,
+    'if %RC% LSS 8 (',
+    `    >>"${logPath}" echo [%date% %time%] launching new build`,
+    `    start "" "${installDir}\\${exeName}"`,
+    `    rmdir /S /Q "${stagingDir}" 2>NUL`,
+    ') else (',
+    `    >>"${logPath}" echo [%date% %time%] robocopy failed - leaving staging in place at ${stagingDir}`,
+    ')',
+    // Tidy up: delete the .vbs (wscript has already exited; it's just
+    // a leftover file at this point) and self-delete the .cmd via the
+    // classic `(goto) 2>nul & del "%~f0"` trick.
+    `del "${vbsPath}" 2>NUL`,
+    '(goto) 2>nul & del "%~f0"',
+  ]
+  writeFileSync(swapPath, cmdLines.join('\r\n') + '\r\n', 'utf8')
+
+  // intWindowStyle=0 = hidden, bWaitOnReturn=False = fire-and-forget.
+  // wscript itself has no console, so nothing flashes onscreen.
+  // Escaping: cmd.exe needs the .cmd path quoted (it contains a space
+  // when %TEMP% lives under a path with one); VBScript escapes a "
+  // inside a "-string by doubling it ("").
+  const vbsLines = [
+    'Set WshShell = CreateObject("WScript.Shell")',
+    `WshShell.Run "cmd.exe /c """ & "${swapPath.replace(/"/g, '""')}" & """", 0, False`,
+  ]
+  writeFileSync(vbsPath, vbsLines.join('\r\n') + '\r\n', 'utf8')
+
+  return { cmdPath: swapPath, vbsPath }
+}
+
+/** Configure the updater. Called once at app start (after we have a
+ *  window to broadcast to). Skips on:
  *  - Mock mode (no real publish endpoint)
- *  - Unpackaged dev runs (electron-updater short-circuits anyway, but
- *    we skip explicitly to avoid log noise)
- *  - Linux AppImage when not running from a real AppImage (file:// or
- *    extracted dir won't have the right metadata)
- */
+ *  - Unpackaged dev runs (the staging swap would clobber the running
+ *    `npm run dev` install)
+ *  - Non-Windows platforms (the swap script is Windows-only — the
+ *    project is Windows-only as of v0.4.0). */
 export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<void> {
   mainWindow = win
 
@@ -108,154 +516,41 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
     log.info('updater: dev mode — auto-update disabled')
     return
   }
-
-  const mod = await loadUpdater()
-  if (!mod) return
-
-  // electron-updater is a CommonJS module. When dynamic-imported from
-  // ESM (this file is ESM — package.json has "type": "module"), Node
-  // wraps module.exports into the namespace's `default` property. That
-  // means a plain `const { autoUpdater } = mod` produces undefined and
-  // the next line crashes with:
-  //   TypeError: Cannot set properties of undefined (setting 'logger')
-  //   at initUpdater (resources/app.asar/out/main/index.js:NNNN)
-  // which is exactly what shipped in v0.3.30 + v0.3.31, leaving in-place
-  // auto-update silently broken — the "Check for updates" button would
-  // get its result via GitHub's releases API fallback, but the actual
-  // electron-updater download/install pipeline never initialised.
-  //
-  // Bundlers also vary: electron-vite's CJS interop sometimes re-exposes
-  // the named export at the namespace root, so we accept either shape.
-  const autoUpdater =
-    (mod as { autoUpdater?: unknown }).autoUpdater
-    ?? (mod as { default?: { autoUpdater?: unknown } }).default?.autoUpdater
-  if (!autoUpdater) {
-    log.warn(
-      'electron-updater loaded but autoUpdater export not found — auto-update disabled',
-    )
+  if (process.platform !== 'win32') {
+    log.info('updater: non-Windows platform — auto-update disabled')
     return
   }
-  // Cast to the runtime shape now that we've validated it's present.
-  // The eslint-disable lets us keep `any` here without polluting the
-  // rest of the file; downstream code uses the same callsite-derived
-  // shape it always did.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const au = autoUpdater as any
 
-  // Route electron-updater's own logging through electron-log so its
-  // chatter ends up in main.log alongside ours. Without this you get a
-  // separate file that's easy to miss when debugging an update issue.
-  au.logger = log
-
-  // We want explicit control over when downloads happen — auto-download
-  // means the user sees the "ready to install" banner without warning.
-  // Renderer triggers the actual download via the IPC handler below.
-  au.autoDownload = false
-  au.autoInstallOnAppQuit = true
-
-  au.on('checking-for-update', () => {
-    log.info('updater: checking for update')
-    broadcast({ kind: 'checking' })
-  })
-
-  // Local types for the same reason as the update-downloaded / error
-  // handlers below — `au: any` strips inference from the event
-  // callbacks, but we don't want full implicit-any either.
-  interface AvailableInfo { version: string; releaseNotes?: string | unknown }
-  interface ProgressInfo { percent: number; bytesPerSecond: number; transferred: number; total: number }
-
-  au.on('update-available', (info: AvailableInfo) => {
-    log.info('updater: update available', info.version)
-    broadcast({
-      kind: 'available',
-      version: info.version,
-      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
-    })
-  })
-
-  au.on('update-not-available', (info: AvailableInfo) => {
-    log.info('updater: up to date', info.version)
-    broadcast({ kind: 'not-available' })
-  })
-
-  au.on('download-progress', (p: ProgressInfo) => {
-    broadcast({
-      kind: 'downloading',
-      percent: Math.round(p.percent),
-      bytesPerSecond: Math.round(p.bytesPerSecond),
-      transferred: p.transferred,
-      total: p.total,
-    })
-  })
-
-  // The `info` / `err` callbacks lose their typed inference because
-  // `au` is typed as `any` (electron-updater's CJS export defeats the
-  // namespace's type info — see the destructure comment above). Light
-  // local types keep the call-sites honest without re-importing
-  // electron-updater's full UpdateInfo / ProgressInfo shapes.
-  interface UpdateInfo { version: string; releaseNotes?: string | unknown }
-  au.on('update-downloaded', (info: UpdateInfo) => {
-    log.info('updater: update downloaded', info.version)
-    broadcast({
-      kind: 'downloaded',
-      version: info.version,
-      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
-    })
-  })
-
-  au.on('error', (err: Error) => {
-    log.error('updater error:', err)
-    broadcast({ kind: 'error', message: err?.message ?? String(err) })
-  })
-
-  // Register the IPC handlers the renderer uses to drive the updater.
-  // We do this inside initUpdater rather than in ipc-handlers.ts so
-  // the dynamic import + the handlers live in one file — easier to
-  // delete if we ever decide to remove auto-update.
+  // IPC handlers — registered inside initUpdater so the entire updater
+  // surface is in one file (easy to delete if the strategy ever
+  // changes again).
   ipcMain.handle('updater:get-state', () => lastState)
+  ipcMain.handle('updater:check',    async () => { await checkForUpdates({ silent: false }) })
+  ipcMain.handle('updater:download', async () => { await downloadUpdate() })
+  ipcMain.handle('updater:install',  async () => { await installUpdate() })
 
-  ipcMain.handle('updater:check', async () => {
-    try {
-      await au.checkForUpdates()
-    } catch (e) {
-      log.error('updater: check failed:', e)
-      broadcast({ kind: 'error', message: (e as Error).message })
-    }
-  })
+  // Stagger the initial check so app launch stays snappy — the
+  // wizard's Welcome screen renders before we hit GitHub.
+  startupTimeoutHandle = setTimeout(() => {
+    checkForUpdates({ silent: true }).catch((e) => {
+      log.error('updater: startup check failed:', e)
+    })
+  }, STARTUP_DELAY_MS)
 
-  ipcMain.handle('updater:download', async () => {
-    if (lastState.kind !== 'available' && lastState.kind !== 'error') {
-      log.warn('updater: download requested but no update available; current state:', lastState.kind)
-      return
-    }
-    try {
-      await au.downloadUpdate()
-    } catch (e) {
-      log.error('updater: download failed:', e)
-      broadcast({ kind: 'error', message: (e as Error).message })
-    }
-  })
+  // Periodic re-check — covers the long-install scenario where the
+  // wizard is open for an hour+ while a fresh release ships.
+  intervalHandle = setInterval(() => {
+    checkForUpdates({ silent: true }).catch((e) => {
+      log.error('updater: periodic check failed:', e)
+    })
+  }, PERIODIC_INTERVAL_MS)
 
-  ipcMain.handle('updater:install', () => {
-    if (lastState.kind !== 'downloaded') {
-      log.warn('updater: install requested but no update downloaded; current state:', lastState.kind)
-      return
-    }
-    log.info('updater: quitting and installing update')
-    // isSilent=false → on Windows, the NSIS installer briefly flashes
-    //   its progress; users prefer that to a silent process-replacement
-    //   they don't understand.
-    // isForceRunAfter=true → relaunch the app immediately after the
-    //   install completes.
-    au.quitAndInstall(false, true)
-  })
+  log.info('updater: initialised (startup check scheduled, periodic 6h)')
+}
 
-  // Fire the initial check. Non-blocking — the result lands in
-  // lastState and the renderer picks it up on its next get-state call
-  // or via the broadcast event.
-  log.info('updater: kicking off initial check')
-  au.checkForUpdates().catch((e: Error) => {
-    log.error('updater: initial check failed:', e)
-    broadcast({ kind: 'error', message: e.message })
-  })
+/** Stop timers — called from main's tearDown so the periodic interval
+ *  doesn't keep a Node event loop reference alive past app.quit(). */
+export function stopUpdater(): void {
+  if (intervalHandle) { clearInterval(intervalHandle); intervalHandle = null }
+  if (startupTimeoutHandle) { clearTimeout(startupTimeoutHandle); startupTimeoutHandle = null }
 }
