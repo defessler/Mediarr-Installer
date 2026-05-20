@@ -313,6 +313,64 @@ def read_plex_prefs(prefs_path):
     except Exception:
         return {}
 
+_MASTER_PIN_ENTRY = (
+    "  - name: config-templates-master\n"
+    "    type: config-templates\n"
+    "    clone_url: https://github.com/recyclarr/config-templates.git\n"
+    "    reference: master\n"
+    "    replace_default: true\n"
+)
+
+
+def _merge_master_pin_into_settings(content):
+    """Inject the config-templates master-pin block into an existing
+    Recyclarr settings.yml that lacks it, preserving everything else.
+
+    Two cases handled without a YAML parser (PyYAML isn't in stdlib —
+    we don't want a runtime pip-install on the NAS just for this):
+
+      1. `resource_providers:` already exists in the file → insert our
+         entry as the FIRST list item under it. Recyclarr applies
+         providers in order, so first ensures replace_default beats
+         any default-shadowing entry the user has below.
+      2. No `resource_providers:` key → append the whole block at EOF
+         with a comment explaining why it's there.
+
+    Returns the new file content, or None if neither pattern can be
+    matched safely (caller falls back to a warn() so we never destroy
+    user content)."""
+    pin_with_comment = (
+        "  # Injected by Mediarr Installer setup-arr-config.py — required\n"
+        "  # for Recyclarr to resolve the granular include templates the\n"
+        "  # wizard's recyclarr.yml uses. The v8 branch lacks them; this\n"
+        "  # provider overrides the default and points at master.\n"
+        + _MASTER_PIN_ENTRY
+    )
+
+    # Match `resource_providers:` at column 0, possibly followed by a
+    # comment, on its own line. Tolerate trailing whitespace.
+    rp_re = re.compile(r'(?m)^resource_providers\s*:[^\n]*\n')
+    m = rp_re.search(content)
+    if m:
+        insertion_point = m.end()
+        return content[:insertion_point] + pin_with_comment + content[insertion_point:]
+
+    # No resource_providers section — append at EOF. Make sure there's
+    # exactly one blank line before our addition so we don't run into
+    # the user's last key.
+    suffix = (
+        "\n"
+        "# Added by Mediarr Installer — pins config-templates to master\n"
+        "# (Recyclarr v8 defaults to its v8 branch which has dropped the\n"
+        "# granular include templates this wizard's recyclarr.yml uses).\n"
+        "resource_providers:\n"
+        + _MASTER_PIN_ENTRY
+    )
+    if not content.endswith('\n'):
+        content += '\n'
+    return content + suffix
+
+
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 def _request(url, headers, method='GET', data=None):
@@ -629,6 +687,15 @@ def add_root_folder(base, key, api, path, extra_fields=None, container=None):
         acl_diagnostic(path)
 
 def add_download_client(base, key, api, name, implementation, field_overrides):
+    # ?forceSave=true mirrors what the arr UI does when the user clicks
+    # Save with a validation warning — accepts the client despite
+    # warnings (e.g. Lidarr's "Lidarr will be unable to perform
+    # Completed Download Handling as configured" with a qBit watch
+    # folder set). Without forceSave the arr returns HTTP 400 and the
+    # client never saves, even though it would work fine. Errors (not
+    # warnings) still reject — forceSave only suppresses the warning
+    # severity tier.
+    fs = "?forceSave=true"
     existing = GET(base, key, f"/{api}/downloadclient")
     if existing is None:
         fail(f"Download client {name}: can't reach API"); return
@@ -646,7 +713,7 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
         for fname, fval in field_overrides.items():
             if fname in field_map:
                 existing_client['fields'][field_map[fname]]['value'] = fval
-        result = PUT(base, key, f"/{api}/downloadclient/{existing_client['id']}", existing_client)
+        result = PUT(base, key, f"/{api}/downloadclient/{existing_client['id']}{fs}", existing_client)
         if result:
             ok(f"Download client: {name} (updated)")
             return
@@ -687,7 +754,7 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
     for fname, fval in field_overrides.items():
         if fname in field_map:
             schema['fields'][field_map[fname]]['value'] = fval
-    result = POST(base, key, f"/{api}/downloadclient", schema)
+    result = POST(base, key, f"/{api}/downloadclient{fs}", schema)
     ok(f"Download client: {name}") if result else fail(f"Download client: {name}")
 
 def add_remote_path_mapping(base, key, api, host, remote, local, container=None):
@@ -3443,6 +3510,9 @@ def main():
     if is_enabled(env, 'ENABLE_RECYCLARR'):
         recyclarr_yml = f"{B}/recyclarr/config/recyclarr.yml"
         # ── Recyclarr settings.yml — pin config-templates to master ─
+        # (helper defined inline so it's adjacent to its single caller
+        # — see the user-customised branch in the block below for the
+        # full motivation.)
         #
         # Recyclarr v8.x clones the config-templates repo at runtime
         # and prefers a `v{Major}` branch (so v8 → the `v8` branch).
@@ -3504,13 +3574,65 @@ def main():
                 else:
                     skip("Recyclarr settings.yml (already current)")
             else:
-                info(
-                    f"Recyclarr settings.yml at {recyclarr_settings_yml} is "
-                    "user-customised — leaving alone. If you see "
-                    "\"Unable to find include template\" errors, add a "
-                    "config-templates provider pinned to `master` to your "
-                    "settings.yml."
+                # User-customised settings.yml (no wizard marker). Don't
+                # clobber it — but DO check it has the master-pin block
+                # the granular includes need. The whole point of v0.3.23+
+                # was to fix the "Unable to find include template" error;
+                # silently preserving a settings.yml that's missing the
+                # pin recreates the bug for any user with a pre-existing
+                # file. Detect + merge in the missing block, preserving
+                # the rest of the user's content.
+                #
+                # Detection is approximate (we don't parse YAML — no
+                # PyYAML in stdlib, and this avoids the extra dep): we
+                # look for the three load-bearing pieces of a master pin
+                # on the same `config-templates` provider entry. If all
+                # three are present, assume the user has it covered.
+                has_pin = (
+                    'config-templates' in existing_settings
+                    and re.search(r'reference:\s*master', existing_settings)
+                    and re.search(r'replace_default:\s*true', existing_settings)
                 )
+                if has_pin:
+                    skip(f"Recyclarr settings.yml (user-customised, master pin already present)")
+                else:
+                    merged = _merge_master_pin_into_settings(existing_settings)
+                    if merged is None:
+                        # Couldn't safely merge — fall back to warning
+                        # so the user knows what to do, without
+                        # destroying their content.
+                        warn(
+                            f"Recyclarr settings.yml at {recyclarr_settings_yml} is "
+                            "user-customised AND missing the required "
+                            "config-templates master-pin block — Recyclarr "
+                            "sync will fail with \"Unable to find include "
+                            "template\" until you add this to "
+                            "resource_providers in that file:\n"
+                            "  - name: config-templates-master\n"
+                            "    type: config-templates\n"
+                            "    clone_url: https://github.com/recyclarr/config-templates.git\n"
+                            "    reference: master\n"
+                            "    replace_default: true"
+                        )
+                    else:
+                        # Back up the user's original so a regrettable
+                        # merge can be rolled back (mtime-stamped name
+                        # for distinguishability if it happens twice).
+                        backup = recyclarr_settings_yml + f".before-mediarr-{time.strftime('%Y%m%d-%H%M%S')}.bak"
+                        try:
+                            with open(backup, 'w', encoding='utf-8') as f:
+                                f.write(existing_settings)
+                        except Exception:
+                            backup = None
+                        with open(recyclarr_settings_yml, 'w', encoding='utf-8') as f:
+                            f.write(merged)
+                        if backup:
+                            info(f"  Backed up your previous settings.yml → {backup}")
+                        ok(
+                            f"Recyclarr settings.yml: injected missing config-templates "
+                            f"master-pin block (your other customisations preserved) → "
+                            f"{recyclarr_settings_yml}"
+                        )
         except Exception as e:
             warn(f"Couldn't write recyclarr/config/settings.yml: {e}")
 
