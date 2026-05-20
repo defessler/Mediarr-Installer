@@ -698,7 +698,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
           <div className="flex items-center justify-between gap-3">
             <h2 id="help-modal-title" className="text-lg font-semibold inline-flex items-center gap-2">
               <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30" aria-hidden="true">
-                <HelpCircle size={18} className="text-emerald-300" strokeWidth={1.75} aria-hidden="true" />
+                <HelpCircle size={20} className="text-emerald-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               Help &amp; troubleshooting
             </h2>
@@ -707,7 +707,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
               className="text-slate-400 hover:text-slate-200 rounded-md p-1 hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
               aria-label="Close help modal"
             >
-              <X size={18} aria-hidden="true" />
+              <X size={20} aria-hidden="true" />
             </button>
           </div>
           <p className="text-xs text-slate-400 mt-2">
@@ -735,7 +735,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
               aria-label="Open the beginner's INSTALL.md walkthrough on GitHub in a new tab"
             >
               INSTALL.md on GitHub
-              <ExternalLink size={11} aria-hidden="true" />
+              <ExternalLink size={13} aria-hidden="true" />
             </a>
             <span className="text-slate-400">
               {' '}— covers everything from enabling SSH on your NAS to adding your
@@ -744,7 +744,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
           </div>
           <div className="relative mt-3">
             <Search
-              size={14}
+              size={16}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
             />
             <input
@@ -853,7 +853,7 @@ function Entry({ item, installDir }: { item: TItem; installDir: string }) {
                   transition={{ duration: 0.12 }}
                   className="inline-flex items-center gap-1 text-emerald-300"
                 >
-                  <ClipboardCheck size={11} aria-hidden="true" />
+                  <ClipboardCheck size={13} aria-hidden="true" />
                   copied
                 </motion.span>
               ) : (
@@ -865,7 +865,7 @@ function Entry({ item, installDir }: { item: TItem; installDir: string }) {
                   transition={{ duration: 0.12 }}
                   className="inline-flex items-center gap-1"
                 >
-                  <Clipboard size={11} aria-hidden="true" />
+                  <Clipboard size={13} aria-hidden="true" />
                   copy
                 </motion.span>
               )}

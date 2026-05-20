@@ -125,7 +125,7 @@ export function IndexerCard({ def, values, onChange }: Props) {
                 title={`Visit ${def.name} — opens in browser`}
                 aria-label={`Visit ${def.name} website — opens in new tab`}
               >
-                site <ExternalLink size={10} aria-hidden="true" />
+                site <ExternalLink size={12} aria-hidden="true" />
               </a>
             )}
           </div>

@@ -831,7 +831,7 @@ export function RunScreen() {
               className="text-center"
             >
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4">
-                <Rocket size={32} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
+                <Rocket size={36} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
               </div>
               <h1 className="text-3xl font-bold tracking-tight">Ready to launch</h1>
               <p className="text-slate-400 mt-3 text-base max-w-md mx-auto">
@@ -861,7 +861,7 @@ export function RunScreen() {
                 transition={{ duration: 0.22 }}
                 className="bg-rose-950/40 border border-rose-700/50 text-rose-100 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
               >
-                <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+                <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="font-mono whitespace-pre-wrap">{errorMsg}</div>
               </motion.div>
             )}
@@ -874,7 +874,7 @@ export function RunScreen() {
             <BigButton
               size="md"
               variant="secondary"
-              icon={<ArrowLeft size={16} />}
+              icon={<ArrowLeft size={18} />}
               onClick={() => setStep('configure')}
             >
               Back
@@ -895,7 +895,7 @@ export function RunScreen() {
             <BigButton
               size="md"
               variant="primary"
-              icon={<Rocket size={16} />}
+              icon={<Rocket size={18} />}
               onClick={go}
             >
               Start install
@@ -1050,7 +1050,7 @@ export function RunScreen() {
                 className="inline-flex items-center gap-1 tabular-nums"
                 title="Total time since the install started"
               >
-                <Clock size={11} className="text-slate-600" aria-hidden="true" />
+                <Clock size={13} className="text-slate-600" aria-hidden="true" />
                 {fmtElapsed(elapsedMs)}
               </span>
             )}
@@ -1086,7 +1086,7 @@ export function RunScreen() {
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-rose-900/30 hover:bg-rose-800/40 border border-rose-700/50 rounded-md text-rose-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50"
               >
-                <XCircle size={14} aria-hidden="true" />
+                <XCircle size={16} aria-hidden="true" />
                 <span className="font-semibold">{failCount}</span> failed
               </motion.button>
             )}
@@ -1098,7 +1098,7 @@ export function RunScreen() {
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-900/20 hover:bg-amber-800/30 border border-amber-700/40 rounded-md text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
               >
-                <AlertTriangle size={14} aria-hidden="true" />
+                <AlertTriangle size={16} aria-hidden="true" />
                 <span className="font-semibold">{actionCount}</span> need{actionCount === 1 ? 's' : ''} action
               </motion.button>
             )}
@@ -1199,7 +1199,7 @@ export function RunScreen() {
               ? 'Wait until the install finishes before going back'
               : 'Return to the configure screen'
           }
-          icon={<ArrowLeft size={16} />}
+          icon={<ArrowLeft size={18} />}
         >
           Back
         </BigButton>
@@ -1209,12 +1209,12 @@ export function RunScreen() {
           {phase === 'running-setup' && 'Running setup.sh — see log'}
           {phase === 'done'   && (
             <span className="inline-flex items-center gap-1.5 text-emerald-300">
-              <CheckCircle2 size={14} aria-hidden="true" /> Install complete — click Continue
+              <CheckCircle2 size={16} aria-hidden="true" /> Install complete — click Continue
             </span>
           )}
           {phase === 'failed' && (
             <span className="inline-flex items-start gap-1.5 text-amber-200/90">
-              <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>
                 Install paused — tap <span className="text-slate-200 font-medium">Retry</span> to run it again,
                 or <span className="text-slate-200 font-medium">Back</span> to tweak a setting first.
@@ -1234,7 +1234,7 @@ export function RunScreen() {
                 ? 'Install already finished successfully'
                 : 'Available once the install has paused'
           }
-          icon={<RotateCw size={16} />}
+          icon={<RotateCw size={18} />}
         >
           Retry
         </BigButton>
@@ -1250,7 +1250,7 @@ export function RunScreen() {
                 ? 'Install paused — try Retry first'
                 : 'Available once the install completes'
           }
-          trailingIcon={<ArrowRight size={16} />}
+          trailingIcon={<ArrowRight size={18} />}
         >
           Continue
         </BigButton>

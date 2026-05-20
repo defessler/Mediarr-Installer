@@ -98,7 +98,7 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
               className="text-slate-400 hover:text-slate-100 p-1 rounded hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               aria-label="Close issues modal"
             >
-              <XIcon size={18} aria-hidden="true" />
+              <XIcon size={20} aria-hidden="true" />
             </button>
           </div>
           <p className="text-xs text-slate-400 mt-1">
@@ -138,7 +138,7 @@ function TabbedBody({
           active={tab === 'fail'}
           onClick={() => setTab('fail')}
           disabled={fails.length === 0}
-          icon={<XCircle size={13} />}
+          icon={<XCircle size={15} />}
           label="Failed"
           count={fails.length}
           accent="rose"
@@ -147,7 +147,7 @@ function TabbedBody({
           active={tab === 'action'}
           onClick={() => setTab('action')}
           disabled={actions.length === 0}
-          icon={<AlertTriangle size={13} />}
+          icon={<AlertTriangle size={15} />}
           label="Needs action"
           count={actions.length}
           accent="amber"
@@ -177,7 +177,7 @@ function TabbedBody({
                 : 'Info: '
               return (
                 <li key={i} className={`flex gap-2 items-start ${cls}`}>
-                  <Icon size={14} className={`shrink-0 mt-0.5 ${iconColor}`} aria-hidden="true" />
+                  <Icon size={16} className={`shrink-0 mt-0.5 ${iconColor}`} aria-hidden="true" />
                   <span className="break-words">
                     <span className="sr-only">{srPrefix}</span>
                     {it.text}

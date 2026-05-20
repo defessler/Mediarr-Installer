@@ -18,7 +18,7 @@ function MigrateHeader() {
       className="flex items-center gap-3"
     >
       <div className="shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/30 border border-amber-500/30 flex items-center justify-center">
-        <ArrowRightLeft size={22} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
+        <ArrowRightLeft size={24} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
       </div>
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Migrate library</h1>
@@ -371,7 +371,7 @@ export function MigrateScreen() {
 
       <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
         <h2 className="font-medium inline-flex items-center gap-2">
-          <Cloud size={16} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
+          <Cloud size={18} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
           Source arr connection
         </h2>
         <p className="text-xs text-slate-400">
@@ -420,7 +420,7 @@ export function MigrateScreen() {
           <BigButton
             size="md"
             variant="primary"
-            icon={!fetching ? (totalFetched > 0 ? <RefreshCw size={14} /> : <Download size={14} />) : undefined}
+            icon={!fetching ? (totalFetched > 0 ? <RefreshCw size={16} /> : <Download size={16} />) : undefined}
             onClick={fetchSource}
             disabled={fetching || importing}
             loading={fetching}
@@ -433,12 +433,12 @@ export function MigrateScreen() {
           </BigButton>
           {fetchError && (
             <span className="text-rose-300 text-sm inline-flex items-center gap-1.5">
-              <XCircle size={14} aria-hidden="true" /> {fetchError}
+              <XCircle size={16} aria-hidden="true" /> {fetchError}
             </span>
           )}
           {totalFetched > 0 && !fetching && (
             <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5" role="status" aria-live="polite">
-              <CheckCircle2 size={14} aria-hidden="true" />
+              <CheckCircle2 size={16} aria-hidden="true" />
               Got {totalFetched} title{totalFetched === 1 ? '' : 's'}. Scroll down to import →
             </span>
           )}
@@ -448,7 +448,7 @@ export function MigrateScreen() {
       {totalFetched > 0 && (
         <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
           <h2 className="font-medium inline-flex items-center gap-2">
-            <Eye size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+            <Eye size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
             Preview
           </h2>
           {counts.sonarr > 0 && (
@@ -466,7 +466,7 @@ export function MigrateScreen() {
               doesn't have to re-paste on every wizard launch. */}
           <div className="border-t border-slate-800 pt-3 space-y-2">
             <h3 className="text-sm font-medium inline-flex items-center gap-2">
-              <KeyRound size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+              <KeyRound size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
               Destination credentials
             </h3>
             {keysError && (
@@ -546,7 +546,7 @@ export function MigrateScreen() {
                   size="lg"
                   variant="primary"
                   className={`w-full ${canImport && !importing && !reduced ? 'ring-2 ring-emerald-400/30 animate-pulse' : ''}`}
-                  icon={!importing ? <ArrowRight size={18} /> : undefined}
+                  icon={!importing ? <ArrowRight size={20} /> : undefined}
                   onClick={importAll}
                   disabled={importing || fetching || !canImport}
                   loading={importing}
@@ -582,20 +582,20 @@ export function MigrateScreen() {
         <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="font-medium inline-flex items-center gap-2">
-              <ListChecks size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+              <ListChecks size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
               Import results
             </h2>
             <span className="text-xs text-slate-400 inline-flex items-center gap-2" role="status" aria-live="polite">
               <span className="text-emerald-300 inline-flex items-center gap-1">
-                <CheckCircle2 size={12} aria-hidden="true" /> added {counts_results.ok}
+                <CheckCircle2 size={14} aria-hidden="true" /> added {counts_results.ok}
               </span>
               <span aria-hidden="true">·</span>
               <span className="text-sky-300 inline-flex items-center gap-1">
-                <RefreshCw size={12} aria-hidden="true" /> updated {counts_results.updated}
+                <RefreshCw size={14} aria-hidden="true" /> updated {counts_results.updated}
               </span>
               <span aria-hidden="true">·</span>
               <span className="text-rose-300 inline-flex items-center gap-1">
-                <XCircle size={12} aria-hidden="true" /> {counts_results.fail}
+                <XCircle size={14} aria-hidden="true" /> {counts_results.fail}
               </span>
             </span>
           </div>
@@ -620,7 +620,7 @@ export function MigrateScreen() {
                         : 'text-rose-300')
                     }
                   >
-                    <ResultIcon size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
+                    <ResultIcon size={13} className="shrink-0 mt-0.5" aria-hidden="true" />
                     <span>
                       {r.title}
                       {r.message && <span className="text-slate-500"> — {r.message}</span>}
@@ -640,7 +640,7 @@ export function MigrateScreen() {
                 className="absolute bottom-1 right-1 inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 title="Resume following — jump to bottom"
               >
-                Jump to bottom <ChevronDown size={12} aria-hidden="true" />
+                Jump to bottom <ChevronDown size={14} aria-hidden="true" />
               </motion.button>
             )}
           </div>
@@ -650,7 +650,7 @@ export function MigrateScreen() {
       {/* ── qBittorrent migration ─────────────────────────────────────── */}
       <section className="rounded-md border border-slate-700 bg-slate-900/40 p-4 space-y-3">
         <h2 className="font-medium inline-flex items-center gap-2">
-          <Download size={16} className="text-amber-400" strokeWidth={1.75} aria-hidden="true" />
+          <Download size={18} className="text-amber-400" strokeWidth={1.75} aria-hidden="true" />
           qBittorrent torrents
         </h2>
         <p className="text-xs text-slate-400">
@@ -696,7 +696,7 @@ export function MigrateScreen() {
           <BigButton
             size="md"
             variant="primary"
-            icon={!qbitFetching ? (qbitTorrents && qbitTorrents.length > 0 ? <RefreshCw size={14} /> : <Download size={14} />) : undefined}
+            icon={!qbitFetching ? (qbitTorrents && qbitTorrents.length > 0 ? <RefreshCw size={16} /> : <Download size={16} />) : undefined}
             onClick={fetchQbit}
             disabled={qbitFetching || qbitImporting}
             loading={qbitFetching}
@@ -709,12 +709,12 @@ export function MigrateScreen() {
           </BigButton>
           {qbitFetchError && (
             <span className="text-rose-300 text-sm inline-flex items-center gap-1.5">
-              <XCircle size={14} aria-hidden="true" /> {qbitFetchError}
+              <XCircle size={16} aria-hidden="true" /> {qbitFetchError}
             </span>
           )}
           {qbitTorrents && qbitTorrents.length > 0 && !qbitFetching && (
             <span className="text-emerald-300 text-sm inline-flex items-center gap-1.5" role="status" aria-live="polite">
-              <CheckCircle2 size={14} aria-hidden="true" />
+              <CheckCircle2 size={16} aria-hidden="true" />
               Got {qbitTorrents.length} torrent{qbitTorrents.length === 1 ? '' : 's'}. Scroll down to migrate →
             </span>
           )}
@@ -737,7 +737,7 @@ export function MigrateScreen() {
 
             <div className="border-t border-slate-800 pt-3 space-y-2">
               <h3 className="text-sm font-medium inline-flex items-center gap-2">
-                <Route size={14} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
+                <Route size={16} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
                 Path remap
               </h3>
               <p className="text-xs text-slate-400">
@@ -787,7 +787,7 @@ export function MigrateScreen() {
                 where .env hasn't been read yet. */}
             <div className="border-t border-slate-800 pt-3 space-y-2">
               <h3 className="text-sm font-medium inline-flex items-center gap-2">
-                <Lock size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+                <Lock size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
                 Destination qBittorrent
               </h3>
               <p className="text-xs text-slate-400">
@@ -840,7 +840,7 @@ export function MigrateScreen() {
                     size="lg"
                     variant="primary"
                     className={`w-full ${canMigrate && !qbitImporting && !reduced ? 'ring-2 ring-emerald-400/30 animate-pulse' : ''}`}
-                    icon={!qbitImporting ? <ArrowRight size={18} /> : undefined}
+                    icon={!qbitImporting ? <ArrowRight size={20} /> : undefined}
                     onClick={importQbit}
                     disabled={qbitImporting || qbitFetching || !canMigrate}
                     loading={qbitImporting}
@@ -874,16 +874,16 @@ export function MigrateScreen() {
           <div className="border-t border-slate-800 pt-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium inline-flex items-center gap-2">
-                <ListChecks size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+                <ListChecks size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
                 Migration results
               </h3>
               <span className="text-xs text-slate-400 inline-flex items-center gap-2" role="status" aria-live="polite">
                 <span className="text-emerald-300 inline-flex items-center gap-1">
-                  <CheckCircle2 size={12} aria-hidden="true" /> {qbitResults.filter((r) => r.status === 'ok').length}
+                  <CheckCircle2 size={14} aria-hidden="true" /> {qbitResults.filter((r) => r.status === 'ok').length}
                 </span>
                 <span aria-hidden="true">·</span>
                 <span className="text-rose-300 inline-flex items-center gap-1">
-                  <XCircle size={12} aria-hidden="true" /> {qbitResults.filter((r) => r.status === 'fail').length}
+                  <XCircle size={14} aria-hidden="true" /> {qbitResults.filter((r) => r.status === 'fail').length}
                 </span>
               </span>
             </div>
@@ -903,7 +903,7 @@ export function MigrateScreen() {
                         (r.status === 'ok' ? 'text-emerald-300' : 'text-rose-300')
                       }
                     >
-                      <Icon size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
+                      <Icon size={13} className="shrink-0 mt-0.5" aria-hidden="true" />
                       <span>
                         {r.title}
                         {r.message && <span className="text-slate-500"> — {r.message}</span>}
@@ -923,7 +923,7 @@ export function MigrateScreen() {
                   className="absolute bottom-1 right-1 inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border border-emerald-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                   title="Resume following — jump to bottom"
                 >
-                  Jump to bottom <ChevronDown size={12} aria-hidden="true" />
+                  Jump to bottom <ChevronDown size={14} aria-hidden="true" />
                 </motion.button>
               )}
             </div>
@@ -935,7 +935,7 @@ export function MigrateScreen() {
         <BigButton
           size="md"
           variant="secondary"
-          icon={<ArrowLeft size={16} />}
+          icon={<ArrowLeft size={18} />}
           onClick={() => setStep('welcome')}
           disabled={fetching || importing}
         >
@@ -944,7 +944,7 @@ export function MigrateScreen() {
         <BigButton
           size="md"
           variant={results.length > 0 ? 'primary' : 'secondary'}
-          trailingIcon={<ArrowRight size={16} />}
+          trailingIcon={<ArrowRight size={18} />}
           onClick={() => setStep('done')}
           disabled={fetching || importing}
         >

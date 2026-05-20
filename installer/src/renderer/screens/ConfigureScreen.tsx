@@ -46,7 +46,7 @@ function ConfigureHeader() {
       className="text-center"
     >
       <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-700/30 border border-emerald-500/30 mb-4">
-        <Settings2 size={32} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
+        <Settings2 size={36} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
       </div>
       <h1 className="text-3xl font-bold tracking-tight">Make it yours</h1>
       <p className="text-slate-400 mt-2 text-base max-w-lg mx-auto">
@@ -183,7 +183,7 @@ function ServicesSection({
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-        <Boxes size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+        <Boxes size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
         Services
         <span className="text-xs font-normal text-slate-500">
           ({enabledCount} of {SERVICE_TOGGLES.length} enabled — Prowlarr + Flaresolverr always on)
@@ -234,7 +234,7 @@ function ServicesSection({
                     : 'bg-slate-800/30 border border-slate-700/30')
                 }
               >
-                <Icon size={18} className={t.iconColor} strokeWidth={1.75} />
+                <Icon size={20} className={t.iconColor} strokeWidth={1.75} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium">{t.label}</div>
@@ -312,7 +312,7 @@ function TrashProfilesSection({
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-        <Award size={18} className="text-amber-400" strokeWidth={1.75} aria-hidden="true" />
+        <Award size={20} className="text-amber-400" strokeWidth={1.75} aria-hidden="true" />
         TRaSH Guide profiles
         <span className="text-xs font-normal text-slate-500">
           (which quality bundle Recyclarr applies)
@@ -332,7 +332,7 @@ function TrashProfilesSection({
         {sonarrOn && (
           <div>
             <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5" htmlFor="trash-sonarr-profile">
-              <Tv size={13} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
+              <Tv size={15} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
               Sonarr profile
             </label>
             <select
@@ -365,7 +365,7 @@ function TrashProfilesSection({
         {radarrOn && (
           <div>
             <label className="block text-sm font-medium mb-1 inline-flex items-center gap-1.5" htmlFor="trash-radarr-profile">
-              <Film size={13} className="text-yellow-400" strokeWidth={1.75} aria-hidden="true" />
+              <Film size={15} className="text-yellow-400" strokeWidth={1.75} aria-hidden="true" />
               Radarr profile
             </label>
             <select
@@ -399,7 +399,7 @@ function TrashProfilesSection({
           Lidarr dropdown here. */}
       {isEnabled(config.ENABLE_LIDARR) && (
         <p className="text-xs text-slate-500 italic inline-flex items-start gap-1.5">
-          <Music size={11} className="text-fuchsia-400 shrink-0 mt-0.5" strokeWidth={1.75} aria-hidden="true" />
+          <Music size={13} className="text-fuchsia-400 shrink-0 mt-0.5" strokeWidth={1.75} aria-hidden="true" />
           <span>
             Lidarr isn&apos;t supported by Recyclarr — for music quality definitions
             see{' '}
@@ -521,7 +521,7 @@ function VpnSection({
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-        <Shield size={18} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
+        <Shield size={20} className="text-sky-400" strokeWidth={1.75} aria-hidden="true" />
         VPN
       </h2>
 
@@ -542,7 +542,7 @@ function VpnSection({
           className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3"
         >
           <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
-            <AlertTriangle size={14} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
+            <AlertTriangle size={16} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
           </div>
           <div>
             <div className="font-medium text-amber-100">VPN off (default)</div>
@@ -578,7 +578,7 @@ function VpnSection({
                     }
                   >
                     <div className="font-medium flex items-center gap-1.5">
-                      {picked && <CheckCircle2 size={12} className="text-emerald-400" aria-hidden="true" />}
+                      {picked && <CheckCircle2 size={14} className="text-emerald-400" aria-hidden="true" />}
                       {p.label}
                     </div>
                     <div className="text-xs text-slate-400 mt-0.5">{p.blurb}</div>
@@ -618,7 +618,7 @@ function VpnSection({
                 <BigButton
                   size="md"
                   variant={vpnToken.length >= 16 && !vpnBusy ? 'primary' : 'secondary'}
-                  icon={!vpnBusy ? <KeyRound size={14} /> : undefined}
+                  icon={!vpnBusy ? <KeyRound size={16} /> : undefined}
                   onClick={fetchVpnKey}
                   disabled={vpnBusy || vpnToken.length < 16}
                   loading={vpnBusy}
@@ -629,13 +629,13 @@ function VpnSection({
               </div>
               {vpnError && (
                 <div className="text-rose-300 text-sm inline-flex items-center gap-1.5">
-                  <XCircle size={14} aria-hidden="true" />
+                  <XCircle size={16} aria-hidden="true" />
                   {vpnError}
                 </div>
               )}
               {config.WIREGUARD_PRIVATE_KEY && !vpnError && (
                 <div className="text-emerald-300 text-sm inline-flex items-center gap-1.5">
-                  <CheckCircle2 size={14} aria-hidden="true" />
+                  <CheckCircle2 size={16} aria-hidden="true" />
                   Got it — {config.WIREGUARD_PRIVATE_KEY.length}-char WireGuard key cached.
                 </div>
               )}
@@ -808,7 +808,7 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-          <HardDrive size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+          <HardDrive size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
           Install location
         </h2>
         <p className="text-xs text-slate-400">
@@ -852,7 +852,7 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-          <UserCircle size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+          <UserCircle size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
           Identity
         </h2>
 
@@ -863,7 +863,7 @@ export function ConfigureScreen() {
             shared "users" group rather than the user's private group). */}
         <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-3">
           <label className="block text-sm font-medium inline-flex items-center gap-2 w-full">
-            <Users size={14} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+            <Users size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
             Container user / group
             <span className="text-slate-500 text-xs">
               (these own the media files — pick something other than the install user)
@@ -875,7 +875,7 @@ export function ConfigureScreen() {
               className="text-xs text-rose-300 inline-flex items-start gap-1.5"
               role="alert"
             >
-              <XCircle size={11} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+              <XCircle size={13} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
               <span>Couldn&apos;t read users from the NAS: {usersError}</span>
             </div>
           )}
@@ -968,7 +968,7 @@ export function ConfigureScreen() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-          <KeyRound size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+          <KeyRound size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
           Arr Web UI auth
         </h2>
         <p className="text-sm text-slate-400">
@@ -986,7 +986,7 @@ export function ConfigureScreen() {
       {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
         <section className="space-y-4">
           <h2 className="text-lg font-medium border-b border-slate-800 pb-2 flex items-center gap-2">
-            <Lock size={18} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+            <Lock size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
             qBittorrent WebUI
           </h2>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -1037,7 +1037,7 @@ export function ConfigureScreen() {
       {isEnabled(config.ENABLE_PLEX as string | undefined) && (
         <section className="rounded-md border border-amber-700/30 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
           <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
-            <Clock size={14} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
+            <Clock size={16} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
           </div>
           <div className="space-y-1">
             <div className="font-medium text-amber-100">
@@ -1075,7 +1075,7 @@ export function ConfigureScreen() {
           niceties. */}
       <details className="space-y-2">
         <summary className="cursor-pointer text-lg font-medium border-b border-slate-800 pb-2 hover:text-emerald-300 select-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-          <Wrench size={18} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+          <Wrench size={20} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
           Advanced
           <span className="text-xs font-normal text-slate-500 ml-2">
             (click to expand — account-based usenet provider, indexer API
@@ -1085,7 +1085,7 @@ export function ConfigureScreen() {
         <div className="space-y-8 pt-4">
           <section className="space-y-4">
             <h3 className="text-base font-medium flex items-center gap-2">
-              <Newspaper size={16} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+              <Newspaper size={18} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
               SABnzbd usenet provider
             </h3>
             <p className="text-sm text-slate-400">
@@ -1139,7 +1139,7 @@ export function ConfigureScreen() {
 
           <section className="space-y-3">
             <h3 className="text-base font-medium flex items-center gap-2">
-              <Captions size={16} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+              <Captions size={18} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
               Bazarr subtitle providers
             </h3>
             <p className="text-sm text-slate-400">
@@ -1177,7 +1177,7 @@ export function ConfigureScreen() {
         <BigButton
           size="md"
           variant="secondary"
-          icon={<ArrowLeft size={16} />}
+          icon={<ArrowLeft size={18} />}
           onClick={() => useWizard.getState().setStep('detect')}
         >
           Back
@@ -1194,7 +1194,7 @@ export function ConfigureScreen() {
         <BigButton
           size="md"
           variant="primary"
-          trailingIcon={<ArrowRight size={16} />}
+          trailingIcon={<ArrowRight size={18} />}
           disabled={errors.length > 0}
           onClick={go}
           title={errors.length > 0 ? 'Fix the issues above first' : 'Move to the install step'}

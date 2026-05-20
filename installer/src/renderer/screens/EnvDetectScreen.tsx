@@ -187,9 +187,9 @@ export function EnvDetectScreen() {
           the pass/fail meaning. We surface the actual status via the
           parent role/aria-label structure on the section. */}
       {ok ? (
-        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+        <CheckCircle2 size={18} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
       ) : (
-        <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+        <XCircle size={18} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
       )}
       <span className="text-sm">
         <span className="sr-only">{ok ? 'OK: ' : 'Failed: '}</span>
@@ -238,7 +238,7 @@ export function EnvDetectScreen() {
                 : { duration: 0.3 }
             }
           >
-            <Radar size={32} className="text-sky-300" strokeWidth={1.5} aria-hidden="true" />
+            <Radar size={36} className="text-sky-300" strokeWidth={1.5} aria-hidden="true" />
           </motion.div>
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
@@ -260,7 +260,7 @@ export function EnvDetectScreen() {
           transition={{ duration: 0.22 }}
           className="bg-rose-950/40 border border-rose-700/50 text-rose-100 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
         >
-          <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <AlertCircle size={22} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <div className="font-semibold">Detection failed</div>
             <div className="text-rose-200/80 text-xs mt-0.5 font-mono whitespace-pre-wrap">{error}</div>
@@ -593,9 +593,9 @@ export function EnvDetectScreen() {
           <section className="rounded-md border border-slate-800 p-4 text-sm">
             <div className="flex items-center gap-3">
               {r.sudoMode === 'root' || r.sudoMode === 'nopasswd' ? (
-                <CheckCircle2 size={16} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
               ) : (
-                <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                <AlertTriangle size={18} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
               )}
               <span>
                 Sudo strategy: <span className="font-mono">{r.sudoMode}</span>
@@ -623,13 +623,13 @@ export function EnvDetectScreen() {
             (r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs))) && (
             <section className="rounded-md border border-amber-900/50 bg-amber-950/30 p-4 text-sm">
               <h2 className="font-medium text-amber-200 mb-2 inline-flex items-center gap-2">
-                <AlertTriangle size={14} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
+                <AlertTriangle size={16} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
                 Platform readiness
               </h2>
               {r.tunDevice === false && (
                 <div className="mb-2">
                   <div className="text-amber-200 inline-flex items-center gap-2">
-                    <AlertTriangle size={14} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
                     <span className="font-mono">/dev/net/tun</span> not present
                   </div>
                   <p className="text-amber-200/80 mt-1 ml-5">
@@ -648,7 +648,7 @@ sudo insmod /lib/modules/tun.ko
               {r.iptablesLoaded === false && (
                 <div className="mb-2">
                   <div className="text-amber-200 inline-flex items-center gap-2">
-                    <AlertTriangle size={14} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
                     iptables kernel modules not loaded
                   </div>
                   <p className="text-amber-200/80 mt-1 ml-5">
@@ -665,7 +665,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
               {r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs) && (
                 <div className="mb-2">
                   <div className="text-rose-200 inline-flex items-center gap-2">
-                    <XCircle size={14} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
                     Install dir is on <span className="font-mono">{r.installDirFs}</span> — SQLite will corrupt
                   </div>
                   <p className="text-rose-200/80 mt-1 ml-5">
@@ -713,7 +713,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
             return (
               <section className="rounded-md border border-amber-700/50 bg-amber-900/10 p-4 space-y-3 text-sm">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                  <AlertTriangle size={18} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
                   <span className="font-medium">Services already running — keep them?</span>
                 </div>
                 <p className="text-slate-300 text-xs">
@@ -791,7 +791,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           {(r.existingInstall.hasCompose || r.existingInstall.runningContainers.length > 0) && (
             <section className="rounded-md border border-sky-700/50 bg-sky-900/20 p-4 space-y-3 text-sm">
               <div className="flex items-center gap-2">
-                <Info size={16} className="text-sky-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                <Info size={18} className="text-sky-400 shrink-0" strokeWidth={2} aria-hidden="true" />
                 <span className="font-medium">An install already exists at this path</span>
               </div>
               <ul className="text-slate-300 space-y-0.5 ml-5 list-disc list-inside text-xs">
@@ -815,7 +815,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
                 <BigButton
                   size="sm"
                   variant="primary"
-                  icon={<RefreshCw size={12} />}
+                  icon={<RefreshCw size={14} />}
                   className="bg-gradient-to-b from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 shadow-lg shadow-sky-900/40 border-sky-400/30"
                   onClick={() => { setMode('update'); setStep('run-update') }}
                 >
@@ -832,7 +832,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           {r.portConflicts.length > 0 && (
             <section className="rounded-md border border-rose-700/50 bg-rose-900/20 p-4 space-y-3 text-sm">
               <div className="flex items-center gap-2">
-                <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                <XCircle size={18} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
                 <span className="font-medium">Port conflicts detected</span>
               </div>
               <p className="text-slate-300 text-xs">
@@ -880,7 +880,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
         <BigButton
           size="md"
           variant="secondary"
-          icon={<ArrowLeft size={16} />}
+          icon={<ArrowLeft size={18} />}
           onClick={() => setStep('connect')}
         >
           Back
@@ -888,25 +888,25 @@ git clone https://github.com/telnetdoogie/synology-docker.git
         <div className="flex-1 text-sm text-center">
           {status === 'detecting' && (
             <span className="text-slate-400 inline-flex items-center gap-1.5">
-              <Radar size={14} className="text-sky-400" aria-hidden="true" />
+              <Radar size={16} className="text-sky-400" aria-hidden="true" />
               Running checks over SSH…
             </span>
           )}
           {status === 'failed' && (
             <span className="text-rose-300 inline-flex items-center gap-1.5" role="status" aria-live="polite">
-              <XCircle size={14} aria-hidden="true" />
+              <XCircle size={16} aria-hidden="true" />
               Detection failed — see details above
             </span>
           )}
           {status === 'ok' && allBlocking && (
             <span className="text-emerald-300 inline-flex items-center gap-1.5" role="status" aria-live="polite">
-              <CheckCircle2 size={14} aria-hidden="true" />
+              <CheckCircle2 size={16} aria-hidden="true" />
               All required checks passed
             </span>
           )}
           {status === 'ok' && !allBlocking && (
             <span className="text-amber-300 inline-flex items-center gap-1.5" role="status" aria-live="polite">
-              <AlertTriangle size={14} aria-hidden="true" />
+              <AlertTriangle size={16} aria-hidden="true" />
               Fix the red items above to continue
             </span>
           )}
@@ -914,7 +914,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
         <BigButton
           size="md"
           variant="primary"
-          trailingIcon={<ArrowRight size={16} />}
+          trailingIcon={<ArrowRight size={18} />}
           disabled={!allBlocking}
           onClick={() => setStep('configure')}
           title={

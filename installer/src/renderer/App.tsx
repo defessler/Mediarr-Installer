@@ -293,14 +293,14 @@ export function App() {
         }}
       >
         <span className="font-medium tracking-wide text-slate-300 inline-flex items-center gap-1.5">
-          <Server size={12} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
+          <Server size={14} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
           Mediarr Installer
         </span>
       </div>
 
       {info?.mock && (
         <div className="bg-amber-500/15 text-amber-200 border-b border-amber-500/30 text-xs px-4 py-1.5 text-center font-medium inline-flex items-center justify-center gap-2">
-          <FlaskConical size={12} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
+          <FlaskConical size={14} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
           <span className="font-bold tracking-wide">MOCK MODE</span>
           <span className="font-normal text-amber-200/80">
             — SSH, SFTP, env detection, and NordVPN API are stubbed. No real NAS is contacted.
@@ -343,12 +343,12 @@ export function App() {
               >
                 {autosaveStatus === 'saving' ? (
                   <>
-                    <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+                    <Loader2 size={13} className="animate-spin" aria-hidden="true" />
                     Saving…
                   </>
                 ) : (
                   <>
-                    <Check size={11} aria-hidden="true" />
+                    <Check size={13} aria-hidden="true" />
                     Saved
                   </>
                 )}
@@ -361,7 +361,7 @@ export function App() {
             className="ml-2 inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors"
             title="Switch to a different profile"
           >
-            <Users size={11} aria-hidden="true" />
+            <Users size={13} aria-hidden="true" />
             switch
           </button>
         </div>
@@ -440,7 +440,7 @@ export function App() {
                   the previous char was a tofu-prone single guillemet. */}
               {i < stepList.length - 1 && (
                 <ChevronRight
-                  size={14}
+                  size={16}
                   strokeWidth={2.5}
                   className={
                     'transition-colors duration-300 shrink-0 ' +
@@ -497,7 +497,7 @@ export function App() {
                 aria-label={`v${info.updateAvailable.latest} update available — open release on GitHub in new tab`}
                 title={`Click to open the v${info.updateAvailable.latest} release page on GitHub`}
               >
-                <ArrowUpCircle size={11} aria-hidden="true" />
+                <ArrowUpCircle size={13} aria-hidden="true" />
                 v{info.updateAvailable.latest} available
               </a>
             )}
@@ -521,11 +521,11 @@ export function App() {
                 }
               >
                 {checkState === 'checking' ? (
-                  <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+                  <Loader2 size={13} className="animate-spin" aria-hidden="true" />
                 ) : checkState === 'up-to-date' ? (
-                  <Check size={11} className="text-emerald-400" aria-hidden="true" />
+                  <Check size={13} className="text-emerald-400" aria-hidden="true" />
                 ) : (
-                  <RefreshCw size={11} aria-hidden="true" />
+                  <RefreshCw size={13} aria-hidden="true" />
                 )}
                 {checkState === 'checking'
                   ? 'Checking…'
@@ -544,7 +544,7 @@ export function App() {
               className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-700/50 hover:bg-emerald-600/60 text-emerald-100 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
               title="Common issues + the exact fix for each — searchable, copy-to-clipboard"
             >
-              <HelpCircle size={12} aria-hidden="true" />
+              <HelpCircle size={14} aria-hidden="true" />
               Help
             </button>
             <button
@@ -564,7 +564,7 @@ export function App() {
               className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               title={info.logPath}
             >
-              <FileText size={12} aria-hidden="true" />
+              <FileText size={14} aria-hidden="true" />
               Open log
             </button>
             <button
@@ -576,7 +576,7 @@ export function App() {
               className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               title="Show the log file in your file manager"
             >
-              <FolderOpen size={12} aria-hidden="true" />
+              <FolderOpen size={14} aria-hidden="true" />
               Reveal
             </button>
             <button
@@ -588,7 +588,7 @@ export function App() {
               className="inline-flex items-center gap-1 px-1.5 py-1 rounded hover:bg-slate-800 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
               title="Toggle Chromium DevTools — only needed for debugging"
             >
-              <Wrench size={12} aria-hidden="true" />
+              <Wrench size={14} aria-hidden="true" />
               DevTools
             </button>
             <span className="font-mono opacity-60">

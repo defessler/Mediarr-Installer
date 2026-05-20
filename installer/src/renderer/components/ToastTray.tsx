@@ -70,7 +70,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
     >
       <div className="flex items-start gap-3">
         <Icon
-          size={20}
+          size={22}
           aria-hidden="true"
           className={`shrink-0 mt-0.5 ${SEVERITY_ICON_COLOR[toast.severity]}`}
         />
@@ -95,7 +95,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
               }
               className="inline-flex items-center gap-1 hover:opacity-100 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
             >
-              <FileText size={12} aria-hidden="true" />
+              <FileText size={14} aria-hidden="true" />
               Open log
             </button>
           </div>
@@ -119,7 +119,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           className="shrink-0 opacity-60 hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:opacity-100"
           aria-label={`Dismiss "${toast.title}" notification`}
         >
-          <X size={14} aria-hidden="true" />
+          <X size={16} aria-hidden="true" />
         </button>
       </div>
     </motion.div>

@@ -20,12 +20,22 @@ html, body, #root {
   height: 100%;
 }
 
+/* Root font-size drives every Tailwind text-* class (they're rem-based),
+   so a single bump here scales the entire UI proportionally. Bumped from
+   16px → 17.5px in v0.3.31 for a ~10% across-the-board size increase
+   (kids + visually-impaired users were squinting at the previous size).
+   Icons get their own bump via per-component size= prop changes in the
+   same release. */
+html {
+  font-size: 17.5px;
+}
+
 body {
   margin: 0;
-  /* 16px base — research-backed minimum for children + accessibility.
-     Previous default (14px / text-sm) was too small for the target
-     audience. */
-  font-size: 16px;
+  /* Inherit from html (1rem = 17.5px) so a future re-tune only needs
+     to touch the html rule above. Atkinson Hyperlegible reads cleanly
+     at this size; falls back gracefully if the font fails to load. */
+  font-size: 1rem;
   font-family: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
@@ -78,7 +88,10 @@ h1, h2, h3 {
 /* Streaming log panel — terminal aesthetic */
 .log-panel {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  /* 13px (was 12px) — matches the v0.3.31 across-the-board bump.
+     Kept in absolute px (not rem) because terminal-style log output
+     reads best at a fixed character width regardless of root scale. */
+  font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -108,11 +121,11 @@ textarea:focus-visible,
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: #10b981; /* emerald-500 */
-  /* Slightly larger hit target than the browser default — 16px → 18px
-     gets us closer to the 24px Material guidance without making the
-     check itself look comic. */
-  width: 18px;
-  height: 18px;
+  /* 20px hit target (was 18px) — matches the v0.3.31 across-the-board
+     size bump. Closer to Material's 24px guidance for touch / mouse
+     targets without making the check itself look cartoony. */
+  width: 20px;
+  height: 20px;
   cursor: pointer;
 }
 

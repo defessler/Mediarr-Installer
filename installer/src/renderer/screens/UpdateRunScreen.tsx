@@ -587,7 +587,7 @@ docker compose $FILES --progress plain --ansi never up -d`
         <div className="flex items-center gap-3">
           <div className="shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500/20 to-sky-700/30 border border-sky-500/30 flex items-center justify-center">
             <RefreshCw
-              size={22}
+              size={24}
               className={`text-sky-300 ${phase === 'running' && !reduced ? 'animate-spin' : ''}`}
               strokeWidth={2}
               aria-hidden="true"
@@ -681,7 +681,7 @@ docker compose $FILES --progress plain --ansi never up -d`
             <BigButton
               size="sm"
               variant="danger"
-              icon={!(running && lastAction === `step-${stepToRerun}`) ? <Play size={11} fill="currentColor" /> : undefined}
+              icon={!(running && lastAction === `step-${stepToRerun}`) ? <Play size={13} fill="currentColor" /> : undefined}
               onClick={() => rerunStep(stepToRerun)}
               disabled={running}
               loading={running && lastAction === `step-${stepToRerun}`}
@@ -703,7 +703,7 @@ docker compose $FILES --progress plain --ansi never up -d`
         <BigButton
           size="md"
           variant="secondary"
-          icon={<ArrowLeft size={16} />}
+          icon={<ArrowLeft size={18} />}
           onClick={() => setStep('welcome')}
           disabled={running}
           title={
@@ -719,19 +719,19 @@ docker compose $FILES --progress plain --ansi never up -d`
           {phase === 'running' && `${lastActionLabel} in progress…`}
           {phase === 'done' && (
             <span className="inline-flex items-center gap-1.5 text-emerald-300">
-              <CheckCircle2 size={14} aria-hidden="true" /> {lastActionLabel} complete
+              <CheckCircle2 size={16} aria-hidden="true" /> {lastActionLabel} complete
             </span>
           )}
           {phase === 'failed' && (
             <span className="inline-flex items-center gap-1.5 text-amber-200/90">
-              <AlertCircle size={14} aria-hidden="true" /> {lastActionLabel} paused — see log
+              <AlertCircle size={16} aria-hidden="true" /> {lastActionLabel} paused — see log
             </span>
           )}
         </div>
         <BigButton
           size="md"
           variant={phase === 'done' ? 'primary' : 'secondary'}
-          trailingIcon={<ArrowRight size={16} />}
+          trailingIcon={<ArrowRight size={18} />}
           onClick={() => setStep('done')}
           disabled={phase !== 'done'}
           title={
@@ -781,7 +781,7 @@ function ActionCard({
         onClick={onClick}
         disabled={disabled}
         loading={running}
-        icon={!running ? <Play size={11} fill="currentColor" /> : undefined}
+        icon={!running ? <Play size={13} fill="currentColor" /> : undefined}
       >
         {buttonLabel}
       </BigButton>

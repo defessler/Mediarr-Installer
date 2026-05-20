@@ -74,7 +74,7 @@ export function LogActions({ lines, defaultName, header }: Props) {
               transition={{ duration: 0.12 }}
               className="text-emerald-400 inline-flex items-center"
             >
-              <ClipboardCheck size={13} aria-hidden="true" />
+              <ClipboardCheck size={15} aria-hidden="true" />
             </motion.span>
           ) : (
             <motion.span
@@ -85,7 +85,7 @@ export function LogActions({ lines, defaultName, header }: Props) {
               transition={{ duration: 0.12 }}
               className="inline-flex items-center"
             >
-              <Clipboard size={13} aria-hidden="true" />
+              <Clipboard size={15} aria-hidden="true" />
             </motion.span>
           )}
         </AnimatePresence>
@@ -98,7 +98,7 @@ export function LogActions({ lines, defaultName, header }: Props) {
         className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
         title="Save log to a file"
       >
-        <Save size={13} aria-hidden="true" />
+        <Save size={15} aria-hidden="true" />
         Save log…
       </motion.button>
       <AnimatePresence>
@@ -112,7 +112,7 @@ export function LogActions({ lines, defaultName, header }: Props) {
             role="status"
             aria-live="polite"
           >
-            <ClipboardCheck size={11} aria-hidden="true" />
+            <ClipboardCheck size={13} aria-hidden="true" />
             Saved to {savedPath}
           </motion.span>
         )}

@@ -237,7 +237,7 @@ export function WelcomeScreen() {
                   onClick={() => setCreating(true)}
                   className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                 >
-                  <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
+                  <Plus size={18} strokeWidth={2.5} aria-hidden="true" />
                   New profile
                 </button>
                 <span className="text-slate-700" aria-hidden="true">·</span>
@@ -246,7 +246,7 @@ export function WelcomeScreen() {
                   className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
                   title="Import a passphrase-protected .mediarr-profile.json file"
                 >
-                  <Download size={16} strokeWidth={2.5} aria-hidden="true" />
+                  <Download size={18} strokeWidth={2.5} aria-hidden="true" />
                   Import
                 </button>
               </div>
@@ -309,24 +309,24 @@ export function WelcomeScreen() {
                       <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
                         {p.hasConfig && (
                           <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <Settings size={11} aria-hidden="true" /> config saved
+                            <Settings size={13} aria-hidden="true" /> config saved
                           </span>
                         )}
                         {p.hasSecret && (
                           <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <Lock size={11} aria-hidden="true" /> secrets saved
+                            <Lock size={13} aria-hidden="true" /> secrets saved
                           </span>
                         )}
                         {lastRuns[p.id]?.phase === 'done' && (
                           <span className="inline-flex items-center gap-1 text-emerald-300">
-                            <Sparkles size={11} aria-hidden="true" />
+                            <Sparkles size={13} aria-hidden="true" />
                             last install ok
                             <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
                           </span>
                         )}
                         {lastRuns[p.id]?.phase === 'failed' && (
                           <span className="inline-flex items-center gap-1 text-amber-300/90">
-                            <AlertTriangle size={11} aria-hidden="true" /> last install paused
+                            <AlertTriangle size={13} aria-hidden="true" /> last install paused
                             {lastRuns[p.id].failedStep != null && <span> at step {lastRuns[p.id].failedStep}</span>}
                             <span className="text-slate-500"> · {timeAgo(lastRuns[p.id].finishedAt)}</span>
                           </span>
@@ -343,7 +343,7 @@ export function WelcomeScreen() {
                       <BigButton
                         size="md"
                         variant="primary"
-                        icon={<Play size={16} fill="currentColor" />}
+                        icon={<Play size={18} fill="currentColor" />}
                         loading={busy === p.id}
                         disabled={busy !== null}
                         onClick={() => pickProfile(p.id, 'install')}
@@ -359,7 +359,7 @@ export function WelcomeScreen() {
                         aria-expanded={overflowOpenId === p.id}
                         aria-haspopup="menu"
                       >
-                        <Settings size={16} aria-hidden="true" />
+                        <Settings size={18} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -381,7 +381,7 @@ export function WelcomeScreen() {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-700/60">
                           <BigButton
                             size="sm" variant="ghost"
-                            icon={<Edit3 size={14} />}
+                            icon={<Edit3 size={16} />}
                             disabled={busy !== null}
                             onClick={() => pickProfile(p.id, 'edit')}
                           >
@@ -389,7 +389,7 @@ export function WelcomeScreen() {
                           </BigButton>
                           <BigButton
                             size="sm" variant="ghost"
-                            icon={<RefreshCw size={14} />}
+                            icon={<RefreshCw size={16} />}
                             disabled={busy !== null}
                             onClick={() => pickProfile(p.id, 'update')}
                           >
@@ -397,7 +397,7 @@ export function WelcomeScreen() {
                           </BigButton>
                           <BigButton
                             size="sm" variant="ghost"
-                            icon={<ArrowRightLeft size={14} />}
+                            icon={<ArrowRightLeft size={16} />}
                             disabled={busy !== null}
                             onClick={() => pickProfile(p.id, 'migrate')}
                           >
@@ -405,7 +405,7 @@ export function WelcomeScreen() {
                           </BigButton>
                           <BigButton
                             size="sm" variant="ghost"
-                            icon={<Upload size={14} />}
+                            icon={<Upload size={16} />}
                             disabled={busy !== null}
                             onClick={() => setExportingFor(p)}
                           >
@@ -423,13 +423,13 @@ export function WelcomeScreen() {
                                   className="flex items-center justify-center gap-3 rounded-md border border-rose-700/40 bg-rose-950/30 px-3 py-2 text-xs"
                                 >
                                   <span className="text-rose-200 inline-flex items-center gap-1.5">
-                                    <AlertTriangle size={12} aria-hidden="true" />
+                                    <AlertTriangle size={14} aria-hidden="true" />
                                     Really delete <span className="font-medium text-rose-100 truncate max-w-[12em]">{p.label}</span>?
                                   </span>
                                   <BigButton
                                     size="sm"
                                     variant="danger"
-                                    icon={<Trash2 size={12} />}
+                                    icon={<Trash2 size={14} />}
                                     disabled={busy !== null}
                                     onClick={() => deleteProfile(p.id)}
                                   >
@@ -454,7 +454,7 @@ export function WelcomeScreen() {
                                   transition={{ duration: 0.14 }}
                                   className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 disabled:opacity-40 transition-colors rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
                                 >
-                                  <Trash2 size={12} aria-hidden="true" />
+                                  <Trash2 size={14} aria-hidden="true" />
                                   Delete this profile
                                 </motion.button>
                               )}
@@ -478,7 +478,7 @@ export function WelcomeScreen() {
             className="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-5 space-y-3"
           >
             <h2 className="font-semibold text-lg flex items-center gap-2" id="new-profile-heading">
-              <Plus size={18} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
+              <Plus size={20} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
               New profile
             </h2>
             <input
@@ -512,7 +512,7 @@ export function WelcomeScreen() {
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-3 text-sm">
           <h2 className="font-semibold flex items-center gap-2">
-            <CheckCircle2 size={16} className="text-emerald-400" aria-hidden="true" />
+            <CheckCircle2 size={18} className="text-emerald-400" aria-hidden="true" />
             Before you begin
           </h2>
           {/* Icon-prefixed checklist. Each item has its own Lucide
@@ -523,7 +523,7 @@ export function WelcomeScreen() {
           <ul className="space-y-2 text-slate-300">
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-slate-800/80 border border-slate-700/60">
-                <Terminal size={14} className="text-slate-300" strokeWidth={1.75} aria-hidden="true" />
+                <Terminal size={16} className="text-slate-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
                 SSH is enabled on the NAS (Control Panel &rarr; Terminal &amp; SNMP).
@@ -531,7 +531,7 @@ export function WelcomeScreen() {
             </li>
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-sky-900/30 border border-sky-700/40">
-                <Boxes size={14} className="text-sky-300" strokeWidth={1.75} aria-hidden="true" />
+                <Boxes size={16} className="text-sky-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
                 Docker (Container Manager) is installed via Synology Package Center.
@@ -539,7 +539,7 @@ export function WelcomeScreen() {
             </li>
             <li className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md bg-emerald-900/30 border border-emerald-700/40">
-                <UserCircle size={14} className="text-emerald-300" strokeWidth={1.75} aria-hidden="true" />
+                <UserCircle size={16} className="text-emerald-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
                 For fresh installs that include Plex: an account at plex.tv.
@@ -616,7 +616,7 @@ function EmptyState({ onCreate, onImport }: { onCreate: () => void; onImport: ()
         transition={reduced ? {} : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}
         className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-emerald-700/20 border border-emerald-500/25 mx-auto"
       >
-        <Server size={32} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
+        <Server size={36} className="text-emerald-300" strokeWidth={1.5} aria-hidden="true" />
       </motion.div>
       <div>
         <div className="text-slate-200 text-xl font-semibold">Let's set up your first NAS</div>
@@ -628,14 +628,14 @@ function EmptyState({ onCreate, onImport }: { onCreate: () => void; onImport: ()
       <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
         <BigButton
           variant="primary"
-          icon={<Plus size={20} strokeWidth={2.5} />}
+          icon={<Plus size={22} strokeWidth={2.5} />}
           onClick={onCreate}
         >
           Create your first profile
         </BigButton>
         <BigButton
           variant="secondary"
-          icon={<Download size={20} strokeWidth={2.5} />}
+          icon={<Download size={22} strokeWidth={2.5} />}
           onClick={onImport}
         >
           Import from file

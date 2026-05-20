@@ -153,7 +153,7 @@ export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
                   }
                 >
                   <RotateCw
-                    size={12}
+                    size={14}
                     aria-hidden="true"
                     className={isRerunning ? 'animate-spin' : ''}
                     strokeWidth={2.5}

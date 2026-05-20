@@ -63,7 +63,7 @@ export function PasswordInput({ toggle = true, className = '', ...rest }: Props)
               transition={{ duration: 0.14 }}
               className="inline-flex items-center justify-center"
             >
-              {shown ? <EyeOff size={14} /> : <Eye size={14} />}
+              {shown ? <EyeOff size={16} /> : <Eye size={16} />}
             </motion.span>
           </AnimatePresence>
         </button>

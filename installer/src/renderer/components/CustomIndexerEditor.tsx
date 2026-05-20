@@ -203,7 +203,7 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
           id="custom-indexers-heading"
           className="text-base font-medium flex items-center gap-2"
         >
-          <Plus size={16} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
+          <Plus size={18} className="text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
           Custom indexers
           <span className="text-xs font-normal text-slate-500 ml-1">
             ({items.length} {items.length === 1 ? 'entry' : 'entries'})
@@ -223,7 +223,7 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
           role="alert"
           className="rounded-md border border-rose-700/40 bg-rose-900/20 p-3 text-xs text-rose-100 flex items-start gap-2"
         >
-          <AlertCircle size={14} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <AlertCircle size={16} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <div className="font-semibold">Couldn't parse CUSTOM_INDEXERS_JSON</div>
             <pre className="mt-1 whitespace-pre-wrap font-mono">{parseError}</pre>
@@ -354,7 +354,7 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
                 <BigButton
                   size="sm"
                   variant="ghost"
-                  icon={<Trash2 size={12} aria-hidden="true" />}
+                  icon={<Trash2 size={14} aria-hidden="true" />}
                   onClick={() => removeAt(idx)}
                 >
                   Remove
@@ -369,7 +369,7 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
         <BigButton
           size="sm"
           variant="secondary"
-          icon={<Plus size={12} fill="currentColor" aria-hidden="true" />}
+          icon={<Plus size={14} fill="currentColor" aria-hidden="true" />}
           onClick={addEmpty}
         >
           Add custom indexer
@@ -383,10 +383,10 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
           className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
           aria-expanded={advanced}
         >
-          <Code2 size={12} aria-hidden="true" />
+          <Code2 size={14} aria-hidden="true" />
           {advanced ? 'Hide raw JSON' : 'Edit JSON directly'}
           <ChevronDown
-            size={11}
+            size={13}
             aria-hidden="true"
             className={`transition-transform ${advanced ? 'rotate-180' : ''}`}
           />
@@ -399,7 +399,7 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
           aria-label="Browse Prowlarr's full indexer catalogue on GitHub — opens in new tab"
         >
           Browse Prowlarr's full catalogue
-          <ExternalLink size={10} aria-hidden="true" />
+          <ExternalLink size={12} aria-hidden="true" />
         </a>
       </div>
 

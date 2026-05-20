@@ -113,19 +113,19 @@ export function ConnectScreen() {
         className="text-center"
       >
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500/20 to-sky-700/30 border border-sky-500/30 mb-4">
-          <Plug size={32} className="text-sky-300" strokeWidth={1.5} aria-hidden="true" />
+          <Plug size={36} className="text-sky-300" strokeWidth={1.5} aria-hidden="true" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
           Connect to your NAS
           {mode === 'update' && (
             <span className="inline-flex items-center gap-1 ml-3 align-middle text-xs font-semibold uppercase tracking-wider text-sky-300 bg-sky-500/15 border border-sky-500/30 rounded-full px-2 py-0.5">
-              <RefreshCw size={10} strokeWidth={2.5} aria-hidden="true" />
+              <RefreshCw size={12} strokeWidth={2.5} aria-hidden="true" />
               Update
             </span>
           )}
           {mode === 'migrate' && (
             <span className="inline-flex items-center gap-1 ml-3 align-middle text-xs font-semibold uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">
-              <ArrowRight size={10} strokeWidth={2.5} aria-hidden="true" />
+              <ArrowRight size={12} strokeWidth={2.5} aria-hidden="true" />
               Migrate
             </span>
           )}
@@ -150,7 +150,7 @@ export function ConnectScreen() {
             onClick={() => setStep('welcome')}
             className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors"
           >
-            <Users size={11} aria-hidden="true" />
+            <Users size={13} aria-hidden="true" />
             Switch profile
           </button>
         </div>
@@ -210,7 +210,7 @@ export function ConnectScreen() {
               transition={{ duration: 0.18 }}
               className="mt-1 text-xs text-amber-300 inline-flex items-center gap-1.5"
             >
-              <AlertTriangle size={11} className="shrink-0" aria-hidden="true" />
+              <AlertTriangle size={13} className="shrink-0" aria-hidden="true" />
               Port {connection.port} is for HTTP/DSM, not SSH. Try 22.
             </motion.p>
           )}
@@ -267,7 +267,7 @@ export function ConnectScreen() {
                     transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                   />
                 )}
-                <Icon size={14} />
+                <Icon size={16} />
                 {label}
               </button>
             )
@@ -308,7 +308,7 @@ export function ConnectScreen() {
           className="rounded-md border border-amber-700/40 bg-amber-900/10 p-3 space-y-2 overflow-hidden"
         >
           <label className="block text-sm font-medium inline-flex items-center gap-2" htmlFor="ssh-sudo-pass">
-            <Shield size={14} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
+            <Shield size={16} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
             Sudo password
             <span className="ml-1 text-xs text-amber-300/90 font-normal">
               ({connection.user} is not root — needed for firewall + chmod)
@@ -323,7 +323,7 @@ export function ConnectScreen() {
             onChange={(e) => setSudoPassword(e.target.value)}
           />
           <p className="text-xs text-slate-400 inline-flex items-center gap-1.5">
-            <Lock size={11} className="text-slate-500" aria-hidden="true" />
+            <Lock size={13} className="text-slate-500" aria-hidden="true" />
             Stored in memory only — never written to disk or saved to your
             connection profile.
           </p>
@@ -365,10 +365,10 @@ export function ConnectScreen() {
                 className="shrink-0 mt-0.5"
                 aria-hidden="true"
               >
-                <CheckCircle2 size={20} className="text-emerald-400" />
+                <CheckCircle2 size={22} className="text-emerald-400" />
               </motion.span>
             ) : (
-              <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+              <AlertCircle size={22} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
             )}
             <div className="flex-1 min-w-0">
               {result.ok ? (
@@ -452,7 +452,7 @@ export function ConnectScreen() {
         <BigButton
           size="md"
           variant="secondary"
-          icon={<ArrowLeft size={16} />}
+          icon={<ArrowLeft size={18} />}
           onClick={() => setStep('welcome')}
         >
           Back
@@ -467,7 +467,7 @@ export function ConnectScreen() {
           {!busy && connection.host && !result && !testOk && 'Click Test to verify'}
           {testOk && (
             <span className="inline-flex items-center gap-1.5 text-emerald-300">
-              <CheckCircle2 size={14} aria-hidden="true" />
+              <CheckCircle2 size={16} aria-hidden="true" />
               Connection works — click Continue
             </span>
           )}
@@ -475,7 +475,7 @@ export function ConnectScreen() {
         <BigButton
           size="md"
           variant={testOk ? 'secondary' : 'primary'}
-          icon={<ShieldCheck size={16} />}
+          icon={<ShieldCheck size={18} />}
           loading={busy && !testOk}
           disabled={busy || !connection.host}
           onClick={test}
@@ -492,7 +492,7 @@ export function ConnectScreen() {
         <BigButton
           size="md"
           variant="primary"
-          trailingIcon={<ArrowRight size={16} />}
+          trailingIcon={<ArrowRight size={18} />}
           loading={busy && testOk}
           disabled={busy || !testOk}
           onClick={connectAndContinue}

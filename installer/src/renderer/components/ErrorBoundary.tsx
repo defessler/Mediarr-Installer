@@ -85,7 +85,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="max-w-xl mx-auto px-8 py-12 space-y-6">
           <div className="text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 mb-4">
-              <AlertOctagon size={32} className="text-rose-300" strokeWidth={1.5} aria-hidden="true" />
+              <AlertOctagon size={36} className="text-rose-300" strokeWidth={1.5} aria-hidden="true" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">Something went wrong</h1>
             <p className="text-slate-400 mt-2 text-sm">
@@ -117,7 +117,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={this.reload}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
-              <RotateCw size={14} aria-hidden="true" />
+              <RotateCw size={16} aria-hidden="true" />
               Reload wizard
             </button>
             <button
@@ -125,7 +125,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={this.resetToWelcome}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100 font-medium text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
-              <Home size={14} aria-hidden="true" />
+              <Home size={16} aria-hidden="true" />
               Reset to Welcome
             </button>
             <button
@@ -133,7 +133,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={this.openLog}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
             >
-              <FileText size={14} aria-hidden="true" />
+              <FileText size={16} aria-hidden="true" />
               Open log
             </button>
           </div>

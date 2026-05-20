@@ -215,7 +215,7 @@ export function DoneScreen() {
           <BigButton
             size="md"
             variant="secondary"
-            icon={<RefreshCw size={16} />}
+            icon={<RefreshCw size={18} />}
             loading={running}
             onClick={runValidate}
           >
@@ -261,7 +261,7 @@ export function DoneScreen() {
                   Configure screen so users carry the mental model
                   across screens. */}
               <div className="shrink-0 w-9 h-9 rounded-md bg-slate-900/70 border border-slate-700/60 flex items-center justify-center" aria-hidden="true">
-                <ServiceIcon size={18} className={s.iconColor} strokeWidth={1.75} />
+                <ServiceIcon size={20} className={s.iconColor} strokeWidth={1.75} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold truncate text-base flex items-center gap-2">
@@ -278,11 +278,11 @@ export function DoneScreen() {
                   health signal) but it's aria-hidden because we expose
                   the same info textually in a sr-only span below — keeps
                   screen readers from voicing both "checkmark" + "ok". */}
-              <StatusIcon size={16} className={`shrink-0 ${statusColor}`} strokeWidth={2} aria-hidden="true" />
+              <StatusIcon size={18} className={`shrink-0 ${statusColor}`} strokeWidth={2} aria-hidden="true" />
               <span className="sr-only">
                 Status: {h === 'ok' ? 'healthy' : h === 'fail' ? 'not responding' : 'unknown'}
               </span>
-              <ExternalLink size={14} className="text-slate-500 shrink-0" aria-hidden="true" />
+              <ExternalLink size={16} className="text-slate-500 shrink-0" aria-hidden="true" />
             </motion.button>
           )
         })}
@@ -292,11 +292,11 @@ export function DoneScreen() {
         <summary className="cursor-pointer p-3 text-sm font-medium flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden hover:bg-slate-800/40 transition-colors rounded-t-md">
           <span className="inline-flex items-center gap-2">
             <ChevronDown
-              size={14}
+              size={16}
               className="text-slate-500 transition-transform group-open:rotate-180"
               aria-hidden="true"
             />
-            <FileText size={14} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+            <FileText size={16} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
             Validation log
             {exit !== null && (
               <span className={`ml-1 text-xs ${exit === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -380,19 +380,19 @@ export function DoneScreen() {
         <div className="flex-1 text-sm text-center" role="status" aria-live="polite">
           {healthEntries.length === 0 ? (
             <span className="text-slate-500 inline-flex items-center gap-1.5">
-              <Circle size={12} className="text-slate-600" aria-hidden="true" />
+              <Circle size={14} className="text-slate-600" aria-hidden="true" />
               Validation pending
             </span>
           ) : failCount === 0 ? (
             <span className="text-emerald-300 inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} aria-hidden="true" />
+              <CheckCircle2 size={16} aria-hidden="true" />
               All {okCount} services reachable
             </span>
           ) : (
             <span className="text-amber-300 inline-flex items-center gap-1.5">
-              <CheckCircle2 size={14} className="text-emerald-400" aria-hidden="true" />
+              <CheckCircle2 size={16} className="text-emerald-400" aria-hidden="true" />
               {okCount} reachable,
-              <XCircle size={14} className="text-rose-400" aria-hidden="true" />
+              <XCircle size={16} className="text-rose-400" aria-hidden="true" />
               {failCount} not — see grid above
             </span>
           )}
@@ -400,7 +400,7 @@ export function DoneScreen() {
         <BigButton
           size="md"
           variant="secondary"
-          icon={<RotateCcw size={14} />}
+          icon={<RotateCcw size={16} />}
           onClick={reset}
         >
           Start over

@@ -118,7 +118,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
   return (
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-sm font-semibold" htmlFor="tz-search">
-        <Globe size={14} className="text-emerald-400" aria-hidden="true" />
+        <Globe size={16} className="text-emerald-400" aria-hidden="true" />
         Timezone
         <span className="text-slate-500 text-xs font-normal">
           · used for Plex schedules, log timestamps, etc.
@@ -162,7 +162,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
 
       {/* Search input with leading icon. */}
       <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
         <input
           ref={inputRef}
           id="tz-search"
@@ -186,7 +186,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
             whileTap={reduced ? {} : { scale: 0.97 }}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-200 rounded transition-colors"
           >
-            <Sparkles size={12} aria-hidden="true" />
+            <Sparkles size={14} aria-hidden="true" />
             <span>Use NAS's tz: <span className="font-mono">{detectedTz}</span></span>
           </motion.button>
         )}
@@ -198,7 +198,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
             whileTap={reduced ? {} : { scale: 0.97 }}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
           >
-            <MonitorSmartphone size={12} aria-hidden="true" />
+            <MonitorSmartphone size={14} aria-hidden="true" />
             <span>Use this PC's tz: <span className="font-mono">{browserTz}</span></span>
           </motion.button>
         )}
@@ -214,7 +214,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
       >
         {filtered.length === 0 ? (
           <div className="px-3 py-6 text-sm text-slate-500 flex flex-col items-center gap-2">
-            <Search size={20} className="text-slate-600" aria-hidden="true" />
+            <Search size={22} className="text-slate-600" aria-hidden="true" />
             <span className="italic">
               No timezones match <span className="font-mono text-slate-400">{filter}</span>.
             </span>
@@ -241,7 +241,7 @@ export function TimezoneSelect({ value, onChange, detectedTz }: Props) {
                   even when the user scrolls away from it (the highlight
                   bg alone can blend into long zone lists). */}
               {z.zone === value ? (
-                <CheckCircle2 size={12} className="text-emerald-400 shrink-0" aria-hidden="true" />
+                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" aria-hidden="true" />
               ) : (
                 <span className="inline-block w-3 shrink-0" />
               )}

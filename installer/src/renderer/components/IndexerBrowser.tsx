@@ -130,7 +130,7 @@ export function IndexerBrowser({ catalog, values, onChange }: Props) {
     <section className="space-y-3">
       <header className="space-y-2">
         <h3 className="text-base font-medium flex items-center gap-2">
-          <Globe size={16} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+          <Globe size={18} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
           Find indexers
           <span className="text-xs font-normal text-slate-500 ml-1">
             ({visible.length} of {enriched.length} shown)
@@ -151,7 +151,7 @@ export function IndexerBrowser({ catalog, values, onChange }: Props) {
           filter on each keystroke. */}
       <div className="relative">
         <Search
-          size={14}
+          size={16}
           aria-hidden="true"
           className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
         />
@@ -170,7 +170,7 @@ export function IndexerBrowser({ catalog, values, onChange }: Props) {
             aria-label="Clear search"
             className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-6 h-6 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
           >
-            <X size={12} aria-hidden="true" />
+            <X size={14} aria-hidden="true" />
           </button>
         )}
       </div>
@@ -180,28 +180,28 @@ export function IndexerBrowser({ catalog, values, onChange }: Props) {
           what axis the row is for at a glance. */}
       <div className="space-y-1.5">
         <ChipRow
-          icon={<Sparkles size={12} aria-hidden="true" className="text-emerald-400" />}
+          icon={<Sparkles size={14} aria-hidden="true" className="text-emerald-400" />}
           label="Content"
           filters={CONTENT_FILTERS}
           active={contentTags}
           setActive={setContentTags}
         />
         <ChipRow
-          icon={<Filter size={12} aria-hidden="true" className="text-sky-400" />}
+          icon={<Filter size={14} aria-hidden="true" className="text-sky-400" />}
           label="Cost"
           filters={COST_FILTERS}
           active={costTags}
           setActive={setCostTags}
         />
         <ChipRow
-          icon={<Filter size={12} aria-hidden="true" className="text-amber-400" />}
+          icon={<Filter size={14} aria-hidden="true" className="text-amber-400" />}
           label="Signup"
           filters={SIGNUP_FILTERS}
           active={signupTags}
           setActive={setSignupTags}
         />
         <ChipRow
-          icon={<Filter size={12} aria-hidden="true" className="text-violet-400" />}
+          icon={<Filter size={14} aria-hidden="true" className="text-violet-400" />}
           label="Kind"
           filters={KIND_FILTERS}
           active={kindTags}
@@ -214,7 +214,7 @@ export function IndexerBrowser({ catalog, values, onChange }: Props) {
               onClick={clearAll}
               className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
             >
-              <X size={11} aria-hidden="true" />
+              <X size={13} aria-hidden="true" />
               Reset filters
             </button>
           </div>
@@ -231,7 +231,7 @@ export function IndexerBrowser({ catalog, values, onChange }: Props) {
           aria-live="polite"
           className="rounded-md border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400 flex items-start gap-3"
         >
-          <AlertCircle size={16} className="text-amber-300 shrink-0 mt-0.5" aria-hidden="true" />
+          <AlertCircle size={18} className="text-amber-300 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <div className="text-slate-200 font-medium">No indexers match your filters</div>
             <p className="text-xs mt-0.5">

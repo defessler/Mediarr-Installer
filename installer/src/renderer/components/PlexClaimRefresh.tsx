@@ -55,7 +55,7 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 space-y-3">
       <label className="flex items-center gap-2 text-sm" htmlFor="plex-claim-input">
-        <Clock size={16} className="text-emerald-400 shrink-0" aria-hidden="true" />
+        <Clock size={18} className="text-emerald-400 shrink-0" aria-hidden="true" />
         <span className="font-semibold">Plex claim token</span>
         <span className="text-slate-500 text-xs">
           · expires 4 minutes after you generate it
@@ -66,7 +66,7 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
           rel="noreferrer"
           className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded"
         >
-          Get fresh token <ExternalLink size={11} aria-hidden="true" />
+          Get fresh token <ExternalLink size={13} aria-hidden="true" />
         </a>
       </label>
       <input
@@ -101,14 +101,14 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
         >
           {expired ? (
             <>
-              <XCircle size={14} className="text-rose-400 shrink-0" aria-hidden="true" />
+              <XCircle size={16} className="text-rose-400 shrink-0" aria-hidden="true" />
               <span className="text-rose-300">
                 Expired — open plex.tv/claim and paste a fresh token.
               </span>
             </>
           ) : stale ? (
             <>
-              <AlertTriangle size={14} className="text-amber-400 shrink-0" aria-hidden="true" />
+              <AlertTriangle size={16} className="text-amber-400 shrink-0" aria-hidden="true" />
               <span className="text-amber-300">
                 Expires in <span className="font-mono tabular-nums">{mm}:{ss}</span> —
                 refresh if you'll wait before clicking install.
@@ -116,7 +116,7 @@ export function PlexClaimRefresh({ value, onChange }: Props) {
             </>
           ) : (
             <>
-              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" aria-hidden="true" />
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" aria-hidden="true" />
               <span className="text-emerald-300">
                 Fresh · <span className="font-mono tabular-nums">{mm}:{ss}</span> remaining
               </span>
