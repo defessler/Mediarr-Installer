@@ -16,13 +16,7 @@ import { saveTextToFile, openTextFromFile } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
 import * as installLog from './install-log.js'
 import * as qbit from './qbit-migration.js'
-import {
-  getMainWindow,
-  getCachedUpdateInfo,
-  downloadUpdateZip,
-  isUpdateSkipped,
-  skipCurrentUpdate,
-} from './index.js'
+import { getMainWindow } from './index.js'
 
 export const isMockMode = (): boolean =>
   process.env.INSTALLER_MOCK === '1' || process.env.INSTALLER_MOCK === 'true'
@@ -91,28 +85,16 @@ export function registerIpcHandlers() {
   }) => openTextFromFile(args ?? {}))
 
   // ── App info ──────────────────────────────────────────────────────────────
+  // updateAvailable used to live here, sourced from a parallel GitHub
+  // /releases/latest ping in main/index.ts. v0.4.3 consolidated all
+  // update-state behind updater-service.ts — the renderer reads
+  // available-update info via the `updater:state` event stream.
   ipcMain.handle(IPC.appGetInfo, () => ({
     mock: useMock,
     version: app.getVersion(),
     payloadSha: payloadSha(),
     logPath: log.transports.file.getFile().path,
-    // Suppress the update notification when the user has explicitly
-    // skipped this exact version. They can still get to the release
-    // page from the footer's About / GitHub link if there is one.
-    updateAvailable: isUpdateSkipped() ? null : getCachedUpdateInfo(),
   }))
-  ipcMain.handle(IPC.appDownloadUpdate, async () => {
-    try {
-      const r = await downloadUpdateZip()
-      return r
-    } catch (e) {
-      return { path: null, bytes: 0, error: (e as Error).message }
-    }
-  })
-  ipcMain.handle(IPC.appSkipUpdateVersion, () => {
-    skipCurrentUpdate()
-    return undefined
-  })
   // Opens the active log file in the user's default text editor.
   // Returns the path so the renderer can show it in a toast.
   ipcMain.handle(IPC.appOpenLog, async () => {

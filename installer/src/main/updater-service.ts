@@ -55,6 +55,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -96,6 +97,23 @@ let startupTimeoutHandle: NodeJS.Timeout | null = null
  *  user's "Cancel" button calls cancelDownload(), which signals abort
  *  and triggers the cleanup branch in downloadUpdate(). */
 let currentDownloadAbort: AbortController | null = null
+
+/** Persisted "user hit Skip on v0.X.Y; don't pester me about this
+ *  exact version again" marker. Cleared when a strictly-newer version
+ *  appears (we only compare equality — if v0.X.Y is skipped and v0.X.Z
+ *  ships, the skip falls through). Lives in userData so it survives
+ *  the in-place file swap on update. */
+function skippedFilePath(): string {
+  return join(app.getPath('userData'), 'skipped-update.txt')
+}
+function readSkippedVersion(): string | null {
+  try { return readFileSync(skippedFilePath(), 'utf8').trim() || null }
+  catch { return null }
+}
+function writeSkippedVersion(v: string): void {
+  try { writeFileSync(skippedFilePath(), v, { mode: 0o600 }) }
+  catch (e) { log.error('updater: skip-version write failed:', e) }
+}
 
 export function getUpdateState(): UpdaterState {
   return lastState
@@ -192,8 +210,19 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
       log.warn(`updater: release ${best.tag_name} found but no matching win-unpacked zip asset`)
       return null
     }
+    const version = (best.tag_name ?? '').replace(/^[a-zA-Z-]*v?/, '')
+    // Honour the user's "Skip this version" choice. Equality match —
+    // a later version of the SAME tag never gets re-skipped, so the
+    // user is asked about every distinct release.
+    const skipped = readSkippedVersion()
+    if (skipped && skipped === version) {
+      pendingUpdate = null
+      broadcast({ kind: 'not-available' })
+      log.info(`updater: v${version} found but user previously skipped it`)
+      return null
+    }
     pendingUpdate = {
-      version: (best.tag_name ?? '').replace(/^[a-zA-Z-]*v?/, ''),
+      version,
       tagName: best.tag_name ?? '',
       downloadUrl: asset.browser_download_url,
       sizeBytes: asset.size ?? 0,
@@ -206,6 +235,7 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
       kind: 'available',
       version: pendingUpdate.version,
       releaseNotes: pendingUpdate.releaseNotes,
+      htmlUrl: pendingUpdate.htmlUrl,
     })
     return pendingUpdate
   } catch (e) {
@@ -328,6 +358,7 @@ async function downloadUpdate(): Promise<void> {
         kind: 'available',
         version: update.version,
         releaseNotes: update.releaseNotes,
+        htmlUrl: update.htmlUrl,
       })
       return
     }
@@ -371,6 +402,7 @@ async function downloadUpdate(): Promise<void> {
     kind: 'downloaded',
     version: update.version,
     releaseNotes: update.releaseNotes,
+    htmlUrl: update.htmlUrl,
   })
 }
 
@@ -385,6 +417,22 @@ function cancelDownload(): void {
   } else {
     log.info('updater: cancel requested but no download in flight')
   }
+}
+
+/** Mark the current pending version as "skipped" — the WhatsNew banner
+ *  hides for this exact release, and stays hidden across launches
+ *  until a strictly different version ships (equality compare, so
+ *  v0.5.0 skip doesn't suppress v0.5.1). Also reset state to
+ *  not-available so the banner clears immediately. */
+function skipCurrentVersion(): void {
+  if (!pendingUpdate) {
+    log.warn('updater: skip requested but no pending update')
+    return
+  }
+  log.info(`updater: user skipped v${pendingUpdate.version}`)
+  writeSkippedVersion(pendingUpdate.version)
+  pendingUpdate = null
+  broadcast({ kind: 'not-available' })
 }
 
 /** Phase 2: write a hidden swap helper that waits for our PID + exe
@@ -576,6 +624,7 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
   ipcMain.handle('updater:download', async () => { await downloadUpdate() })
   ipcMain.handle('updater:install',  async () => { await installUpdate() })
   ipcMain.handle('updater:cancel',   () => { cancelDownload() })
+  ipcMain.handle('updater:skip',     () => { skipCurrentVersion() })
 
   // Stagger the initial check so app launch stays snappy — the
   // wizard's Welcome screen renders before we hit GitHub.

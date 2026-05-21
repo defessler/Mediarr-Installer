@@ -76,30 +76,51 @@ export function App() {
   // owns the actual download + install UI.
   type CheckState = 'idle' | 'checking' | 'up-to-date' | 'error'
   const [checkState, setCheckState] = useState<CheckState>('idle')
+  /** Snapshot of the latest available update (if any). Drives the
+   *  footer's "v0.x.y available" pill. v0.4.3 consolidated this off
+   *  the parallel GitHub fetch that used to live in main/index.ts —
+   *  the updater is the only source of update info now. */
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    version: string
+    htmlUrl?: string
+  } | null>(null)
 
   // Subscribe to the updater event stream so the button reacts to the
-  // outcome of `updater.check()` calls (both ours and the auto-check at
-  // startup). The CheckState transitions are derived from the
-  // electron-updater event sequence:
+  // outcome of `updater.check()` calls (both ours and the auto-check
+  // at startup) and the footer pill mirrors the latest available
+  // version. CheckState transitions:
   //   click → 'checking' (immediate UI feedback)
   //   ↓
-  //   'checking-for-update' (no-op, we already showed it)
-  //   ↓
-  //   'update-not-available'    → 'up-to-date'
-  //   'update-available'        → 'idle' (banner takes over)
-  //   'error'                   → 'error'
+  //   'not-available'    → 'up-to-date' (sticky 4s)
+  //   'available'        → 'idle' (banner takes over)
+  //   'error'            → 'error' (sticky 4s)
   useEffect(() => {
     const off = window.installer.updater?.onState?.((s) => {
       if (s.kind === 'not-available') {
+        setPendingUpdate(null)
         setCheckState('up-to-date')
         setTimeout(() => setCheckState((c) => (c === 'up-to-date' ? 'idle' : c)), 4000)
-      } else if (s.kind === 'available' || s.kind === 'downloading' || s.kind === 'downloaded') {
+      } else if (s.kind === 'available' || s.kind === 'downloaded') {
+        setPendingUpdate({ version: s.version, htmlUrl: s.htmlUrl })
+        setCheckState('idle')
+      } else if (s.kind === 'downloading') {
+        // We already know the version from a prior `available` event;
+        // don't clobber pendingUpdate here.
         setCheckState('idle')
       } else if (s.kind === 'error') {
         setCheckState('error')
         setTimeout(() => setCheckState((c) => (c === 'error' ? 'idle' : c)), 4000)
       }
     })
+    // Prime the snapshot with the current state in case the updater
+    // fired its first check before our subscription attached.
+    void window.installer.updater?.getState?.().then((s) => {
+      if (s.kind === 'available' || s.kind === 'downloaded' || s.kind === 'downloading') {
+        if (s.kind !== 'downloading') {
+          setPendingUpdate({ version: s.version, htmlUrl: s.htmlUrl })
+        }
+      }
+    }).catch(() => { /* updater unavailable */ })
     return () => { off?.() }
   }, [])
 
@@ -488,25 +509,35 @@ export function App() {
         <footer className="text-xs text-slate-500 px-4 py-1.5 border-t border-slate-900 flex justify-between items-center gap-3">
           <div className="flex items-center gap-2">
             <span>v{info.version}</span>
-            {info.updateAvailable && (
-              <a
-                href={info.updateAvailable.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
-                aria-label={`v${info.updateAvailable.latest} update available — open release on GitHub in new tab`}
-                title={`Click to open the v${info.updateAvailable.latest} release page on GitHub`}
-              >
-                <ArrowUpCircle size={13} aria-hidden="true" />
-                v{info.updateAvailable.latest} available
-              </a>
+            {pendingUpdate && (
+              pendingUpdate.htmlUrl ? (
+                <a
+                  href={pendingUpdate.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+                  aria-label={`v${pendingUpdate.version} update available — open release on GitHub in new tab`}
+                  title={`Click to open the v${pendingUpdate.version} release page on GitHub`}
+                >
+                  <ArrowUpCircle size={13} aria-hidden="true" />
+                  v{pendingUpdate.version} available
+                </a>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 font-medium"
+                  aria-label={`v${pendingUpdate.version} update available`}
+                >
+                  <ArrowUpCircle size={13} aria-hidden="true" />
+                  v{pendingUpdate.version} available
+                </span>
+              )
             )}
             {/* Manual recheck. The startup auto-check still runs in
-                main/index.ts; this exists so a user who knows a fix
-                just landed can grab it without restarting the wizard.
-                Hidden when an update is already advertised (the pill
-                above is the real CTA in that case). */}
-            {!info.updateAvailable && (
+                updater-service.ts on a 6h cadence; this exists so a
+                user who knows a fix just landed can grab it without
+                restarting the wizard. Hidden when an update is already
+                advertised — the pill above is the real CTA. */}
+            {!pendingUpdate && (
               <button
                 type="button"
                 onClick={checkForUpdates}

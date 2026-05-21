@@ -220,7 +220,7 @@ export function WelcomeScreen() {
           </p>
         </header>
 
-        {appInfo && <WhatsNew info={appInfo} onChanged={refreshAppInfo} />}
+        {appInfo && <WhatsNew info={appInfo} />}
 
         {profiles === null ? (
           <ProfilesLoading />

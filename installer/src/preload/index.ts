@@ -131,10 +131,6 @@ const installer = {
       ipcRenderer.invoke(IPC.appShowLogInFolder),
     openDevTools: (): Promise<{ opened: boolean }> =>
       ipcRenderer.invoke(IPC.appOpenDevTools),
-    downloadUpdate: (): Promise<{ path: string | null; bytes: number; error?: string }> =>
-      ipcRenderer.invoke(IPC.appDownloadUpdate),
-    skipUpdateVersion: (): Promise<void> =>
-      ipcRenderer.invoke(IPC.appSkipUpdateVersion),
   },
   installLog: {
     start: (kind?: 'install' | 'update' | 'validate'): Promise<{ path: string }> =>
@@ -159,6 +155,10 @@ const installer = {
      *  The state transition back to 'available' lands via the same
      *  onState subscription the renderer is already on. */
     cancel:   (): Promise<void> => ipcRenderer.invoke('updater:cancel'),
+    /** Mark the current pending version as "skipped" — the banner
+     *  hides for this exact release and stays hidden across launches.
+     *  No-op if nothing is currently advertised. */
+    skip:     (): Promise<void> => ipcRenderer.invoke('updater:skip'),
     onState:  (cb: (s: import('../shared/ipc.js').UpdaterState) => void) => {
       const handler = (_e: unknown, payload: import('../shared/ipc.js').UpdaterState) => cb(payload)
       ipcRenderer.on('updater:state', handler)

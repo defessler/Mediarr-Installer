@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Sparkles, Download, ExternalLink, ChevronDown, FileText, RefreshCw, X } from 'lucide-react'
 import type { AppInfo, UpdaterState } from '../../shared/ipc.js'
-import { useErrors, reportError } from '../store/errors.js'
+import { reportError } from '../store/errors.js'
 import { BigButton } from './BigButton.js'
 
 interface Props {
+  /** Used only to render "you're on vX.Y.Z" — all update info comes
+   *  from the live updater state via IPC. */
   info: AppInfo
-  /** Bumped by the parent to force re-render after a skip / download. */
-  onChanged?: () => void
 }
 
 // Very small Markdown subset renderer. GitHub release notes typically
@@ -144,14 +144,14 @@ function renderNotes(md: string): React.ReactNode {
   return out
 }
 
-export function WhatsNew({ info, onChanged }: Props) {
+export function WhatsNew({ info }: Props) {
   const [busy, setBusy] = useState<'download' | 'skip' | 'install' | 'cancel' | null>(null)
   const reduced = useReducedMotion()
-  // Live updater state, subscribed from the main process. Drives whether
-  // we show "Install update" (in-place), a progress bar, or the legacy
-  // "Download zip" button. Builds older than the electron-updater
-  // integration (or builds running in dev / mock) stay on `idle`
-  // forever — the legacy zip flow handles those.
+  // Live updater state, subscribed from the main process. Drives every
+  // bit of UI in this banner — the button shape, the progress bar, the
+  // release-notes section, the Release-page link, all of it. Stays on
+  // `idle` in dev/mock where the IPC handlers aren't registered (we
+  // return null below in that case, so the banner just hides).
   const [updater, setUpdater] = useState<UpdaterState>({ kind: 'idle' })
   useEffect(() => {
     let cancelled = false
@@ -162,31 +162,34 @@ export function WhatsNew({ info, onChanged }: Props) {
     return () => { cancelled = true; off?.() }
   }, [])
 
-  const u = info.updateAvailable
-  // Only suppress the banner if there's no GitHub-reported newer version
-  // AND the in-place updater hasn't found one. The updater can fire
-  // before our GitHub fetch (it has its own publish.yml manifest), so
-  // we surface the banner from either source.
-  if (!u && updater.kind === 'idle') return null
-  if (!u && updater.kind === 'not-available') return null
+  // Banner is gated entirely on the updater state — no parallel GitHub
+  // fetch from main any more. idle = pre-first-check / dev / mock,
+  // not-available = up to date or user skipped this version, checking
+  // = fleeting transit state we don't render UI for.
+  if (updater.kind === 'idle') return null
+  if (updater.kind === 'not-available') return null
+  if (updater.kind === 'checking') return null
 
-  // The version we display in the banner — prefer whichever source
-  // has fresher info. Both should agree on the same tag.
-  const latestVersion = (updater.kind === 'available' || updater.kind === 'downloaded')
-    ? updater.version
-    : u?.latest ?? ''
+  // Pull the version + release URL + notes off whichever state variant
+  // carries them. Discriminated union narrowing keeps this safe.
+  const latestVersion =
+    (updater.kind === 'available' || updater.kind === 'downloaded') ? updater.version : ''
+  const releaseUrl =
+    (updater.kind === 'available' || updater.kind === 'downloaded') ? updater.htmlUrl : undefined
+  const releaseNotes =
+    (updater.kind === 'available' || updater.kind === 'downloaded') ? (updater.releaseNotes ?? '') : ''
 
   // What action button to show:
   // - 'install'   — update is downloaded; one click restarts + replaces.
-  // - 'download'  — in-place updater knows about the version but hasn't
-  //                 downloaded it yet; one click pulls + installs.
-  // - 'fallback'  — no in-place updater in this build (idle even after
-  //                 page mount); fall back to the legacy zip download.
-  const mode: 'install' | 'download' | 'progress' | 'fallback' =
+  // - 'download'  — updater knows about the version but hasn't fetched
+  //                 it yet; click → background download.
+  // - 'progress'  — download in flight; show progress bar + Cancel.
+  // - 'error'     — error banner only, no action button.
+  const mode: 'install' | 'download' | 'progress' | 'error' =
     updater.kind === 'downloaded'   ? 'install'
     : updater.kind === 'downloading' ? 'progress'
     : updater.kind === 'available'   ? 'download'
-    : 'fallback'
+    : 'error'
 
   async function startInPlaceDownload() {
     setBusy('download')
@@ -213,32 +216,13 @@ export function WhatsNew({ info, onChanged }: Props) {
     }
   }
 
-  async function legacyDownload() {
-    setBusy('download')
-    try {
-      const r = await window.installer.app.downloadUpdate()
-      if (r.error) {
-        useErrors.getState().pushError('Download failed', r.error)
-      } else if (r.path) {
-        const mb = (r.bytes / (1024 * 1024)).toFixed(1)
-        useErrors.getState().pushInfo(
-          `Downloaded v${latestVersion}`,
-          `Saved to ${r.path} (${mb} MB). Close this app and extract the new ` +
-          `folder over your current install.`,
-        )
-      }
-    } catch (e) {
-      reportError('Download update', e)
-    } finally {
-      setBusy(null)
-    }
-  }
-
   async function skip() {
     setBusy('skip')
     try {
-      await window.installer.app.skipUpdateVersion()
-      onChanged?.()
+      // Updater state flips to 'not-available' via the onState
+      // subscription, which causes the early-return above and the
+      // banner unmounts. No parent refresh needed any more.
+      await window.installer.updater?.skip()
     } catch (e) {
       reportError('Skip update', e)
     } finally {
@@ -287,8 +271,8 @@ export function WhatsNew({ info, onChanged }: Props) {
                   ? 'Downloading update… you can keep using the app.'
                   : mode === 'download'
                     ? `You're on v${info.version}. Click below to download and install in place — no manual extract needed.`
-                    : /* fallback */
-                      `You're on v${info.version}. Your current install keeps working until you swap the folder.`}
+                    : /* error */
+                      `Something went wrong checking or downloading the update. Use the Check button in the footer to retry.`}
             </p>
           </div>
         </div>
@@ -332,22 +316,9 @@ export function WhatsNew({ info, onChanged }: Props) {
               {busy === 'cancel' ? 'Cancelling…' : 'Cancel'}
             </BigButton>
           )}
-          {mode === 'fallback' && u?.zipUrl && (
-            <BigButton
-              size="sm"
-              variant="primary"
-              icon={busy === 'download' ? undefined : <Download size={14} aria-hidden="true" />}
-              onClick={legacyDownload}
-              disabled={busy !== null}
-              loading={busy === 'download'}
-              title="Download the win-unpacked zip to your Downloads folder (manual swap)"
-            >
-              {busy === 'download' ? 'Downloading…' : 'Download zip'}
-            </BigButton>
-          )}
-          {u && (
+          {releaseUrl && (
             <a
-              href={u.url}
+              href={releaseUrl}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 h-7 px-2 text-xs bg-slate-700 hover:bg-slate-600 rounded-md transition-colors text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
@@ -404,7 +375,7 @@ export function WhatsNew({ info, onChanged }: Props) {
         </div>
       )}
 
-      {u && (
+      {(mode === 'install' || mode === 'download') && (
         <details className="rounded-md bg-slate-900/40 text-sm group">
           <summary className="cursor-pointer px-3 py-2 select-none text-slate-300 font-medium hover:text-slate-100 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
             <ChevronDown size={16} className="text-slate-500 transition-transform group-open:rotate-180 shrink-0" aria-hidden="true" />
@@ -412,7 +383,7 @@ export function WhatsNew({ info, onChanged }: Props) {
             What's new in v{latestVersion}
           </summary>
           <div className="px-3 pb-3 pt-1 space-y-1 text-sm">
-            {renderNotes(u.notes)}
+            {renderNotes(releaseNotes)}
           </div>
         </details>
       )}

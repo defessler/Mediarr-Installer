@@ -233,30 +233,6 @@ export interface AppInfo {
   payloadSha: string | null
   /** Absolute path to electron-log's current log file on this machine. */
   logPath: string
-  /** GitHub-releases ping result populated shortly after app launch.
-   *  Null = up to date, network unreachable, or fetch still in flight.
-   *  When set, the renderer shows the WhatsNew banner on Welcome and
-   *  a small "v0.x available" pill in the footer. The wizard does not
-   *  auto-apply updates — the user downloads + replaces the folder. */
-  updateAvailable: {
-    latest: string
-    url: string
-    /** GitHub release `body` (Markdown). Rendered in the WhatsNew banner. */
-    notes: string
-    /** Direct URL to a `win-unpacked.zip` release asset if present.
-     *  When set, the renderer can offer a one-click "Download zip"
-     *  button that saves the zip to the user's Downloads folder and
-     *  opens Explorer pointing at it. */
-    zipUrl: string | null
-  } | null
-}
-
-export interface UpdateDownloadResult {
-  /** Where the zip landed on disk (typically ~/Downloads/<name>.zip).
-   *  Null when the user cancelled or the download failed. */
-  path: string | null
-  /** Bytes written, for the renderer to show a "x.y MB downloaded" hint. */
-  bytes: number
 }
 
 /** Lifecycle states the in-place updater can be in. The main side
@@ -266,14 +242,18 @@ export interface UpdateDownloadResult {
  *  downloaded = "Restart and install" button; error = banner).
  *
  *  Discriminated union — every variant carries exactly the data its
- *  matching UI needs, no more. */
+ *  matching UI needs, no more.
+ *
+ *  `available` / `downloaded` carry the GitHub release page URL so the
+ *  renderer can render a "Release page" link + footer pill without
+ *  the renderer needing its own GitHub fetch. */
 export type UpdaterState =
   | { kind: 'idle' }
   | { kind: 'checking' }
-  | { kind: 'available'; version: string; releaseNotes?: string }
+  | { kind: 'available'; version: string; releaseNotes?: string; htmlUrl?: string }
   | { kind: 'not-available' }
   | { kind: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
-  | { kind: 'downloaded'; version: string; releaseNotes?: string }
+  | { kind: 'downloaded'; version: string; releaseNotes?: string; htmlUrl?: string }
   | { kind: 'error'; message: string }
 
 // ── Connection profiles ───────────────────────────────────────────────────────
@@ -514,8 +494,6 @@ export const IPC = {
   appOpenLog:      'app:open-log',
   appShowLogInFolder: 'app:show-log-in-folder',
   appOpenDevTools: 'app:open-devtools',
-  appDownloadUpdate: 'app:download-update',
-  appSkipUpdateVersion: 'app:skip-update-version',
   // qBittorrent migration (renderer → main, main fetches over HTTP)
   qbitFetchList:    'qbit:fetch-list',
   qbitMigrateOne:   'qbit:migrate-one',

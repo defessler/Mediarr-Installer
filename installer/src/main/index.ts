@@ -2,11 +2,9 @@
 // owns the app lifecycle.
 
 import { app, BrowserWindow, dialog, screen, shell } from 'electron'
-import { createWriteStream, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, basename } from 'node:path'
-import { pipeline } from 'node:stream/promises'
-import { Readable } from 'node:stream'
+import { dirname, join } from 'node:path'
 import log from 'electron-log/main.js'
 import { registerIpcHandlers, isMockMode } from './ipc-handlers.js'
 import * as ssh from './ssh-service.js'
@@ -33,182 +31,6 @@ process.on('uncaughtException', (err) => {
 })
 
 let mainWindow: BrowserWindow | null = null
-
-/** Cached result of the GitHub-releases ping. Populated by
- *  checkForUpdate() shortly after app.whenReady(); null on first
- *  launch until that fetch resolves, and null afterwards if the API
- *  was unreachable, rate-limited, or returned no releases. The
- *  appGetInfo IPC handler reads this lazily so the renderer can show
- *  the WhatsNew banner on Welcome (and the small footer pill).
- *  We deliberately don't block app startup on the network — the
- *  wizard works offline once you've reached the Configure screen. */
-let updateInfo: {
-  latest: string
-  url: string
-  /** Raw GitHub release body (Markdown). Renderer applies a tiny
-   *  sanitised renderer; we don't transform here so future renderer
-   *  improvements can rely on the original text. */
-  notes: string
-  /** Direct URL to a `win-unpacked.zip` asset on the release, if
-   *  present. Drives the "Download zip" button. */
-  zipUrl: string | null
-} | null = null
-
-export function getCachedUpdateInfo() {
-  return updateInfo
-}
-
-/** Compare a GitHub tag like "installer-v0.2.0" / "v0.2.0" / "0.2.0"
- *  against app.getVersion() (always a "X.Y.Z" semver-ish triple).
- *  Returns true when the tag is strictly newer. Avoids pulling in the
- *  full `semver` package — we don't use pre-release identifiers in
- *  this project so a numeric triple compare is enough. */
-function isNewerVersion(tag: string, current: string): boolean {
-  const stripPrefix = (s: string) => s.replace(/^[a-zA-Z-]*v?/, '')
-  const parse = (s: string) =>
-    stripPrefix(s).split(/[.-]/).slice(0, 3).map((n) => Number(n) || 0)
-  const [ta, tb, tc] = parse(tag)
-  const [ca, cb, cc] = parse(current)
-  if (ta !== ca) return ta > ca
-  if (tb !== cb) return tb > cb
-  return tc > cc
-}
-
-// Versions the user has explicitly chosen to skip from the WhatsNew
-// banner. Persists across launches in userData so a dismissed v0.3
-// doesn't keep reappearing. Cleared automatically when an EVEN newer
-// version shows up (we only compare "skipped == latest" — if a v0.4
-// arrives, the v0.3 skip is irrelevant).
-const SKIPPED_FILE = () => join(app.getPath('userData'), 'skipped-update.txt')
-function readSkippedVersion(): string | null {
-  try { return readFileSync(SKIPPED_FILE(), 'utf8').trim() || null }
-  catch { return null }
-}
-function writeSkippedVersion(v: string): void {
-  try { writeFileSync(SKIPPED_FILE(), v, { mode: 0o600 }) }
-  catch (e) { log.error('skip-version write failed:', e) }
-}
-export function isUpdateSkipped(): boolean {
-  if (!updateInfo) return false
-  return readSkippedVersion() === updateInfo.latest
-}
-export function skipCurrentUpdate(): void {
-  if (!updateInfo) return
-  writeSkippedVersion(updateInfo.latest)
-}
-
-/** In-flight guard so a button-mash on the WhatsNew "Download zip"
- *  button doesn't kick off two pipelines writing to the same path
- *  (which corrupts the file and masks errors from each other). */
-let downloadInFlight: Promise<{ path: string | null; bytes: number }> | null = null
-
-/** Download the cached update's win-unpacked zip into the user's
- *  Downloads folder and reveal it in the OS file manager. Streams
- *  with no buffer, so a 200 MB build won't blow up memory. Returns
- *  the saved path + bytes. Throws on network failure / missing url.
- *  Concurrent calls return the same promise. */
-export function downloadUpdateZip(): Promise<{ path: string | null; bytes: number }> {
-  if (downloadInFlight) return downloadInFlight
-  downloadInFlight = doDownloadUpdateZip()
-    .finally(() => { downloadInFlight = null })
-  return downloadInFlight
-}
-
-async function doDownloadUpdateZip(): Promise<{ path: string | null; bytes: number }> {
-  if (!updateInfo?.zipUrl) {
-    throw new Error('No download URL on the current release — open the release page manually.')
-  }
-  const url = updateInfo.zipUrl
-  // URL() can throw on malformed input. Defensive parse so the user
-  // gets a clear "bad URL from GitHub" instead of an unhandled throw.
-  let filename: string
-  try {
-    filename = basename(new URL(url).pathname) || `mediarr-installer-v${updateInfo.latest}.zip`
-  } catch {
-    filename = `mediarr-installer-v${updateInfo.latest}.zip`
-  }
-  const target = join(app.getPath('downloads'), filename)
-
-  const res = await fetch(url, {
-    headers: { 'User-Agent': `Mediarr-Installer/${app.getVersion()}` },
-    redirect: 'follow',
-  })
-  if (!res.ok || !res.body) {
-    throw new Error(`Download failed: HTTP ${res.status} from GitHub.`)
-  }
-  // Stream node-fetch's web ReadableStream into a fs WriteStream so we
-  // never buffer the whole zip in memory. On any pipeline failure we
-  // unlink the partial file so the user's Downloads folder isn't
-  // littered with corrupt zips.
-  const out = createWriteStream(target)
-  let bytes = 0
-  const reader = Readable.fromWeb(res.body as unknown as import('stream/web').ReadableStream)
-  reader.on('data', (chunk: Buffer) => { bytes += chunk.length })
-  try {
-    await pipeline(reader, out)
-  } catch (e) {
-    try { unlinkSync(target) } catch { /* file may not exist or be locked */ }
-    throw e
-  }
-  log.info(`update zip saved: ${target} (${bytes} bytes)`)
-  // Reveal in Explorer so the user can swap the unpacked folder.
-  try { shell.showItemInFolder(target) } catch { /* non-fatal */ }
-  return { path: target, bytes }
-}
-
-/** Fire-and-forget GitHub-releases ping. Never throws — any failure
- *  just leaves updateInfo=null and the footer pill stays hidden. */
-async function checkForUpdate(): Promise<void> {
-  if (isMockMode()) return       // skip in mock — no real version meaning
-  try {
-    const ac = new AbortController()
-    const t = setTimeout(() => ac.abort(), 8_000)
-    const res = await fetch(
-      'https://api.github.com/repos/defessler/Mediarr-Installer/releases/latest',
-      {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          'User-Agent': `Mediarr-Installer/${app.getVersion()}`,
-        },
-        signal: ac.signal,
-      },
-    )
-    clearTimeout(t)
-    if (!res.ok) return            // 404 on a brand-new repo with no releases is fine
-    const body = (await res.json()) as {
-      tag_name?: string
-      html_url?: string
-      body?: string
-      assets?: { name?: string; browser_download_url?: string }[]
-    }
-    const tag = body.tag_name ?? ''
-    const url = body.html_url ?? ''
-    if (!tag) return
-    if (isNewerVersion(tag, app.getVersion())) {
-      const stripped = tag.replace(/^[a-zA-Z-]*v?/, '')
-      // Find a zip asset that looks like the unpacked Windows build —
-      // electron-builder names artifacts like "win-unpacked.zip" by
-      // convention, but we also accept any zip whose name contains
-      // "win-unpacked" for forward-compat with renamed artifacts.
-      const zipAsset = body.assets?.find((a) =>
-        (a.name ?? '').toLowerCase().includes('win-unpacked') &&
-        (a.name ?? '').toLowerCase().endsWith('.zip'),
-      )
-      updateInfo = {
-        latest: stripped,
-        url: url || 'https://github.com/defessler/Mediarr-Installer/releases',
-        notes: body.body ?? '',
-        zipUrl: zipAsset?.browser_download_url ?? null,
-      }
-      log.info(`update available: v${stripped} (current v${app.getVersion()}); zip=${zipAsset?.name ?? 'n/a'}`)
-    } else {
-      log.info(`up to date — v${app.getVersion()} ≥ tag ${tag}`)
-    }
-  } catch (e) {
-    // Network errors, abort, JSON parse errors — leave updateInfo null.
-    log.info('update check failed (non-fatal):', (e as Error).message)
-  }
-}
 
 function createWindow() {
   const preloadPath = join(__dirname_main, '..', 'preload', 'index.mjs')
@@ -348,18 +170,11 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
 
-  // Legacy update check — keeps the WhatsNew banner working on builds
-  // that pre-date the electron-updater integration. New builds also
-  // populate `updateInfo` from the same fetch so the banner still
-  // shows release notes; the difference is the in-app install button
-  // is now driven by the updater-service below, not by the legacy
-  // download-zip path.
-  checkForUpdate().catch(() => { /* checkForUpdate already logs */ })
-
-  // Initialise the in-place updater. Listens for available updates,
-  // streams download progress to the renderer, exposes IPC handlers
-  // for the renderer's "Download" + "Install + restart" buttons.
-  // No-ops in mock mode or unpackaged dev.
+  // Initialise the in-place updater. Polls GitHub Releases on a 6h
+  // cadence (plus an initial check 30s after launch), streams download
+  // progress to the renderer, exposes IPC handlers for the renderer's
+  // "Install update" / "Cancel" / "Restart & install" / "Skip"
+  // buttons. No-ops in mock mode, unpackaged dev, or non-Windows.
   if (mainWindow) {
     initUpdater(mainWindow, isMockMode()).catch((e) => {
       log.error('initUpdater failed:', e)
