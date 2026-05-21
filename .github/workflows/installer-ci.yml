@@ -27,9 +27,9 @@ jobs:
       run:
         working-directory: installer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -37,7 +37,7 @@ jobs:
 
       # Native deps (ssh2 → cpu-features) need a C toolchain; ubuntu-latest
       # already has gcc/python3, but pin python explicitly so node-gyp picks it up.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload Vite build output
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vite-build-output
           path: installer/out/
@@ -64,7 +64,7 @@ jobs:
   lint-nas-scripts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -87,7 +87,7 @@ jobs:
         # case patterns).
         run: shellcheck --severity=warning -e SC2086,SC2155 nas/scripts/*.sh nas/migration/*.sh
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
