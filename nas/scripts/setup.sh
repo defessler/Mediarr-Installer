@@ -106,6 +106,30 @@ if [ -f "$ENV_FILE" ]; then
         echo "  wizard to regenerate .env from scratch."
         exit 1
     fi
+
+    # Auto-discover Synology /volume[0-9]+ disks so the Homepage resources
+    # widget shows real disk-usage stats. Each detected volume gets
+    # MONITORED_DISK_N=/volumeN appended to .env (idempotent — re-runs
+    # skip slots already set). docker-compose.yml's homepage service has
+    # 4 conditional /diskN bind mounts that pick these up via
+    # ${MONITORED_DISK_N:-/tmp} substitution; setup-arr-config.py's
+    # render_homepage_widgets() emits a disk widget per populated slot.
+    # On non-Synology hosts the for-loop's glob expands to literal
+    # "/volume[0-9]*" which fails the [ -d ] test and nothing happens —
+    # users can hand-add MONITORED_DISK_N to .env for their layout.
+    if [ -f "$ENV_FILE" ]; then
+        _disk_n=1
+        for _vol in /volume[0-9]*; do
+            [ -d "$_vol" ] || continue
+            [ "$_disk_n" -le 4 ] || break
+            if ! grep -q "^MONITORED_DISK_${_disk_n}=" "$ENV_FILE"; then
+                echo "MONITORED_DISK_${_disk_n}=${_vol}" >> "$ENV_FILE"
+                echo "  Detected storage volume $_vol → MONITORED_DISK_${_disk_n} in .env"
+            fi
+            _disk_n=$((_disk_n + 1))
+        done
+        unset _disk_n _vol
+    fi
 fi
 
 # Force docker compose to emit plain progress output. Default ("auto")
@@ -735,11 +759,7 @@ if is_enabled ENABLE_RECYCLARR; then
     echo ""
 fi
 echo "  ── Updates ────────────────────────────────────"
-echo "  Image-only pull (no restart, no downtime) — click Update Images"
-echo "  on the Homepage dashboard, or:"
-echo "     http://${IP}:8889/pull                    # web UI with Pull Now button"
-echo ""
-echo "  Full pull + recreate (swaps containers onto the new images):"
+echo "  Pull newer images + recreate any whose hash changed:"
 echo "  cd $SCRIPT_DIR"
 # Surface the active profile set so a copy-pasted update command will
 # actually update the user's selected services. Without COMPOSE_PROFILES

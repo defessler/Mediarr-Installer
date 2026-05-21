@@ -166,6 +166,18 @@ services:
     volumes:
       - ${INSTALL_DIR}/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Host disk mounts for the resources widget. MONITORED_DISK_N is
+      # populated by setup.sh's detect_storage_volumes() — a /volume[0-9]+
+      # scan that runs before `compose up`. Fallback /tmp keeps `compose
+      # up` from erroring when a slot is unset (always-exists path);
+      # setup-arr-config.py's render_homepage_widgets() only emits a
+      # disk widget for slots with a real MONITORED_DISK_N, so unused
+      # /diskN mounts sit idle and are never read. 4 slots covers all
+      # multi-volume Synology setups we've seen — bump if you need more.
+      - ${MONITORED_DISK_1:-/tmp}:/disk1:ro
+      - ${MONITORED_DISK_2:-/tmp}:/disk2:ro
+      - ${MONITORED_DISK_3:-/tmp}:/disk3:ro
+      - ${MONITORED_DISK_4:-/tmp}:/disk4:ro
     logging: *logging
     restart: unless-stopped
 
@@ -512,19 +524,13 @@ services:
     logging: *logging
     restart: unless-stopped
 
-  # Generic "stack-ops" webhook sidecar. Born as Recyclarr's web UI
-  # (Recyclarr itself is a CLI tool with no web interface) but has
-  # grown to also serve /pull — a one-click Docker-image refresh
-  # endpoint reachable from the Homepage dashboard's Update Images
-  # tile. See recyclarr-trigger.py for both endpoints' justification.
-  #
-  # NOT gated on the "recyclarr" compose profile any more: /pull is
-  # useful regardless of whether Recyclarr is enabled, so we want this
-  # sidecar to start with the rest of the stack. The /sync endpoint
-  # still requires the `recyclarr` container to be running, but it
-  # responds with a clear error in its absence rather than crashing.
-  # Container name is kept (rename would orphan existing containers
-  # on `docker compose up -d`).
+  # Recyclarr's web-UI sidecar. Recyclarr itself is a CLI tool with no
+  # web interface; this small Python:alpine container hosts a one-page
+  # status + Sync Now button. See recyclarr-trigger.py for endpoint
+  # details. Briefly also served /pull (Docker-image refresh) — that
+  # endpoint was removed when its post-pull `compose up -d` kept severing
+  # gluetun's network namespace and breaking qBittorrent. Container name
+  # kept (rename would orphan existing containers on `compose up -d`).
   recyclarr-trigger:
     # Pin Python minor so a future 3.x release doesn't break http.server
     # or http.cookiejar (both used in recyclarr-trigger.py). Bump after
@@ -582,15 +588,14 @@ services:
     # failures (e.g., no DNS during a NAS reboot) silent + crash-loop
     # invisibly. Quote-passing of the sleep keeps the apk retry from
     # hammering the package mirror if it fails the first try.
-    # docker-cli-compose installs the `docker compose` subcommand which
-    # the /pull endpoint uses to recreate containers onto freshly-pulled
-    # images. Without it the pull lands new layers on disk but every
-    # container keeps running on its old image. Both packages live in
-    # alpine's community repo — install in one apk add so we make one
-    # network round trip instead of two.
+    # docker-cli for `docker exec recyclarr recyclarr sync` from POST
+    # /sync. docker-cli-compose used to be installed here for the /pull
+    # endpoint's `compose up -d` recreate step — endpoint + package both
+    # removed when post-pull recreates kept severing gluetun's network
+    # namespace and breaking qBittorrent's network_mode: service:gluetun.
     command: >-
-      sh -c "apk add --no-cache docker-cli docker-cli-compose ||
-             { echo 'apk add docker-cli + docker-cli-compose failed; sleeping 60s before exit so we don'\\''t hammer the mirror'; sleep 60; exit 1; };
+      sh -c "apk add --no-cache docker-cli ||
+             { echo 'apk add docker-cli failed; sleeping 60s before exit so we don'\\''t hammer the mirror'; sleep 60; exit 1; };
              exec python3 /app/server.py"
     logging: *logging
     # restart: on-failure:5 instead of unless-stopped so a persistent
