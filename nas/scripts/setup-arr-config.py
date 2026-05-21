@@ -251,6 +251,69 @@ def read_env_merged(script_dir):
     parent = read_env(os.path.join(script_dir, '..', '.env'))
     return parent
 
+
+def set_env_value(env_path, key, value):
+    """Update KEY=value in .env, in place. Appends if absent, no-op if
+    the value already matches. Returns True when the file was changed.
+
+    Why this exists: setup-arr-config.py auto-discovers API keys from
+    each arr's config.xml on every run, but historically only used the
+    discovered values for its own generated configs (recyclarr.yml,
+    unpackerr.conf, etc.). The discovered values never made it back to
+    .env, so anything downstream that read SONARR_API_KEY / etc. from
+    .env got an empty string. Concrete failure mode: docker-compose
+    used to inject `UN_SONARR_0_API_KEY=${SONARR_API_KEY}` into the
+    unpackerr container, and unpackerr's env-var configuration
+    overrides its conf file when both are set — empty .env therefore
+    clobbered the real keys we'd written to unpackerr.conf, and
+    unpackerr reported "0 servers" forever. The compose env vars are
+    gone now, but other consumers (recyclarr.yml ${VAR} interpolation,
+    the diagnose scripts, future sidecars) still benefit from .env
+    holding the source of truth.
+
+    Preserves the surrounding line structure: trailing comments,
+    spacing, and ordering are left untouched on update. New keys
+    append at the end of the file with no decorative whitespace."""
+    if value is None:
+        return False
+    value = str(value).strip()
+    if not value:
+        return False
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        lines = []
+    key_prefix = f"{key}="
+    found = False
+    changed = False
+    for i, line in enumerate(lines):
+        # Match against the bare key= (allow surrounding whitespace but
+        # not commented-out lines — `# KEY=foo` is documentation, not a
+        # value the user wants us to update).
+        stripped = line.lstrip()
+        if stripped.startswith('#'):
+            continue
+        if stripped.startswith(key_prefix):
+            found = True
+            existing = stripped[len(key_prefix):].split('#', 1)[0].strip().strip('"').strip("'")
+            if existing == value:
+                return False
+            lines[i] = f"{key}={value}\n"
+            changed = True
+            break
+    if not found:
+        # Make sure we don't double-blank-line at EOF; if the file
+        # doesn't end with a newline, add one before appending.
+        if lines and not lines[-1].endswith('\n'):
+            lines[-1] = lines[-1] + '\n'
+        lines.append(f"{key}={value}\n")
+        changed = True
+    if changed:
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+    return changed
+
 def read_arr_key(config_xml):
     """Read API key from a *arr config.xml file."""
     try:
@@ -3157,6 +3220,29 @@ def main():
     SABNZBD_KEY  = env.get('SABNZBD_API_KEY')  or read_sabnzbd_key(f"{B}/sabnzbd/config/sabnzbd.ini")
     BAZARR_KEY   = env.get('BAZARR_API_KEY')   or read_bazarr_key(f"{B}/bazarr/config")
     SEERR_KEY    = env.get('SEERR_API_KEY')    or read_json_key(f"{B}/seerr/config/settings.json", "main", "apiKey")
+
+    # Sync every discovered key back to .env. docker-compose substitutes
+    # ${SONARR_API_KEY} etc. into the unpackerr container's env block
+    # on every `compose up`, and unpackerr's env vars override its
+    # conf-file values when both are set — so leaving .env blank meant
+    # compose injected empty strings that clobbered the real keys we'd
+    # written to unpackerr.conf. Writing them back here keeps env-var
+    # + conf-file paths in agreement for any downstream consumer.
+    # In-memory `env` dict is also refreshed so downstream code paths
+    # in this same run see the new values without re-reading the file.
+    if not os.environ.get('MEDIARR_SKIP_ENV_WRITEBACK'):
+        for env_key, value in (
+            ('SONARR_API_KEY',   SONARR_KEY),
+            ('RADARR_API_KEY',   RADARR_KEY),
+            ('LIDARR_API_KEY',   LIDARR_KEY),
+            ('PROWLARR_API_KEY', PROWLARR_KEY),
+            ('SABNZBD_API_KEY',  SABNZBD_KEY),
+            ('BAZARR_API_KEY',   BAZARR_KEY),
+            ('SEERR_API_KEY',    SEERR_KEY),
+        ):
+            if set_env_value(ENV_FILE_DEFAULT, env_key, value):
+                env[env_key] = value
+                ok(f"{env_key} synced into .env (was blank or stale)")
 
     # qBittorrent's reachable host inside the media network depends on
     # whether VPN is wrapping it:

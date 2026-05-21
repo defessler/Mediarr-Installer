@@ -183,12 +183,20 @@ fi
 
 section "Container env (UN_* vars)"
 if [ "${STATUS:-}" = "running" ]; then
-    docker exec unpackerr env 2>/dev/null | grep -E '^UN_' | sort | indent
-    echo ""
-    echo "  Note: docker-compose.yml injects ONLY UN_SONARR_0 + UN_RADARR_0 (lines"
-    echo "  614-617). Lidarr is NOT in env — its config comes entirely from the"
-    echo "  [[lidarr]] block in unpackerr.conf, which setup-arr-config.py only writes"
-    echo "  when LIDARR_API_KEY exists at config-generation time."
+    UN_VARS=$(docker exec unpackerr env 2>/dev/null | grep -E '^UN_' | sort)
+    if [ -z "$UN_VARS" ]; then
+        echo "  (no UN_* env vars set — expected; conf file is the only source of"
+        echo "   truth as of the env-vars-removed change. If you see UN_* vars here,"
+        echo "   the container was created against an older docker-compose.yml and"
+        echo "   needs recreating:  docker compose up -d --force-recreate unpackerr )"
+    else
+        echo "$UN_VARS" | indent
+        echo ""
+        echo "  ⚠  UN_* env vars present means this container was created against an"
+        echo "  older docker-compose.yml. Those env vars override the conf file and"
+        echo "  cause empty-key '0 servers' bugs when .env is blank. Recreate with:"
+        echo "    cd $INSTALL_DIR/scripts && docker compose up -d --force-recreate unpackerr"
+    fi
 else
     echo "  container not running — env unavailable"
 fi

@@ -616,10 +616,16 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - UN_SONARR_0_URL=http://sonarr:8989
-      - UN_SONARR_0_API_KEY=${SONARR_API_KEY}
-      - UN_RADARR_0_URL=http://radarr:7878
-      - UN_RADARR_0_API_KEY=${RADARR_API_KEY}
+      # No UN_* env vars: unpackerr's env-var configuration OVERRIDES
+      # its conf file when both are set. The wizard auto-discovers each
+      # arr's API key from its config.xml on every setup run and writes
+      # the resulting [[sonarr]] / [[radarr]] / [[lidarr]] blocks into
+      # unpackerr.conf (see setup-arr-config.py's Unpackerr section).
+      # Earlier versions also injected UN_SONARR_0_API_KEY=${SONARR_API_KEY}
+      # here — when .env had blank keys (because nothing wrote them back
+      # at first install), the empty env-var clobbered the real conf
+      # key and unpackerr reported "0 servers" forever. Conf-file-only
+      # is the single source of truth now.
     volumes:
       - ${INSTALL_DIR}/unpackerr/config:/config
       - ${DATA_ROOT}:/data
