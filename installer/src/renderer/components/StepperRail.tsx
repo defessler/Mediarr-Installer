@@ -122,11 +122,11 @@ export function StepperRail({ steps, onRerun, rerunningStep }: Props) {
                 transition={{ type: 'spring', stiffness: 400, damping: 35 }}
               />
             )}
-            <div className="relative flex items-center gap-3 px-2 py-2 text-sm">
-              <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                <StatusIcon status={s.status} />
+            <div className="relative flex items-center gap-2 px-1.5 py-1.5 text-sm">
+              <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                <StatusIcon status={s.status} size={14} />
               </div>
-              <span className="font-mono text-xs w-5 text-right text-slate-500 shrink-0 tabular-nums">
+              <span className="font-mono text-xs w-4 text-right text-slate-500 shrink-0 tabular-nums">
                 {s.number}
               </span>
               <span className="truncate flex-1">{s.label}</span>
