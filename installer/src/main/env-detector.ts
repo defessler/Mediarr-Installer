@@ -11,6 +11,7 @@ import type { EnvDetectResult, PortConflict } from '../shared/ipc.js'
 // `docker compose up -d` step will fail with "address already in use".
 const STACK_PORTS: { port: number; service: string }[] = [
   { port: 32400, service: 'Plex' },
+  { port: 8096,  service: 'Jellyfin' },
   { port: 49150, service: 'Prowlarr' },
   { port: 49151, service: 'Radarr' },
   { port: 49152, service: 'Sonarr' },
@@ -28,7 +29,7 @@ const STACK_PORTS: { port: number; service: string }[] = [
 // Container names the stack creates. Used to recognize a re-install vs
 // a foreign Docker setup.
 const STACK_CONTAINERS = new Set([
-  'plex', 'tautulli', 'seerr', 'homepage', 'prowlarr', 'flaresolverr',
+  'plex', 'jellyfin', 'tautulli', 'seerr', 'homepage', 'prowlarr', 'flaresolverr',
   'sonarr', 'radarr', 'bazarr', 'lidarr', 'gluetun', 'qbittorrent',
   'sabnzbd', 'recyclarr', 'unpackerr',
 ])

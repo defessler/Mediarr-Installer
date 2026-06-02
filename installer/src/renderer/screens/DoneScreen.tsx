@@ -156,6 +156,18 @@ export function DoneScreen() {
   const reduced = useReducedMotion()
   const installSucceeded = exit === 0 || (failCount === 0 && okCount > 0)
 
+  // Media-server-aware tile list — swap the Plex tile for Jellyfin (port
+  // 8096) and drop Plex-only Tautulli when the user deployed Jellyfin, so
+  // the grid matches what actually got installed.
+  const mediaServer = config.MEDIA_SERVER || 'plex'
+  const displayedServices = SERVICES.flatMap((s) => {
+    if (s.name === 'Plex') {
+      return mediaServer === 'jellyfin' ? [{ ...s, name: 'Jellyfin', port: '8096' }] : [s]
+    }
+    if (s.name === 'Tautulli' && mediaServer === 'jellyfin') return []
+    return [s]
+  })
+
   // Single confetti burst when the user lands here with the install
   // succeeded. Reward moment — emotionally distinct from "yep, looks
   // ok" toast. Suppressed in reduced-motion (vestibular sensitivity).
@@ -228,7 +240,7 @@ export function DoneScreen() {
           icon (status circle) that animates between states. Clicking
           opens the service URL in the user's default browser. */}
       <div className="grid grid-cols-2 gap-3">
-        {SERVICES.map((s, i) => {
+        {displayedServices.map((s, i) => {
           const url = `http://${ip}:${s.port}`
           const h = health[s.name] ?? 'unknown'
           const StatusIcon = h === 'ok' ? CheckCircle2 : h === 'fail' ? XCircle : Circle
@@ -326,9 +338,23 @@ export function DoneScreen() {
         <ol className="list-decimal list-inside space-y-2 text-sm text-slate-300">
           <li>
             Open <span className="font-mono text-emerald-400">http://{ip}:5056</span> and run
-            the Seerr wizard. Connect Plex with the URL{' '}
-            <span className="font-mono">http://plex:32400</span>.
+            the {mediaServer === 'jellyfin' ? 'Jellyseerr' : 'Seerr'} wizard. Connect{' '}
+            {mediaServer === 'jellyfin' ? (
+              <>Jellyfin with the URL <span className="font-mono">http://jellyfin:8096</span></>
+            ) : (
+              <>Plex with the URL <span className="font-mono">http://plex:32400</span></>
+            )}.
           </li>
+          {mediaServer === 'jellyfin' && (
+            <li>
+              Finish Jellyfin&apos;s first-run setup at{' '}
+              <span className="font-mono text-emerald-400">http://{ip}:8096</span> (admin
+              user + libraries pointing at <span className="font-mono">/media</span>). For
+              auto library-refresh on import, generate an API key (Dashboard → API Keys),
+              add it as <span className="font-mono">JELLYFIN_API_KEY</span> in .env, and
+              re-run <span className="font-mono">setup-arr-config.py</span>.
+            </li>
+          )}
           {!config.USENET_HOST && (
             <li>
               Open SABnzbd at <span className="font-mono text-emerald-400">http://{ip}:49155</span>{' '}
@@ -346,16 +372,24 @@ export function DoneScreen() {
       <section className="space-y-2 border-t border-slate-800 pt-6">
         <h2 className="text-lg font-medium text-emerald-400">Configured automatically</h2>
         <ul className="list-disc list-inside space-y-1 text-sm text-slate-300">
-          <li>
-            Tautulli is wired to <span className="font-mono">plex:32400</span> using the
-            token Plex got from your claim. Visit{' '}
-            <span className="font-mono text-emerald-400">http://{ip}:8181</span> to verify.
-            {' '}
-            <span className="text-slate-500 italic">
-              (Note: if you ran the wizard before Plex finished its first-claim
-              handshake, re-run setup-arr-config.py once Plex is up.)
-            </span>
-          </li>
+          {mediaServer === 'jellyfin' ? (
+            <li>
+              Sonarr/Radarr/Lidarr → Jellyfin library refresh is wired (once
+              <span className="font-mono"> JELLYFIN_API_KEY</span> is set), so Jellyfin
+              rescans the moment a download is imported.
+            </li>
+          ) : (
+            <li>
+              Tautulli is wired to <span className="font-mono">plex:32400</span> using the
+              token Plex got from your claim. Visit{' '}
+              <span className="font-mono text-emerald-400">http://{ip}:8181</span> to verify.
+              {' '}
+              <span className="text-slate-500 italic">
+                (Note: if you ran the wizard before Plex finished its first-claim
+                handshake, re-run setup-arr-config.py once Plex is up.)
+              </span>
+            </li>
+          )}
           {config.USENET_HOST && (
             <li>
               SABnzbd usenet provider <span className="font-mono">{config.USENET_HOST}</span>

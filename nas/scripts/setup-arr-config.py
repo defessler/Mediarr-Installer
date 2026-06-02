@@ -195,6 +195,16 @@ AUTOMATED = {
     'qbit_prefs':      False,   # qBittorrent default prefs applied
 }
 
+
+def media_server_kind(env):
+    """Which media server the stack is running: 'jellyfin' or 'plex'
+    (default). ENABLE_PLEX is the on/off master for the media-server
+    group; MEDIA_SERVER picks which server. Mirrors setup.sh's
+    normalization so the Python configurator agrees on which code path
+    (Plex token + Tautulli vs Jellyfin API key) applies."""
+    return 'jellyfin' if (env.get('MEDIA_SERVER') or 'plex').strip().lower() == 'jellyfin' else 'plex'
+
+
 errors = 0
 
 # Container UID/GID for the docker-exec write probe. Set by main() from
@@ -1275,6 +1285,63 @@ def configure_plex_notification(base, key, api, plex_token, on_episode_file=Fals
         # know it didn't auto-apply.
         warn(f"{api} → Plex notification: POST rejected — add manually at "
              f"Settings → Connect → Add → Plex Media Server (host=plex port=32400)")
+
+
+def configure_jellyfin_notification(base, key, api, jf_apikey, jf_host='jellyfin', jf_port=8096):
+    """Jellyfin equivalent of configure_plex_notification. Wires the arr's
+    built-in "Emby" connection (implementation `MediaBrowser`, which is
+    what Sonarr/Radarr/Lidarr expose for both Emby AND Jellyfin) so
+    Jellyfin rescans the relevant library the instant a file is imported.
+
+    Needs a Jellyfin API key: there's no claim-token flow like Plex —
+    after Jellyfin's first-run web setup the user generates a key under
+    Dashboard → API Keys and pastes it into .env as JELLYFIN_API_KEY.
+    When that's blank we skip cleanly (the install isn't broken; the
+    user re-runs this script once the key is in place). Idempotent:
+    skips when our notification already exists.
+    """
+    if not jf_apikey:
+        skip(f"{api} → Jellyfin notification (set JELLYFIN_API_KEY in .env after "
+             f"Jellyfin's first-run setup, then re-run this script)")
+        return
+    name = "Jellyfin"
+    existing = GET(base, key, f"/{api}/notification")
+    if existing is None:
+        fail(f"{api} → Jellyfin notification: can't reach API"); return
+    if any(n.get('name') == name for n in existing):
+        skip(f"{api} → Jellyfin notification (already configured)"); return
+
+    schemas = GET(base, key, f"/{api}/notification/schema") or []
+    # The arrs label this connection "Emby" historically; its
+    # implementation string is 'MediaBrowser' and it serves Jellyfin too.
+    schema = next((s for s in schemas if s.get('implementation') == 'MediaBrowser'), None)
+    if schema is None:
+        warn(f"{api} → Jellyfin notification: Emby/Jellyfin (MediaBrowser) schema "
+             f"not found in this arr version"); return
+
+    schema = json.loads(json.dumps(schema))  # deep copy
+    schema['name'] = name
+    schema['onGrab'] = False
+    schema['onDownload'] = True
+    schema['onUpgrade'] = True
+    schema['onRename'] = True
+    fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
+    for fname, fval in {
+        'host':          jf_host,
+        'port':          jf_port,
+        'useSsl':        False,
+        'apiKey':        jf_apikey,
+        'updateLibrary': True,
+    }.items():
+        if fname in fm:
+            schema['fields'][fm[fname]]['value'] = fval
+
+    result = POST(base, key, f"/{api}/notification", schema)
+    if result:
+        ok(f"{api} → Jellyfin notification: configured (library refresh on import/upgrade)")
+    else:
+        warn(f"{api} → Jellyfin notification: POST rejected — add manually at "
+             f"Settings → Connect → Add → Emby (host={jf_host} port={jf_port}, paste API key)")
 
 # ── Prowlarr ──────────────────────────────────────────────────────────────────
 
@@ -3201,12 +3268,17 @@ def render_homepage_services(env, ip):
                 f"        icon: {icon}\n"
                 f"        siteMonitor: {monitor or href}")
 
-    # Media section — Plex stack (Plex / Tautulli / Seerr move together).
+    # Media section — the media server + request manager. Plex adds a
+    # Tautulli analytics tile; Jellyfin has built-in stats so it doesn't.
     media = []
     if is_enabled(env, 'ENABLE_PLEX'):
-        media.append(block("Plex",     f"http://{ip}:32400/web", "Media server",   "plex.png",      f"http://{ip}:32400"))
-        media.append(block("Tautulli", f"http://{ip}:8181",      "Plex analytics", "tautulli.png"))
-        media.append(block("Seerr",    f"http://{ip}:5056",      "Request movies & TV", "overseerr.png"))
+        if media_server_kind(env) == 'jellyfin':
+            media.append(block("Jellyfin", f"http://{ip}:8096", "Media server",   "jellyfin.png", f"http://{ip}:8096"))
+            media.append(block("Seerr",    f"http://{ip}:5056", "Request movies & TV", "jellyseerr.png"))
+        else:
+            media.append(block("Plex",     f"http://{ip}:32400/web", "Media server",   "plex.png",      f"http://{ip}:32400"))
+            media.append(block("Tautulli", f"http://{ip}:8181",      "Plex analytics", "tautulli.png"))
+            media.append(block("Seerr",    f"http://{ip}:5056",      "Request movies & TV", "overseerr.png"))
     if media:
         out.append("- Media:")
         out.extend(media)
@@ -3599,8 +3671,26 @@ def main():
     # PMS config and Seerr wants for its first-run auth. One filesystem
     # read shared between the two.
 
+    # plex_token (Plex) / jf_apikey (Jellyfin) are the per-server
+    # credentials the arr → media-server notification + request manager
+    # need. Exactly one is populated, based on MEDIA_SERVER.
     plex_token = None
-    if is_enabled(env, 'ENABLE_PLEX'):
+    jf_apikey = None
+    media_kind = media_server_kind(env)
+    if is_enabled(env, 'ENABLE_PLEX') and media_kind == 'jellyfin':
+        section("Jellyfin")
+        jf_apikey = (env.get('JELLYFIN_API_KEY') or '').strip()
+        if jf_apikey:
+            ok("JELLYFIN_API_KEY found — wiring arr library scans + request manager to Jellyfin")
+        else:
+            warn("JELLYFIN_API_KEY not set yet. Finish Jellyfin's first-run setup at "
+                 "http://<NAS>:8096, then Dashboard → API Keys → generate a key, set "
+                 "JELLYFIN_API_KEY=<key> in .env and re-run this script.")
+        # Tautulli is Plex-only — Jellyfin ships its own playback stats in
+        # its dashboard, so there's no analytics container to wire here.
+        print(f"  {DIM}⏭  Tautulli not deployed with Jellyfin (built-in stats instead).{RESET}")
+        AUTOMATED['tautulli_token'] = True   # N/A for Jellyfin — keep it off the pending list
+    elif is_enabled(env, 'ENABLE_PLEX'):
         PLEX_PREFS = f"{B}/plex/config/Library/Application Support/Plex Media Server/Preferences.xml"
         TAUTULLI_INI = f"{B}/tautulli/config/config.ini"
         try:
@@ -3699,7 +3789,10 @@ def main():
         # ScheduledLibraryUpdatesEnabled=0 this means Plex sees new
         # content fast without scheduled-scan I/O.
         if is_enabled(env, 'ENABLE_PLEX'):
-            configure_plex_notification(SONARR, SONARR_KEY, "api/v3", plex_token, on_episode_file=True)
+            if media_kind == 'jellyfin':
+                configure_jellyfin_notification(SONARR, SONARR_KEY, "api/v3", jf_apikey)
+            else:
+                configure_plex_notification(SONARR, SONARR_KEY, "api/v3", plex_token, on_episode_file=True)
         if ARR_USER and ARR_PASS:
             configure_auth(SONARR, SONARR_KEY, "api/v3", ARR_USER, ARR_PASS)
 
@@ -3738,7 +3831,10 @@ def main():
         configure_backup_schedule(RADARR, RADARR_KEY, "api/v3")
         # Plex Connect notification — same rationale as Sonarr block above.
         if is_enabled(env, 'ENABLE_PLEX'):
-            configure_plex_notification(RADARR, RADARR_KEY, "api/v3", plex_token, on_episode_file=False)
+            if media_kind == 'jellyfin':
+                configure_jellyfin_notification(RADARR, RADARR_KEY, "api/v3", jf_apikey)
+            else:
+                configure_plex_notification(RADARR, RADARR_KEY, "api/v3", plex_token, on_episode_file=False)
         if ARR_USER and ARR_PASS:
             configure_auth(RADARR, RADARR_KEY, "api/v3", ARR_USER, ARR_PASS)
 
@@ -3820,7 +3916,10 @@ def main():
         # onSeriesDelete fields (those are Sonarr-only), and the helper only
         # uses that flag to set those two fields, so False is the safe choice.
         if is_enabled(env, 'ENABLE_PLEX'):
-            configure_plex_notification(LIDARR, LIDARR_KEY, "api/v1", plex_token, on_episode_file=False)
+            if media_kind == 'jellyfin':
+                configure_jellyfin_notification(LIDARR, LIDARR_KEY, "api/v1", jf_apikey)
+            else:
+                configure_plex_notification(LIDARR, LIDARR_KEY, "api/v1", plex_token, on_episode_file=False)
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)
 

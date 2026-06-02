@@ -5,7 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
-  Clock, CheckCircle2, XCircle, AlertTriangle,
+  Clock, CheckCircle2, XCircle, AlertTriangle, Info,
   type LucideIcon,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
@@ -157,7 +157,7 @@ interface ServiceToggle {
 }
 
 const SERVICE_TOGGLES: ServiceToggle[] = [
-  { key: 'ENABLE_PLEX',        label: 'Plex stack',   hint: 'Plex + Tautulli + Seerr (request system)',     icon: PlaySquare,      iconColor: 'text-amber-400' },
+  { key: 'ENABLE_PLEX',        label: 'Media server', hint: 'Plex or Jellyfin + Seerr (request system)',     icon: PlaySquare,      iconColor: 'text-amber-400' },
   { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation',                                 icon: Tv,              iconColor: 'text-sky-400' },
   { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation',                              icon: Film,            iconColor: 'text-yellow-400' },
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
@@ -1027,14 +1027,62 @@ export function ConfigureScreen() {
         </section>
       )}
 
+      {/* Media-server picker — Plex or Jellyfin (mutually exclusive).
+          Only shown when the media-server group is enabled. Drives
+          MEDIA_SERVER in .env; setup.sh activates the matching compose
+          profile and the configurator wires the right server. */}
+      {isEnabled(config.ENABLE_PLEX as string | undefined) && (
+        <section className="rounded-md border border-slate-800 p-3 space-y-2">
+          <div className="text-sm font-medium flex items-center gap-2">
+            <PlaySquare size={16} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
+            Media server
+          </div>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Media server">
+            {([
+              { id: 'plex',     name: 'Plex',     blurb: 'Claim token + Tautulli analytics' },
+              { id: 'jellyfin', name: 'Jellyfin', blurb: 'Free & open-source, no account' },
+            ] as const).map((ms) => {
+              const active = (config.MEDIA_SERVER || 'plex') === ms.id
+              return (
+                <button
+                  key={ms.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => update('MEDIA_SERVER', ms.id)}
+                  className={
+                    'text-left rounded-md border p-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ' +
+                    (active
+                      ? 'border-amber-500/50 bg-amber-900/20'
+                      : 'border-slate-700 bg-slate-900/40 hover:border-slate-600')
+                  }
+                >
+                  <div className="text-sm font-medium">{ms.name}</div>
+                  <div className="text-xs text-slate-400">{ms.blurb}</div>
+                </button>
+              )
+            })}
+          </div>
+          {(config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
+            <p className="text-xs text-slate-400">
+              The request manager runs as{' '}
+              <span className="font-mono text-slate-300">Jellyseerr</span> (supports
+              Jellyfin). Tautulli is Plex-only, so it&apos;s skipped — Jellyfin has
+              built-in playback stats.
+            </p>
+          )}
+        </section>
+      )}
+
       {/* Plex claim is collected on the Run screen instead — it expires
           4 minutes after generation, so capturing it earlier risks the
           token going stale while the user fills out other fields. The
           RunScreen has a PlexClaimRefresh widget right above the Start
           button with a live countdown and a "Get fresh token" link.
-          Hide the banner when Plex is opted out of the stack — there's
-          no Plex container to claim. */}
-      {isEnabled(config.ENABLE_PLEX as string | undefined) && (
+          Hide the banner when Plex is opted out of the stack, or when the
+          user picked Jellyfin (no claim token — see the Jellyfin note). */}
+      {isEnabled(config.ENABLE_PLEX as string | undefined)
+        && (config.MEDIA_SERVER || 'plex') !== 'jellyfin' && (
         <section className="rounded-md border border-amber-700/30 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
           <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
             <Clock size={16} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
@@ -1057,6 +1105,30 @@ export function ConfigureScreen() {
                 plex.tv/claim
               </a>
               .
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Jellyfin has no claim token — it's set up in the browser after
+          install. Tell the user the post-install step so the arr → library
+          wiring can be completed (optional; the stack works without it). */}
+      {isEnabled(config.ENABLE_PLEX as string | undefined)
+        && (config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
+        <section className="rounded-md border border-sky-700/30 bg-sky-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
+          <div className="shrink-0 w-8 h-8 rounded-md bg-sky-500/15 border border-sky-500/30 flex items-center justify-center mt-0.5">
+            <Info size={16} className="text-sky-300" strokeWidth={2} aria-hidden="true" />
+          </div>
+          <div className="space-y-1">
+            <div className="font-medium text-sky-100">
+              Jellyfin finishes setting up in your browser
+            </div>
+            <div className="text-xs text-slate-400">
+              No claim token needed. After install, open{' '}
+              <span className="font-mono text-slate-300">http://&lt;NAS&gt;:8096</span>,
+              complete the first-run wizard, then (optionally) generate an API key
+              under Dashboard → API Keys and paste it into the Run screen so the
+              arrs auto-refresh Jellyfin on import.
             </div>
           </div>
         </section>

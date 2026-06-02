@@ -19,6 +19,7 @@ import { reportError } from '../store/errors.js'
 function containerToEnableKey(c: string): keyof EnvFormValues | null {
   switch (c) {
     case 'plex':
+    case 'jellyfin':
     case 'tautulli':
     case 'seerr':         return 'ENABLE_PLEX'
     case 'sonarr':        return 'ENABLE_SONARR'

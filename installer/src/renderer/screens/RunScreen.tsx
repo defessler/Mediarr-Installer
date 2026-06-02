@@ -847,11 +847,40 @@ export function RunScreen() {
                 so the footer doesn't lie about "no Plex claim — Plex
                 needs manual setup" when Plex isn't going to be in the
                 stack at all. */}
-            {isEnabled(config.ENABLE_PLEX as string | undefined) && (
+            {isEnabled(config.ENABLE_PLEX as string | undefined)
+              && (config.MEDIA_SERVER || 'plex') !== 'jellyfin' && (
               <PlexClaimRefresh
                 value={config.PLEX_CLAIM}
                 onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}
               />
+            )}
+
+            {/* Jellyfin has no claim token. Optional API key — paste after
+                the first-run browser setup so the arrs can wire library
+                scans. Blank is fine; the install works without it. */}
+            {isEnabled(config.ENABLE_PLEX as string | undefined)
+              && (config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
+              <section className="rounded-md border border-sky-700/30 bg-sky-900/10 p-3 space-y-2 text-sm">
+                <label htmlFor="jellyfin-api-key" className="font-medium text-sky-100 block">
+                  Jellyfin API key <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="jellyfin-api-key"
+                  type="text"
+                  value={config.JELLYFIN_API_KEY ?? ''}
+                  onChange={(e) => setConfig({ JELLYFIN_API_KEY: e.target.value || undefined })}
+                  placeholder="paste after first-run — Jellyfin Dashboard → API Keys"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm font-mono focus:outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-500/40"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-slate-400">
+                  No claim token needed — you can install now and leave this blank.
+                  After the stack is up, finish Jellyfin&apos;s setup at
+                  <span className="font-mono"> :8096</span>, generate a key, paste it
+                  here and re-run (or wire it later over SSH).
+                </p>
+              </section>
             )}
 
             {errorMsg && (
@@ -1176,7 +1205,8 @@ export function RunScreen() {
         </div>
       </div>
 
-      {phase === 'failed' && isEnabled(config.ENABLE_PLEX as string | undefined) && (
+      {phase === 'failed' && isEnabled(config.ENABLE_PLEX as string | undefined)
+        && (config.MEDIA_SERVER || 'plex') !== 'jellyfin' && (
         <PlexClaimRefresh
           value={config.PLEX_CLAIM}
           onChange={(claim) => setConfig({ PLEX_CLAIM: claim })}

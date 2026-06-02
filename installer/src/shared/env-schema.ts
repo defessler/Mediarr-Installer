@@ -68,11 +68,24 @@ export const envSchema = z.object({
   DATA_ROOT: optStr.refine((v) => !v || v.startsWith('/'),
     'must be an absolute path starting with /'),
 
+  // Media server — 'plex' (default) or 'jellyfin'. Free-form-tolerant
+  // (empty = plex) so older .envs without the key validate fine.
+  MEDIA_SERVER: optStr.refine(
+    (v) => !v || v === 'plex' || v === 'jellyfin',
+    'must be "plex" or "jellyfin"',
+  ),
+  // Derived by renderEnv from MEDIA_SERVER; round-trips through .env.
+  SEERR_IMAGE: optStr,
+
   // Plex
   PLEX_CLAIM: optStr.refine(
     (v) => !v || v.startsWith('claim-'),
     'Plex claim tokens start with "claim-"',
   ),
+
+  // Jellyfin — API key pasted post-first-run. No fixed format (Jellyfin
+  // keys are 32-char hex but we don't hard-enforce), just optional.
+  JELLYFIN_API_KEY: optStr,
 
   // ARR auth
   ARR_USERNAME: optStr,

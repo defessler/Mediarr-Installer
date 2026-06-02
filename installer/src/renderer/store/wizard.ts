@@ -131,6 +131,10 @@ const defaultConfig: Partial<EnvFormValues> = {
   PUID: '1026',
   PGID: '100',
   TZ: 'America/New_York',
+  // Media server: Plex by default (back-compat — existing profiles have
+  // no MEDIA_SERVER key and render as plex). The Configure screen lets
+  // the user switch to Jellyfin.
+  MEDIA_SERVER: 'plex',
   // NAS-portable path defaults. Synology values match the historical
   // baseline so existing profiles round-trip without changes; non-
   // Synology users get a sensible suggestion from EnvDetect's

@@ -77,6 +77,14 @@ is_enabled() {
     esac
 }
 
+# Media server pick (plex|jellyfin) — decides whether the media-server
+# rule opens 32400 (Plex + DLNA/GDM) or 8096 (Jellyfin).
+MEDIA_SERVER="plex"
+if [ -n "$ENV_FILE" ]; then
+    _ms=$(grep -m1 '^MEDIA_SERVER=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)
+    [ "$_ms" = "jellyfin" ] && MEDIA_SERVER="jellyfin"
+fi
+
 add_rules() {
     # DSM (always open — needed to manage the NAS itself)
     iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5000 -j ACCEPT
@@ -98,15 +106,23 @@ add_rules() {
     # them tightens the surface area and matches what's actually
     # running.
     if is_enabled ENABLE_PLEX; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 32400 -j ACCEPT
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 32469 -j ACCEPT
-        iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32410 -j ACCEPT
-        iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32412 -j ACCEPT
-        iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32413 -j ACCEPT
-        iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32414 -j ACCEPT
-        # Tautulli + Seerr (ride on ENABLE_PLEX in the rest of the stack)
+        if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+            # Jellyfin HTTP (8096). DLNA (1900/udp) + client discovery
+            # (7359/udp) are optional and off unless the user enables them
+            # in Jellyfin's dashboard, so we don't pre-open them.
+            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8096 -j ACCEPT
+        else
+            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 32400 -j ACCEPT
+            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 32469 -j ACCEPT
+            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32410 -j ACCEPT
+            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32412 -j ACCEPT
+            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32413 -j ACCEPT
+            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32414 -j ACCEPT
+            # Tautulli — Plex-only analytics
+            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8181 -j ACCEPT
+        fi
+        # Seerr / Jellyseerr request manager — runs under either server
         iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5056 -j ACCEPT
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8181 -j ACCEPT
     fi
 
     if is_enabled ENABLE_SONARR; then
@@ -156,6 +172,9 @@ remove_rules() {
     iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32412 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32413 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32414 -j ACCEPT 2>/dev/null
+
+    # Jellyfin (main HTTP)
+    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 8096 -j ACCEPT 2>/dev/null
 
     # Sonarr
     iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49152 -j ACCEPT 2>/dev/null

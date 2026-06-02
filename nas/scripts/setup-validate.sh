@@ -145,12 +145,24 @@ if [ -n "$WG_KEY" ]; then
     fi
 fi
 
-# Warn if PLEX_CLAIM is empty (only needed on first run)
-PLEX_CLAIM=$(env_val "PLEX_CLAIM")
-if [ -z "$PLEX_CLAIM" ]; then
-    warn "PLEX_CLAIM is empty — only needed on first run. Get one from https://plex.tv/claim"
+# Media-server-specific first-run credential check. Plex uses a claim
+# token (plex.tv/claim, first run only); Jellyfin uses an API key the
+# user generates after its web wizard. Either is optional at this stage.
+MEDIA_SERVER=$(env_val "MEDIA_SERVER" | tr '[:upper:]' '[:lower:]')
+if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+    JF_KEY=$(env_val "JELLYFIN_API_KEY")
+    if [ -z "$JF_KEY" ]; then
+        warn "JELLYFIN_API_KEY is empty — set it after Jellyfin's first-run setup (Dashboard → API Keys) so the arrs auto-wire to Jellyfin. See setup.sh's closing notes."
+    else
+        ok "JELLYFIN_API_KEY is set"
+    fi
 else
-    ok "PLEX_CLAIM is set"
+    PLEX_CLAIM=$(env_val "PLEX_CLAIM")
+    if [ -z "$PLEX_CLAIM" ]; then
+        warn "PLEX_CLAIM is empty — only needed on first run. Get one from https://plex.tv/claim"
+    else
+        ok "PLEX_CLAIM is set"
+    fi
 fi
 
 # ── Folders ───────────────────────────────────────────────────────────────────
@@ -183,11 +195,14 @@ is_enabled() {
 # anyway so the output focuses on what actually matters for the
 # user's deployment. Prowlarr is always-on, never gated.
 REQUIRED_DIRS=("$INSTALL_DIR/prowlarr/config")
-is_enabled ENABLE_PLEX && REQUIRED_DIRS+=(
-    "$INSTALL_DIR/plex/config"
-    "$INSTALL_DIR/tautulli/config"
-    "$INSTALL_DIR/seerr/config"
-)
+if is_enabled ENABLE_PLEX; then
+    REQUIRED_DIRS+=("$INSTALL_DIR/seerr/config")
+    if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+        REQUIRED_DIRS+=("$INSTALL_DIR/jellyfin/config")
+    else
+        REQUIRED_DIRS+=("$INSTALL_DIR/plex/config" "$INSTALL_DIR/tautulli/config")
+    fi
+fi
 is_enabled ENABLE_SONARR      && REQUIRED_DIRS+=("$INSTALL_DIR/sonarr/config")
 is_enabled ENABLE_RADARR      && REQUIRED_DIRS+=("$INSTALL_DIR/radarr/config")
 is_enabled ENABLE_BAZARR      && REQUIRED_DIRS+=("$INSTALL_DIR/bazarr/config")

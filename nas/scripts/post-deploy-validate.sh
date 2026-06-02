@@ -76,8 +76,15 @@ section "Containers"
 # gated in docker-compose.yml). Each user-toggled service maps to one
 # or more container names — Plex stack groups three under ENABLE_PLEX,
 # qBittorrent pulls in gluetun when VPN_ENABLED.
+# Media server (plex|jellyfin). seerr runs under either; Tautulli is
+# Plex-only, so it's excluded when Jellyfin is the chosen server.
+MEDIA_SERVER=$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')
+[ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
 CONTAINERS=(prowlarr flaresolverr)
-is_enabled ENABLE_PLEX        && CONTAINERS+=(plex tautulli seerr)
+if is_enabled ENABLE_PLEX; then
+    CONTAINERS+=(seerr)
+    if [ "$MEDIA_SERVER" = "jellyfin" ]; then CONTAINERS+=(jellyfin); else CONTAINERS+=(plex tautulli); fi
+fi
 is_enabled ENABLE_SONARR      && CONTAINERS+=(sonarr)
 is_enabled ENABLE_RADARR      && CONTAINERS+=(radarr)
 is_enabled ENABLE_LIDARR      && CONTAINERS+=(lidarr)
@@ -314,7 +321,13 @@ check_tautulli() {
 # disabled service would return HTTP 000 (nothing listening) and false-
 # fail the post-deploy.
 is_enabled ENABLE_HOMEPAGE    && check_url "Homepage"     "http://$LAN_IP:3000"
-is_enabled ENABLE_PLEX        && check_url "Plex"         "http://$LAN_IP:32400/web"
+if is_enabled ENABLE_PLEX; then
+    if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+        check_url "Jellyfin" "http://$LAN_IP:8096"
+    else
+        check_url "Plex" "http://$LAN_IP:32400/web"
+    fi
+fi
 is_enabled ENABLE_SONARR      && check_url "Sonarr"       "http://$LAN_IP:49152"
 is_enabled ENABLE_RADARR      && check_url "Radarr"       "http://$LAN_IP:49151"
 is_enabled ENABLE_LIDARR      && check_url "Lidarr"       "http://$LAN_IP:49154"
@@ -328,7 +341,7 @@ is_enabled ENABLE_SABNZBD     && check_url "SABnzbd"      "http://$LAN_IP:49155"
 # below which inspects the container state + emits a specific recovery
 # hint (restart-qbit.sh) instead of a flat fail.
 is_enabled ENABLE_QBITTORRENT && check_qbit
-is_enabled ENABLE_PLEX        && check_tautulli
+{ is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; } && check_tautulli
 # Seerr binds to its port only AFTER the user completes the first-run
 # wizard at http://<NAS>:5056 in a browser. Until then curl gets HTTP
 # 000 (connection refused). Treat that as a warning, not a fail —
@@ -351,7 +364,7 @@ is_enabled ENABLE_RECYCLARR   && check_url "Recyclarr trigger" "http://$LAN_IP:8
 # Fetch public IP up-front — both Plex external check and VPN check need
 # it, and they're each independently gated below.
 PUBLIC_IP=""
-if is_enabled ENABLE_PLEX || { is_enabled ENABLE_QBITTORRENT && vpn_on; }; then
+if { is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; } || { is_enabled ENABLE_QBITTORRENT && vpn_on; }; then
     echo "  Fetching public IP..."
     # 3 retries with 2s spacing covers transient DNS / network hiccups
     # during install — public IP lookup is non-critical so we tolerate
@@ -359,7 +372,7 @@ if is_enabled ENABLE_PLEX || { is_enabled ENABLE_QBITTORRENT && vpn_on; }; then
     PUBLIC_IP=$(curl -sf --max-time 5 --retry 3 --retry-delay 2 https://api.ipify.org)
 fi
 
-if is_enabled ENABLE_PLEX; then
+if is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; then
     section "Plex External Access"
     if [ -z "$PUBLIC_IP" ]; then
         fail "Could not determine public IP — check internet connectivity"
@@ -550,10 +563,15 @@ if is_enabled ENABLE_HOMEPAGE; then
         # the "- " in services.yaml — same as render_homepage_services'
         # block() name argument. Add new entries here when a new tile
         # is added to the generator.
-        EXPECTED_TILES=(
-            "ENABLE_PLEX:Plex"
-            "ENABLE_PLEX:Tautulli"
-            "ENABLE_PLEX:Seerr"
+        EXPECTED_TILES=()
+        if is_enabled ENABLE_PLEX; then
+            if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+                EXPECTED_TILES+=("ENABLE_PLEX:Jellyfin" "ENABLE_PLEX:Seerr")
+            else
+                EXPECTED_TILES+=("ENABLE_PLEX:Plex" "ENABLE_PLEX:Tautulli" "ENABLE_PLEX:Seerr")
+            fi
+        fi
+        EXPECTED_TILES+=(
             "ENABLE_SONARR:Sonarr"
             "ENABLE_RADARR:Radarr"
             "ENABLE_LIDARR:Lidarr"

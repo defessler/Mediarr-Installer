@@ -137,8 +137,12 @@ fi
 # `compose up -d` only starts the no-profile services (Prowlarr +
 # Flaresolverr); profile-gated services like Plex / qBittorrent /
 # gluetun never come back up after a NAS boot.
+# Media server (plex|jellyfin) — the profile name IS the value. seerr
+# is in both profiles so it comes up under either. Mirrors setup.sh.
+MEDIA_SERVER="$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')"
+[ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
 PROFILES=()
-is_enabled ENABLE_PLEX        && PROFILES+=("plex")
+is_enabled ENABLE_PLEX        && PROFILES+=("$MEDIA_SERVER")
 is_enabled ENABLE_SONARR      && PROFILES+=("sonarr")
 is_enabled ENABLE_RADARR      && PROFILES+=("radarr")
 is_enabled ENABLE_LIDARR      && PROFILES+=("lidarr")

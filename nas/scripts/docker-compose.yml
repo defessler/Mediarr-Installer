@@ -97,10 +97,58 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  jellyfin:
+    image: linuxserver/jellyfin:latest
+    container_name: jellyfin
+    # Jellyfin is the open-source alternative to Plex. Selected via
+    # MEDIA_SERVER=jellyfin in .env — setup.sh then activates the
+    # "jellyfin" profile instead of "plex". The two are mutually
+    # exclusive (one media server at a time); ENABLE_PLEX is the master
+    # on/off for the media-server group regardless of which one runs.
+    profiles: ["jellyfin"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    ports:
+      - ${LAN_IP}:8096:8096
+    volumes:
+      - ${INSTALL_DIR}/jellyfin/config:/config
+      - ${DATA_ROOT}/Media:/media
+    # Hardware transcoding (Intel QuickSync / VAAPI). Uncomment on hosts
+    # with a /dev/dri render node — Intel iGPU models incl. UGREEN x86
+    # boxes and Synology Intel models (DS920+, DS923+, etc.). After
+    # uncommenting, enable it in Jellyfin: Dashboard → Playback →
+    # Transcoding → "Video Acceleration API (VAAPI)", device
+    # /dev/dri/renderD128.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    healthcheck:
+      # /health returns "Healthy" (plain text, unauthenticated) once the
+      # server is up. 60s start_period covers first-boot DB init.
+      test: curl -sf http://localhost:8096/health > /dev/null || exit 1
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+    restart: unless-stopped
+
   seerr:
-    image: ghcr.io/seerr-team/seerr:latest
+    # Request manager. Defaults to Seerr for Plex; setup.sh swaps in
+    # Jellyseerr (a superset fork that supports Plex AND Jellyfin/Emby)
+    # via SEERR_IMAGE when MEDIA_SERVER=jellyfin. Same container name +
+    # config path either way, so the Homepage tile / API-key discovery /
+    # arr wiring in setup-arr-config.py stay identical.
+    image: ${SEERR_IMAGE:-ghcr.io/seerr-team/seerr:latest}
     container_name: seerr
-    profiles: ["plex"]
+    # Available under BOTH media-server profiles. Compose drops the
+    # depends_on entry for whichever server isn't in the active profile
+    # set, so listing both is safe.
+    profiles: ["plex", "jellyfin"]
     init: true
     # The Seerr image runs as user `node` (UID 1000) by default. Forcing
     # PUID:PGID via the `user:` directive bypasses the image's
@@ -113,7 +161,7 @@ services:
     user: "${PUID}:${PGID}"
     networks: [media]
     security_opt: *security
-    depends_on: [plex]
+    depends_on: [plex, jellyfin]
     environment:
       - TZ=${TZ}
     ports:

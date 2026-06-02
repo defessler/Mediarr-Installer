@@ -221,8 +221,16 @@ fi
 # indexer config, and Flaresolverr is the CloudFlare bypass Prowlarr
 # uses. Both are <50 MB RAM; not worth a toggle.
 
+# Media server selection — plex (default) or jellyfin. ENABLE_PLEX is the
+# on/off master for the media-server group (server + Seerr/Jellyseerr
+# request manager); MEDIA_SERVER picks WHICH server runs. The profile
+# name is literally the MEDIA_SERVER value ("plex" or "jellyfin"), and
+# seerr lives in BOTH profiles so it starts under either.
+MEDIA_SERVER="$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')"
+[ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
+
 PROFILES=()
-is_enabled ENABLE_PLEX        && PROFILES+=("plex")
+is_enabled ENABLE_PLEX        && PROFILES+=("$MEDIA_SERVER")
 is_enabled ENABLE_SONARR      && PROFILES+=("sonarr")
 is_enabled ENABLE_RADARR      && PROFILES+=("radarr")
 is_enabled ENABLE_LIDARR      && PROFILES+=("lidarr")
@@ -316,6 +324,24 @@ stop_disabled_services() {
             stopped=$((stopped + 1))
         fi
     done
+    # Media-server switch reaper. When the user flips MEDIA_SERVER, the
+    # other server (and Plex-only Tautulli) drops out of the active
+    # profile set — but `compose up -d` only (re)creates services IN the
+    # active profiles; it never stops ones that left. Reap the stale
+    # server's containers so plex + jellyfin don't both run (port-bind
+    # clash on nothing shared, but wasted RAM + a confusing dashboard).
+    local stale=""
+    if is_enabled ENABLE_PLEX; then
+        if [ "$MEDIA_SERVER" = "jellyfin" ]; then stale="plex tautulli"; else stale="jellyfin"; fi
+    fi
+    for container in $stale; do
+        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
+            docker stop "$container" >/dev/null 2>&1 || true
+            docker rm   "$container" >/dev/null 2>&1 || true
+            echo "  ✔ Removed $container (not used by MEDIA_SERVER=$MEDIA_SERVER)"
+            stopped=$((stopped + 1))
+        fi
+    done
     if [ $stopped -eq 0 ]; then
         echo "  No previously-running services to remove."
     fi
@@ -342,7 +368,14 @@ check_port_conflicts() {
     # works but trips shellcheck (SC2178/SC2128) and silently breaks the
     # moment a service name ever contains whitespace.
     local pairs=("prowlarr:49150" "flaresolverr:8191")
-    is_enabled ENABLE_PLEX        && pairs+=("plex:32400" "seerr:5056" "tautulli:8181")
+    if is_enabled ENABLE_PLEX; then
+        pairs+=("seerr:5056")
+        if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+            pairs+=("jellyfin:8096")
+        else
+            pairs+=("plex:32400" "tautulli:8181")
+        fi
+    fi
     is_enabled ENABLE_SONARR      && pairs+=("sonarr:49152")
     is_enabled ENABLE_RADARR      && pairs+=("radarr:49151")
     is_enabled ENABLE_LIDARR      && pairs+=("lidarr:49154")
@@ -736,7 +769,13 @@ is_enabled ENABLE_HOMEPAGE && {
     echo ""
 }
 echo "  ── Services ───────────────────────────────────"
-is_enabled ENABLE_PLEX        && echo "  Plex         http://${IP}:32400/web"
+if is_enabled ENABLE_PLEX; then
+    if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+        echo "  Jellyfin     http://${IP}:8096"
+    else
+        echo "  Plex         http://${IP}:32400/web"
+    fi
+fi
 is_enabled ENABLE_SONARR      && echo "  Sonarr       http://${IP}:49152"
 is_enabled ENABLE_RADARR      && echo "  Radarr       http://${IP}:49151"
 is_enabled ENABLE_LIDARR      && echo "  Lidarr       http://${IP}:49154"
@@ -745,21 +784,39 @@ is_enabled ENABLE_SABNZBD     && echo "  SABnzbd      http://${IP}:49155"
 is_enabled ENABLE_QBITTORRENT && echo "  qBittorrent  http://${IP}:49156"
 is_enabled ENABLE_BAZARR      && echo "  Bazarr       http://${IP}:49153"
 is_enabled ENABLE_PLEX        && echo "  Seerr        http://${IP}:5056"
-is_enabled ENABLE_PLEX        && echo "  Tautulli     http://${IP}:8181"
+{ is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; } && echo "  Tautulli     http://${IP}:8181"
 echo ""
 echo "  ── Remaining manual steps ─────────────────────"
 n=0
 if is_enabled ENABLE_PLEX; then
-    n=$((n + 1))
-    echo "  $n. Seerr wizard: http://${IP}:5056"
-    echo "     Connect Plex with: http://plex:32400"
-    echo "     Then re-run: python3 $SCRIPT_DIR/setup-arr-config.py"
-    echo ""
-    n=$((n + 1))
-    echo "  $n. Tautulli: http://${IP}:8181"
-    echo "     Connect Plex with token from:"
-    echo "     Plex → Settings → Troubleshooting → Get X-Plex-Token"
-    echo ""
+    if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+        n=$((n + 1))
+        echo "  $n. Jellyfin first-run: http://${IP}:8096"
+        echo "     Complete the setup wizard (create your admin user, then add"
+        echo "     libraries pointing at /media/Movies, /media/TV Shows, etc)."
+        echo "     To let the arrs auto-refresh Jellyfin on import + wire the"
+        echo "     request manager, generate an API key and re-run config:"
+        echo "       Dashboard → API Keys → +  →  copy the key"
+        echo "       set JELLYFIN_API_KEY=<key> in $ENV_FILE"
+        echo "       python3 $SCRIPT_DIR/setup-arr-config.py"
+        echo ""
+        n=$((n + 1))
+        echo "  $n. Requests (Jellyseerr): http://${IP}:5056"
+        echo "     Sign in with Jellyfin, point it at http://jellyfin:8096,"
+        echo "     then re-run: python3 $SCRIPT_DIR/setup-arr-config.py"
+        echo ""
+    else
+        n=$((n + 1))
+        echo "  $n. Seerr wizard: http://${IP}:5056"
+        echo "     Connect Plex with: http://plex:32400"
+        echo "     Then re-run: python3 $SCRIPT_DIR/setup-arr-config.py"
+        echo ""
+        n=$((n + 1))
+        echo "  $n. Tautulli: http://${IP}:8181"
+        echo "     Connect Plex with token from:"
+        echo "     Plex → Settings → Troubleshooting → Get X-Plex-Token"
+        echo ""
+    fi
 fi
 if is_enabled ENABLE_SABNZBD; then
     n=$((n + 1))

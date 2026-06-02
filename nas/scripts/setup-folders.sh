@@ -52,6 +52,7 @@ echo ""
 
 CONFIG_DIRS=(
     "$INSTALL_DIR/plex/config"
+    "$INSTALL_DIR/jellyfin/config"
     "$INSTALL_DIR/tautulli/config"
     "$INSTALL_DIR/seerr/config"
     "$INSTALL_DIR/prowlarr/config"

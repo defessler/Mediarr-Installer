@@ -77,7 +77,7 @@ esac
 # part of the stack, including ones whose ENABLE_* got flipped to
 # false since last install. `--remove-orphans` is the belt-and-
 # braces on top of that.
-PROFILES=(plex sonarr radarr lidarr bazarr usenet torrenting vpn homepage recyclarr unpackerr)
+PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn homepage recyclarr unpackerr)
 
 # Pick the right compose files. When VPN was off at install time, the
 # no-vpn override is part of the active config; loading it on down
@@ -111,7 +111,7 @@ fi
 
 # Quick sanity: anything left running with one of our container names?
 LEFTOVERS=""
-for c in prowlarr flaresolverr plex tautulli seerr sonarr radarr lidarr \
+for c in prowlarr flaresolverr plex jellyfin tautulli seerr sonarr radarr lidarr \
          bazarr qbittorrent gluetun sabnzbd homepage recyclarr unpackerr; do
     if docker ps --format '{{.Names}}' | grep -qx "$c"; then
         LEFTOVERS="$LEFTOVERS $c"
