@@ -185,25 +185,36 @@ export function EnvDetectScreen() {
     return () => { cancelled = true }
   }, [sessionId, targetDir])
 
-  const Check = ({ ok, label, value }: { ok: boolean; label: string; value?: string | null }) => (
+  // `tone` overrides the icon when a row is neither a clean pass nor a
+  // real failure — e.g. a data dir that's "missing" but will be created
+  // by the installer. Defaults to ok/fail for every existing caller.
+  const Check = ({ ok, label, value, tone }: {
+    ok: boolean; label: string; value?: string | null
+    tone?: 'ok' | 'fail' | 'info'
+  }) => {
+    const t = tone ?? (ok ? 'ok' : 'fail')
+    return (
     <div className="flex items-center gap-3 py-1.5">
       {/* aria-hidden on the icon — surrounding label already carries
           the pass/fail meaning. We surface the actual status via the
           parent role/aria-label structure on the section. */}
-      {ok ? (
+      {t === 'ok' ? (
         <CheckCircle2 size={18} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+      ) : t === 'info' ? (
+        <Info size={18} className="text-sky-400 shrink-0" strokeWidth={2} aria-hidden="true" />
       ) : (
         <XCircle size={18} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
       )}
       <span className="text-sm">
-        <span className="sr-only">{ok ? 'OK: ' : 'Failed: '}</span>
+        <span className="sr-only">{t === 'ok' ? 'OK: ' : t === 'info' ? 'Info: ' : 'Failed: '}</span>
         {label}
       </span>
       {value !== undefined && (
         <span className="ml-auto text-sm font-mono text-slate-400">{value ?? '-'}</span>
       )}
     </div>
-  )
+    )
+  }
 
   const r = result
   const MIN_FREE_GIB = 20
@@ -518,11 +529,27 @@ export function EnvDetectScreen() {
             <h2 className="font-medium mb-1 text-sm uppercase text-slate-400 tracking-wide">
               {r.nasFamily === 'synology' ? 'Shared folder ACL' : 'Data directory'}
             </h2>
-            <Check
-              ok={r.dataShareExists}
-              label={`${r.dataSharePath ?? 'Data directory'} exists`}
-              value={r.dataShareExists ? 'yes' : 'missing'}
-            />
+            {/* A missing data dir is only a hard failure on Synology, where
+                the canonical move is creating a *shared folder* in DSM (a
+                bare mkdir bypasses the ACL/share layer the install relies
+                on). On every other family there's no shared-folder concept
+                and setup-folders.sh just `mkdir -p`s the whole tree during
+                install — so "missing" there is informational, not a red ✗. */}
+            {(() => {
+              const willCreate = !r.dataShareExists && r.nasFamily !== 'synology' && !!r.dataSharePath
+              return (
+                <Check
+                  ok={r.dataShareExists}
+                  tone={r.dataShareExists ? 'ok' : willCreate ? 'info' : 'fail'}
+                  label={
+                    willCreate
+                      ? `${r.dataSharePath} (created during install)`
+                      : `${r.dataSharePath ?? 'Data directory'} exists`
+                  }
+                  value={r.dataShareExists ? 'yes' : willCreate ? 'will be created' : 'missing'}
+                />
+              )
+            })()}
             {!r.dataShareExists && r.nasFamily === 'synology' && (
               <p className="text-amber-300 text-xs ml-5 mt-1">
                 Create it in DSM → Control Panel → Shared Folder → Create.
@@ -530,9 +557,18 @@ export function EnvDetectScreen() {
               </p>
             )}
             {!r.dataShareExists && r.nasFamily !== 'synology' && r.dataSharePath && (
-              <p className="text-amber-300 text-xs ml-5 mt-1 font-mono">
-                sudo mkdir -p {r.dataSharePath} && sudo chown {r.username ?? '<user>'}:{r.groupname ?? '<group>'} {r.dataSharePath}
-              </p>
+              <div className="ml-5 mt-1 text-xs text-slate-400 space-y-1">
+                <p>
+                  No action needed — the install creates this and the full
+                  Media + Downloads tree, owned by{' '}
+                  <span className="font-mono">{r.username ?? 'your user'}:{r.groupname ?? 'group'}</span>.
+                  To create it yourself first (e.g. to reuse an existing media
+                  share), run:
+                </p>
+                <p className="font-mono text-slate-300">
+                  sudo mkdir -p {r.dataSharePath} && sudo chown {r.username ?? '<user>'}:{r.groupname ?? '<group>'} {r.dataSharePath}
+                </p>
+              </div>
             )}
             {!r.dataShareExists && !r.dataSharePath && (
               <p className="text-amber-300 text-xs ml-5 mt-1">
