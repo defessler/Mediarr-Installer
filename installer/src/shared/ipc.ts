@@ -87,6 +87,12 @@ export interface InternetCheck {
   dockerDaemonUp: boolean
 }
 
+/** NAS families the environment detector recognizes. Drives default
+ *  paths + PUID/PGID and gates family-specific UI and troubleshooting
+ *  help (Synology ACL/Task-Scheduler, UGREEN/Debian cron + systemd, …). */
+export type NasFamily =
+  | 'synology' | 'ugreen' | 'qnap' | 'unraid' | 'truenas' | 'omv' | 'linux'
+
 export interface EnvDetectResult {
   docker: 'v2' | 'v1-legacy' | 'missing'
   volume1: boolean
@@ -170,7 +176,7 @@ export interface EnvDetectResult {
   /** Detected NAS family. Drives sensible defaults for INSTALL_DIR
    *  and DATA_ROOT, and gates family-specific features (Synology ACL
    *  via synoacltool, QNAP qpkg paths, Unraid /mnt/user, etc.). */
-  nasFamily: 'synology' | 'qnap' | 'unraid' | 'truenas' | 'omv' | 'linux'
+  nasFamily: NasFamily
   /** Short OS version string the NAS self-reports (DSM build, Unraid
    *  version, kernel uname). Surfaced on Detect so the user can sanity-
    *  check what they're installing onto. */

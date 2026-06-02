@@ -88,7 +88,7 @@ function pickLanIp(args: {
 }
 
 export function EnvDetectScreen() {
-  const { sessionId, setStep, setConfig, setMode, config, connection, targetDir } = useWizard()
+  const { sessionId, setStep, setConfig, setMode, setNasFamily, config, connection, targetDir } = useWizard()
   const [status, setStatus] = useState<Status>('detecting')
   const [result, setResult] = useState<EnvDetectResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -105,6 +105,10 @@ export function EnvDetectScreen() {
         const r = await window.installer.env.detect(sessionId, targetDir)
         if (cancelled) return
         setResult(r)
+        // Publish the detected family to the store so family-gated UI
+        // outside this screen (the Help modal) can tailor its platform-
+        // specific instructions.
+        setNasFamily(r.nasFamily)
 
         // Auto-fill anything we detected that the user hasn't already typed.
         // PUID/PGID intentionally NOT auto-filled from the SSH user —
@@ -204,6 +208,19 @@ export function EnvDetectScreen() {
   const r = result
   const MIN_FREE_GIB = 20
   const lowDisk = !!r?.disk && r.disk.freeGiB < MIN_FREE_GIB
+  // SQLite corrupts on NETWORK filesystems (NFS/CIFS/SMB/fuse). Flag only
+  // those — an 'unknown' fstype (e.g. the install dir doesn't exist yet)
+  // or any local fs (ext4/btrfs/xfs/zfs/…) is fine and must NOT trip the
+  // "will corrupt" warning. Previously the check was an allow-list that
+  // treated 'unknown' as unsafe, which false-alarmed on healthy UGREEN
+  // boxes where /volume1/docker/media isn't created until install.
+  const installFsRisky = !!r?.installDirFs && /^(nfs|cifs|smb|fuse)/i.test(r.installDirFs)
+  // The "iptables kernel modules unloaded" probe (lsmod | grep ^ip_tables)
+  // is a Synology-DSM-specific failure mode — DSM point releases wipe the
+  // legacy ip_tables module. On nftables-based distros (UGOS/Debian) that
+  // module is legitimately absent (Docker uses the nft backend), so the
+  // warning is a false alarm everywhere except Synology.
+  const iptablesModulesWarn = r?.iptablesLoaded === false && r.nasFamily === 'synology'
   const allBlocking =
     !!r &&
     r.docker !== 'missing' &&
@@ -281,6 +298,7 @@ export function EnvDetectScreen() {
               <span className="font-medium">
                 {{
                   synology: 'Synology DSM',
+                  ugreen:   'UGREEN UGOS',
                   qnap:     'QNAP QTS / QuTS',
                   unraid:   'Unraid',
                   truenas:  'TrueNAS',
@@ -330,7 +348,7 @@ export function EnvDetectScreen() {
             <Check
               ok={r.volume1 || r.nasFamily !== 'synology'}
               label={r.nasFamily === 'synology' ? '/volume1 exists' : 'Storage root present'}
-              value={r.volume1 ? '/volume1 (Synology)'
+              value={r.volume1 ? '/volume1'
                 : r.dataCandidates[0] ? r.dataCandidates[0]
                 : 'no candidate found'}
             />
@@ -603,12 +621,23 @@ export function EnvDetectScreen() {
             </div>
             {r.sudoMode === 'password' && (
               <p className="text-amber-200/80 mt-2">
-                You logged in as a non-root user. The cleanest path is to
-                log in as <span className="font-mono mx-1">root</span>
-                instead — DSM 7 disables root SSH by default but you can
-                re-enable it via Control Panel → User & Group → root →
-                Edit → set a password. (A sudo-password prompt path is
-                on the roadmap but not shipping today.)
+                You logged in as a non-root user, so the privileged install
+                steps run under <span className="font-mono mx-1">sudo</span>.
+                Make sure you filled in the{' '}
+                <span className="font-mono mx-1">Sudo password</span> field on
+                the Connect screen — the wizard pipes it to{' '}
+                <span className="font-mono">sudo -S</span> for each step.
+                {r.nasFamily === 'synology' && (
+                  <> Alternatively, log in as{' '}
+                  <span className="font-mono mx-1">root</span> — DSM 7 disables
+                  root SSH by default, but you can re-enable it via Control
+                  Panel → User &amp; Group → root → Edit → set a password.</>
+                )}
+                {r.nasFamily === 'ugreen' && (
+                  <> On UGOS this is expected — the admin user uses password
+                  sudo and root SSH is off by default, so just keep the Sudo
+                  password field filled.</>
+                )}
               </p>
             )}
           </section>
@@ -619,8 +648,7 @@ export function EnvDetectScreen() {
               needed for VPN; iptables modules are normally loaded;
               non-local filesystem is rare. Warn-not-block so users can
               proceed with their eyes open. */}
-          {(r.tunDevice === false || r.iptablesLoaded === false ||
-            (r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs))) && (
+          {(r.tunDevice === false || iptablesModulesWarn || installFsRisky) && (
             <section className="rounded-md border border-amber-900/50 bg-amber-950/30 p-4 text-sm">
               <h2 className="font-medium text-amber-200 mb-2 inline-flex items-center gap-2">
                 <AlertTriangle size={16} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
@@ -633,19 +661,26 @@ export function EnvDetectScreen() {
                     <span className="font-mono">/dev/net/tun</span> not present
                   </div>
                   <p className="text-amber-200/80 mt-1 ml-5">
-                    Gluetun&apos;s WireGuard tunnel needs this device. On DSM 7 the tun
-                    module isn&apos;t loaded by default — Gluetun starts but the tunnel
-                    silently never connects, cascading into qBittorrent never
-                    starting. Fix once:
+                    Gluetun&apos;s WireGuard tunnel needs this device. If the tun
+                    module isn&apos;t loaded, Gluetun starts but the tunnel silently
+                    never connects, cascading into qBittorrent never starting.
+                    Only matters if you enable the VPN. Fix once:
                   </p>
-                  <pre className="ml-5 mt-1 text-xs bg-black/40 rounded p-2 font-mono">
+                  {r.nasFamily === 'synology' ? (
+                    <pre className="ml-5 mt-1 text-xs bg-black/40 rounded p-2 font-mono">
 sudo insmod /lib/modules/tun.ko
 {'\n'}# then in DSM: Control Panel → Task Scheduler → Create
 # Triggered Task → "Boot-up" → User-defined script:
 {'\n'}#   insmod /lib/modules/tun.ko</pre>
+                  ) : (
+                    <pre className="ml-5 mt-1 text-xs bg-black/40 rounded p-2 font-mono">
+sudo modprobe tun
+{'\n'}# make it load on every boot:
+{'\n'}echo tun | sudo tee /etc/modules-load.d/tun.conf</pre>
+                  )}
                 </div>
               )}
-              {r.iptablesLoaded === false && (
+              {iptablesModulesWarn && (
                 <div className="mb-2">
                   <div className="text-amber-200 inline-flex items-center gap-2">
                     <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
@@ -662,7 +697,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
 {'\n'}# then reboot the NAS</pre>
                 </div>
               )}
-              {r.installDirFs && !['ext2/ext3', 'ext4', 'btrfs', 'xfs', 'tmpfs'].includes(r.installDirFs) && (
+              {installFsRisky && (
                 <div className="mb-2">
                   <div className="text-rose-200 inline-flex items-center gap-2">
                     <XCircle size={16} className="text-rose-400 shrink-0" strokeWidth={2} aria-hidden="true" />
@@ -672,7 +707,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
                     The arrs (Sonarr/Radarr/etc) use SQLite for their config DBs.
                     SQLite corrupts catastrophically on network filesystems (NFS, CIFS, fuse mounts).
                     Move <code className="font-mono">INSTALL_DIR</code> to local storage like
-                    <code className="font-mono"> /volume1/docker/media</code>.
+                    <code className="font-mono"> {r.suggestedInstallDir}</code>.
                   </p>
                 </div>
               )}

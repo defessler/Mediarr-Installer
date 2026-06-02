@@ -50,7 +50,7 @@ done
 # Python scripts + migration tools. Migration tools live at INSTALL_DIR/
 # migration/ regardless of layout (legacy or new) — they're separate
 # from the scripts/ subfolder.
-for script in indexers/setup-indexers.py indexers/setup-bazarr-providers.py setup-arr-config.py recyclarr-trigger.py; do
+for script in indexers/setup-indexers.py indexers/setup-bazarr-providers.py setup-arr-config.py recyclarr-trigger.py auto-manual-import.py; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
         echo "  ✔ $script"

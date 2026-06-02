@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { ConnectionConfig, MigrateState } from '../../shared/ipc.js'
+import type { ConnectionConfig, MigrateState, NasFamily } from '../../shared/ipc.js'
 import type { EnvFormValues } from '../../shared/env-render.js'
 
 export type WizardStep =
@@ -66,6 +66,13 @@ interface WizardState {
   /** Where on the NAS we install */
   targetDir: string
   setTargetDir: (d: string) => void
+
+  /** NAS family from the most recent environment detect. Transient (not
+   *  persisted) — re-detected each session. Lets family-gated UI outside
+   *  the Detect screen (e.g. the Help modal) tailor platform-specific
+   *  instructions (Synology Task Scheduler vs UGREEN/Linux cron + systemd). */
+  nasFamily: NasFamily | null
+  setNasFamily: (f: NasFamily | null) => void
 
   /** MigrateScreen form state — source arr/qBit URLs + creds the user
    *  pasted. Persisted via the active profile (encrypted blob), NOT
@@ -188,6 +195,9 @@ export const useWizard = create<WizardState>()(
       targetDir: DEFAULT_TARGET,
       setTargetDir: (targetDir) => set({ targetDir }),
 
+      nasFamily: null,
+      setNasFamily: (nasFamily) => set({ nasFamily }),
+
       migrate: {},
       setMigrate: (m) => set((s) => ({ migrate: { ...s.migrate, ...m } })),
 
@@ -237,6 +247,7 @@ export const useWizard = create<WizardState>()(
           config: { ...defaultConfig, ...incomingConfig, PLEX_CLAIM: undefined },
           plexClaimSetAt: null,
           targetDir: p.targetDir || DEFAULT_TARGET,
+          nasFamily: null,    // re-detected when this profile's NAS is scanned
           migrate: p.migrate ?? {},
           sessionId: null,    // any prior session is dead now
         })
@@ -253,6 +264,7 @@ export const useWizard = create<WizardState>()(
           config: defaultConfig,
           plexClaimSetAt: null,
           targetDir: DEFAULT_TARGET,
+          nasFamily: null,
           migrate: {},
         }),
     }),

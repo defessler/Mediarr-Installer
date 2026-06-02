@@ -61,6 +61,8 @@ export function App() {
   // a specific screen.
   const [helpOpen, setHelpOpen] = useState(false)
   const targetDir = useWizard((s) => s.targetDir)
+  const nasFamily = useWizard((s) => s.nasFamily)
+  const wizardConfig = useWizard((s) => s.config)
 
   // Manual "Check for updates" button state. The automatic check fires
   // on app launch (main/index.ts), but a manual recheck is useful when
@@ -641,6 +643,10 @@ export function App() {
         {helpOpen && (
           <TroubleshootingModal
             installDir={targetDir}
+            nasFamily={nasFamily}
+            dataRoot={wizardConfig.DATA_ROOT}
+            puid={wizardConfig.PUID}
+            pgid={wizardConfig.PGID}
             onClose={() => setHelpOpen(false)}
           />
         )}

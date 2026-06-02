@@ -69,20 +69,26 @@ export async function detectEnv(
   // single bash invocation that prints labelled sections, parsed below.
   const tq = shellQuote(targetDir)
   const batch = [
-    // SSH non-interactive shells often have a narrow PATH (just
-    // /usr/bin:/bin:/usr/sbin:/sbin), which on most NAS distros
-    // doesn't include where Docker actually installs its binaries.
-    // Augment with paths used by every NAS family we support so
-    // `docker`, `docker compose`, and `docker-compose` are findable
-    // here AND when setup.sh runs later.
+    // SSH non-interactive shells often have a narrow PATH, which on most
+    // NAS distros doesn't include where Docker (or system tools) actually
+    // live. Augment with paths used by every NAS family we support so
+    // `docker`, `docker compose`, `docker-compose`, AND `iptables` are
+    // findable here AND when setup.sh runs later.
     //
+    //   /usr/sbin /sbin: Debian-based UGOS (UGREEN) and most Linux distros
+    //                 keep `iptables` (and other admin tools) in sbin, and
+    //                 a NON-root non-interactive SSH shell on Debian gets
+    //                 PATH=/usr/bin:/bin only — so `iptables --version`
+    //                 false-reports "missing" without these. (This is the
+    //                 #1 reason the REQUIRED iptables check failed on
+    //                 UGREEN DXP-series boxes.)
     //   Synology DSM: /var/packages/ContainerManager/target/usr/bin
     //                 /var/packages/Docker/target/usr/bin (legacy)
     //   QNAP QTS:     /share/CACHEDEV1_DATA/.qpkg/container-station/bin
     //                 /share/.qpkg/container-station/bin (some setups)
     //   Unraid:       /usr/local/sbin / /usr/local/bin (already covered)
     //   TrueNAS / Linux: /usr/local/bin / /usr/bin (already covered)
-    'export PATH="/usr/local/bin:/usr/local/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/share/.qpkg/container-station/bin:$PATH"',
+    'export PATH="/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/share/.qpkg/container-station/bin:$PATH"',
     'set +e',
     // NAS family fingerprint. Multiple signals matter — some Synology
     // boxes have /volume1 mirrored on Unraid hosts when users symlink
@@ -95,6 +101,21 @@ export async function detectEnv(
     'echo "===nas_unraid==="; [ -f /etc/unraid-version ] && echo y',
     'echo "===nas_truenas==="; ( grep -qiE "truenas|freenas" /etc/version 2>/dev/null || [ -f /etc/truenas_version ] ) && echo y',
     'echo "===nas_omv==="; ( [ -f /etc/openmediavault/config.xml ] || dpkg -l openmediavault 2>/dev/null | grep -q "^ii" ) && echo y',
+    // UGREEN UGOS Pro (Debian 12). No single canonical marker file like
+    // Synology's synoinfo.conf is documented, so we look at DMI vendor
+    // strings (readable by non-root via /sys/class/dmi/id), os-release,
+    // and any ugreen/ugos file under /etc. The TS classifier below ALSO
+    // applies a heuristic (Debian + /volume1 + not-Synology) so units
+    // whose DMI strings don't carry a recognizable marker still resolve
+    // to 'ugreen' instead of falling through to generic Linux (which
+    // would hand them /opt + /srv defaults that don't match UGOS's
+    // /volume1 storage layout).
+    'echo "===nas_ugreen==="; ' +
+      'if grep -qiE "ugreen|ugos" /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name /sys/class/dmi/id/board_vendor 2>/dev/null ' +
+      '   || grep -qiE "ugreen|ugos" /etc/os-release 2>/dev/null ' +
+      '   || ls /etc 2>/dev/null | grep -qiE "ugreen|ugos"; then echo y; fi',
+    // Debian-base marker — feeds the UGREEN heuristic above.
+    'echo "===is_debian==="; [ -f /etc/debian_version ] && echo y || true',
     // OS version string the NAS reports (helps surface DSM7.2 vs 7.1, etc.)
     'echo "===os_version==="; ' +
       '( [ -f /etc.defaults/VERSION ] && grep -E "^productversion|^buildnumber" /etc.defaults/VERSION ) || ' +
@@ -197,7 +218,17 @@ export async function detectEnv(
     // SQLite for their config DB, which corrupts catastrophically on
     // network filesystems. Surface the FS type so the wizard can
     // hard-reject before install starts.
-    'echo "===install_dir_fs==="; stat -f -c "%T" ' + tq + ' 2>/dev/null || echo unknown',
+    // The INSTALL_DIR usually doesn't exist yet at detect time (the wizard
+    // creates it during install), so stat'ing it directly returns nothing
+    // → "unknown", which used to trip the scary "filesystem unknown —
+    // SQLite will corrupt" warning on a perfectly healthy box (observed on
+    // UGREEN where the default /volume1/docker/media isn't created yet).
+    // Walk up to the nearest EXISTING ancestor and report ITS fstype — the
+    // dir we create will inherit that filesystem.
+    'echo "===install_dir_fs==="; ' +
+      'p=' + tq + '; ' +
+      'while [ -n "$p" ] && [ "$p" != "/" ] && [ ! -e "$p" ]; do p=$(dirname "$p"); done; ' +
+      'stat -f -c "%T" "$p" 2>/dev/null || echo unknown',
     // Data-directory probes — the source of the long-running "Sonarr
     // says root folder doesn\'t exist" trap on Synology, but a generic
     // "does the data tree exist + is it writable as my user" check on
@@ -223,7 +254,7 @@ export async function detectEnv(
     // back to the family-appropriate fix instructions (DSM Control Panel
     // vs `mkdir -p && chown` vs Unraid Settings → Shares).
     'echo "===data_share_path==="; ' +
-      'if [ -f /etc/synoinfo.conf ] && [ -d /volume1 ]; then ' +
+      'if [ -d /volume1 ]; then ' +
       '  echo /volume1/Data; ' +
       'elif [ -d /mnt/user ]; then ' +
       '  echo /mnt/user/data; ' +
@@ -239,7 +270,7 @@ export async function detectEnv(
       'fi',
     'echo "===data_share_exists==="; ' +
       'p=$( ' +
-      '  if [ -f /etc/synoinfo.conf ] && [ -d /volume1 ]; then echo /volume1/Data; ' +
+      '  if [ -d /volume1 ]; then echo /volume1/Data; ' +
       '  elif [ -d /mnt/user ]; then echo /mnt/user/data; ' +
       '  elif [ -d /share/CACHEDEV1_DATA ]; then echo /share/Data; ' +
       '  elif [ -d /mnt ]; then for d in /mnt/*; do [ -d "$d" ] || continue; name=$(basename "$d"); case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; echo "$d/data"; break; done; ' +
@@ -247,7 +278,7 @@ export async function detectEnv(
       '[ -n "$p" ] && [ -d "$p" ] && echo y || echo n',
     'echo "===data_share_writable==="; ' +
       'p=$( ' +
-      '  if [ -f /etc/synoinfo.conf ] && [ -d /volume1 ]; then echo /volume1/Data; ' +
+      '  if [ -d /volume1 ]; then echo /volume1/Data; ' +
       '  elif [ -d /mnt/user ]; then echo /mnt/user/data; ' +
       '  elif [ -d /share/CACHEDEV1_DATA ]; then echo /share/Data; ' +
       '  elif [ -d /mnt ]; then for d in /mnt/*; do [ -d "$d" ] || continue; name=$(basename "$d"); case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; echo "$d/data"; break; done; ' +
@@ -385,11 +416,20 @@ export async function detectEnv(
   // Used to pick sensible defaults for INSTALL_DIR / DATA_ROOT and
   // gate Synology-only features like the `synoacltool` ACL grant.
   let nasFamily: EnvDetectResult['nasFamily']
+  // Synology shares the /volume1 layout with UGREEN, so it must be checked
+  // first via its definitive /etc/synoinfo.conf marker. UGREEN UGOS is a
+  // Debian box with /volume1 but no synoinfo — match its explicit DMI/
+  // os-release marker, then fall back to the heuristic "Debian + /volume1
+  // + not Synology" for units whose DMI strings don't say "UGREEN".
+  const hasVolume1 = volume1Out.startsWith('ok')
+  const isDebian = section(o, 'is_debian') === 'y'
   if (section(o, 'nas_synology') === 'y')      nasFamily = 'synology'
+  else if (section(o, 'nas_ugreen')  === 'y')  nasFamily = 'ugreen'
   else if (section(o, 'nas_qnap')    === 'y')  nasFamily = 'qnap'
   else if (section(o, 'nas_unraid')  === 'y')  nasFamily = 'unraid'
   else if (section(o, 'nas_truenas') === 'y')  nasFamily = 'truenas'
   else if (section(o, 'nas_omv')     === 'y')  nasFamily = 'omv'
+  else if (isDebian && hasVolume1)             nasFamily = 'ugreen'
   else                                          nasFamily = 'linux'
 
   // The candidate data-share roots that actually exist on this host,
@@ -535,6 +575,8 @@ function pickFamilyIdDefaults(
 ): { puid: string; pgid: string } {
   switch (family) {
     case 'synology': return { puid: '1026', pgid: '100' }
+    // UGOS first admin user is uid 1000, primary group `admin` = gid 10.
+    case 'ugreen':   return { puid: '1000', pgid: '10'  }
     case 'unraid':   return { puid: '99',   pgid: '100' }
     case 'truenas':  return { puid: '568',  pgid: '568' }
     case 'qnap':     return { puid: '1000', pgid: '100' }
@@ -563,6 +605,18 @@ function pickFamilyDefaults(
       // canonical home for compose stacks. /volume1 is overwhelmingly
       // the default; the ~3% of users on /volume2 just edit the
       // Configure-screen field to point at the right volume.
+      return {
+        installDir: '/volume1/docker/media',
+        dataRoot:   '/volume1/Data',
+      }
+    case 'ugreen':
+      // UGOS Pro mounts its storage pool at /volume1 (a real btrfs mount,
+      // same convention as DSM — minus Synology's shared-folder ACL
+      // layer). Installing the UGOS Docker app auto-creates the `docker`
+      // shared folder at /volume1/docker, so the compose tree fits under
+      // /volume1/docker/media and user media under /volume1/Data, exactly
+      // like Synology. (Falling through to the generic-Linux /opt + /srv
+      // defaults would point at paths that aren't on the storage pool.)
       return {
         installDir: '/volume1/docker/media',
         dataRoot:   '/volume1/Data',

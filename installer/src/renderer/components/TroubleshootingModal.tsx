@@ -19,6 +19,17 @@ import {
   HelpCircle, Search, X, Clipboard, ClipboardCheck, ExternalLink, SearchX,
 } from 'lucide-react'
 import { BigButton } from './BigButton.js'
+import type { NasFamily } from '../../shared/ipc.js'
+
+/** Substitution context handed to family-aware command builders + the
+ *  placeholder replacer. Sourced from the wizard's detect result + .env. */
+interface TCtx {
+  installDir: string
+  dataRoot: string
+  nasFamily: NasFamily
+  puid: string
+  pgid: string
+}
 
 interface TItem {
   /** Top-level grouping shown as a section header in the modal. */
@@ -29,10 +40,60 @@ interface TItem {
   cause: string
   /** Plain-English fix; can be empty if the command is self-explanatory. */
   fix?: string
-  /** Optional shell command(s) the user can copy. Multi-line ok.
-   *  Use `<INSTALL_DIR>` as a literal placeholder — render renders it
-   *  as a styled chip so the user knows to substitute their path. */
-  command?: string
+  /** Optional shell command(s) the user can copy. Multi-line ok. Either a
+   *  static string (with `<INSTALL_DIR>` / `<DATA_ROOT>` / `<PUID>` /
+   *  `<PGID>` placeholders, substituted at render time) OR a function of
+   *  the detect context — used when the steps themselves differ by NAS
+   *  family (e.g. Synology Task Scheduler vs UGREEN/Linux cron). */
+  command?: string | ((c: TCtx) => string)
+  /** If set, this entry is only shown when the detected family is in the
+   *  list. Omit for entries that apply to every NAS. When the family is
+   *  not yet known (Help opened before Detect), gated entries still show
+   *  so nothing is hidden prematurely. */
+  family?: NasFamily[]
+}
+
+/** Family-appropriate "how to schedule a script on a cadence" snippet.
+ *  Synology/QNAP/Unraid/TrueNAS have GUI schedulers; UGREEN UGOS (and
+ *  generic Linux / OMV) have no task-scheduler UI, so we hand them cron. */
+function scheduleHint(family: NasFamily, cadence: 'weekly' | 'monthly', cmd: string): string {
+  switch (family) {
+    case 'synology':
+      return `# Schedule ${cadence} via Synology Task Scheduler:\n`
+        + `#   Control Panel → Task Scheduler → Create → Scheduled Task →\n`
+        + `#   User-defined script → run as root, schedule = ${cadence}:\n`
+        + `#     ${cmd}`
+    case 'qnap':
+      return `# Schedule ${cadence} via QTS (Control Panel → ...) or root crontab:\n#     ${cmd}`
+    case 'unraid':
+      return `# Schedule ${cadence} via the Unraid "User Scripts" plugin (or root crontab):\n#     ${cmd}`
+    case 'truenas':
+      return `# Schedule ${cadence} via TrueNAS → System Settings → Advanced → Cron Jobs:\n#     ${cmd}`
+    default: {
+      // ugreen / omv / linux — plain cron (UGOS has no task-scheduler UI).
+      const cron = cadence === 'weekly' ? '0 4 * * 0' : '0 4 1 * *'
+      return `# Schedule ${cadence} with cron (run: sudo crontab -e), e.g.:\n#     ${cron} ${cmd}`
+    }
+  }
+}
+
+/** Family-appropriate "run this at every boot" snippet. */
+function bootHint(family: NasFamily, cmd: string): string {
+  switch (family) {
+    case 'synology':
+      return `# Synology DSM:\n`
+        + `#   Control Panel → Task Scheduler → Create → Triggered Task →\n`
+        + `#   User-defined script (run as root), Event: Boot-up:\n#     ${cmd}`
+    case 'qnap':
+      return `# QNAP: add to autorun.sh (enable in Control Panel → Hardware):\n#     ${cmd}`
+    case 'unraid':
+      return `# Unraid: User Scripts plugin → schedule "At First Array Start Only":\n#     ${cmd}`
+    case 'truenas':
+      return `# TrueNAS: System Settings → Advanced → Init/Shutdown Scripts →\n#   Type=Command, When=POSTINIT:\n#     ${cmd}`
+    default:
+      // ugreen / omv / linux — root crontab @reboot (let Docker settle first).
+      return `# Linux / UGOS — run at boot via root crontab (sudo crontab -e):\n#     @reboot sleep 30 && ${cmd}`
+  }
 }
 
 // Order chosen so the most common / most painful issues come first.
@@ -63,6 +124,7 @@ const ITEMS: TItem[] = [
   {
     category: 'Install failed or timed out',
     symptom: '"Path does not exist" on Sonarr/Radarr root folders',
+    family: ['synology'],
     cause:
       'On Synology DSM, shared folders have a separate ACL layer on top of POSIX permissions. The containers run as PUID 1026 and can\'t see writeability through the shared-folder ACL even though POSIX says yes.',
     fix:
@@ -70,7 +132,20 @@ const ITEMS: TItem[] = [
   },
   {
     category: 'Install failed or timed out',
+    symptom: '"Path does not exist" on Sonarr/Radarr root folders',
+    family: ['ugreen', 'qnap', 'unraid', 'truenas', 'omv', 'linux'],
+    cause:
+      'The arr containers run as PUID:PGID and can\'t write to your data tree — usually the directory is owned by root (or a different user) with no group-write bit, so the arr\'s writability probe fails and Sonarr reports it as ENOENT ("does not exist") even though the path is right there. (Unlike Synology, there\'s no shared-folder ACL layer here — it\'s plain POSIX.)',
+    fix:
+      'Give the container user ownership + write on your data root, then re-run setup.sh. Substitute your actual PUID:PGID (shown on the Detect screen) and data path:',
+    command:
+      `sudo chown -R <PUID>:<PGID> <DATA_ROOT> && sudo chmod -R 775 <DATA_ROOT>
+sudo bash <INSTALL_DIR>/setup.sh`,
+  },
+  {
+    category: 'Install failed or timed out',
     symptom: 'Sonarr port 49152 already in use',
+    family: ['synology'],
     cause:
       'Synology\'s Media Server package binds 49152 for DLNA/UPnP. The wizard\'s arr ports overlap the IANA dynamic range, which DLNA also uses.',
     fix:
@@ -96,7 +171,7 @@ cd <INSTALL_DIR>
 docker compose stop qbittorrent
 mv qbittorrent/config qbittorrent/config.broken-$(date +%Y%m%d-%H%M%S)
 mkdir -p qbittorrent/config
-chown 1026:100 qbittorrent/config
+sudo chown <PUID>:<PGID> qbittorrent/config
 bash setup.sh`,
   },
   {
@@ -142,19 +217,12 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
     cause:
       'On NAS reboot, Docker auto-restarts containers in arbitrary order. qBit (network_mode: container:gluetun) often tries to start BEFORE gluetun\'s namespace exists, fails with "must join at least one network," then enters Docker\'s exponential restart backoff (100ms → 200ms → 400ms → ... → minutes between retries). Even after gluetun is up, qBit can stay stuck for 10+ min before its backoff timer elapses. `depends_on` in compose doesn\'t help here because the docker daemon\'s restart-policy path doesn\'t honor compose semantics — only `docker compose up` does.',
     fix:
-      'Wire boot-orchestrator.sh as a Synology Task Scheduler triggered task. It waits for the Docker daemon, then runs `docker compose up -d` with the right profile flags — compose respects depends_on, so gluetun starts first and qBit comes up cleanly. Set this once; future reboots are hands-off.',
-    command:
-      `# Synology DSM:
-#   Control Panel → Task Scheduler → Create → Triggered Task →
-#     User-defined script (run as root)
-#   Task name:  Mediarr stack — boot orchestrator
-#   Event:      Boot-up
-#   Run command:
-#     bash <INSTALL_DIR>/boot-orchestrator.sh
-
-# Verify it works without rebooting:
-sudo bash <INSTALL_DIR>/boot-orchestrator.sh
-tail -20 <INSTALL_DIR>/boot-orchestrator.log`,
+      'Wire boot-orchestrator.sh to run at every boot (the steps below are tailored to your detected NAS). It waits for the Docker daemon, then runs `docker compose up -d` with the right profile flags — compose respects depends_on, so gluetun starts first and qBit comes up cleanly. Set this once; future reboots are hands-off.',
+    command: (c) =>
+      `${bootHint(c.nasFamily, `bash ${c.installDir}/boot-orchestrator.sh`)}\n\n`
+      + `# Verify it works without rebooting:\n`
+      + `sudo bash ${c.installDir}/boot-orchestrator.sh\n`
+      + `tail -20 ${c.installDir}/boot-orchestrator.log`,
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
@@ -235,6 +303,18 @@ sudo bash setup.sh`,
     fix:
       'Run the bundled fix-imports.sh helper. It (1) fires DownloadedEpisodesScan / DownloadedMoviesScan / DownloadedAlbumsScan against all six known completed-download paths (torrent + usenet roots for each arr), (2) waits 30s for the arrs to process, (3) dumps any items still stuck along with their exact statusMessages, (4) reports library + backlog file counts so you can see whether imports actually landed. This same script auto-runs as Step 11 of every install now, so the symptom shouldn\'t recur on fresh installs.',
     command: `bash <INSTALL_DIR>/fix-imports.sh`,
+  },
+  {
+    category: 'Sonarr / Radarr / Lidarr / Prowlarr',
+    symptom: '"Manual Import Required" / "Found matching movie via grab history"',
+    cause:
+      'A second class of stuck imports — distinct from the "never scanned" backlog above. Here the arr DID see the downloaded file AND DID identify which media it\'s for (via grab history — the arr remembers what it asked the indexer to grab and the matched movie/series/album ID), but it refuses to auto-commit the import because the parsed release title doesn\'t cleanly match the matched media\'s title. Classic Radarr log line: "Found matching movie via grab history, but release was matched to movie by ID. Manual import required." Common triggers: scene releases with cryptic group names (e.g. just a hash + ext), anime with non-standard romanization, foreign-language packs, or generic filenames inside the torrent. The file IS downloaded and the arr DOES know what it is — it just won\'t commit without explicit confirmation. fix-imports.sh above won\'t help here because re-scanning hits the same parse mismatch and bounces back to "import blocked".',
+    fix:
+      'Run the bundled auto-manual-import.py helper. It walks each arr\'s queue for trackedDownloadState=importBlocked items, fetches the arr\'s own /manualimport candidates (which carry the matched media pre-populated from grab history), and submits the WebUI\'s ManualImport command for the conservative subset — only when matched media + quality are populated AND no codec/quality/language/custom-format rejection is in the way. Anything ambiguous (multiple candidate movies, hard quality rejection, missing episode IDs) is logged with the reason and left for manual review in the WebUI. importMode=Auto means torrents are copied (qBit keeps seeding the original) and usenet downloads are moved — same logic the WebUI dialog applies when you don\'t override the dropdown. Idempotent — safe to re-run on a schedule. Auto-runs as Step 12 of every wizard install; a weekly scheduled entry (cron, or your NAS\'s task scheduler) catches the steady-state drip.',
+    command: (c) =>
+      `# One-shot drain:\n`
+      + `python3 ${c.installDir}/auto-manual-import.py\n\n`
+      + scheduleHint(c.nasFamily, 'weekly', `python3 ${c.installDir}/auto-manual-import.py`),
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
@@ -558,20 +638,14 @@ Radarr → Movies tab → ✎ Edit (or "X selected" toolbar)
     cause:
       'The wizard only runs `recyclarr sync` once at install time. TRaSH publishes Custom Format updates roughly weekly; to pick them up you need to re-run the sync.',
     fix:
-      'Three options, in order of friendliness: (1) click the Recyclarr tile on the Homepage dashboard — opens a one-page UI with a "Sync Now" button. (2) Use the bundled recyclarr-sync.sh helper from SSH (writes a .last-sync stamp + appends sync.log). (3) Schedule (2) weekly via Synology Task Scheduler so you don\'t have to remember.',
-    command:
-      `# Option 1 — browser button (easiest):
-#   Open http://<NAS>:8889 (or click the Recyclarr tile on Homepage)
-#   → "Sync Now" → done
-
-# Option 2 — SSH one-liner with logging:
-bash <INSTALL_DIR>/recyclarr-sync.sh
-
-# Option 3 — schedule weekly (Synology):
-#   Control Panel → Task Scheduler → Create → Scheduled Task →
-#   User-defined script  (run as root)
-#   Run command:  bash <INSTALL_DIR>/recyclarr-sync.sh
-#   Schedule: Weekly, Sunday 04:00`,
+      'Three options, in order of friendliness: (1) click the Recyclarr tile on the Homepage dashboard — opens a one-page UI with a "Sync Now" button. (2) Use the bundled recyclarr-sync.sh helper from SSH (writes a .last-sync stamp + appends sync.log). (3) Schedule (2) weekly (cron, or your NAS\'s task scheduler) so you don\'t have to remember.',
+    command: (c) =>
+      `# Option 1 — browser button (easiest):\n`
+      + `#   Open http://<NAS>:8889 (or click the Recyclarr tile on Homepage)\n`
+      + `#   → "Sync Now" → done\n\n`
+      + `# Option 2 — SSH one-liner with logging:\n`
+      + `bash ${c.installDir}/recyclarr-sync.sh\n\n`
+      + `# Option 3 — ${scheduleHint(c.nasFamily, 'weekly', `bash ${c.installDir}/recyclarr-sync.sh`).replace(/^# /, '')}`,
   },
   {
     category: 'Recyclarr',
@@ -629,12 +703,30 @@ const CATEGORIES = [
 
 interface Props {
   installDir: string
+  /** Detected NAS family (null until Detect has run) — gates platform-
+   *  specific entries and tailors scheduling/boot instructions. */
+  nasFamily?: NasFamily | null
+  /** User's DATA_ROOT / PUID / PGID from .env, for command substitution. */
+  dataRoot?: string
+  puid?: string
+  pgid?: string
   onClose: () => void
 }
 
-export function TroubleshootingModal({ installDir, onClose }: Props) {
+export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pgid, onClose }: Props) {
   const [query, setQuery] = useState('')
   const reduced = useReducedMotion()
+
+  // Substitution context for command builders + placeholder replacement.
+  // Fall back to the historical Synology defaults when a field hasn't been
+  // populated yet (Help opened before Configure), so snippets stay valid.
+  const ctx: TCtx = {
+    installDir: installDir || '/volume1/docker/media',
+    dataRoot: dataRoot || '/volume1/Data',
+    nasFamily: nasFamily ?? 'synology',
+    puid: puid || '1026',
+    pgid: pgid || '100',
+  }
 
   // ESC closes — standard modal hygiene matching IssuesModal.
   useEffect(() => {
@@ -645,21 +737,27 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // Filter items by query — checks symptom + cause + fix + category so
-  // a user looking for "tautulli" finds everything tagged it, but also
-  // a user searching for the exact error text "must join at least one"
-  // finds the qBit/gluetun entry.
+  // Filter items by family first (hide platform-specific entries that
+  // don't apply to the detected NAS — but show everything while the
+  // family is still unknown), then by query — symptom + cause + fix +
+  // category so a user looking for "tautulli" finds everything tagged it,
+  // and a search for "must join at least one" finds the qBit/gluetun entry.
+  // command is searched only when it's a static string (family-aware
+  // command builders are functions — their text varies by platform).
   const filtered = useMemo(() => {
+    const familyOk = (i: TItem) =>
+      !i.family || nasFamily == null || i.family.includes(nasFamily)
+    const base = ITEMS.filter(familyOk)
     const q = query.trim().toLowerCase()
-    if (!q) return ITEMS
-    return ITEMS.filter((i) =>
+    if (!q) return base
+    return base.filter((i) =>
       i.symptom.toLowerCase().includes(q) ||
       i.cause.toLowerCase().includes(q) ||
       (i.fix ?? '').toLowerCase().includes(q) ||
       i.category.toLowerCase().includes(q) ||
-      (i.command ?? '').toLowerCase().includes(q),
+      (typeof i.command === 'string' ? i.command.toLowerCase() : '').includes(q),
     )
-  }, [query])
+  }, [query, nasFamily])
 
   // Group filtered items by category, preserving the CATEGORIES order
   // (which is human-curated for ergonomic browsing — most-common first).
@@ -776,7 +874,7 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
                 </h3>
                 <div className="space-y-3">
                   {g.items.map((item, i) => (
-                    <Entry key={`${g.category}-${i}`} item={item} installDir={installDir} />
+                    <Entry key={`${g.category}-${i}`} item={item} ctx={ctx} />
                   ))}
                 </div>
               </section>
@@ -797,13 +895,19 @@ export function TroubleshootingModal({ installDir, onClose }: Props) {
   )
 }
 
-function Entry({ item, installDir }: { item: TItem; installDir: string }) {
+function Entry({ item, ctx }: { item: TItem; ctx: TCtx }) {
   const [copied, setCopied] = useState(false)
-  // Substitute the user's actual install dir into command snippets.
-  // Falls back to a clearly-fake path when the wizard hasn't been
-  // configured yet, so the user sees they need to substitute.
-  const dir = installDir || '/volume1/docker/media'
-  const cmd = item.command?.replace(/<INSTALL_DIR>/g, dir)
+  // Resolve the command: family-aware builders are functions of the
+  // detect context; static strings get their placeholders substituted
+  // (<INSTALL_DIR> / <DATA_ROOT> / <PUID> / <PGID>). Function builders
+  // already bake ctx values in, so the same substitution pass over their
+  // output is a harmless no-op.
+  const raw = typeof item.command === 'function' ? item.command(ctx) : item.command
+  const cmd = raw
+    ?.replace(/<INSTALL_DIR>/g, ctx.installDir)
+    .replace(/<DATA_ROOT>/g, ctx.dataRoot)
+    .replace(/<PUID>/g, ctx.puid)
+    .replace(/<PGID>/g, ctx.pgid)
 
   async function copyCmd() {
     if (!cmd) return

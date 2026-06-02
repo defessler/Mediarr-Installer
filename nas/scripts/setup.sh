@@ -681,6 +681,31 @@ echo "        (catches any backlog from previous runs or pre-existing files)"
 run_step 11 "Import any download backlog" \
     bash -c "bash '$SCRIPT_DIR/fix-imports.sh' || true"
 
+# Step 12: drain "Manual import required" queue items.
+#
+# Step 11 above tells the arrs to RE-SCAN — that fixes downloads where
+# the arr never noticed the file at all. But some downloads land in a
+# different stuck state: the arr DID see the file, DID identify the
+# target media via grab history, but refused to auto-import because the
+# parsed release title doesn't cleanly match the matched media's title.
+# Classic Radarr log: "Found matching movie via grab history, but
+# release was matched to movie by ID. Manual import required."
+#
+# auto-manual-import.py walks each arr's queue for those, fetches the
+# arr's own manualimport candidates (which carry the matched media
+# pre-populated from the grab history), and submits ManualImport for
+# the conservative subset — only when matched media + quality are
+# populated AND no codec/quality/language rejection blocks the import.
+# Ambiguous items are left alone so the operator can resolve in the
+# WebUI. Wrapped with `|| true` so a transient API hiccup here doesn't
+# fail the whole install; the script is safe to re-run any time.
+echo ""
+echo "  Note: auto-resolving 'Manual Import Required' queue items"
+echo "        (Sonarr/Radarr/Lidarr items where grab history identified"
+echo "        the target media but the parser couldn't auto-confirm)"
+run_step 12 "Auto-confirm manual imports" \
+    bash -c "python3 '$SCRIPT_DIR/auto-manual-import.py' || true"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 LAN_IP=$(grep -m1 '^LAN_IP=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
@@ -786,6 +811,17 @@ echo "  If Sonarr / Radarr / Seerr feel slow on every page navigation"
 echo "  (10s+ on each click), vacuum the SQLite DBs + disable broken"
 echo "  indexers in one shot:"
 echo "  sudo bash $SCRIPT_DIR/tune-arrs.sh"
+echo ""
+echo "  Drain 'Manual import required' queue items — arr identified the"
+echo "  target media via grab history but won't auto-import because the"
+echo "  parsed release title doesn't match. Conservative: skips items"
+echo "  with quality/codec/language rejections so nothing wrong slips in."
+echo "  python3 $SCRIPT_DIR/auto-manual-import.py"
+echo ""
+echo "  To schedule weekly via Synology Task Scheduler:"
+echo "    Control Panel → Task Scheduler → Create → Scheduled Task →"
+echo "    User-defined script → run as root, schedule = weekly:"
+echo "      python3 $SCRIPT_DIR/auto-manual-import.py"
 echo ""
 echo "  ── Boot ordering (RECOMMENDED) ────────────────"
 echo "  On NAS reboot, qBittorrent can get stuck on 'must join at least"
