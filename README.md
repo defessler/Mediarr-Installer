@@ -1,6 +1,6 @@
 # NAS Media Stack
 
-A self-hosted media automation stack running on a Synology DS1522+. Tell it what you want to watch — it finds, downloads, organises, and serves it to Plex automatically.
+A self-hosted media automation stack running on a Synology DS1522+. Tell it what you want to watch — it finds, downloads, organises, and serves it to **Plex or Jellyfin** automatically.
 
 > **The wizard does all of this for you.** Download the latest **[Mediarr
 > Installer](https://github.com/defessler/Mediarr-Installer/releases/latest)**
@@ -59,16 +59,25 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
                     │ downloads to /data/Downloads/
                     │ Sonarr/Radarr/Lidarr hardlink to /data/Media/
                     ▼
-             ┌────────────┐
-             │    Plex    │  ← streams your library to any device
-             └────────────┘
+             ┌──────────────────┐
+             │ Plex / Jellyfin  │  ← streams your library to any device
+             └──────────────────┘
 ```
+
+> **Media server: Plex or Jellyfin.** Pick one with `MEDIA_SERVER=plex`
+> (default) or `MEDIA_SERVER=jellyfin` in `.env` (the wizard's Configure
+> screen has a Plex/Jellyfin picker). They're mutually exclusive. Jellyfin
+> is free and open-source with no account or claim token; the request
+> portal becomes **Jellyseerr** (which also supports Plex), and Plex-only
+> **Tautulli** is skipped (Jellyfin has built-in playback stats). For
+> Jellyfin, paste a `JELLYFIN_API_KEY` (generated after its first-run web
+> setup) so the *arrs* trigger library refreshes on import.
 
 ### Services
 
 | Service | Role |
 |---------|------|
-| **Plex** | Media server — streams to phones, TVs, browsers |
+| **Plex** *or* **Jellyfin** | Media server (pick one via `MEDIA_SERVER`) — streams to phones, TVs, browsers. Jellyfin is free & open-source, no account needed. |
 | **Sonarr** | TV show automation — monitors, downloads, imports |
 | **Radarr** | Movie automation — same as Sonarr but for movies |
 | **Lidarr** | Music automation — same pattern, for albums and tracks |
@@ -77,8 +86,8 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 | **qBittorrent** | Torrent client — all traffic routes through Gluetun VPN |
 | **SABnzbd** | Usenet client |
 | **Gluetun** | VPN gateway — qBittorrent's network runs entirely inside it |
-| **Seerr** | Request portal — lets others request movies/shows |
-| **Tautulli** | Plex analytics — watch history, stream stats, notifications |
+| **Seerr** / **Jellyseerr** | Request portal — lets others request movies/shows (Jellyseerr is used when `MEDIA_SERVER=jellyfin`) |
+| **Tautulli** | Plex analytics — watch history, stream stats, notifications (Plex only; skipped for Jellyfin, which has built-in stats) |
 | **Recyclarr** | Syncs TRaSH Guide quality profiles into Sonarr/Radarr |
 | **Unpackerr** | Watches completed downloads and unpacks archives for import |
 
@@ -147,7 +156,7 @@ If you'd rather skip the installer (e.g. headless setup, scripted deployment, or
    cp /volume1/docker/media/.env.example /volume1/docker/media/.env
    nano /volume1/docker/media/.env
    ```
-   Required keys: `PUID`, `PGID`, `TZ`, `LAN_IP`, `QBITTORRENT_PASS`. Optional: `PLEX_CLAIM` (from https://plex.tv/claim — expires in 4 minutes, paste it right before running `setup.sh`), `NORDVPN_ACCESS_TOKEN` (auto-fetches WireGuard key), `ARR_USERNAME` / `ARR_PASSWORD`, `TRASH_SONARR_PROFILE` / `TRASH_RADARR_PROFILE` for the Recyclarr quality bundle.
+   Required keys: `PUID`, `PGID`, `TZ`, `LAN_IP`, `QBITTORRENT_PASS`. Optional: `MEDIA_SERVER` (`plex` (default) or `jellyfin`), `PLEX_CLAIM` (Plex only — from https://plex.tv/claim, expires in 4 minutes, paste it right before running `setup.sh`), `JELLYFIN_API_KEY` (Jellyfin only — generate it after Jellyfin's first-run setup at `:8096` → Dashboard → API Keys, then re-run `setup-arr-config.py`), `NORDVPN_ACCESS_TOKEN` (auto-fetches WireGuard key), `ARR_USERNAME` / `ARR_PASSWORD`, `TRASH_SONARR_PROFILE` / `TRASH_RADARR_PROFILE` for the Recyclarr quality bundle.
 3. **Run setup.sh**
    ```bash
    sudo bash /volume1/docker/media/setup.sh

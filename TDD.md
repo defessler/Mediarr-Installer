@@ -24,7 +24,7 @@ Audience: engineers reviewing the codebase, contributors looking for the design 
 
 ## 1. Executive summary
 
-Mediarr installs a turnkey "personal Netflix" stack on a Synology NAS: Plex serves the library, Sonarr/Radarr/Lidarr automate TV/movie/music acquisition, Prowlarr manages indexers, qBittorrent + SABnzbd download through a VPN, Bazarr fetches subtitles, Recyclarr keeps quality rules current, and Homepage is the dashboard.
+Mediarr installs a turnkey "personal Netflix" stack on a Synology NAS: Plex or Jellyfin serves the library (the user picks one), Sonarr/Radarr/Lidarr automate TV/movie/music acquisition, Prowlarr manages indexers, qBittorrent + SABnzbd download through a VPN, Bazarr fetches subtitles, Recyclarr keeps quality rules current, and Homepage is the dashboard.
 
 The stack is implemented as three independent layers:
 
@@ -126,7 +126,8 @@ Lives in [`nas/docker-compose.yml`](nas/docker-compose.yml).
 
 | Container | Role | Image |
 |---|---|---|
-| **plex** | Streams the library | `lscr.io/linuxserver/plex` |
+| **plex** | Streams the library (when `MEDIA_SERVER=plex`) | `lscr.io/linuxserver/plex` |
+| **jellyfin** | Streams the library (when `MEDIA_SERVER=jellyfin`) | `lscr.io/linuxserver/jellyfin` |
 | **sonarr** | TV automation | `lscr.io/linuxserver/sonarr` |
 | **radarr** | Movie automation | `lscr.io/linuxserver/radarr` |
 | **lidarr** | Music automation | `lscr.io/linuxserver/lidarr` |
@@ -134,8 +135,8 @@ Lives in [`nas/docker-compose.yml`](nas/docker-compose.yml).
 | **bazarr** | Subtitle fetcher | `lscr.io/linuxserver/bazarr` |
 | **qbittorrent** | Torrent client | `lscr.io/linuxserver/qbittorrent` |
 | **sabnzbd** | Usenet client | `lscr.io/linuxserver/sabnzbd` |
-| **seerr** | Request portal | `fallenbagel/jellyseerr` |
-| **tautulli** | Plex analytics | `lscr.io/linuxserver/tautulli` |
+| **seerr** | Request portal | `${SEERR_IMAGE}` — Seerr (`ghcr.io/seerr-team/seerr`) for Plex, Jellyseerr (`ghcr.io/fallenbagel/jellyseerr`) for Jellyfin |
+| **tautulli** | Plex analytics (Plex only — skipped for Jellyfin) | `lscr.io/linuxserver/tautulli` |
 | **homepage** | Dashboard | `ghcr.io/gethomepage/homepage` |
 | **gluetun** | VPN gateway | `qmcgaw/gluetun` |
 | **flaresolverr** | CloudFlare bypass | `ghcr.io/flaresolverr/flaresolverr` |
@@ -199,6 +200,8 @@ A hardlink is filesystem-cheap (one inode, two names) and disk-zero (no copy). q
 ### 4.5 Profiles — opt-out services without yml edits
 
 Every user-facing service has `profiles: [<name>]` in compose. `setup.sh` reads `ENABLE_*` from `.env` and builds `COMPOSE_PROFILES=plex,sonarr,...`. `docker compose up -d` then only starts what's selected. Prowlarr + Flaresolverr have no profile gate — they're cheap and every arr needs them.
+
+The media server is special: `ENABLE_PLEX` is the on/off master for the media-server group, and `MEDIA_SERVER` (`plex`|`jellyfin`) picks which one. The compose profile name IS the `MEDIA_SERVER` value, so `setup.sh` just does `PROFILES+=("$MEDIA_SERVER")`. `plex`/`tautulli` are in the `plex` profile, `jellyfin` is in the `jellyfin` profile, and `seerr` is in BOTH (its image switches to Jellyseerr via `${SEERR_IMAGE}`). Switching `MEDIA_SERVER` reaps the other server's containers in `stop_disabled_services`. The Python configurator branches on `MEDIA_SERVER`: Plex uses a claim-token + `PlexServer` arr notifications + Tautulli; Jellyfin uses a user-supplied `JELLYFIN_API_KEY` + `MediaBrowser` arr notifications and skips Tautulli/remote-access.
 
 This means uninstalling a service is just `ENABLE_X=false` in `.env`. No yml edits, no rebuild.
 

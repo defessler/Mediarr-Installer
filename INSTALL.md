@@ -97,7 +97,7 @@ Optional but recommended:
 
 | Item | Why | Where to get it |
 |------|-----|-----------------|
-| **A Plex account** | To stream your library | https://plex.tv (free) |
+| **A Plex *or* Jellyfin server** | To stream your library | Plex: free login at https://plex.tv. Jellyfin: nothing to sign up for — it's fully self-hosted; just pick it in the wizard. |
 | **A VPN subscription** | Privacy for torrent traffic | NordVPN, Proton, Mullvad, AirVPN, or Surfshark all work |
 | **A Usenet provider account** | Faster, more reliable downloads than torrents | Eweka, Newshosting, UsenetServer, etc. (paid) |
 | **An indexer or two** | Where the *arr apps find releases | Prowlarr ships with public indexers built-in; for private, see [Step 4](#6-step-4--first-time-setup-for-each-service) |
@@ -368,22 +368,30 @@ you'll see proof of it.
 
 **What to fill in (in order of importance):**
 
-1. **Services** — uncheck anything you don't want. If you don't have a Plex
-   account, uncheck "Plex stack." If you only do usenet, uncheck qBittorrent.
-   If unsure: leave them all on; you can turn things off later.
+1. **Services + media server** — uncheck anything you don't want. The
+   **Media server** row has a **Plex / Jellyfin** picker — choose **Jellyfin**
+   if you'd rather not use a Plex account (it's free, open-source, no signup).
+   Uncheck the media server entirely if you only want the *arr* automation.
+   If you only do usenet, uncheck qBittorrent. If unsure: leave them on; you
+   can turn things off later.
 
 2. **TRaSH Guide profiles** — these set the quality bar for your downloads.
    Defaults are fine. If you have lots of storage and want 4K, pick UHD; for
    anime, pick Anime. (See [Recyclarr docs](https://recyclarr.dev) for what
    each profile does.)
 
-3. **Plex claim token** — this is what links your Plex container to your Plex
-   account. **It expires after 4 minutes**, so do this LAST before clicking
-   Continue:
+3. **Plex claim token** *(Plex only — skip if you picked Jellyfin)* — this
+   links your Plex container to your Plex account. **It expires after 4
+   minutes**, so do this LAST before clicking Continue:
    - Open https://plex.tv/claim in a new browser tab.
    - Sign in if needed.
    - Copy the `claim-XXXX...` code shown on the page.
    - Paste it into the Plex claim token field in the wizard.
+
+   **Jellyfin** has no claim token. Install right away; afterwards open
+   `http://<NAS>:8096`, finish Jellyfin's first-run setup in your browser,
+   then (optionally) paste a Jellyfin API key on the Run screen so the
+   *arrs* refresh Jellyfin's library automatically on import.
 
 4. **qBittorrent password** — pick any password (at least 8 characters). You'll
    use this to log into qBittorrent's web UI later.
