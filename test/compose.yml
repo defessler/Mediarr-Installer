@@ -1,0 +1,49 @@
+# ── Fake-NAS test fleet ───────────────────────────────────────────────────────
+# Three simulated NAS environments the installer can be pointed at, each on its
+# own SSH port. All need `privileged: true` for the in-container Docker daemon.
+#
+#   docker compose -f test/compose.yml --profile all up -d --build
+#   # then connect the installer to:
+#   #   Synology-sim  → localhost:2201   (tester / tester)
+#   #   UGREEN-sim    → localhost:2202
+#   #   generic Linux → localhost:2203
+#
+# Or test ONE family non-interactively with the payload runner:
+#   bash test/run-e2e.sh --family ugreen
+#
+# Tear down (also wipes the throwaway DinD state):
+#   docker compose -f test/compose.yml --profile all down -v
+name: mediarr-test
+
+x-fake-nas: &fake-nas
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: mediarr-testnas:latest
+  # DinD needs a privileged container + its own writable /var/lib/docker.
+  privileged: true
+  # tmpfs keeps the throwaway daemon's image/layer state out of the host and
+  # makes teardown instant. Bump size (or switch to a named volume) if you run
+  # the FULL stack, whose images are several GB.
+  tmpfs:
+    - /var/lib/docker
+  restart: "no"
+
+services:
+  nas-synology:
+    <<: *fake-nas
+    environment: { NAS_FAMILY: synology }
+    ports: ["2201:22"]
+    profiles: ["synology", "all"]
+
+  nas-ugreen:
+    <<: *fake-nas
+    environment: { NAS_FAMILY: ugreen }
+    ports: ["2202:22"]
+    profiles: ["ugreen", "all"]
+
+  nas-generic:
+    <<: *fake-nas
+    environment: { NAS_FAMILY: generic }
+    ports: ["2203:22"]
+    profiles: ["generic", "all"]

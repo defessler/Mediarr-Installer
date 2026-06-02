@@ -233,12 +233,26 @@ export function EnvDetectScreen() {
   // module is legitimately absent (Docker uses the nft backend), so the
   // warning is a false alarm everywhere except Synology.
   const iptablesModulesWarn = r?.iptablesLoaded === false && r.nasFamily === 'synology'
+  // Which REQUIRED checks actually gate "Continue". Two of them are
+  // Synology-only and must NOT block other Docker hosts:
+  //   • /volume1 — Synology's storage root. Every other family has a
+  //     different layout (handled by the "Storage root present" check +
+  //     family path defaults), so a generic Linux / Unraid / TrueNAS /
+  //     Docker-Desktop host without /volume1 is still fine.
+  //   • iptables binary — required on DSM (its Docker uses the iptables
+  //     backend and setup-firewall.sh shells out to it), but nftables-
+  //     based hosts (UGOS / Debian 12+ / most modern Linux) legitimately
+  //     have no `iptables` on PATH and Docker programs NAT via the nft
+  //     backend itself. Blocking them was the main thing stopping the
+  //     wizard from running on a plain Docker host.
+  // python3 stays a hard requirement on every family — setup-arr-config.py
+  // and the qBittorrent hash generator run on the host at install time.
   const allBlocking =
     !!r &&
     r.docker !== 'missing' &&
-    r.volume1 &&
+    (r.volume1 || r.nasFamily !== 'synology') &&
     !!r.python3 &&
-    !!r.iptables
+    (!!r.iptables || r.nasFamily !== 'synology')
 
   const reduced = useReducedMotion()
   return (
@@ -365,7 +379,19 @@ export function EnvDetectScreen() {
                 : 'no candidate found'}
             />
             <Check ok={!!r.python3} label="python3" value={r.python3 ?? 'missing'} />
-            <Check ok={!!r.iptables} label="iptables" value={r.iptables ?? 'missing'} />
+            {/* iptables is only a hard requirement on Synology (its Docker
+                uses the iptables backend). nftables-based hosts (UGOS,
+                Debian 12+, generic Docker hosts) have no iptables binary
+                and Docker handles NAT via nftables — show that as neutral
+                info, not a red ✗. */}
+            <Check
+              ok={!!r.iptables || r.nasFamily !== 'synology'}
+              tone={r.iptables ? 'ok' : r.nasFamily === 'synology' ? 'fail' : 'info'}
+              label="iptables"
+              value={r.iptables
+                ? r.iptables
+                : r.nasFamily === 'synology' ? 'missing' : 'n/a (Docker uses nftables)'}
+            />
           </section>
 
           <section className="rounded-md border border-slate-800 p-4 space-y-1">
@@ -374,7 +400,7 @@ export function EnvDetectScreen() {
             </h2>
             <Check
               ok={!!r.disk && !lowDisk}
-              label="Disk space on /volume1"
+              label={r.nasFamily === 'synology' ? 'Disk space on /volume1' : 'Disk space for install'}
               value={r.disk
                 ? `${r.disk.freeGiB} GiB free of ${Math.round(r.disk.totalBytes / 1024 ** 3)} GiB`
                 : 'unknown'}

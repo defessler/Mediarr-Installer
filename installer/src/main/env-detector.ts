@@ -181,7 +181,15 @@ export async function detectEnv(
     // bound by our own stack — the previous install's containers don't
     // count as a conflict; we'll restart them as part of the install.
     'echo "===docker_ports==="; docker ps --format "{{.Names}}|{{.Ports}}" 2>/dev/null || true',
-    'echo "===df==="; df -kP /volume1 2>/dev/null | tail -n +2',
+    // Disk space where the stack will actually install. Walk up to the
+    // nearest existing ancestor of INSTALL_DIR (same trick as
+    // install_dir_fs) instead of hardcoding /volume1 — otherwise a
+    // generic Linux / Unraid / TrueNAS host (no /volume1) reports
+    // "unknown" free space and trips a false low-disk warning.
+    'echo "===df==="; ' +
+      'p=' + tq + '; ' +
+      'while [ -n "$p" ] && [ "$p" != "/" ] && [ ! -e "$p" ]; do p=$(dirname "$p"); done; ' +
+      'df -kP "$p" 2>/dev/null | tail -n +2',
     'echo "===netstat==="; netstat -lnt 2>/dev/null | awk \'NR>2 {n=split($4,a,":"); print a[n]}\' | sort -un',
     'echo "===dockerhub==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo 000',
     'echo "===plextv==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://plex.tv 2>/dev/null || echo 000',

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
-  HelpCircle, FileText, FolderOpen, Wrench, ArrowUpCircle, ChevronRight,
-  Check, Loader2, FlaskConical, Users, Server, RefreshCw,
+  HelpCircle, FileText, FolderOpen, Wrench, ChevronRight,
+  Check, Loader2, FlaskConical, Users, Server, RefreshCw, Download, X,
 } from 'lucide-react'
 import { useWizard, type WizardStep, STEPS_NEEDING_SESSION } from './store/wizard.js'
 import { useErrors, reportError } from './store/errors.js'
@@ -18,7 +18,7 @@ import { RunScreen } from './screens/RunScreen.js'
 import { UpdateRunScreen } from './screens/UpdateRunScreen.js'
 import { MigrateScreen } from './screens/MigrateScreen.js'
 import { DoneScreen } from './screens/DoneScreen.js'
-import type { AppInfo } from '../shared/ipc.js'
+import type { AppInfo, UpdaterState } from '../shared/ipc.js'
 
 // Stepper labels for the install flow. The update flow uses a 3-step
 // reduced rail (Welcome -> Connect -> Update -> Done).
@@ -82,10 +82,12 @@ export function App() {
    *  footer's "v0.x.y available" pill. v0.4.3 consolidated this off
    *  the parallel GitHub fetch that used to live in main/index.ts —
    *  the updater is the only source of update info now. */
-  const [pendingUpdate, setPendingUpdate] = useState<{
-    version: string
-    htmlUrl?: string
-  } | null>(null)
+  /** Full live updater state — drives the footer's in-place update
+   *  control (download → progress → restart & install) so the updater
+   *  works from EVERY screen, not just the Welcome screen's WhatsNew
+   *  banner. Previously the footer only linked out to the GitHub release
+   *  page; now it runs the same in-place flow. */
+  const [updaterState, setUpdaterState] = useState<UpdaterState>({ kind: 'idle' })
 
   // Subscribe to the updater event stream so the button reacts to the
   // outcome of `updater.check()` calls (both ours and the auto-check
@@ -98,16 +100,14 @@ export function App() {
   //   'error'            → 'error' (sticky 4s)
   useEffect(() => {
     const off = window.installer.updater?.onState?.((s) => {
+      setUpdaterState(s)
+      // checkState only drives the manual "Check for updates" button's
+      // transient feedback; the in-place control is driven by
+      // updaterState directly.
       if (s.kind === 'not-available') {
-        setPendingUpdate(null)
         setCheckState('up-to-date')
         setTimeout(() => setCheckState((c) => (c === 'up-to-date' ? 'idle' : c)), 4000)
-      } else if (s.kind === 'available' || s.kind === 'downloaded') {
-        setPendingUpdate({ version: s.version, htmlUrl: s.htmlUrl })
-        setCheckState('idle')
-      } else if (s.kind === 'downloading') {
-        // We already know the version from a prior `available` event;
-        // don't clobber pendingUpdate here.
+      } else if (s.kind === 'available' || s.kind === 'downloaded' || s.kind === 'downloading') {
         setCheckState('idle')
       } else if (s.kind === 'error') {
         setCheckState('error')
@@ -117,11 +117,7 @@ export function App() {
     // Prime the snapshot with the current state in case the updater
     // fired its first check before our subscription attached.
     void window.installer.updater?.getState?.().then((s) => {
-      if (s.kind === 'available' || s.kind === 'downloaded' || s.kind === 'downloading') {
-        if (s.kind !== 'downloading') {
-          setPendingUpdate({ version: s.version, htmlUrl: s.htmlUrl })
-        }
-      }
+      setUpdaterState(s)
     }).catch(() => { /* updater unavailable */ })
     return () => { off?.() }
   }, [])
@@ -511,35 +507,62 @@ export function App() {
         <footer className="text-xs text-slate-500 px-4 py-1.5 border-t border-slate-900 flex justify-between items-center gap-3">
           <div className="flex items-center gap-2">
             <span>v{info.version}</span>
-            {pendingUpdate && (
-              pendingUpdate.htmlUrl ? (
-                <a
-                  href={pendingUpdate.htmlUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
-                  aria-label={`v${pendingUpdate.version} update available — open release on GitHub in new tab`}
-                  title={`Click to open the v${pendingUpdate.version} release page on GitHub`}
+            {/* In-place update control — runs the SAME in-place updater
+                the WhatsNew banner does (download → restart & install),
+                reachable from EVERY screen. No longer a link out to the
+                GitHub release page (that was the "it just links to the
+                release page" bug). The unpacked build self-swaps via the
+                robocopy helper in updater-service.ts. */}
+            {updaterState.kind === 'available' && (
+              <button
+                type="button"
+                onClick={() => { void window.installer.updater?.download() }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+                title={`Download v${updaterState.version} and install it in place — no manual download needed`}
+                aria-label={`Install update v${updaterState.version} in place`}
+              >
+                <Download size={13} aria-hidden="true" />
+                Install v{updaterState.version}
+              </button>
+            )}
+            {updaterState.kind === 'downloading' && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 font-medium"
+                aria-live="polite"
+              >
+                <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+                Downloading {updaterState.percent}%
+                <button
+                  type="button"
+                  onClick={() => { void window.installer.updater?.cancel() }}
+                  className="ml-1 -mr-0.5 rounded-full hover:bg-emerald-500/40 p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+                  title="Cancel the update download"
+                  aria-label="Cancel update download"
                 >
-                  <ArrowUpCircle size={13} aria-hidden="true" />
-                  v{pendingUpdate.version} available
-                </a>
-              ) : (
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 font-medium"
-                  aria-label={`v${pendingUpdate.version} update available`}
-                >
-                  <ArrowUpCircle size={13} aria-hidden="true" />
-                  v{pendingUpdate.version} available
-                </span>
-              )
+                  <X size={11} aria-hidden="true" />
+                </button>
+              </span>
+            )}
+            {updaterState.kind === 'downloaded' && (
+              <button
+                type="button"
+                onClick={() => { void window.installer.updater?.install() }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white hover:bg-emerald-500 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+                title="Restart now and apply the update in place"
+                aria-label={`Restart and install update v${updaterState.version}`}
+              >
+                <RefreshCw size={13} aria-hidden="true" />
+                Restart to update
+              </button>
             )}
             {/* Manual recheck. The startup auto-check still runs in
                 updater-service.ts on a 6h cadence; this exists so a
                 user who knows a fix just landed can grab it without
                 restarting the wizard. Hidden when an update is already
-                advertised — the pill above is the real CTA. */}
-            {!pendingUpdate && (
+                in flight — the in-place control above is the real CTA. */}
+            {updaterState.kind !== 'available'
+              && updaterState.kind !== 'downloading'
+              && updaterState.kind !== 'downloaded' && (
               <button
                 type="button"
                 onClick={checkForUpdates}

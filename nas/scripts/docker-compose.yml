@@ -213,7 +213,7 @@ services:
       - ${LAN_IP}:3000:3000
     volumes:
       - ${INSTALL_DIR}/homepage/config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock:ro
       # Host disk mounts for the resources widget. MONITORED_DISK_N is
       # populated by setup.sh's detect_storage_volumes() — a /volume[0-9]+
       # scan that runs before `compose up`. Fallback /tmp keeps `compose
@@ -598,7 +598,7 @@ services:
       # from inside this container. The trigger has no other privileged
       # access; the lock + 180s timeout in recyclarr-trigger.py cap
       # abuse to "trigger a no-op sync occasionally."
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
       # The recyclarr container's /config dir — read-only — so the
       # trigger can read the .last-sync stamp to display freshness.
       - ${INSTALL_DIR}/recyclarr/config:/recyclarr-config:ro
