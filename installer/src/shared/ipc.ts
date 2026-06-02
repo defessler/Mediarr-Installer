@@ -200,6 +200,23 @@ export interface EnvDetectResult {
   suggestedPuid: string
   /** Family-aware fallback for PGID. See suggestedPuid. */
   suggestedPgid: string
+  /** Raw `uname -m` (e.g. 'x86_64', 'aarch64', 'armv7l'); null if unread.
+   *  Drives the 32-bit-ARM hard-block (the media images dropped 32-bit
+   *  support) and the arm64 "no hardware transcode" warning. */
+  cpuArch: string | null
+  /** Raw `uname -s` kernel name ('Linux', 'FreeBSD', …). Non-Linux hosts
+   *  (notably TrueNAS CORE = FreeBSD) can't run the Linux Docker stack and
+   *  are hard-rejected up front. */
+  kernelOs: string | null
+  /** Total host RAM in MB (from /proc/meminfo MemTotal). null if unread.
+   *  Used to warn when the box is too small (<~2 GB) for the full stack. */
+  ramMB: number | null
+  /** How confident the family classification is: 'high' = an OS marker
+   *  file matched (synoinfo.conf, qpkg.conf, unraid-version, …); 'low' =
+   *  only a heuristic matched (Debian + /volume1 → ugreen); 'unknown' =
+   *  nothing matched and we fell through to the generic 'linux' family.
+   *  The Detect screen asks the user to confirm paths when 'unknown'. */
+  familyConfidence: 'high' | 'low' | 'unknown'
 }
 
 // ── VPN ──────────────────────────────────────────────────────────────────────

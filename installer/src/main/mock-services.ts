@@ -429,6 +429,10 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
     // env-detector picks the family-appropriate fallback per nasFamily.
     suggestedPuid: '1026',
     suggestedPgid: '100',
+    cpuArch: 'x86_64',
+    kernelOs: 'Linux',
+    ramMB: 8192,
+    familyConfidence: 'high',
   }
 }
 

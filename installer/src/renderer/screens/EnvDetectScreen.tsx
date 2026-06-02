@@ -226,7 +226,12 @@ export function EnvDetectScreen() {
   // "will corrupt" warning. Previously the check was an allow-list that
   // treated 'unknown' as unsafe, which false-alarmed on healthy UGREEN
   // boxes where /volume1/docker/media isn't created until install.
-  const installFsRisky = !!r?.installDirFs && /^(nfs|cifs|smb|fuse)/i.test(r.installDirFs)
+  // SQLite-corrupting filesystems: genuine NETWORK mounts (nfs/cifs/smb) and
+  // remote/overlay FUSE (mergerfs/sshfs/rclone). Plain local FUSE — notably
+  // Unraid's /mnt/user shfs which reports as 'fuseblk' — is LOCAL and must
+  // NOT be flagged (doing so false-alarmed every Unraid install).
+  const installFsRisky = !!r?.installDirFs
+    && /^(nfs|cifs|smb|sshfs|fuse\.(mergerfs|sshfs|rclone|rfs))/i.test(r.installDirFs)
   // The "iptables kernel modules unloaded" probe (lsmod | grep ^ip_tables)
   // is a Synology-DSM-specific failure mode — DSM point releases wipe the
   // legacy ip_tables module. On nftables-based distros (UGOS/Debian) that
@@ -247,8 +252,31 @@ export function EnvDetectScreen() {
   //     wizard from running on a plain Docker host.
   // python3 stays a hard requirement on every family — setup-arr-config.py
   // and the qBittorrent hash generator run on the host at install time.
+  // ── Host arch / kernel / RAM gates ───────────────────────────────────────
+  // cpuArch from `uname -m`. 64-bit ARM = aarch64/arm64; 32-bit ARM =
+  // armv6l/armv7l/arm; 32-bit x86 = i386..i686. The media images dropped
+  // 32-bit (armhf) support in 2023, so a 32-bit host can't run the stack.
+  const arch = (r?.cpuArch ?? '').trim()
+  const isArm64 = /aarch64|arm64/i.test(arch)
+  const is32bitArm = /^arm/i.test(arch) && !isArm64           // armv7l, armv6l, arm
+  const is32bitX86 = /^i[3-6]86$/i.test(arch)
+  const is32bit = is32bitArm || is32bitX86
+  const isFreeBsd = (r?.kernelOs ?? '').toLowerCase() === 'freebsd'
+  const lowRam = !!r?.ramMB && r.ramMB < 2048
+
+  // Hard blocks — environments that cannot run the stack at all. We reject
+  // up front with a clear reason instead of letting the install fail deep
+  // in a `docker compose up` (or, worse, look like it worked then crash-loop).
+  const hardBlock: string | null =
+    isFreeBsd
+      ? 'This looks like TrueNAS CORE / FreeBSD. The media stack is Linux-Docker only — it cannot run on FreeBSD. Migrate to TrueNAS SCALE (or use any Linux host with Docker) and re-run.'
+    : is32bit
+      ? `This host is 32-bit (${arch || 'unknown arch'}). The media-server and *arr container images dropped 32-bit support in 2023 — a 64-bit host (x86_64 or arm64) is required. Many legacy/closed NAS appliances fall here and can't run the stack.`
+    : null
+
   const allBlocking =
     !!r &&
+    !hardBlock &&
     r.docker !== 'missing' &&
     (r.volume1 || r.nasFamily !== 'synology') &&
     !!r.python3 &&
@@ -313,6 +341,19 @@ export function EnvDetectScreen() {
 
       {r && (
         <>
+          {/* Hard-block banner — this host cannot run the stack at all
+              (FreeBSD / 32-bit / unsupportable appliance). Continue stays
+              disabled; we say why up front instead of failing mid-install. */}
+          {hardBlock && (
+            <section className="rounded-md border border-rose-700/60 bg-rose-950/40 p-4 text-sm flex items-start gap-3">
+              <XCircle size={22} className="text-rose-400 shrink-0 mt-0.5" strokeWidth={2} aria-hidden="true" />
+              <div>
+                <div className="font-semibold text-rose-100">This environment can&apos;t run the stack</div>
+                <p className="text-rose-200/80 mt-1">{hardBlock}</p>
+              </div>
+            </section>
+          )}
+
           {/* NAS family banner. Surfaces what the wizard auto-detected
               + the paths it picked — gives the user a sanity check
               before they commit to those paths on Configure. */}
@@ -346,10 +387,26 @@ export function EnvDetectScreen() {
                 <span className="font-mono text-slate-300">{r.suggestedDataRoot}</span>
               </div>
             </div>
-            {r.nasFamily !== 'synology' && (
+            {(r.cpuArch || r.ramMB) && (
+              <div className="text-xs text-slate-500">
+                Host:{' '}
+                <span className="font-mono text-slate-400">
+                  {r.cpuArch ?? 'arch?'}{isArm64 ? ' (arm64)' : is32bit ? ' (32-bit)' : ''}
+                  {r.ramMB ? ` · ${(r.ramMB / 1024).toFixed(1)} GiB RAM` : ''}
+                </span>
+              </div>
+            )}
+            {r.nasFamily !== 'synology' && r.familyConfidence === 'high' && (
               <p className="text-xs text-emerald-300/80">
                 Non-Synology host detected. The wizard auto-fills these paths
                 on the Configure screen; you can override them there.
+              </p>
+            )}
+            {r.familyConfidence !== 'high' && (
+              <p className="text-xs text-amber-300/80">
+                {r.familyConfidence === 'unknown'
+                  ? 'We couldn’t positively identify this NAS, so these are generic Linux defaults — double-check the Install dir + Data root on the next screen so they land on your real storage pool, not the system disk.'
+                  : 'Identified by heuristic (Debian + /volume1). If this isn’t a UGREEN box, adjust the paths on the next screen.'}
               </p>
             )}
             {r.dataCandidates.length > 0 && (
@@ -711,12 +768,39 @@ export function EnvDetectScreen() {
               needed for VPN; iptables modules are normally loaded;
               non-local filesystem is rare. Warn-not-block so users can
               proceed with their eyes open. */}
-          {(r.tunDevice === false || iptablesModulesWarn || installFsRisky) && (
+          {((isArm64 && !hardBlock) || lowRam || r.tunDevice === false || iptablesModulesWarn || installFsRisky) && (
             <section className="rounded-md border border-amber-900/50 bg-amber-950/30 p-4 text-sm">
               <h2 className="font-medium text-amber-200 mb-2 inline-flex items-center gap-2">
                 <AlertTriangle size={16} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
                 Platform readiness
               </h2>
+              {isArm64 && !hardBlock && (
+                <div className="mb-2">
+                  <div className="text-amber-200 inline-flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    ARM64 host — no hardware transcoding
+                  </div>
+                  <p className="text-amber-200/80 mt-1 ml-5">
+                    The stack&apos;s images run on arm64, but Plex/Jellyfin have no
+                    hardware-accelerated transcoding on ARM NAS CPUs — playback that
+                    needs transcoding falls back to (slow) software. Direct-play is
+                    fine. FlareSolverr is also unreliable on ARM; leave it off.
+                  </p>
+                </div>
+              )}
+              {lowRam && (
+                <div className="mb-2">
+                  <div className="text-amber-200 inline-flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    Low RAM ({r.ramMB ? `${(r.ramMB / 1024).toFixed(1)} GiB` : 'under 2 GiB'})
+                  </div>
+                  <p className="text-amber-200/80 mt-1 ml-5">
+                    The full stack wants ~2 GiB+ free. On a smaller box, disable the
+                    heavier services (Plex/Jellyfin, some *arr) on the Configure
+                    screen to avoid out-of-memory crashes.
+                  </p>
+                </div>
+              )}
               {r.tunDevice === false && (
                 <div className="mb-2">
                   <div className="text-amber-200 inline-flex items-center gap-2">

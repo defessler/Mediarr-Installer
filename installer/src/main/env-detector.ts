@@ -3,7 +3,7 @@
 // PUID/PGID, timezone, LAN IPs, Docker version, Python, iptables, plus
 // pre-existing install detection and port-conflict scan.
 
-import { exec } from './ssh-service.js'
+import { exec, setSessionEffectiveRoot } from './ssh-service.js'
 import type { EnvDetectResult, PortConflict } from '../shared/ipc.js'
 
 // Ports the stack binds. Mirrors docker-compose.yml + setup-firewall.sh.
@@ -154,6 +154,13 @@ export async function detectEnv(
     'echo "===pgid==="; id -g',
     'echo "===uname==="; id -un',
     'echo "===gname==="; id -gn',
+    // CPU arch + kernel + RAM — drive the 32-bit-ARM hard-block, the
+    // FreeBSD (TrueNAS CORE) reject, the arm64 "no HW transcode" warning,
+    // and the low-RAM warning. `uname -m`/`-s` + /proc/meminfo are all
+    // non-root-readable on every supported family.
+    'echo "===arch==="; uname -m 2>/dev/null',
+    'echo "===kernel==="; uname -s 2>/dev/null',
+    'echo "===mem==="; grep -m1 MemTotal /proc/meminfo 2>/dev/null | awk \'{print $2}\'',
     'echo "===tz_file==="; cat /etc/timezone 2>/dev/null',
     'echo "===tz_link==="; readlink /etc/localtime 2>/dev/null',
     'echo "===lan==="; ip -4 addr show 2>/dev/null | awk \'/inet /{print $2}\' | grep -v \'^127\' || true',
@@ -337,7 +344,13 @@ export async function detectEnv(
     .filter(Boolean)
 
   const whoami = section(o, 'whoami')
-  const isRoot = whoami === 'root'
+  // Treat uid 0 as root even when the account isn't NAMED 'root'. QNAP's
+  // `admin`, TerraMaster's superadmin, and others ARE uid 0 with no sudo
+  // — without this they'd be detected as needing a (nonexistent) sudo
+  // password and every privileged step would fail. We also mark the SSH
+  // session effective-root so wrapSudo skips the `sudo` prefix entirely.
+  const isRoot = whoami === 'root' || section(o, 'puid') === '0'
+  setSessionEffectiveRoot(sessionId, isRoot)
   const sudoNopw = section(o, 'sudo_nopw')
   let sudoMode: EnvDetectResult['sudoMode'] = 'password'
   if (isRoot) sudoMode = 'root'
@@ -420,6 +433,14 @@ export async function detectEnv(
   const sshClientIp = section(o, 'ssh_client') || null
   const replyIp = section(o, 'reply_ip') || null
 
+  // Host arch / kernel / RAM. cpuArch drives the 32-bit-ARM hard-block +
+  // arm64 warning; kernelOs catches FreeBSD (TrueNAS CORE); ramMB the
+  // low-memory warning.
+  const cpuArch = section(o, 'arch').trim() || null
+  const kernelOs = section(o, 'kernel').trim() || null
+  const memKB = Number(section(o, 'mem').trim())
+  const ramMB = Number.isFinite(memKB) && memKB > 0 ? Math.round(memKB / 1024) : null
+
   // NAS family fingerprint. Order matters — Synology DSM, then the
   // distros that mimic Synology paths (none today), then the others.
   // Used to pick sensible defaults for INSTALL_DIR / DATA_ROOT and
@@ -440,6 +461,21 @@ export async function detectEnv(
   else if (section(o, 'nas_omv')     === 'y')  nasFamily = 'omv'
   else if (isDebian && hasVolume1)             nasFamily = 'ugreen'
   else                                          nasFamily = 'linux'
+
+  // Confidence in that classification: high when a definitive OS marker
+  // file matched, low when only the Debian+/volume1 heuristic fired
+  // (could be a plain Debian box with a stray /volume1), unknown when
+  // nothing matched and we fell through to generic 'linux'. The Detect
+  // screen nudges the user to confirm paths when it's not 'high'.
+  const markerMatched =
+    section(o, 'nas_synology') === 'y' ||
+    section(o, 'nas_ugreen')   === 'y' ||
+    section(o, 'nas_qnap')     === 'y' ||
+    section(o, 'nas_unraid')   === 'y' ||
+    section(o, 'nas_truenas')  === 'y' ||
+    section(o, 'nas_omv')      === 'y'
+  const familyConfidence: EnvDetectResult['familyConfidence'] =
+    nasFamily === 'linux' ? 'unknown' : markerMatched ? 'high' : 'low'
 
   // The candidate data-share roots that actually exist on this host,
   // in the order the detection probe walked. The renderer picks one
@@ -559,6 +595,10 @@ export async function detectEnv(
     suggestedDataRoot:   familyDefaults.dataRoot,
     suggestedPuid:       pickFamilyIdDefaults(nasFamily).puid,
     suggestedPgid:       pickFamilyIdDefaults(nasFamily).pgid,
+    cpuArch,
+    kernelOs,
+    ramMB,
+    familyConfidence,
   }
 }
 

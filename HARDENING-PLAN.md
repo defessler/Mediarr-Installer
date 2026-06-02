@@ -34,7 +34,9 @@ detected / mis-handled · ⛔ unsupportable (document & reject cleanly).
 ## 2. Cross-cutting hardening themes (prioritized)
 
 ### Phase 1 — cheap, high-impact correctness
-1. **CPU-arch + RAM probe** *(trivial, high)* — env-detector has **zero** arch awareness. Add `uname -m` and `MemTotal` (`/proc/meminfo`) to the batched probe. Decision tree: 32-bit ARM (`armv7l`/armhf) → **hard-block** (linuxserver dropped armhf 2023-07-01, no current images); arm64 → allow but warn "no HW transcode" + warn if RAM < ~2 GB; amd64 → current behavior. This single change unblocks correct handling of ARM Synology/QNAP/SBC and prevents silent breakage.
+> **Status: items 1–4 + #11 shipped in v0.4.11.** (#5 FlareSolverr + #6 multi-arch pre-flight move with Sprint 2.)
+
+1. **CPU-arch + RAM probe** *(trivial, high)* — ✅ **v0.4.11**. — env-detector has **zero** arch awareness. Add `uname -m` and `MemTotal` (`/proc/meminfo`) to the batched probe. Decision tree: 32-bit ARM (`armv7l`/armhf) → **hard-block** (linuxserver dropped armhf 2023-07-01, no current images); arm64 → allow but warn "no HW transcode" + warn if RAM < ~2 GB; amd64 → current behavior. This single change unblocks correct handling of ARM Synology/QNAP/SBC and prevents silent breakage.
 2. **TrueNAS CORE hard-reject** *(trivial, high)* — add a `uname -s == FreeBSD` early-exit ("requires TrueNAS SCALE or a Linux host"). Today CORE matches the same `/etc/version` regex as SCALE and is accepted, then fails confusingly when `ip`/`lsmod`/`iptables`/`stat -f` probes break on BSD userland.
 3. **Unraid FUSE not false-rejected** *(trivial, high)* — verify `/mnt/user` reporting as `fuseblk`/`fuse.*` is treated as **local** by the install-dir-fs SQLite guard (it's local shfs, not NFS/CIFS). A false reject would block every Unraid install. Recommend appdata on `/mnt/cache` where a cache pool exists.
 4. **uid-0-not-named-root** *(trivial, high for QNAP/TerraMaster/ZimaOS)* — `isRoot` currently tests `whoami === 'root'`. QNAP `admin`, TerraMaster superadmin, and others are **uid 0 with a different name**. Switch to `id -u == 0 ⇒ root` (drop sudo). This is the core QNAP fix.
@@ -67,7 +69,7 @@ detected / mis-handled · ⛔ unsupportable (document & reject cleanly).
 
 ## 3. Recommended sequencing
 
-- **Sprint 1 (correctness, ~1 release):** #1 arch/RAM probe, #2 CORE reject, #3 Unraid-FUSE, #4 uid-0-root, #11 unsupportable reject. These are mostly small env-detector + EnvDetectScreen changes and remove the worst silent failures. Expose `arch`, `ramMB`, `familyConfidence` in `EnvDetectResult`.
+- **Sprint 1 (correctness)** — ✅ **shipped v0.4.11**: #1 arch/RAM probe, #2 CORE reject, #3 Unraid-FUSE, #4 uid-0-root, #11 unsupportable (via 32-bit block). Added `cpuArch`/`kernelOs`/`ramMB`/`familyConfidence` to `EnvDetectResult`; `wrapSudo` now skips `sudo` for effective-root (uid 0) sessions.
 - **Sprint 2 (reach):** #7 Asustor, #8 TerraMaster, #9 ZimaOS families; #5 FlareSolverr-optional + #6 multi-arch pre-flight.
 - **Sprint 3 (robustness):** #13 containerize python3, #12 privilege strategy, #14 remediation matrix.
 - **Sprint 4 (resilience + ops):** #15 confidence/dmidecode, #16 resumability, #17 pre-flight, #19 CI harness, #20 diagnostics. (#18 Podman as a stretch.)

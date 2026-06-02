@@ -25,6 +25,11 @@ interface Session {
   config: ConnectionConfig
   /** lazily created on first sftp call */
   sftp: SFTPWrapper | null
+  /** Set by env-detector once it learns the login is uid 0 even though
+   *  the account isn't named 'root' (QNAP `admin`, TerraMaster superadmin,
+   *  …). When true, wrapSudo skips the `sudo` prefix and exec stops
+   *  demanding a sudo password — those boxes have no sudo. */
+  effectiveRoot?: boolean
 }
 
 const sessions = new Map<string, Session>()
@@ -243,11 +248,25 @@ export function disconnect(sessionId: string): void {
   sessions.delete(sessionId)
 }
 
+/** Mark a session as effectively-root (uid 0 under a non-'root' name).
+ *  Called by env-detector after it reads `id -u`. Safe no-op for unknown
+ *  sessions. */
+export function setSessionEffectiveRoot(sessionId: string, value: boolean): void {
+  const sess = sessions.get(sessionId)
+  if (sess) sess.effectiveRoot = value
+}
+
+/** True when no `sudo` is needed: the SSH user is named root, OR the login
+ *  is uid 0 under another name (QNAP admin etc.). */
+function sessionIsRoot(sess: Session): boolean {
+  return sess.config.user === 'root' || sess.effectiveRoot === true
+}
+
 function wrapSudo(sessionId: string, cmd: string, sudo: boolean): string {
   if (!sudo) return cmd
   const sess = sessions.get(sessionId)
   if (!sess) return cmd
-  if (sess.config.user === 'root') return cmd
+  if (sessionIsRoot(sess)) return cmd
   // -S reads the password from stdin; -p '' blanks the prompt so the
   // password write doesn't appear in the log.
   const escaped = cmd.replace(/'/g, `'\\''`)
@@ -364,7 +383,7 @@ export async function exec(args: {
   // and proceeds; if not, sudo rejects and execOnce sees a non-zero
   // exit. Either way we don't hang.
   const needsSudoPassword =
-    !!args.sudo && sess.config.user !== 'root'
+    !!args.sudo && !sessionIsRoot(sess)
   if (needsSudoPassword && !sess.config.sudoPassword) {
     throw new Error(
       `This command needs sudo (user=${sess.config.user}), but no sudo ` +
@@ -435,7 +454,7 @@ export async function execStream(args: {
       activeChannels.set(channelId, stream)
 
       // Pipe sudo password to stdin if needed.
-      if (args.sudo && sess.config.user !== 'root' && sess.config.sudoPassword) {
+      if (args.sudo && !sessionIsRoot(sess) && sess.config.sudoPassword) {
         stream.write(sess.config.sudoPassword + '\n')
       }
 
