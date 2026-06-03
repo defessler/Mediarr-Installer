@@ -360,6 +360,16 @@ export async function writeFile(_args: {
   // Pretend we wrote .env successfully.
 }
 
+export async function downloadFile(_args: {
+  sessionId: string
+  remotePath: string
+  localPath: string
+}): Promise<void> {
+  await sleep(50)
+  // Mock: no real file is fetched. The diag handler returns early in mock
+  // mode anyway (mock exec output carries no DIAGNOSTICS_TARBALL sentinel).
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export async function detectEnv(sessionId: string, _targetDir?: string): Promise<EnvDetectResult> {
@@ -368,6 +378,10 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
   const sc = sess?.scenario ?? { existingInstall: false, portConflicts: false }
   return {
     docker: 'v2',
+    podman: false,
+    podmanCompose: 'none',
+    podmanSocket: null,
+    podmanRootless: false,
     volume1: true,
     puid: 1026,
     pgid: 100,

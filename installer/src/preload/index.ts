@@ -9,6 +9,7 @@ import {
   type AppInfo,
   type ConnectionConfig,
   type ConnectResult,
+  type DiagCollectResult,
   type EnvDetectResult,
   type ExecResult,
   type LoadedProfile,
@@ -81,6 +82,10 @@ const installer = {
       ipcRenderer.on(IPC.evtSftpProgress, handler)
       return () => ipcRenderer.off(IPC.evtSftpProgress, handler)
     },
+  },
+  diag: {
+    collect: (args: { sessionId: string; installDir: string }): Promise<DiagCollectResult> =>
+      ipcRenderer.invoke(IPC.diagCollect, args),
   },
   env: {
     detect: (sessionId: string, targetDir?: string): Promise<EnvDetectResult> =>

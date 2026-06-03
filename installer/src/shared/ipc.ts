@@ -96,6 +96,20 @@ export type NasFamily =
 
 export interface EnvDetectResult {
   docker: 'v2' | 'v1-legacy' | 'missing'
+  /** Podman is installed (fallback container runtime when Docker is absent). */
+  podman: boolean
+  /** Podman's compose front-end: 'native' = `podman compose` (v4+),
+   *  'external' = the `podman-compose` Python wrapper, 'none' = neither. */
+  podmanCompose: 'native' | 'external' | 'none'
+  /** Where Podman's API socket lives: 'user' = rootless
+   *  ~/.local/share/containers/podman/podman.sock, 'root' =
+   *  /run/podman/podman.sock, null = none found. Drives the DOCKER_SOCK /
+   *  DOCKER_HOST override so `docker compose` can talk to Podman. */
+  podmanSocket: 'user' | 'root' | null
+  /** True when Podman runs rootless — host ports <1024 won't bind without
+   *  userns remapping. The stack uses high ports, so usually harmless; the
+   *  Detect screen warns if the user added a low-port custom service. */
+  podmanRootless: boolean
   volume1: boolean
   puid: number | null
   pgid: number | null
@@ -254,6 +268,18 @@ export interface SftpProgress {
 export interface SftpUploadResult {
   uploaded: number
   bytesTotal: number
+}
+
+/** Result of running collect-diagnostics.sh + fetching the tarball back. */
+export interface DiagCollectResult {
+  /** True when a tarball was produced AND saved to the user's machine. */
+  ok: boolean
+  /** Local path the bundle was saved to (null if cancelled / failed). */
+  path: string | null
+  /** True when the user cancelled the save dialog (not an error). */
+  canceled?: boolean
+  /** Human-readable failure reason when ok is false and not cancelled. */
+  error?: string
 }
 
 // ── App info ──────────────────────────────────────────────────────────────────
@@ -506,6 +532,8 @@ export const IPC = {
   // SFTP
   sftpUploadDir:   'sftp:upload-dir',
   sftpWriteFile:   'sftp:write-file',
+  // Diagnostics (run collect-diagnostics.sh on the NAS, fetch the tarball back)
+  diagCollect:     'diag:collect',
   // Helpers
   envDetect:       'env:detect',
   vpnFetchKey:     'vpn:fetch-key',

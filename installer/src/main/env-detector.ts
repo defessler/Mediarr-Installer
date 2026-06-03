@@ -173,6 +173,19 @@ export async function detectEnv(
       'fi',
     'echo "===docker_v2==="; docker compose version 2>&1; echo "RC=$?"',
     'echo "===docker_v1==="; command -v docker-compose 2>&1; echo "RC=$?"',
+    // Podman fallback runtime (additive — only consulted when Docker is absent).
+    // Presence, which compose front-end it has, where its socket lives, and
+    // whether it's rootless (port-binding implications surfaced in the UI).
+    'echo "===podman_v==="; podman --version 2>/dev/null || true',
+    'echo "===podman_compose==="; ' +
+      'if podman compose version >/dev/null 2>&1; then echo native; ' +
+      'elif command -v podman-compose >/dev/null 2>&1; then echo external; ' +
+      'else echo none; fi',
+    'echo "===podman_socket==="; ' +
+      'if [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then echo user; ' +
+      'elif [ -S /run/podman/podman.sock ]; then echo root; ' +
+      'else echo none; fi',
+    'echo "===podman_rootless==="; podman info --format \'{{.Host.Security.Rootless}}\' 2>/dev/null || true',
     'echo "===volume1==="; [ -d /volume1 ] && echo ok; echo "RC=$?"',
     'echo "===puid==="; id -u',
     'echo "===pgid==="; id -g',
@@ -368,6 +381,17 @@ export async function detectEnv(
 
   const dockerV2OK = /RC=0$/m.test(section(o, 'docker_v2'))
   const dockerV1OK = /RC=0$/m.test(section(o, 'docker_v1'))
+  // Podman fallback signals (only meaningful when Docker is absent).
+  const podmanPresent = section(o, 'podman_v').trim().length > 0
+  const podmanComposeRaw = section(o, 'podman_compose').trim()
+  const podmanCompose: EnvDetectResult['podmanCompose'] =
+    podmanComposeRaw === 'native' || podmanComposeRaw === 'external'
+      ? podmanComposeRaw
+      : 'none'
+  const podmanSocketRaw = section(o, 'podman_socket').trim()
+  const podmanSocket: EnvDetectResult['podmanSocket'] =
+    podmanSocketRaw === 'user' || podmanSocketRaw === 'root' ? podmanSocketRaw : null
+  const podmanRootless = section(o, 'podman_rootless').trim() === 'true'
   const volume1Out = section(o, 'volume1')
   const py3Section = section(o, 'py3')
   const iptSection = section(o, 'ipt')
@@ -664,6 +688,10 @@ export async function detectEnv(
 
   return {
     docker: dockerV2OK ? 'v2' : dockerV1OK ? 'v1-legacy' : 'missing',
+    podman: podmanPresent,
+    podmanCompose,
+    podmanSocket,
+    podmanRootless,
     volume1: volume1Out.startsWith('ok'),
     puid: /^\d+$/.test(puidStr) ? Number(puidStr) : null,
     pgid: /^\d+$/.test(pgidStr) ? Number(pgidStr) : null,

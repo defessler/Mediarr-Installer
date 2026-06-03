@@ -670,6 +670,7 @@ export function App() {
             dataRoot={wizardConfig.DATA_ROOT}
             puid={wizardConfig.PUID}
             pgid={wizardConfig.PGID}
+            sessionId={sessionId}
             onClose={() => setHelpOpen(false)}
           />
         )}

@@ -346,3 +346,36 @@ export async function writeFile(args: {
     throw new Error(`writeFile failed (both SFTP and exec): ${(r.stderr || r.stdout).slice(0, 200)}`)
   }
 }
+
+/** Download a remote file to a local path. Tries native SFTP fastGet first,
+ *  falls back to `base64 <file>` over exec (decoded locally) on hosts where
+ *  the SFTP subsystem is disabled — mirrors the upload path's exec fallback.
+ *  Binary-safe (base64 is ASCII over the wire). */
+export async function downloadFile(args: {
+  sessionId: string
+  remotePath: string
+  localPath: string
+}): Promise<void> {
+  // Native SFTP fastGet.
+  try {
+    const sftp = await getSftp(args.sessionId)
+    await new Promise<void>((resolve, reject) => {
+      sftp.fastGet(args.remotePath, args.localPath, (err) => (err ? reject(err) : resolve()))
+    })
+    return
+  } catch { /* fall through to exec */ }
+
+  // Exec fallback: base64-encode on the NAS, decode + write locally.
+  const remoteEsc = args.remotePath.replace(/'/g, `'\\''`)
+  const r = await exec({
+    sessionId: args.sessionId,
+    cmd: `base64 '${remoteEsc}'`,
+    sudo: false,
+    timeoutMs: 300_000,
+  })
+  if (r.exitCode !== 0) {
+    throw new Error(`downloadFile failed (both SFTP and exec): ${(r.stderr || r.stdout).slice(0, 200)}`)
+  }
+  const bytes = Buffer.from(r.stdout.replace(/\s+/g, ''), 'base64')
+  await fs.writeFile(args.localPath, bytes)
+}

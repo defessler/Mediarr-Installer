@@ -263,6 +263,15 @@ export function EnvDetectScreen() {
         if (/aarch64|arm64/i.test(r.cpuArch ?? '') && isEnabled(config.ENABLE_FLARESOLVERR as string | undefined)) {
           patch.ENABLE_FLARESOLVERR = 'false'
         }
+        // Podman runtime (Docker absent) → pre-fill DOCKER_SOCK with a PLAIN
+        // absolute socket path. setup.sh derives DOCKER_HOST=unix://<path>, and
+        // the compose bind mount uses the path directly. Only the system (root)
+        // socket has a stable absolute path; the rootless user socket lives
+        // under $HOME, which a compose bind mount can't expand — for that case
+        // we leave it empty and let setup.sh resolve DOCKER_HOST at runtime.
+        if (r.docker === 'missing' && r.podman && r.podmanSocket === 'root' && !config.DOCKER_SOCK) {
+          patch.DOCKER_SOCK = '/run/podman/podman.sock'
+        }
         if (Object.keys(patch).length > 0) setConfig(patch)
 
         setStatus('ok')
@@ -365,10 +374,15 @@ export function EnvDetectScreen() {
       ? `This host is 32-bit (${arch || 'unknown arch'}). The media-server and *arr container images dropped 32-bit support in 2023 — a 64-bit host (x86_64 or arm64) is required. Many legacy/closed NAS appliances fall here and can't run the stack.`
     : null
 
+  // A usable container runtime = Docker, OR Podman with a compose front-end
+  // (the install drives compose, so Podman alone without one can't run).
+  const hasRuntime =
+    !!r && (r.docker !== 'missing' || (r.podman && r.podmanCompose !== 'none'))
+
   const allBlocking =
     !!r &&
     !hardBlock &&
-    r.docker !== 'missing' &&
+    hasRuntime &&
     (r.volume1 || r.nasFamily !== 'synology') &&
     (!!r.iptables || r.nasFamily !== 'synology')
 
@@ -526,14 +540,53 @@ export function EnvDetectScreen() {
               Required
             </h2>
             <Check
-              ok={r.docker !== 'missing'}
-              label="Docker"
-              value={r.docker === 'v2' ? 'v2' : r.docker === 'v1-legacy' ? 'v1 (legacy)' : 'missing'}
+              ok={r.docker !== 'missing' || (r.podman && r.podmanCompose !== 'none')}
+              tone={r.docker !== 'missing' ? 'ok'
+                : r.podman && r.podmanCompose !== 'none' ? 'info' : 'fail'}
+              label="Container runtime"
+              value={
+                r.docker === 'v2' ? 'Docker v2'
+                : r.docker === 'v1-legacy' ? 'Docker v1 (legacy)'
+                : r.podman && r.podmanCompose !== 'none'
+                  ? `Podman (${r.podmanCompose === 'native' ? 'podman compose' : 'podman-compose'})`
+                  : r.podman ? 'Podman (no compose front-end)'
+                  : 'missing'
+              }
             />
-            {r.docker === 'missing' && (() => {
-              // Family-aware "how to install Docker" remediation. Docker is the
-              // one hard requirement the wizard can't bootstrap for you, so when
-              // it's absent point at the right package source for the platform.
+            {/* Podman-as-runtime note: Docker absent but Podman usable. */}
+            {r.docker === 'missing' && r.podman && r.podmanCompose !== 'none' && (
+              <div className="ml-5 mt-1 mb-2 text-xs text-sky-300/90 space-y-1">
+                <p>
+                  Docker isn’t installed, but Podman is — the wizard will drive
+                  Podman via{' '}
+                  <span className="font-mono">
+                    {r.podmanCompose === 'native' ? 'podman compose' : 'podman-compose'}
+                  </span>{' '}
+                  and point the stack at its socket
+                  {r.podmanSocket ? ` (${r.podmanSocket})` : ''}.
+                  {r.podmanRootless && (
+                    <> Rootless mode detected — the stack’s services all bind high
+                    ports (3000+, 8000+, 49000+), so that’s fine; only a custom
+                    service on a port &lt;1024 would need userns remapping.</>
+                  )}
+                </p>
+              </div>
+            )}
+            {/* Podman present but no compose front-end → not yet usable. */}
+            {r.docker === 'missing' && r.podman && r.podmanCompose === 'none' && (
+              <div className="ml-5 mt-1 mb-2 text-xs text-amber-300 space-y-1">
+                <p>
+                  Podman is installed but has no compose front-end. Install one,
+                  then re-scan:
+                </p>
+                <pre className="font-mono text-amber-200/90 bg-slate-900/60 rounded px-2 py-1 overflow-x-auto whitespace-pre-wrap">
+                  pip install podman-compose   # or upgrade to Podman 4+ (bundles "podman compose")
+                </pre>
+              </div>
+            )}
+            {r.docker === 'missing' && !r.podman && (() => {
+              // No runtime at all. Family-aware "how to install Docker"
+              // remediation — the one prerequisite the wizard can't bootstrap.
               const rem = dockerRemediation(r.nasFamily)
               return (
                 <div className="ml-5 mt-1 mb-2 text-xs text-amber-300 space-y-1">
@@ -561,12 +614,12 @@ export function EnvDetectScreen() {
                 the config steps + qBit hash run in a throwaway python
                 container. Show that as neutral info, not a red ✗. */}
             <Check
-              ok={!!r.python3 || r.docker !== 'missing'}
-              tone={r.python3 ? 'ok' : r.docker !== 'missing' ? 'info' : 'fail'}
+              ok={!!r.python3 || hasRuntime}
+              tone={r.python3 ? 'ok' : hasRuntime ? 'info' : 'fail'}
               label="python3"
               value={r.python3
                 ? r.python3
-                : r.docker !== 'missing' ? 'n/a (runs in a container)' : 'missing'}
+                : hasRuntime ? 'n/a (runs in a container)' : 'missing'}
             />
             {/* iptables is only a hard requirement on Synology (its Docker
                 uses the iptables backend). nftables-based hosts (UGOS,

@@ -71,6 +71,13 @@ export interface EnvFormValues {
    *    Generic:  /srv/data */
   DATA_ROOT?: string
 
+  /** Container-runtime socket override. Empty for normal Docker (compose
+   *  files default to /var/run/docker.sock). Set to a Podman socket path
+   *  when Podman is the runtime — setup.sh exports it as DOCKER_HOST so the
+   *  `docker` client + compose talk to Podman, and the compose bind mounts
+   *  use it via ${DOCKER_SOCK:-/var/run/docker.sock}. */
+  DOCKER_SOCK?: string
+
   // ── Media server
   /** Which media server to deploy: 'plex' (default) or 'jellyfin'.
    *  Mutually exclusive — setup.sh activates the matching compose
@@ -332,6 +339,15 @@ export function renderEnv(v: EnvFormValues): string {
     '# Paths — NAS-family-portable. docker-compose.yml references both.',
     line('INSTALL_DIR', v.INSTALL_DIR || '/volume1/docker/media'),
     line('DATA_ROOT',   v.DATA_ROOT   || '/volume1/Data'),
+    // Only emit the runtime-socket override when it's actually set (Podman).
+    // Leaving it out keeps the compose default ${DOCKER_SOCK:-/var/run/docker.sock}
+    // for the normal Docker case.
+    ...(v.DOCKER_SOCK
+      ? [
+          '# Container runtime socket (Podman). Exported as DOCKER_HOST by setup.sh.',
+          line('DOCKER_SOCK', v.DOCKER_SOCK),
+        ]
+      : []),
     '',
     '# Network',
     line('LAN_IP', v.LAN_IP),

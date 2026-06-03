@@ -25,6 +25,24 @@ export async function saveTextToFile(args: {
   return { saved: true, path: result.filePath }
 }
 
+/** Save-dialog for a binary artifact that's written by the CALLER (e.g. an
+ *  SFTP download), not by this helper. Returns the chosen path so the caller
+ *  can stream bytes into it. Cancels return { saved:false, path:null }. */
+export async function chooseSavePath(args: {
+  defaultName: string
+  title?: string
+  filters?: { name: string; extensions: string[] }[]
+}): Promise<{ saved: boolean; path: string | null }> {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const result = await dialog.showSaveDialog(win, {
+    title: args.title ?? 'Save file',
+    defaultPath: args.defaultName,
+    filters: args.filters ?? [{ name: 'All files', extensions: ['*'] }],
+  })
+  if (result.canceled || !result.filePath) return { saved: false, path: null }
+  return { saved: true, path: result.filePath }
+}
+
 /** Cap how large a file we'll ever slurp into memory through this
  *  helper. 10 MB is wildly more than any text config we read here
  *  (profile exports are a few KB), so this only matters if the user

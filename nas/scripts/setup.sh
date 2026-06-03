@@ -190,16 +190,57 @@ PASS=0
 FAIL=0
 SKIP=0
 
-# ── Detect docker compose command ────────────────────────────────────────────
+# ── Detect docker compose command (Docker, else Podman) ──────────────────────
+# DOCKER_SOCK in .env (set by the wizard when it detects Podman, or hand-added)
+# points the Docker client library at a non-default socket. Export it as
+# DOCKER_HOST BEFORE any compose/docker/python call so they all reach the same
+# daemon. No effect on a normal Docker install (DOCKER_SOCK unset).
+# (env_val isn't defined yet — inline the read. ENV_FILE is resolved above.)
+# DOCKER_SOCK is a PLAIN socket path (so the compose bind mount can use it);
+# DOCKER_HOST needs a unix:// URI. Accept either form and normalise.
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs)"
+if [ -n "$DOCKER_SOCK" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+    echo "  Note: DOCKER_HOST=$DOCKER_HOST (from .env DOCKER_SOCK)."
+fi
 
 COMPOSE=""
-if docker compose version &>/dev/null 2>&1; then
+CONTAINER_RUNTIME="docker"   # the `<rt> run` / `<rt> ps` CLI (docker | podman)
+if docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
-elif command -v docker-compose &>/dev/null; then
+elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
+elif command -v podman >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="podman"
+    # Podman fallback. Prefer the built-in `podman compose` (v4+), else the
+    # `podman-compose` wrapper. Point DOCKER_HOST at Podman's socket if .env
+    # didn't already set one, so the Python config steps (which use the Docker
+    # SDK / talk to containers) reach Podman too.
+    if podman compose version >/dev/null 2>&1; then
+        COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then
+        COMPOSE="podman-compose"
+    else
+        echo "Error: Podman is installed but no compose front-end found."
+        echo "Install 'podman-compose' (pip install podman-compose) or upgrade to"
+        echo "Podman 4+ which bundles 'podman compose', then re-run."
+        exit 1
+    fi
+    if [ -z "$DOCKER_HOST" ]; then
+        if [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then
+            export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then
+            export DOCKER_HOST="unix:///run/podman/podman.sock"
+        fi
+        [ -n "$DOCKER_HOST" ] && echo "  Note: using Podman ($COMPOSE) with DOCKER_HOST=$DOCKER_HOST."
+    fi
+    echo "  Note: Docker not found — using Podman ($COMPOSE)."
 else
-    echo "Error: neither 'docker compose' nor 'docker-compose' found."
-    echo "Install Docker Desktop or the Docker Compose plugin first."
+    echo "Error: no container runtime found (neither Docker nor Podman)."
+    echo "Install Docker (or Podman + a compose front-end) first."
     exit 1
 fi
 
@@ -223,10 +264,16 @@ run_python() {
         "$HOST_PY3" "$@"
         return $?
     fi
-    docker run --rm -i --network host \
+    # Throwaway python container via whichever runtime is active (docker or
+    # podman). Mount the resolved runtime socket (DOCKER_HOST's unix:// path
+    # when set — Podman — else the default Docker socket) so the script can
+    # shell out to the container CLI for the rare steps that need it.
+    local _sock="${DOCKER_HOST#unix://}"
+    [ -n "$_sock" ] || _sock="/var/run/docker.sock"
+    "$CONTAINER_RUNTIME" run --rm -i --network host \
         -v "$SCRIPT_DIR":"$SCRIPT_DIR" \
         -v "$INSTALL_DIR":"$INSTALL_DIR" \
-        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "$_sock":/var/run/docker.sock \
         -w "$SCRIPT_DIR" \
         -e INSTALL_DIR="$INSTALL_DIR" \
         --entrypoint sh \
@@ -454,9 +501,9 @@ stop_disabled_services() {
         # (re-)create or update it as needed.
         is_enabled "$flag" && continue
         # Service is disabled but the container exists → stop + remove.
-        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
-            docker stop "$container" >/dev/null 2>&1 || true
-            docker rm   "$container" >/dev/null 2>&1 || true
+        if $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
+            $CONTAINER_RUNTIME stop "$container" >/dev/null 2>&1 || true
+            $CONTAINER_RUNTIME rm   "$container" >/dev/null 2>&1 || true
             echo "  ✔ Removed $container (now opted out via $flag=false)"
             stopped=$((stopped + 1))
         fi
@@ -472,9 +519,9 @@ stop_disabled_services() {
         if [ "$MEDIA_SERVER" = "jellyfin" ]; then stale="plex tautulli"; else stale="jellyfin"; fi
     fi
     for container in $stale; do
-        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
-            docker stop "$container" >/dev/null 2>&1 || true
-            docker rm   "$container" >/dev/null 2>&1 || true
+        if $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
+            $CONTAINER_RUNTIME stop "$container" >/dev/null 2>&1 || true
+            $CONTAINER_RUNTIME rm   "$container" >/dev/null 2>&1 || true
             echo "  ✔ Removed $container (not used by MEDIA_SERVER=$MEDIA_SERVER)"
             stopped=$((stopped + 1))
         fi
@@ -539,7 +586,7 @@ check_port_conflicts() {
             # If yes, it's not a conflict — compose will recreate that
             # container in step 6. If no, something foreign is holding
             # the port and step 6 will fail.
-            if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$svc"; then
+            if ! $CONTAINER_RUNTIME ps --format '{{.Names}}' 2>/dev/null | grep -qx "$svc"; then
                 conflicts="$conflicts $svc:$port"
             fi
         fi
@@ -613,7 +660,7 @@ wait_for_services() {
 
         for svc in $services; do
             local state
-            state=$(docker inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo "missing")
+            state=$($CONTAINER_RUNTIME inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo "missing")
             if [ "$state" = "running" ]; then
                 status_line+="$svc ✔  "
             else
@@ -839,7 +886,7 @@ fi
 # blocking: `docker manifest inspect` can hit Docker Hub rate limits, so a
 # query failure is treated as "unknown, let the pull decide", not an error.
 check_image_arch() {
-    command -v docker >/dev/null 2>&1 || return 0
+    command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1 || return 0
     local hostm want
     hostm=$(uname -m)
     case "$hostm" in
@@ -848,14 +895,14 @@ check_image_arch() {
         armv7l|armv6l) want=arm   ;;
         *) echo "  ⏭ Unknown CPU arch '$hostm' — skipping image-arch pre-flight."; return 0 ;;
     esac
-    docker manifest inspect hello-world >/dev/null 2>&1 \
-        || { echo "  ⏭ 'docker manifest inspect' unavailable — skipping image-arch pre-flight."; return 0; }
+    $CONTAINER_RUNTIME manifest inspect hello-world >/dev/null 2>&1 \
+        || { echo "  ⏭ 'manifest inspect' unavailable — skipping image-arch pre-flight."; return 0; }
     local images img missing=""
     images=$(cd "$SCRIPT_DIR" && $COMPOSE $COMPOSE_FILES config --images 2>/dev/null | sort -u)
     [ -z "$images" ] && return 0
     for img in $images; do
-        docker manifest inspect "$img" >/dev/null 2>&1 || continue
-        if ! docker manifest inspect "$img" 2>/dev/null | grep -qiE "\"architecture\":[[:space:]]*\"$want\""; then
+        $CONTAINER_RUNTIME manifest inspect "$img" >/dev/null 2>&1 || continue
+        if ! $CONTAINER_RUNTIME manifest inspect "$img" 2>/dev/null | grep -qiE "\"architecture\":[[:space:]]*\"$want\""; then
             missing="$missing $img"
         fi
     done
@@ -879,9 +926,9 @@ check_image_arch() {
 # cooperate.
 MIN_DROOT_GIB=10
 check_docker_dataroot_space() {
-    command -v docker >/dev/null 2>&1 || return 0
+    command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1 || return 0
     local droot free_kb free_gib
-    droot=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null)
+    droot=$($CONTAINER_RUNTIME info -f '{{.DockerRootDir}}' 2>/dev/null)
     [ -n "$droot" ] || return 0
     # Walk up to the nearest existing ancestor so df has a real path to stat.
     while [ -n "$droot" ] && [ ! -d "$droot" ]; do droot=$(dirname "$droot"); done
@@ -910,10 +957,10 @@ check_docker_dataroot_space() {
 # blips shouldn't halt the install) but loud. Cleans up hello-world if we were
 # the ones who pulled it.
 check_registry_egress() {
-    command -v docker >/dev/null 2>&1 || return 0
+    command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1 || return 0
     local had_hw
-    had_hw=$(docker image inspect hello-world >/dev/null 2>&1 && echo 1 || echo 0)
-    if docker pull -q hello-world >/dev/null 2>&1; then
+    had_hw=$($CONTAINER_RUNTIME image inspect hello-world >/dev/null 2>&1 && echo 1 || echo 0)
+    if $CONTAINER_RUNTIME pull -q hello-world >/dev/null 2>&1; then
         echo "  ✔ Docker daemon can reach the registry (pulled a test image)."
     else
         echo "  ⚠ Docker daemon could NOT pull a test image (hello-world)."
@@ -921,9 +968,9 @@ check_registry_egress() {
         echo "    causes: the daemon's DNS/proxy isn't set (check /etc/docker/daemon.json"
         echo "    + the docker service's HTTP_PROXY), an outbound firewall blocks the"
         echo "    daemon, or Docker Hub is rate-limiting this IP. Verify with:"
-        echo "        docker pull hello-world"
+        echo "        $CONTAINER_RUNTIME pull hello-world"
     fi
-    [ "$had_hw" = 0 ] && docker rmi hello-world >/dev/null 2>&1 || true
+    [ "$had_hw" = 0 ] && $CONTAINER_RUNTIME rmi hello-world >/dev/null 2>&1 || true
 }
 
 echo ""

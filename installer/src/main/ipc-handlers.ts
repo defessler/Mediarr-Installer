@@ -12,7 +12,7 @@ import { detectEnv as detectEnvReal } from './env-detector.js'
 import { fetchVpnKey as fetchVpnKeyReal } from './vpn-service.js'
 import * as mock from './mock-services.js'
 import * as profiles from './profile-store.js'
-import { saveTextToFile, openTextFromFile } from './dialog-service.js'
+import { saveTextToFile, openTextFromFile, chooseSavePath } from './dialog-service.js'
 import { payloadSha } from './payload-resolver.js'
 import * as installLog from './install-log.js'
 import * as qbit from './qbit-migration.js'
@@ -48,6 +48,58 @@ export function registerIpcHandlers() {
   // ── SFTP ──────────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.sftpUploadDir, (_e, args) => sftp.uploadDir(args))
   ipcMain.handle(IPC.sftpWriteFile, (_e, args) => sftp.writeFile(args))
+
+  // ── Diagnostics bundle ──────────────────────────────────────────────────────
+  // Run collect-diagnostics.sh on the NAS, parse the tarball path it prints,
+  // let the user pick a save location, then SFTP the (redacted) bundle back.
+  ipcMain.handle(IPC.diagCollect, async (_e, args: { sessionId: string; installDir: string }) => {
+    try {
+      const scriptPath = `${args.installDir.replace(/\/+$/, '')}/scripts/collect-diagnostics.sh`
+      const esc = scriptPath.replace(/'/g, `'\\''`)
+      // Unprivileged: the script degrades gracefully for root-only data
+      // (dmesg/iptables) and the SSH user already has Docker access. 5-min
+      // cap covers slow per-container log tails on spinning rust.
+      const res = await ssh.exec({
+        sessionId: args.sessionId,
+        cmd: `bash '${esc}'`,
+        sudo: false,
+        timeoutMs: 300_000,
+      })
+      const m = res.stdout.match(/^DIAGNOSTICS_TARBALL=(.+)$/m)
+      if (!m) {
+        return {
+          ok: false,
+          path: null,
+          error:
+            `The diagnostics script didn't produce a bundle. ` +
+            (res.stderr || res.stdout || '').slice(-300),
+        }
+      }
+      const remote = m[1].trim()
+      const save = await chooseSavePath({
+        defaultName: remote.split('/').pop() || 'mediarr-diagnostics.tar.gz',
+        title: 'Save diagnostics bundle',
+        filters: [
+          { name: 'Gzipped tarball', extensions: ['tar.gz', 'tgz'] },
+          { name: 'All files', extensions: ['*'] },
+        ],
+      })
+      if (!save.saved || !save.path) return { ok: false, path: null, canceled: true }
+      await sftp.downloadFile({ sessionId: args.sessionId, remotePath: remote, localPath: save.path })
+      // Best-effort: remove the tarball from the NAS now it's been fetched.
+      try {
+        await ssh.exec({
+          sessionId: args.sessionId,
+          cmd: `rm -f '${remote.replace(/'/g, `'\\''`)}'`,
+          sudo: false,
+        })
+      } catch { /* leave it — harmless */ }
+      return { ok: true, path: save.path }
+    } catch (e) {
+      log.error('diag:collect failed', e)
+      return { ok: false, path: null, error: (e as Error).message }
+    }
+  })
 
   // qBittorrent migration — fetch list + per-torrent migrate. Both run
   // in main process to avoid CORS (qBit doesn't send CORS headers) and

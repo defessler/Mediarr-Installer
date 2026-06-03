@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   HelpCircle, Search, X, Clipboard, ClipboardCheck, ExternalLink, SearchX,
+  Download, Loader2, CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { BigButton } from './BigButton.js'
 import type { NasFamily } from '../../shared/ipc.js'
@@ -710,12 +711,42 @@ interface Props {
   dataRoot?: string
   puid?: string
   pgid?: string
+  /** Active SSH session — when present, the "Download diagnostics" button is
+   *  enabled (it runs collect-diagnostics.sh on the NAS and fetches the
+   *  bundle back). Null/absent before Connect, where the button is hidden. */
+  sessionId?: string | null
   onClose: () => void
 }
 
-export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pgid, onClose }: Props) {
+export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pgid, sessionId, onClose }: Props) {
   const [query, setQuery] = useState('')
   const reduced = useReducedMotion()
+
+  // "Download diagnostics" state. Only usable when there's a live SSH session.
+  const [diagBusy, setDiagBusy] = useState(false)
+  const [diagMsg, setDiagMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
+  async function downloadDiagnostics() {
+    if (!sessionId || diagBusy) return
+    setDiagBusy(true)
+    setDiagMsg(null)
+    try {
+      const r = await window.installer.diag.collect({
+        sessionId,
+        installDir: installDir || '/volume1/docker/media',
+      })
+      if (r.ok && r.path) {
+        setDiagMsg({ tone: 'ok', text: `Saved to ${r.path}` })
+      } else if (r.canceled) {
+        setDiagMsg(null)
+      } else {
+        setDiagMsg({ tone: 'err', text: r.error || 'Diagnostics collection failed.' })
+      }
+    } catch (e) {
+      setDiagMsg({ tone: 'err', text: (e as Error).message })
+    } finally {
+      setDiagBusy(false)
+    }
+  }
 
   // Substitution context for command builders + placeholder replacement.
   // Fall back to the historical Synology defaults when a field hasn't been
@@ -883,12 +914,45 @@ export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pg
         </div>
 
         <footer className="px-5 py-3 border-t border-slate-800 flex items-center justify-between gap-3">
-          <span className="text-xs text-slate-500">
-            {filtered.length} item{filtered.length === 1 ? '' : 's'} shown · ESC to close
-          </span>
-          <BigButton size="md" variant="secondary" onClick={onClose}>
-            Close
-          </BigButton>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-xs text-slate-500 shrink-0">
+              {filtered.length} item{filtered.length === 1 ? '' : 's'} shown · ESC to close
+            </span>
+            {diagMsg && (
+              <span
+                className={`text-xs inline-flex items-center gap-1 truncate ${
+                  diagMsg.tone === 'ok' ? 'text-emerald-300' : 'text-amber-300'
+                }`}
+                title={diagMsg.text}
+              >
+                {diagMsg.tone === 'ok'
+                  ? <CheckCircle2 size={13} className="shrink-0" aria-hidden="true" />
+                  : <AlertTriangle size={13} className="shrink-0" aria-hidden="true" />}
+                <span className="truncate">{diagMsg.text}</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Diagnostics bundle — only when there's a live SSH session to
+                run collect-diagnostics.sh against. */}
+            {sessionId && (
+              <BigButton
+                size="md"
+                variant="secondary"
+                onClick={downloadDiagnostics}
+                disabled={diagBusy}
+                icon={diagBusy
+                  ? <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  : <Download size={16} aria-hidden="true" />}
+                title="Run a redacted diagnostics collection on the NAS and save the bundle to your PC"
+              >
+                {diagBusy ? 'Collecting…' : 'Download diagnostics'}
+              </BigButton>
+            )}
+            <BigButton size="md" variant="secondary" onClick={onClose}>
+              Close
+            </BigButton>
+          </div>
         </footer>
       </motion.div>
     </motion.div>
