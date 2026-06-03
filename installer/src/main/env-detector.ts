@@ -3,7 +3,12 @@
 // PUID/PGID, timezone, LAN IPs, Docker version, Python, iptables, plus
 // pre-existing install detection and port-conflict scan.
 
-import { exec, setSessionEffectiveRoot } from './ssh-service.js'
+import {
+  exec,
+  setSessionEffectiveRoot,
+  setSessionDockerGroup,
+  setSessionEscalation,
+} from './ssh-service.js'
 import type { EnvDetectResult, PortConflict } from '../shared/ipc.js'
 
 // Ports the stack binds. Mirrors docker-compose.yml + setup-firewall.sh.
@@ -198,6 +203,11 @@ export async function detectEnv(
     'echo "===py3==="; python3 --version 2>&1; echo "RC=$?"',
     'echo "===ipt==="; iptables --version 2>&1; echo "RC=$?"',
     'echo "===sudo_nopw==="; sudo -n true 2>/dev/null; echo $?',
+    'echo "===has_sudo==="; command -v sudo >/dev/null 2>&1 && echo y || echo n',
+    // doas is the BSD/Alpine escalation tool — present where sudo isn\'t.
+    // `doas -n true` returns 0 only when the caller has a NOPASS rule.
+    'echo "===has_doas==="; command -v doas >/dev/null 2>&1 && echo y || echo n',
+    'echo "===doas_nopw==="; doas -n true 2>/dev/null; echo $?',
     'echo "===whoami==="; whoami',
     'echo "===has_compose==="; [ -f ' + tq + '/docker-compose.yml ] && echo y || true',
     'echo "===has_env==="; [ -f ' + tq + '/.env ] && echo y || true',
@@ -378,10 +388,35 @@ export async function detectEnv(
   // session effective-root so wrapSudo skips the `sudo` prefix entirely.
   const isRoot = whoami === 'root' || section(o, 'puid') === '0'
   setSessionEffectiveRoot(sessionId, isRoot)
+
+  // Escalation backend: prefer sudo (most-tested), fall back to doas
+  // (Alpine / BSD-derived NAS firmware). `*_nopw` probes return "0" when
+  // the caller has a passwordless rule.
+  const hasSudo = section(o, 'has_sudo').trim() === 'y'
+  const hasDoas = section(o, 'has_doas').trim() === 'y'
   const sudoNopw = section(o, 'sudo_nopw')
+  const doasNopw = section(o, 'doas_nopw')
+  const escalation: 'sudo' | 'doas' =
+    hasSudo ? 'sudo' : hasDoas ? 'doas' : 'sudo'
+  const escNopass =
+    escalation === 'sudo'
+      ? sudoNopw.trim().endsWith('0')
+      : doasNopw.trim().endsWith('0')
+  setSessionEscalation(sessionId, escalation, escNopass)
+
   let sudoMode: EnvDetectResult['sudoMode'] = 'password'
   if (isRoot) sudoMode = 'root'
-  else if (sudoNopw.trim().endsWith('0')) sudoMode = 'nopasswd'
+  else if (escNopass) sudoMode = 'nopasswd'
+
+  // Docker-group escalation path: the docker_info probe runs UNPRIVILEGED.
+  // If it returned a server version, this (non-root) login can drive the
+  // Docker daemon without sudo — typically because it's in the `docker`
+  // group or owns the socket. That's enough to run the whole stack even
+  // with no sudo password, so mark the session so exec() won't hard-fail
+  // privileged steps. (Moot for root, which already escalates via uid 0.)
+  const dockerNoSudo = section(o, 'docker_info').trim().length > 0
+  const dockerGroup = dockerNoSudo && !isRoot
+  setSessionDockerGroup(sessionId, dockerGroup)
 
   // Existing install + port conflict from the batched output.
   const dockerPresent = dockerV2OK || dockerV1OK
@@ -606,6 +641,7 @@ export async function detectEnv(
     python3: py3OK ? py3Section.replace(/\nRC=0$/, '') : null,
     iptables: iptOK ? iptSection.replace(/\nRC=0$/, '').split('\n')[0] : null,
     sudoMode,
+    dockerGroup,
     existingInstall,
     portConflicts,
     disk,

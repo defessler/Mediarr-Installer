@@ -38,6 +38,90 @@ function containerToEnableKey(c: string): keyof EnvFormValues | null {
 
 type Status = 'detecting' | 'ok' | 'failed'
 
+// Family-aware "Docker is missing — here's how to get it" guidance. Docker is
+// the one prerequisite the wizard can't bootstrap over SSH (it needs a package
+// manager / app store action), so when it's absent we point at the correct
+// source per platform. `cmd` is an optional copy-pasteable shell snippet for
+// families where install is CLI-driven; GUI-driven NAS families get a note only.
+function dockerRemediation(
+  family: EnvDetectResult['nasFamily'],
+): { note: string; cmd?: string } {
+  switch (family) {
+    case 'synology':
+      return {
+        note:
+          'Docker isn’t installed. Open DSM → Package Center and install ' +
+          '“Container Manager” (DSM 7.2+) or “Docker” (older DSM). ' +
+          'Some value/J-series models don’t offer it — check that yours is supported.',
+      }
+    case 'ugreen':
+      return {
+        note:
+          'Docker isn’t installed. Open the UGOS “App Center” and install ' +
+          'the “Docker” app, then re-run this wizard.',
+      }
+    case 'asustor':
+      return {
+        note:
+          'Docker isn’t installed. Open ADM → App Central and install ' +
+          '“Docker Engine” (and optionally Portainer).',
+      }
+    case 'terramaster':
+      return {
+        note:
+          'Docker isn’t installed. Open TOS → App Center and install ' +
+          '“Docker Manager”.',
+      }
+    case 'qnap':
+      return {
+        note:
+          'Docker isn’t installed. Open the QTS/QuTS App Center and install ' +
+          '“Container Station”, which bundles the Docker engine.',
+      }
+    case 'zimaos':
+      return {
+        note:
+          'ZimaOS normally ships Docker built in — if it’s not detected, your ' +
+          'system may be mid-update or incomplete. Check the ZimaOS App Store / ' +
+          'reboot, then re-scan.',
+      }
+    case 'unraid':
+      return {
+        note:
+          'Docker is built into Unraid but currently disabled. Go to ' +
+          'Settings → Docker, set “Enable Docker” = Yes, and apply. ' +
+          '(A data array / cache pool must be started first.)',
+      }
+    case 'truenas':
+      return {
+        note:
+          'TrueNAS SCALE runs containers through its Apps system rather than ' +
+          'exposing a plain Docker socket, so this SSH-based installer can’t drive ' +
+          'it directly. Run the stack from a Linux VM on the box, or install the ' +
+          'apps individually. (TrueNAS CORE is FreeBSD and unsupported.)',
+      }
+    case 'omv':
+      return {
+        note:
+          'Docker isn’t installed. The easiest route on OpenMediaVault is the ' +
+          'omv-extras “Compose” plugin, which installs the Docker engine for you. ' +
+          'Or install it directly:',
+        cmd: 'sudo apt-get update && sudo apt-get install -y docker.io docker-compose-plugin',
+      }
+    case 'linux':
+    default:
+      return {
+        note:
+          'Docker isn’t installed. On most Linux hosts the official convenience ' +
+          'script is the quickest path, then add your user to the docker group so ' +
+          'this wizard can run without sudo:',
+        cmd:
+          'curl -fsSL https://get.docker.com | sudo sh\n' +
+          'sudo usermod -aG docker "$USER"   # log out/in afterwards',
+      }
+  }
+}
+
 // Translate a detect result into a vertical checklist with red/green dots,
 // then auto-fill what we can into the wizard's config so the user only
 // edits things we couldn't infer.
@@ -437,6 +521,26 @@ export function EnvDetectScreen() {
               label="Docker"
               value={r.docker === 'v2' ? 'v2' : r.docker === 'v1-legacy' ? 'v1 (legacy)' : 'missing'}
             />
+            {r.docker === 'missing' && (() => {
+              // Family-aware "how to install Docker" remediation. Docker is the
+              // one hard requirement the wizard can't bootstrap for you, so when
+              // it's absent point at the right package source for the platform.
+              const rem = dockerRemediation(r.nasFamily)
+              return (
+                <div className="ml-5 mt-1 mb-2 text-xs text-amber-300 space-y-1">
+                  <p>{rem.note}</p>
+                  {rem.cmd && (
+                    <pre className="font-mono text-amber-200/90 bg-slate-900/60 rounded px-2 py-1 overflow-x-auto whitespace-pre-wrap">
+                      {rem.cmd}
+                    </pre>
+                  )}
+                  <p className="text-slate-400">
+                    Install it, then go <span className="font-mono">Back</span> and
+                    reconnect — we'll re-scan automatically.
+                  </p>
+                </div>
+              )
+            })()}
             <Check
               ok={r.volume1 || r.nasFamily !== 'synology'}
               label={r.nasFamily === 'synology' ? '/volume1 exists' : 'Storage root present'}
@@ -748,37 +852,73 @@ export function EnvDetectScreen() {
           </section>
 
           <section className="rounded-md border border-slate-800 p-4 text-sm">
-            <div className="flex items-center gap-3">
-              {r.sudoMode === 'root' || r.sudoMode === 'nopasswd' ? (
-                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
-              ) : (
-                <AlertTriangle size={18} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
-              )}
-              <span>
-                Sudo strategy: <span className="font-mono">{r.sudoMode}</span>
-              </span>
-            </div>
-            {r.sudoMode === 'password' && (
-              <p className="text-amber-200/80 mt-2">
-                You logged in as a non-root user, so the privileged install
-                steps run under <span className="font-mono mx-1">sudo</span>.
-                Make sure you filled in the{' '}
-                <span className="font-mono mx-1">Sudo password</span> field on
-                the Connect screen — the wizard pipes it to{' '}
-                <span className="font-mono">sudo -S</span> for each step.
-                {r.nasFamily === 'synology' && (
-                  <> Alternatively, log in as{' '}
-                  <span className="font-mono mx-1">root</span> — DSM 7 disables
-                  root SSH by default, but you can re-enable it via Control
-                  Panel → User &amp; Group → root → Edit → set a password.</>
-                )}
-                {r.nasFamily === 'ugreen' && (
-                  <> On UGOS this is expected — the admin user uses password
-                  sudo and root SSH is off by default, so just keep the Sudo
-                  password field filled.</>
-                )}
-              </p>
-            )}
+            {(() => {
+              // The Connect screen passes a sudo password? Then sudoMode is
+              // already 'password' and we use it. But a non-root user with NO
+              // sudo password can still proceed if they're in the docker group
+              // (r.dockerGroup) — Docker/compose work unprivileged. Treat that
+              // as a green path; only true 'password' with no docker-group
+              // fallback stays amber.
+              const dockerGroupPath = r.sudoMode === 'password' && r.dockerGroup
+              const greenPath =
+                r.sudoMode === 'root' || r.sudoMode === 'nopasswd' || dockerGroupPath
+              return (
+                <>
+                  <div className="flex items-center gap-3">
+                    {greenPath ? (
+                      <CheckCircle2 size={18} className="text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    ) : (
+                      <AlertTriangle size={18} className="text-amber-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    )}
+                    <span>
+                      Sudo strategy:{' '}
+                      <span className="font-mono">
+                        {dockerGroupPath ? 'docker-group (no sudo)' : r.sudoMode}
+                      </span>
+                    </span>
+                  </div>
+                  {dockerGroupPath && (
+                    <p className="text-emerald-200/80 mt-2">
+                      You logged in as a non-root user with no sudo password,
+                      but your account can drive Docker directly (it's in the{' '}
+                      <span className="font-mono">docker</span> group or owns the
+                      socket), so the install can run unprivileged. Docker and
+                      Compose work normally; a few host-level tweaks that
+                      genuinely need root are skipped with a warning — harmless
+                      on most setups.
+                    </p>
+                  )}
+                  {r.sudoMode === 'password' && !r.dockerGroup && (
+                    <p className="text-amber-200/80 mt-2">
+                      You logged in as a non-root user, so the privileged install
+                      steps run under <span className="font-mono mx-1">sudo</span>.
+                      Make sure you filled in the{' '}
+                      <span className="font-mono mx-1">Sudo password</span> field on
+                      the Connect screen — the wizard pipes it to{' '}
+                      <span className="font-mono">sudo -S</span> for each step.
+                      {r.nasFamily === 'synology' && (
+                        <> Alternatively, log in as{' '}
+                        <span className="font-mono mx-1">root</span> — DSM 7 disables
+                        root SSH by default, but you can re-enable it via Control
+                        Panel → User &amp; Group → root → Edit → set a password.</>
+                      )}
+                      {r.nasFamily === 'ugreen' && (
+                        <> On UGOS this is expected — the admin user uses password
+                        sudo and root SSH is off by default, so just keep the Sudo
+                        password field filled.</>
+                      )}
+                      {(r.nasFamily === 'linux' || r.nasFamily === 'omv' ||
+                        r.nasFamily === 'truenas') && (
+                        <> Or skip sudo entirely by adding your user to the{' '}
+                        <span className="font-mono mx-1">docker</span> group:{' '}
+                        <span className="font-mono">sudo usermod -aG docker $USER</span>,
+                        then log out and back in.</>
+                      )}
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           </section>
 
           {/* Platform readiness — three Synology-DSM7-specific conditions

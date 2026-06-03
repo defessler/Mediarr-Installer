@@ -378,6 +378,7 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
     python3: 'Python 3.11.4',
     iptables: 'iptables v1.8.9',
     sudoMode: 'root',
+    dockerGroup: false,
     existingInstall: sc.existingInstall
       ? {
           hasCompose: true,

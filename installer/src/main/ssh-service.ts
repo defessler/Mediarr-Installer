@@ -30,6 +30,26 @@ interface Session {
    *  …). When true, wrapSudo skips the `sudo` prefix and exec stops
    *  demanding a sudo password — those boxes have no sudo. */
   effectiveRoot?: boolean
+  /** Set by env-detector when the (non-root) login can drive the Docker
+   *  daemon WITHOUT sudo (it's in the `docker` group / has socket access —
+   *  the unprivileged `docker info` probe returned a server version). This
+   *  is a valid install posture: rather than demand a sudo password we
+   *  never got, run the steps unprivileged. Docker/compose work; the few
+   *  genuinely-root steps (Synology firewall, chown-to-PUID, tun insmod)
+   *  degrade with a warning. */
+  dockerGroup?: boolean
+  /** Which privilege-escalation backend the host has. `sudo` everywhere
+   *  except minimalist/BSD-derived firmware (Alpine, some routers) that
+   *  ship `doas` instead. Set by env-detector; defaults to sudo. */
+  escalation?: 'sudo' | 'doas'
+  /** True when the escalation backend runs WITHOUT a password (a NOPASSWD
+   *  sudoers rule or a `nopass` doas rule). Lets us wrap with `sudo -n` /
+   *  `doas -n` and pipe nothing. */
+  escalationNopass?: boolean
+  /** Set once we've emitted the "running unprivileged via docker-group"
+   *  warning, so the degradation notice appears one time per session
+   *  instead of before every privileged step. */
+  dockerGroupWarned?: boolean
 }
 
 const sessions = new Map<string, Session>()
@@ -256,21 +276,99 @@ export function setSessionEffectiveRoot(sessionId: string, value: boolean): void
   if (sess) sess.effectiveRoot = value
 }
 
-/** True when no `sudo` is needed: the SSH user is named root, OR the login
- *  is uid 0 under another name (QNAP admin etc.). */
+/** Mark a (non-root) session as able to drive Docker without sudo. Called
+ *  by env-detector. Safe no-op for unknown sessions. */
+export function setSessionDockerGroup(sessionId: string, value: boolean): void {
+  const sess = sessions.get(sessionId)
+  if (sess) sess.dockerGroup = value
+}
+
+/** Record which escalation backend the host has (sudo vs doas) and whether
+ *  it runs passwordless. Set by env-detector. Safe no-op for unknown ids. */
+export function setSessionEscalation(
+  sessionId: string,
+  backend: 'sudo' | 'doas',
+  nopass: boolean,
+): void {
+  const sess = sessions.get(sessionId)
+  if (sess) {
+    sess.escalation = backend
+    sess.escalationNopass = nopass
+  }
+}
+
+/** True when no escalation is needed: the SSH user is named root, OR the
+ *  login is uid 0 under another name (QNAP admin etc.). */
 function sessionIsRoot(sess: Session): boolean {
   return sess.config.user === 'root' || sess.effectiveRoot === true
+}
+
+/** How a `sudo: true` command should be privileged:
+ *    'none'        — run unwrapped (already root, or a docker-group user
+ *                    with no escalation — best we can do; docker works).
+ *    'wrap-nopass' — wrap with `sudo -n` / `doas -n`; no password to pipe.
+ *    'password'    — wrap with `sudo -S` and pipe the user's sudo password.
+ *    'fail'        — no escalation path; exec()/execStream throw clearly.
+ *
+ *  Order matters: a provided password beats a NOPASS rule (works even when
+ *  the rule is command-scoped), and real escalation beats docker-group
+ *  (which can't do host-root steps like chown-to-PUID or tun insmod). */
+function privMode(sess: Session): 'none' | 'wrap-nopass' | 'password' | 'fail' {
+  if (sessionIsRoot(sess)) return 'none'
+  if (sess.config.sudoPassword) return 'password'
+  if (sess.escalationNopass) return 'wrap-nopass'
+  if (sess.dockerGroup) return 'none'
+  return 'fail'
+}
+
+/** Escalation command prefix for a wrapping mode, honouring the backend. */
+function escPrefix(sess: Session, mode: 'wrap-nopass' | 'password'): string {
+  const backend = sess.escalation ?? 'sudo'
+  if (mode === 'wrap-nopass') return `${backend} -n`
+  // 'password': sudo reads the password from stdin via -S (-p '' blanks the
+  // prompt so it doesn't echo into the log). doas has no stdin-password
+  // flag — it prompts on the tty, which the PTY in execStream answers; in
+  // the non-PTY exec() path doas+password can't work, but doas is paired
+  // with a nopass rule in practice, so that path is effectively unused.
+  return backend === 'doas' ? 'doas' : `sudo -S -p ''`
 }
 
 function wrapSudo(sessionId: string, cmd: string, sudo: boolean): string {
   if (!sudo) return cmd
   const sess = sessions.get(sessionId)
   if (!sess) return cmd
-  if (sessionIsRoot(sess)) return cmd
-  // -S reads the password from stdin; -p '' blanks the prompt so the
-  // password write doesn't appear in the log.
+  const mode = privMode(sess)
+  // 'none' runs as-is; 'fail' also returns as-is but the caller throws first.
+  if (mode !== 'wrap-nopass' && mode !== 'password') return cmd
   const escaped = cmd.replace(/'/g, `'\\''`)
-  return `sudo -S -p '' bash -c '${escaped}'`
+  return `${escPrefix(sess, mode)} bash -c '${escaped}'`
+}
+
+/** True when a `sudo: true` command will run UNPRIVILEGED via the
+ *  docker-group fallback (privMode 'none', but the session isn't actually
+ *  root). Used to surface a one-time degradation warning. */
+function isDockerGroupFallback(sess: Session, sudo: boolean): boolean {
+  return !!sudo && !sessionIsRoot(sess) && privMode(sess) === 'none'
+}
+
+/** Emit (once per session) a clear notice that privileged steps are running
+ *  unprivileged because the login only has docker-group access. Mirrors to
+ *  the on-disk install log and, when a stream channel is supplied, the live
+ *  UI log — so the "degrade with a warning" contract is honoured instead of
+ *  silently running root-only steps without privilege. */
+function noteDockerGroupDegradation(sess: Session, channelId?: string): void {
+  if (sess.dockerGroupWarned) return
+  sess.dockerGroupWarned = true
+  const msg =
+    '\n[mediarr] No root or sudo available — running privileged steps via the ' +
+    'docker group (unprivileged). Docker and Compose work normally, but a few ' +
+    'host-level operations that genuinely need root (chown to a different UID, ' +
+    'firewall rules, kernel modules such as tun for the VPN) may be skipped or ' +
+    'fail. This is expected on docker-group-only logins.\n'
+  appendInstallLog(msg)
+  if (channelId) {
+    send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stderr', chunk: msg })
+  }
 }
 
 /** One-shot exec; buffers stdout/stderr. For UI streaming use execStream. */
@@ -353,6 +451,11 @@ function execOnce(
         } else {
           stream.end()
         }
+      } else {
+        // Nothing to pipe (wrap-nopass / docker-group / plain commands).
+        // Close the writable half so the remote process sees EOF on stdin
+        // instead of us leaving it half-open until 'close'.
+        stream.end()
       }
     })
   })
@@ -377,20 +480,35 @@ export async function exec(args: {
   const sess = sessions.get(args.sessionId)
   if (!sess) throw new Error(`unknown sessionId ${args.sessionId}`)
   const wrapped = wrapSudo(args.sessionId, args.cmd, !!args.sudo)
-  // If we're wrapping with sudo and the user is non-root, we MUST pipe
-  // a password — sudo -S reads stdin. If it's empty and the user has
-  // NOPASSWD configured for this command, sudo accepts the empty line
-  // and proceeds; if not, sudo rejects and execOnce sees a non-zero
-  // exit. Either way we don't hang.
-  const needsSudoPassword =
-    !!args.sudo && !sessionIsRoot(sess)
-  if (needsSudoPassword && !sess.config.sudoPassword) {
+  const mode = privMode(sess)
+  // No escalation path at all → fail fast with a clear, actionable message
+  // instead of silently running unprivileged and corrupting state.
+  if (args.sudo && mode === 'fail') {
     throw new Error(
-      `This command needs sudo (user=${sess.config.user}), but no sudo ` +
-      `password was provided on the Connect screen. Either log in as ` +
-      `root or fill in the "Sudo password" field.`,
+      `This step needs root (user=${sess.config.user}), but there's no way ` +
+      `to escalate: not root, no "Sudo password" provided on Connect, and the ` +
+      `account can't reach Docker without sudo. Log in as root, fill in the ` +
+      `Sudo password field, or add your user to the "docker" group.`,
     )
   }
+  // doas can't accept a password on stdin (no -S equivalent) and this is the
+  // NON-PTY path, so a doas password prompt here would hang forever waiting
+  // on a tty. Fail fast with a fix instead. (The PTY execStream path can
+  // answer the prompt, so this guard is exec()-only.)
+  if (args.sudo && mode === 'password' && (sess.escalation ?? 'sudo') === 'doas') {
+    throw new Error(
+      `This host uses doas, which can't take a password non-interactively. ` +
+      `Add a passwordless rule for your user to /etc/doas.conf (e.g. ` +
+      `"permit nopass <user>"), or log in as root.`,
+    )
+  }
+  // Surface (once) that we're running root-only steps unprivileged because
+  // the login only has docker-group access.
+  if (isDockerGroupFallback(sess, !!args.sudo)) noteDockerGroupDegradation(sess)
+  // 'password' mode: sudo -S reads the password from stdin. If the user has
+  // NOPASSWD for this command, the empty line is accepted; either way we
+  // don't hang.
+  const needsSudoPassword = !!args.sudo && mode === 'password'
   if (args.stdinBytes !== undefined && needsSudoPassword) {
     throw new Error(
       'exec: stdinBytes + sudo on a non-root session conflict — sudo -S ' +
@@ -440,8 +558,24 @@ export async function execStream(args: {
   const sess = sessions.get(args.sessionId)
   if (!sess) throw new Error(`unknown sessionId ${args.sessionId}`)
 
+  // Same fail-fast as exec(): if a streamed step needs root and there's no
+  // escalation path, surface a clear error rather than running it unprivileged.
+  if (args.sudo && privMode(sess) === 'fail') {
+    throw new Error(
+      `This step needs root (user=${sess.config.user}), but there's no way ` +
+      `to escalate: not root, no "Sudo password" provided on Connect, and the ` +
+      `account can't reach Docker without sudo. Log in as root, fill in the ` +
+      `Sudo password field, or add your user to the "docker" group.`,
+    )
+  }
+
   const fullCmd = wrapSudo(args.sessionId, args.cmd, !!args.sudo)
   const channelId = args.channelId
+  // Surface (once) that root-only steps are running unprivileged via the
+  // docker group — mirrored to both the live UI log and the on-disk log.
+  if (isDockerGroupFallback(sess, !!args.sudo)) {
+    noteDockerGroupDegradation(sess, channelId)
+  }
   // Secrets to scrub from every outbound chunk. The sudo password is
   // the one that PTY-echoes; we also redact the SSH password defensively
   // in case a future code path writes it through a PTY too.
@@ -453,8 +587,9 @@ export async function execStream(args: {
       if (err) return reject(err)
       activeChannels.set(channelId, stream)
 
-      // Pipe sudo password to stdin if needed.
-      if (args.sudo && !sessionIsRoot(sess) && sess.config.sudoPassword) {
+      // Pipe sudo password to stdin only in 'password' mode (matches
+      // wrapSudo, which only `sudo -S`-wraps in that mode).
+      if (args.sudo && privMode(sess) === 'password' && sess.config.sudoPassword) {
         stream.write(sess.config.sudoPassword + '\n')
       }
 

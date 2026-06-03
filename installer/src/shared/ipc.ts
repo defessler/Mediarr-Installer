@@ -107,6 +107,11 @@ export interface EnvDetectResult {
   iptables: string | null
   /** how we should run privileged commands once setup begins */
   sudoMode: 'root' | 'nopasswd' | 'password'
+  /** True when a NON-root login can drive Docker without sudo (in the
+   *  `docker` group / owns the socket). Lets setup proceed even with no
+   *  sudo password — Docker/compose work; the few genuinely-root steps
+   *  degrade with a warning. */
+  dockerGroup: boolean
   /** Pre-existing install at targetDir, if any */
   existingInstall: ExistingInstall
   /** Ports our stack wants that are already bound by another process */
