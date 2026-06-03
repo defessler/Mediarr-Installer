@@ -216,10 +216,10 @@ fi
 # semantics mean profiles created before service selection existed start
 # every service exactly like before.
 #
-# prowlarr + flaresolverr are intentionally NOT profile-gated (always
-# on) since Prowlarr is the indexer manager every arr depends on for
-# indexer config, and Flaresolverr is the CloudFlare bypass Prowlarr
-# uses. Both are <50 MB RAM; not worth a toggle.
+# prowlarr is intentionally NOT profile-gated (always on) — it's the
+# indexer manager every arr depends on. flaresolverr (CloudFlare bypass)
+# IS now opt-out via ENABLE_FLARESOLVERR (default-on): it's upstream-
+# deprecated and crashes on arm64, so the installer disables it there.
 
 # Media server selection — plex (default) or jellyfin. ENABLE_PLEX is the
 # on/off master for the media-server group (server + Seerr/Jellyseerr
@@ -239,6 +239,7 @@ is_enabled ENABLE_SABNZBD     && PROFILES+=("usenet")
 is_enabled ENABLE_HOMEPAGE    && PROFILES+=("homepage")
 is_enabled ENABLE_RECYCLARR   && PROFILES+=("recyclarr")
 is_enabled ENABLE_UNPACKERR   && PROFILES+=("unpackerr")
+is_enabled ENABLE_FLARESOLVERR && PROFILES+=("flaresolverr")
 # qBittorrent's profile is "torrenting"; gluetun's is "vpn". Add the
 # VPN profile only when the user enabled BOTH qBittorrent AND the VPN
 # wrap — gluetun without qBittorrent serves no purpose, and qBittorrent
@@ -250,9 +251,9 @@ fi
 
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
-    echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr + flaresolverr always on)"
+    echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
 else
-    echo "  WARN: every service is disabled in .env. Only Prowlarr + Flaresolverr will start."
+    echo "  WARN: every service is disabled in .env. Only Prowlarr will start."
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -367,7 +368,8 @@ check_port_conflicts() {
     # string and relied on word-splitting in `for pair in $pairs`, which
     # works but trips shellcheck (SC2178/SC2128) and silently breaks the
     # moment a service name ever contains whitespace.
-    local pairs=("prowlarr:49150" "flaresolverr:8191")
+    local pairs=("prowlarr:49150")
+    is_enabled ENABLE_FLARESOLVERR && pairs+=("flaresolverr:8191")
     if is_enabled ENABLE_PLEX; then
         pairs+=("seerr:5056")
         if [ "$MEDIA_SERVER" = "jellyfin" ]; then
@@ -446,9 +448,10 @@ wait_for_services() {
     # Wait only on services the user enabled in .env — checking a disabled
     # container loops forever because `docker inspect` returns "missing"
     # for the full max_wait timeout, killing the install with a false
-    # "containers didn't come up" error. Prowlarr + Flaresolverr are
-    # always-on (not profile-gated) so they're always in the list.
-    local services="prowlarr flaresolverr"
+    # "containers didn't come up" error. Prowlarr is always-on; flaresolverr
+    # is opt-out (default-on, off on arm64) so it's gated here.
+    local services="prowlarr"
+    is_enabled ENABLE_FLARESOLVERR && services="$services flaresolverr"
     is_enabled ENABLE_SONARR      && services="$services sonarr"
     is_enabled ENABLE_RADARR      && services="$services radarr"
     is_enabled ENABLE_LIDARR      && services="$services lidarr"
@@ -654,6 +657,47 @@ if ! check_port_conflicts; then
     echo "  ✘ Step 6 (port pre-check) failed — fix the conflict and re-run."
     abort_if_failed
 fi
+
+# Multi-arch pre-flight — confirm each enabled image publishes a manifest for
+# this host's CPU arch BEFORE the (long) pull, so a missing arm64 variant
+# fails loud here instead of 15 min into `compose up`. Best-effort + non-
+# blocking: `docker manifest inspect` can hit Docker Hub rate limits, so a
+# query failure is treated as "unknown, let the pull decide", not an error.
+check_image_arch() {
+    command -v docker >/dev/null 2>&1 || return 0
+    local hostm want
+    hostm=$(uname -m)
+    case "$hostm" in
+        x86_64|amd64)  want=amd64 ;;
+        aarch64|arm64) want=arm64 ;;
+        armv7l|armv6l) want=arm   ;;
+        *) echo "  ⏭ Unknown CPU arch '$hostm' — skipping image-arch pre-flight."; return 0 ;;
+    esac
+    docker manifest inspect hello-world >/dev/null 2>&1 \
+        || { echo "  ⏭ 'docker manifest inspect' unavailable — skipping image-arch pre-flight."; return 0; }
+    local images img missing=""
+    images=$(cd "$SCRIPT_DIR" && $COMPOSE $COMPOSE_FILES config --images 2>/dev/null | sort -u)
+    [ -z "$images" ] && return 0
+    for img in $images; do
+        docker manifest inspect "$img" >/dev/null 2>&1 || continue
+        if ! docker manifest inspect "$img" 2>/dev/null | grep -qiE "\"architecture\":[[:space:]]*\"$want\""; then
+            missing="$missing $img"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        echo ""
+        echo "  ⚠ These images may have no $want ($hostm) build:"
+        for img in $missing; do echo "      • $img"; done
+        echo "    The pull may fail or run an emulated/wrong-arch image; if a"
+        echo "    service crash-loops after install, this is the likely cause."
+    else
+        echo "  ✔ All enabled images publish a $want manifest."
+    fi
+}
+
+echo ""
+echo "  Pre-flight: confirming images are available for this CPU architecture..."
+check_image_arch
 
 echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"

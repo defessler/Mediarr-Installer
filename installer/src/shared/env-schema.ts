@@ -34,6 +34,7 @@ export const envSchema = z.object({
   ENABLE_HOMEPAGE: optStr,
   ENABLE_RECYCLARR: optStr,
   ENABLE_UNPACKERR: optStr,
+  ENABLE_FLARESOLVERR: optStr,
 
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most

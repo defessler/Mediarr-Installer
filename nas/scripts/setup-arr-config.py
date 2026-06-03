@@ -3929,7 +3929,13 @@ def main():
     if not PROWLARR_KEY:
         fail("API key not found — is the container running?")
     elif wait_ready("Prowlarr", PROWLARR, PROWLARR_KEY, "/api/v1/system/status"):
-        add_flaresolverr_proxy(PROWLARR, PROWLARR_KEY)
+        # FlareSolverr is opt-out (ENABLE_FLARESOLVERR; off on arm64). Skip the
+        # proxy wiring when it isn't deployed — pointing Prowlarr at a missing
+        # flaresolverr container would just error on every CloudFlare indexer.
+        if is_enabled(env, 'ENABLE_FLARESOLVERR'):
+            add_flaresolverr_proxy(PROWLARR, PROWLARR_KEY)
+        else:
+            skip("Flaresolverr proxy (ENABLE_FLARESOLVERR=false)")
         if SONARR_KEY:
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Sonarr", "Sonarr",
                              "SonarrSettings", SONARR_INT, SONARR_KEY,

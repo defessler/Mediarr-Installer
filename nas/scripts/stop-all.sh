@@ -77,7 +77,7 @@ esac
 # part of the stack, including ones whose ENABLE_* got flipped to
 # false since last install. `--remove-orphans` is the belt-and-
 # braces on top of that.
-PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn homepage recyclarr unpackerr)
+PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn homepage recyclarr unpackerr flaresolverr)
 
 # Pick the right compose files. When VPN was off at install time, the
 # no-vpn override is part of the active config; loading it on down

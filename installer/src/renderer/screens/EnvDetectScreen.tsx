@@ -173,6 +173,12 @@ export function EnvDetectScreen() {
         if (patch.INSTALL_DIR && targetDir !== patch.INSTALL_DIR) {
           useWizard.getState().setTargetDir(patch.INSTALL_DIR)
         }
+        // FlareSolverr's bundled Chromium crashes on arm64 (and the project
+        // is upstream-deprecated), so default it OFF on ARM hosts. The user
+        // can re-enable it on the Configure screen if they want to try.
+        if (/aarch64|arm64/i.test(r.cpuArch ?? '') && isEnabled(config.ENABLE_FLARESOLVERR as string | undefined)) {
+          patch.ENABLE_FLARESOLVERR = 'false'
+        }
         if (Object.keys(patch).length > 0) setConfig(patch)
 
         setStatus('ok')

@@ -80,7 +80,8 @@ section "Containers"
 # Plex-only, so it's excluded when Jellyfin is the chosen server.
 MEDIA_SERVER=$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')
 [ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
-CONTAINERS=(prowlarr flaresolverr)
+CONTAINERS=(prowlarr)
+is_enabled ENABLE_FLARESOLVERR && CONTAINERS+=(flaresolverr)
 if is_enabled ENABLE_PLEX; then
     CONTAINERS+=(seerr)
     if [ "$MEDIA_SERVER" = "jellyfin" ]; then CONTAINERS+=(jellyfin); else CONTAINERS+=(plex tautulli); fi
@@ -352,7 +353,7 @@ is_enabled ENABLE_PLEX        && check_url_lenient "Seerr" "http://$LAN_IP:5056"
 # Tautulli is checked via check_tautulli above — it has a richer diagnostic
 # (container-state aware: distinguishes booting vs crash-loop). Don't duplicate
 # it here.
-check_url "Flaresolverr" "http://$LAN_IP:8191"
+is_enabled ENABLE_FLARESOLVERR && check_url "Flaresolverr" "http://$LAN_IP:8191"
 # Recyclarr trigger webhook — port 8889 serves the "Sync Now" tile UI.
 # Apk-installs docker-cli at first start (5s) so HTTP isn't reachable
 # the instant the container exists; check_url has a 30s retry budget

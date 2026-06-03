@@ -151,6 +151,7 @@ is_enabled ENABLE_SABNZBD     && PROFILES+=("usenet")
 is_enabled ENABLE_HOMEPAGE    && PROFILES+=("homepage")
 is_enabled ENABLE_RECYCLARR   && PROFILES+=("recyclarr")
 is_enabled ENABLE_UNPACKERR   && PROFILES+=("unpackerr")
+is_enabled ENABLE_FLARESOLVERR && PROFILES+=("flaresolverr")
 if is_enabled ENABLE_QBITTORRENT; then
     PROFILES+=("torrenting")
     case "$VPN" in true|1|yes|on) PROFILES+=("vpn") ;; esac

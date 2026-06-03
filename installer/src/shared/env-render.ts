@@ -26,6 +26,7 @@ export interface EnvFormValues {
   ENABLE_HOMEPAGE?: string      // Dashboard
   ENABLE_RECYCLARR?: string     // Quality-profile sync for sonarr/radarr
   ENABLE_UNPACKERR?: string     // Auto-extract archives in downloads
+  ENABLE_FLARESOLVERR?: string  // CloudFlare bypass for Prowlarr indexers (default-on; off on arm64 — deprecated + crashes on ARM)
 
   // ── TRaSH Guide profile selection
   /** Which Sonarr quality profile Recyclarr should sync from TRaSH
@@ -315,6 +316,7 @@ export function renderEnv(v: EnvFormValues): string {
     line('ENABLE_HOMEPAGE',    isEnabled(v.ENABLE_HOMEPAGE)    ? 'true' : 'false'),
     line('ENABLE_RECYCLARR',   isEnabled(v.ENABLE_RECYCLARR)   ? 'true' : 'false'),
     line('ENABLE_UNPACKERR',   isEnabled(v.ENABLE_UNPACKERR)   ? 'true' : 'false'),
+    line('ENABLE_FLARESOLVERR', isEnabled(v.ENABLE_FLARESOLVERR) ? 'true' : 'false'),
     '',
     '# TRaSH Guide profile picks — consumed by setup-arr-config.py to',
     '# generate recyclarr.yml. Defaults seed the most common TRaSH',

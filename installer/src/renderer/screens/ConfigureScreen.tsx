@@ -167,6 +167,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
+  { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
 
 function ServicesSection({

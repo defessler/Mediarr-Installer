@@ -127,6 +127,7 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_HOMEPAGE: 'true',
   ENABLE_RECYCLARR: 'true',
   ENABLE_UNPACKERR: 'true',
+  ENABLE_FLARESOLVERR: 'true',
 
   PUID: '1026',
   PGID: '100',
