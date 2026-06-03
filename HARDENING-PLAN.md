@@ -71,7 +71,7 @@ detected / mis-handled · ⛔ unsupportable (document & reject cleanly).
 
 - **Sprint 1 (correctness)** — ✅ **shipped v0.4.11**: #1 arch/RAM probe, #2 CORE reject, #3 Unraid-FUSE, #4 uid-0-root, #11 unsupportable (via 32-bit block). Added `cpuArch`/`kernelOs`/`ramMB`/`familyConfidence` to `EnvDetectResult`; `wrapSudo` now skips `sudo` for effective-root (uid 0) sessions.
 - **Sprint 2 (reach)** — ✅ **complete**: #7 Asustor, #8 TerraMaster, #9 ZimaOS families + #19 the DinD harness wired into CI (fast `e2e-detect` classification gate over all families via `test/classify.sh`, plus a manual `e2e-smoke` DinD payload run) shipped in **v0.4.12**; #5 FlareSolverr-optional/arm64 + #6 multi-arch pre-flight shipped in **v0.4.13**.
-- **Sprint 3 (robustness):** #13 containerize python3, #12 privilege strategy, #14 remediation matrix.
+- **Sprint 3 (robustness)** — in progress: ✅ **v0.4.14** #13 containerize python3 (host now needs only Docker — python3 demoted from REQUIRED); ⏳ #12 privilege strategy, #14 remediation matrix.
 - **Sprint 4 (resilience + ops):** #15 confidence/dmidecode, #16 resumability, #17 pre-flight, #19 CI harness, #20 diagnostics. (#18 Podman as a stretch.)
 
 The **DinD harness (#19)** should land early in Sprint 2 so every later platform change is regression-gated by a real install run.

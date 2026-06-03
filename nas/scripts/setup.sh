@@ -171,6 +171,39 @@ else
     exit 1
 fi
 
+# ── Python runner (host python3, else a throwaway container) ──────────────────
+# The config steps (setup-arr-config.py + the indexer/import helpers) and the
+# qBittorrent password hash are Python. Rather than make python3 a hard host
+# requirement, run them on the host's python3 when present, else inside a
+# python:3-alpine container that has the docker CLI + socket + INSTALL_DIR +
+# host network — so the NAS only needs Docker. The scripts reach the stack via
+# http://LAN_IP:<published-port> and shell out to `docker`, which is exactly
+# why the fallback uses --network host + the mounted docker.sock. (Same shape
+# the recyclarr-trigger sidecar already uses to run setup-arr-config.py.)
+HOST_PY3=""
+command -v python3 >/dev/null 2>&1 && HOST_PY3="python3"
+if [ -z "$HOST_PY3" ]; then
+    echo "  Note: no host python3 — config steps will run in a throwaway python container (Docker is all that's needed)."
+fi
+
+run_python() {
+    if [ -n "$HOST_PY3" ]; then
+        "$HOST_PY3" "$@"
+        return $?
+    fi
+    docker run --rm -i --network host \
+        -v "$SCRIPT_DIR":"$SCRIPT_DIR" \
+        -v "$INSTALL_DIR":"$INSTALL_DIR" \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -w "$SCRIPT_DIR" \
+        -e INSTALL_DIR="$INSTALL_DIR" \
+        --entrypoint sh \
+        python:3-alpine \
+        -c 'command -v docker >/dev/null 2>&1 || apk add --no-cache docker-cli >/dev/null 2>&1 || true; exec python3 "$@"' _ "$@"
+}
+# Best-effort variant for the optional steps — never fails the install.
+run_python_besteffort() { run_python "$@" || true; }
+
 # ── Read .env helpers ────────────────────────────────────────────────────────
 
 # Small helper for reading a value out of .env, strips inline comments
@@ -715,19 +748,19 @@ echo "  Note: configuring Sonarr, Radarr, Lidarr, Prowlarr, SABnzbd, Bazarr, See
 echo "        Flaresolverr proxy, qBittorrent watch folder, and more via API."
 echo "        Skips anything already configured."
 run_step 7 "Configure all services" \
-    python3 "$SCRIPT_DIR/setup-arr-config.py"
+    run_python "$SCRIPT_DIR/setup-arr-config.py"
 
 echo ""
 echo "  Note: adding public torrent indexers (1337x, YTS, Nyaa, TPB...) and any"
 echo "        usenet/private indexers whose credentials are set in .env"
 run_step 8 "Add Prowlarr indexers" \
-    python3 "$SCRIPT_DIR/indexers/setup-indexers.py"
+    run_python "$SCRIPT_DIR/indexers/setup-indexers.py"
 
 echo ""
 echo "  Note: enabling free subtitle providers and any account-based providers"
 echo "        (OpenSubtitles, Addic7ed) configured in .env"
 run_step 9 "Enable Bazarr subtitle providers" \
-    python3 "$SCRIPT_DIR/indexers/setup-bazarr-providers.py"
+    run_python "$SCRIPT_DIR/indexers/setup-bazarr-providers.py"
 
 # ── Post-deploy validation ────────────────────────────────────────────────────
 
@@ -781,7 +814,7 @@ echo "  Note: auto-resolving 'Manual Import Required' queue items"
 echo "        (Sonarr/Radarr/Lidarr items where grab history identified"
 echo "        the target media but the parser couldn't auto-confirm)"
 run_step 12 "Auto-confirm manual imports" \
-    bash -c "python3 '$SCRIPT_DIR/auto-manual-import.py' || true"
+    run_python_besteffort "$SCRIPT_DIR/auto-manual-import.py"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 

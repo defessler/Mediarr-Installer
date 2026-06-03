@@ -256,8 +256,9 @@ export function EnvDetectScreen() {
   //     have no `iptables` on PATH and Docker programs NAT via the nft
   //     backend itself. Blocking them was the main thing stopping the
   //     wizard from running on a plain Docker host.
-  // python3 stays a hard requirement on every family — setup-arr-config.py
-  // and the qBittorrent hash generator run on the host at install time.
+  // python3 is NOT required on the host any more: when it's absent, setup.sh
+  // runs the config steps + the qBittorrent hash inside a throwaway python
+  // container (Docker is all that's needed), so it's dropped from the gate.
   // ── Host arch / kernel / RAM gates ───────────────────────────────────────
   // cpuArch from `uname -m`. 64-bit ARM = aarch64/arm64; 32-bit ARM =
   // armv6l/armv7l/arm; 32-bit x86 = i386..i686. The media images dropped
@@ -285,7 +286,6 @@ export function EnvDetectScreen() {
     !hardBlock &&
     r.docker !== 'missing' &&
     (r.volume1 || r.nasFamily !== 'synology') &&
-    !!r.python3 &&
     (!!r.iptables || r.nasFamily !== 'synology')
 
   const reduced = useReducedMotion()
@@ -444,7 +444,17 @@ export function EnvDetectScreen() {
                 : r.dataCandidates[0] ? r.dataCandidates[0]
                 : 'no candidate found'}
             />
-            <Check ok={!!r.python3} label="python3" value={r.python3 ?? 'missing'} />
+            {/* python3 is no longer required on the host — when it's missing,
+                the config steps + qBit hash run in a throwaway python
+                container. Show that as neutral info, not a red ✗. */}
+            <Check
+              ok={!!r.python3 || r.docker !== 'missing'}
+              tone={r.python3 ? 'ok' : r.docker !== 'missing' ? 'info' : 'fail'}
+              label="python3"
+              value={r.python3
+                ? r.python3
+                : r.docker !== 'missing' ? 'n/a (runs in a container)' : 'missing'}
+            />
             {/* iptables is only a hard requirement on Synology (its Docker
                 uses the iptables backend). nftables-based hosts (UGOS,
                 Debian 12+, generic Docker hosts) have no iptables binary

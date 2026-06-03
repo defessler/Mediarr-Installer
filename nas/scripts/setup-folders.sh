@@ -394,19 +394,25 @@ elif [ -f "$QB_CONF_FILE" ] && grep -qF "$QB_SIGNATURE" "$QB_CONF_FILE" 2>/dev/n
     echo "    To reset to wizard defaults: delete that file and re-run setup.sh."
 else
     mkdir -p "$QB_CONF_DIR"
-    # Generate PBKDF2-HMAC-SHA512 hash on the host. 100k iters is what
-    # qBittorrent's own GUI uses when you set a password through it.
-    HASH=$(python3 - "$QB_PASS" <<'PYEOF'
-import sys, hashlib, os, base64
-password = sys.argv[1].encode('utf-8')
-salt = os.urandom(16)
-key = hashlib.pbkdf2_hmac('sha512', password, salt, 100000)
-print('@ByteArray(' + base64.b64encode(salt).decode() + ':' + base64.b64encode(key).decode() + ')')
-PYEOF
-    )
+    # Generate the PBKDF2-HMAC-SHA512 hash (100k iters — what qBittorrent's
+    # own GUI uses). It's pure stdlib (no docker socket / network), so we use
+    # host python3 when present, else a throwaway python:3-alpine container —
+    # the NAS only needs Docker. Password is piped on stdin (not argv) so it
+    # never shows up in process args.
+    QB_HASH_PY='import sys,hashlib,os,base64
+pw=sys.stdin.readline().rstrip("\n").encode("utf-8")
+salt=os.urandom(16)
+key=hashlib.pbkdf2_hmac("sha512",pw,salt,100000)
+print("@ByteArray("+base64.b64encode(salt).decode()+":"+base64.b64encode(key).decode()+")")'
+    if command -v python3 >/dev/null 2>&1; then
+        HASH=$(printf '%s\n' "$QB_PASS" | python3 -c "$QB_HASH_PY")
+    else
+        HASH=$(printf '%s\n' "$QB_PASS" | docker run --rm -i python:3-alpine python3 -c "$QB_HASH_PY")
+    fi
     if [ -z "$HASH" ]; then
-        echo "  ✘ python3 PBKDF2 generation failed — install python3 on the NAS"
-        echo "    (Package Center → Python 3) and re-run setup.sh."
+        echo "  ✘ qBittorrent password-hash generation failed (no host python3,"
+        echo "    and the python:3-alpine fallback container couldn't run). Make"
+        echo "    sure Docker works (or install python3), then re-run setup.sh."
     else
         # If a non-signature conf is here it was written by qBittorrent
         # itself during a botched previous install (the python3-in-
