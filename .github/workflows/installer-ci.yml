@@ -9,6 +9,7 @@ on:
     paths:
       - 'installer/**'
       - 'nas/**'
+      - 'test/**'
       - '.github/workflows/installer-ci.yml'
   push:
     branches:
@@ -17,6 +18,7 @@ on:
     paths:
       - 'installer/**'
       - 'nas/**'
+      - 'test/**'
       - '.github/workflows/installer-ci.yml'
   workflow_dispatch:
 
@@ -103,3 +105,55 @@ jobs:
           for f in nas/scripts/*.py nas/scripts/indexers/*.py nas/migration/*.py; do
             python -m py_compile "$f"
           done
+
+  # Family-detection regression gate. Builds the fake-NAS image (test/) and,
+  # for each simulated family, runs test/classify.sh inside it and asserts the
+  # classification matches what the harness set up. Fast — no DinD / image
+  # pulls (classify.sh only reads marker files). Catches regressions in the
+  # env-detector family markers/order, which classify.sh mirrors.
+  e2e-detect:
+    name: Family detection (fake-NAS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build fake-NAS image
+        run: docker build -t mediarr-testnas:latest test/
+      - name: Assert each simulated family classifies correctly
+        run: |
+          set -uo pipefail
+          fail=0
+          for f in synology ugreen asustor terramaster zimaos generic; do
+            expected="$f"; [ "$f" = generic ] && expected=linux
+            docker rm -f "tn-$f" >/dev/null 2>&1 || true
+            # No --privileged needed: classify.sh only reads marker files,
+            # which entrypoint.sh lays before it ever touches dockerd.
+            docker run -d --name "tn-$f" -e "NAS_FAMILY=$f" mediarr-testnas:latest >/dev/null
+            sleep 3
+            docker cp test/classify.sh "tn-$f:/tmp/classify.sh"
+            got="$(docker exec "tn-$f" bash /tmp/classify.sh | tail -1 | tr -d '[:space:]')"
+            docker rm -f "tn-$f" >/dev/null 2>&1 || true
+            if [ "$got" = "$expected" ]; then
+              echo "✓ $f → $got"
+            else
+              echo "✗ $f → got '$got', expected '$expected'"; fail=1
+            fi
+          done
+          exit "$fail"
+
+  # Full payload smoke test against a real (in-container) Docker daemon: drops
+  # the real nas/ payload into a fake-NAS, runs setup.sh, and asserts the stack
+  # came up. Uses Docker-in-Docker (privileged) + pulls a couple of images, so
+  # it's slower. Manual-trigger for now (workflow_dispatch) until it's proven
+  # green on GitHub-hosted runners; then drop the `if:` to gate every push.
+  e2e-smoke:
+    name: Payload smoke (DinD)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [generic, ugreen]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run payload e2e (${{ matrix.family }}, smoke)
+        run: bash test/run-e2e.sh --family ${{ matrix.family }} --profile smoke

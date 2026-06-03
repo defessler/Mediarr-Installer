@@ -364,13 +364,16 @@ export function EnvDetectScreen() {
               </span>
               <span className="font-medium">
                 {{
-                  synology: 'Synology DSM',
-                  ugreen:   'UGREEN UGOS',
-                  qnap:     'QNAP QTS / QuTS',
-                  unraid:   'Unraid',
-                  truenas:  'TrueNAS',
-                  omv:      'OpenMediaVault',
-                  linux:    'Generic Linux',
+                  synology:    'Synology DSM',
+                  ugreen:      'UGREEN UGOS',
+                  asustor:     'Asustor ADM',
+                  terramaster: 'TerraMaster TOS',
+                  zimaos:      'ZimaOS',
+                  qnap:        'QNAP QTS / QuTS',
+                  unraid:      'Unraid',
+                  truenas:     'TrueNAS',
+                  omv:         'OpenMediaVault',
+                  linux:       'Generic Linux',
                 }[r.nasFamily]}
               </span>
               {r.osVersion && (

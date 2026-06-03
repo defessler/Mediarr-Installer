@@ -23,12 +23,31 @@ case "$FAMILY" in
     # heuristic env-detector uses to classify a box as 'ugreen'.
     mkdir -p /volume1/docker /volume1/Data
     ;;
+  asustor)
+    # Asustor ADM: /volume0 system volume + /etc/nas.conf marker, data on
+    # /volume1.
+    mkdir -p /volume0/etc /volume1/Docker /volume1/Data
+    : > /volume0/etc/nas.conf
+    ln -sf /volume0/etc/nas.conf /etc/nas.conf
+    ;;
+  terramaster)
+    # TerraMaster TOS: /etc/tos marker + the CAPITAL-V /Volume1 storage pool.
+    mkdir -p /etc/tos/scripts /Volume1/docker /Volume1/data
+    ;;
+  zimaos)
+    # ZimaOS: /DATA root + CasaOS stack + os-release branding. (We can't make
+    # the container root read-only, so the sim relies on the os-release
+    # marker — which real ZimaOS also carries.)
+    mkdir -p /DATA/AppData /DATA/Media
+    : > /usr/bin/casaos && chmod +x /usr/bin/casaos
+    printf 'ID=zimaos\nPRETTY_NAME="ZimaOS"\n' > /etc/os-release
+    ;;
   generic | *)
     # A plain Linux Docker host — no NAS markers, FHS-style paths.
     mkdir -p /opt/mediarr /srv/data
     ;;
 esac
-chown -R tester:tester /volume1 /opt/mediarr /srv/data 2>/dev/null || true
+chown -R tester:tester /volume0 /volume1 /Volume1 /DATA /opt/mediarr /srv/data 2>/dev/null || true
 
 # ── In-container Docker daemon (DinD) ─────────────────────────────────────────
 echo "[fake-nas] starting dockerd (requires the container to run --privileged)..."

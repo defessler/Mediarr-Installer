@@ -91,7 +91,8 @@ export interface InternetCheck {
  *  paths + PUID/PGID and gates family-specific UI and troubleshooting
  *  help (Synology ACL/Task-Scheduler, UGREEN/Debian cron + systemd, …). */
 export type NasFamily =
-  | 'synology' | 'ugreen' | 'qnap' | 'unraid' | 'truenas' | 'omv' | 'linux'
+  | 'synology' | 'ugreen' | 'asustor' | 'terramaster' | 'zimaos'
+  | 'qnap' | 'unraid' | 'truenas' | 'omv' | 'linux'
 
 export interface EnvDetectResult {
   docker: 'v2' | 'v1-legacy' | 'missing'

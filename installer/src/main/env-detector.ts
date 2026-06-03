@@ -117,6 +117,25 @@ export async function detectEnv(
       '   || ls /etc 2>/dev/null | grep -qiE "ugreen|ugos"; then echo y; fi',
     // Debian-base marker — feeds the UGREEN heuristic above.
     'echo "===is_debian==="; [ -f /etc/debian_version ] && echo y || true',
+    // Asustor ADM — /volume0 is its non-volatile system volume (unique to
+    // Asustor, alongside the /volume1.. data volumes); /etc/nas.conf is a
+    // symlink into /volume0 holding the ADM version. Must be matched before
+    // the generic-linux fallback so paths land on /volume1 (the data pool),
+    // not /opt + /srv (the small system volume).
+    'echo "===nas_asustor==="; ( [ -d /volume0 ] && [ -e /etc/nas.conf ] ) && echo y',
+    // TerraMaster TOS 6 (Ubuntu/Debian base) — marker dir /etc/tos. Note
+    // its storage volume is /Volume1 (CAPITAL V), so the lowercase /volume1
+    // checks elsewhere never match it; without this probe TOS falls through
+    // to generic linux + /opt defaults that miss the pool.
+    'echo "===nas_terramaster==="; ( [ -d /etc/tos ] || ls /etc 2>/dev/null | grep -qiE "^tos$" ) && echo y',
+    // ZimaOS (IceWhale appliance; embeds CasaOS) — data root /DATA + the
+    // CasaOS stack + a READ-ONLY root filesystem (the appliance trait that
+    // distinguishes it from plain CasaOS on a writable distro). os-release
+    // may also brand it 'zima'. The read-only probe: a touch in /etc fails.
+    'echo "===nas_zimaos==="; ' +
+      'if grep -qi "zima" /etc/os-release 2>/dev/null ' +
+      '   || ( [ -d /DATA ] && { [ -e /usr/bin/casaos ] || [ -d /var/lib/casaos ]; } && ! touch /etc/.mr-rwprobe 2>/dev/null ); ' +
+      'then echo y; fi; rm -f /etc/.mr-rwprobe 2>/dev/null || true',
     // OS version string the NAS reports (helps surface DSM7.2 vs 7.1, etc.)
     'echo "===os_version==="; ' +
       '( [ -f /etc.defaults/VERSION ] && grep -E "^productversion|^buildnumber" /etc.defaults/VERSION ) || ' +
@@ -128,7 +147,7 @@ export async function detectEnv(
     // so the Detect screen can show the candidates and the user picks
     // (or the wizard auto-picks the first match for their NAS family).
     'echo "===data_candidates==="; ' +
-      'for d in /volume1 /volume2 /mnt/user /mnt/cache /share /share/CACHEDEV1_DATA /mnt /srv; do ' +
+      'for d in /volume1 /volume2 /Volume1 /DATA /mnt/user /mnt/cache /share /share/CACHEDEV1_DATA /mnt /srv; do ' +
       '  [ -d "$d" ] && echo "$d"; ' +
       'done',
     // TrueNAS-style pool roots: enumerate top-level dirs under /mnt
@@ -272,6 +291,10 @@ export async function detectEnv(
     'echo "===data_share_path==="; ' +
       'if [ -d /volume1 ]; then ' +
       '  echo /volume1/Data; ' +
+      'elif [ -d /Volume1 ]; then ' +
+      '  echo /Volume1/data; ' +
+      'elif [ -d /DATA ]; then ' +
+      '  echo /DATA/Media; ' +
       'elif [ -d /mnt/user ]; then ' +
       '  echo /mnt/user/data; ' +
       'elif [ -d /share/CACHEDEV1_DATA ]; then ' +
@@ -287,6 +310,8 @@ export async function detectEnv(
     'echo "===data_share_exists==="; ' +
       'p=$( ' +
       '  if [ -d /volume1 ]; then echo /volume1/Data; ' +
+      '  elif [ -d /Volume1 ]; then echo /Volume1/data; ' +
+      '  elif [ -d /DATA ]; then echo /DATA/Media; ' +
       '  elif [ -d /mnt/user ]; then echo /mnt/user/data; ' +
       '  elif [ -d /share/CACHEDEV1_DATA ]; then echo /share/Data; ' +
       '  elif [ -d /mnt ]; then for d in /mnt/*; do [ -d "$d" ] || continue; name=$(basename "$d"); case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; echo "$d/data"; break; done; ' +
@@ -295,6 +320,8 @@ export async function detectEnv(
     'echo "===data_share_writable==="; ' +
       'p=$( ' +
       '  if [ -d /volume1 ]; then echo /volume1/Data; ' +
+      '  elif [ -d /Volume1 ]; then echo /Volume1/data; ' +
+      '  elif [ -d /DATA ]; then echo /DATA/Media; ' +
       '  elif [ -d /mnt/user ]; then echo /mnt/user/data; ' +
       '  elif [ -d /share/CACHEDEV1_DATA ]; then echo /share/Data; ' +
       '  elif [ -d /mnt ]; then for d in /mnt/*; do [ -d "$d" ] || continue; name=$(basename "$d"); case "$name" in user|cache|cache_pool|disks|remotes|rootshare) continue;; esac; echo "$d/data"; break; done; ' +
@@ -453,14 +480,17 @@ export async function detectEnv(
   // + not Synology" for units whose DMI strings don't say "UGREEN".
   const hasVolume1 = volume1Out.startsWith('ok')
   const isDebian = section(o, 'is_debian') === 'y'
-  if (section(o, 'nas_synology') === 'y')      nasFamily = 'synology'
-  else if (section(o, 'nas_ugreen')  === 'y')  nasFamily = 'ugreen'
-  else if (section(o, 'nas_qnap')    === 'y')  nasFamily = 'qnap'
-  else if (section(o, 'nas_unraid')  === 'y')  nasFamily = 'unraid'
-  else if (section(o, 'nas_truenas') === 'y')  nasFamily = 'truenas'
-  else if (section(o, 'nas_omv')     === 'y')  nasFamily = 'omv'
-  else if (isDebian && hasVolume1)             nasFamily = 'ugreen'
-  else                                          nasFamily = 'linux'
+  if (section(o, 'nas_synology') === 'y')        nasFamily = 'synology'
+  else if (section(o, 'nas_ugreen')  === 'y')    nasFamily = 'ugreen'
+  else if (section(o, 'nas_asustor') === 'y')    nasFamily = 'asustor'
+  else if (section(o, 'nas_terramaster') === 'y') nasFamily = 'terramaster'
+  else if (section(o, 'nas_zimaos')  === 'y')    nasFamily = 'zimaos'
+  else if (section(o, 'nas_qnap')    === 'y')    nasFamily = 'qnap'
+  else if (section(o, 'nas_unraid')  === 'y')    nasFamily = 'unraid'
+  else if (section(o, 'nas_truenas') === 'y')    nasFamily = 'truenas'
+  else if (section(o, 'nas_omv')     === 'y')    nasFamily = 'omv'
+  else if (isDebian && hasVolume1)               nasFamily = 'ugreen'
+  else                                            nasFamily = 'linux'
 
   // Confidence in that classification: high when a definitive OS marker
   // file matched, low when only the Debian+/volume1 heuristic fired
@@ -468,12 +498,15 @@ export async function detectEnv(
   // nothing matched and we fell through to generic 'linux'. The Detect
   // screen nudges the user to confirm paths when it's not 'high'.
   const markerMatched =
-    section(o, 'nas_synology') === 'y' ||
-    section(o, 'nas_ugreen')   === 'y' ||
-    section(o, 'nas_qnap')     === 'y' ||
-    section(o, 'nas_unraid')   === 'y' ||
-    section(o, 'nas_truenas')  === 'y' ||
-    section(o, 'nas_omv')      === 'y'
+    section(o, 'nas_synology')    === 'y' ||
+    section(o, 'nas_ugreen')      === 'y' ||
+    section(o, 'nas_asustor')     === 'y' ||
+    section(o, 'nas_terramaster') === 'y' ||
+    section(o, 'nas_zimaos')      === 'y' ||
+    section(o, 'nas_qnap')        === 'y' ||
+    section(o, 'nas_unraid')      === 'y' ||
+    section(o, 'nas_truenas')     === 'y' ||
+    section(o, 'nas_omv')         === 'y'
   const familyConfidence: EnvDetectResult['familyConfidence'] =
     nasFamily === 'linux' ? 'unknown' : markerMatched ? 'high' : 'low'
 
@@ -626,6 +659,13 @@ function pickFamilyIdDefaults(
     case 'synology': return { puid: '1026', pgid: '100' }
     // UGOS first admin user is uid 1000, primary group `admin` = gid 10.
     case 'ugreen':   return { puid: '1000', pgid: '10'  }
+    // Asustor admin / TerraMaster first user / generic NAS: 1000 + group
+    // `users`(100). (Asustor's admin is sometimes uid 999, TerraMaster's is
+    // uid 0 — the /etc/passwd dropdown corrects either.)
+    case 'asustor':     return { puid: '1000', pgid: '100' }
+    case 'terramaster': return { puid: '1000', pgid: '100' }
+    // ZimaOS/CasaOS run containers as 1000/1000 by convention.
+    case 'zimaos':      return { puid: '1000', pgid: '1000' }
     case 'unraid':   return { puid: '99',   pgid: '100' }
     case 'truenas':  return { puid: '568',  pgid: '568' }
     case 'qnap':     return { puid: '1000', pgid: '100' }
@@ -669,6 +709,30 @@ function pickFamilyDefaults(
       return {
         installDir: '/volume1/docker/media',
         dataRoot:   '/volume1/Data',
+      }
+    case 'asustor':
+      // Asustor ADM: data pools at /volume1.. (the /volume0 system volume
+      // is off-limits). App Central's Docker app stores under /volume1; a
+      // user-created "Docker" share is the conventional home for compose.
+      return {
+        installDir: '/volume1/Docker/mediarr',
+        dataRoot:   '/volume1/Data',
+      }
+    case 'terramaster':
+      // TerraMaster TOS mounts its volume at /Volume1 (capital V), with an
+      // `appdata` share convention. (Not /volume1 — that's Synology/UGREEN.)
+      return {
+        installDir: '/Volume1/docker/media',
+        dataRoot:   '/Volume1/data',
+      }
+    case 'zimaos':
+      // ZimaOS root FS is READ-ONLY — only /DATA is writable, so both the
+      // compose tree and media MUST live there (the generic /opt + /srv
+      // defaults would fail to write). /DATA/AppData/<app> is the CasaOS
+      // convention ZimaOS inherits.
+      return {
+        installDir: '/DATA/AppData/mediarr',
+        dataRoot:   '/DATA/Media',
       }
     case 'qnap':
       // QNAP exposes Container Station's working dir under /share/Container.

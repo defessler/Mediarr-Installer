@@ -34,8 +34,11 @@ done
 
 case "$FAMILY" in
   synology|ugreen) INSTALL_DIR="/volume1/docker/media"; DATA_ROOT="/volume1/Data" ;;
+  asustor)         INSTALL_DIR="/volume1/Docker/mediarr"; DATA_ROOT="/volume1/Data" ;;
+  terramaster)     INSTALL_DIR="/Volume1/docker/media"; DATA_ROOT="/Volume1/data" ;;
+  zimaos)          INSTALL_DIR="/DATA/AppData/mediarr"; DATA_ROOT="/DATA/Media" ;;
   generic)         INSTALL_DIR="/opt/mediarr";          DATA_ROOT="/srv/data" ;;
-  *) echo "unknown family: $FAMILY (want synology|ugreen|generic)" >&2; exit 2 ;;
+  *) echo "unknown family: $FAMILY (want synology|ugreen|asustor|terramaster|zimaos|generic)" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

@@ -47,3 +47,21 @@ services:
     environment: { NAS_FAMILY: generic }
     ports: ["2203:22"]
     profiles: ["generic", "all"]
+
+  nas-asustor:
+    <<: *fake-nas
+    environment: { NAS_FAMILY: asustor }
+    ports: ["2204:22"]
+    profiles: ["asustor", "all"]
+
+  nas-terramaster:
+    <<: *fake-nas
+    environment: { NAS_FAMILY: terramaster }
+    ports: ["2205:22"]
+    profiles: ["terramaster", "all"]
+
+  nas-zimaos:
+    <<: *fake-nas
+    environment: { NAS_FAMILY: zimaos }
+    ports: ["2206:22"]
+    profiles: ["zimaos", "all"]
