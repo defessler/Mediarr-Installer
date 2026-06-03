@@ -22,6 +22,15 @@ truenas()     { grep -qiE "truenas|freenas" /etc/version 2>/dev/null || [ -f /et
 omv()         { [ -f /etc/openmediavault/config.xml ] || dpkg -l openmediavault 2>/dev/null | grep -q "^ii"; }
 is_debian()   { [ -f /etc/debian_version ]; }
 has_volume1() { [ -d /volume1 ]; }
+# Mirror of env-detector's vendorIsGeneric guard: a DMI vendor that names a
+# hypervisor / cloud / generic-PC platform means a stray /volume1 here is
+# user-created, not a UGREEN appliance — so the Debian+/volume1 heuristic must
+# NOT fire. Reads the world-readable sysfs node (no privilege). Empty/unreadable
+# vendor → not generic → heuristic still applies (matches the TS `.test('')`).
+vendor_is_generic() {
+    cat /sys/class/dmi/id/sys_vendor 2>/dev/null \
+        | grep -qiE "qemu|kvm|virtualbox|innotek|vmware|microsoft corporation|xen|bochs|parallels|standard pc|seabios|google|amazon|digitalocean|hetzner|oracle"
+}
 
 if   synology;                  then echo synology
 elif ugreen_mark;               then echo ugreen
@@ -32,7 +41,7 @@ elif qnap;                      then echo qnap
 elif unraid;                    then echo unraid
 elif truenas;                   then echo truenas
 elif omv;                       then echo omv
-elif is_debian && has_volume1;  then echo ugreen
+elif is_debian && has_volume1 && ! vendor_is_generic; then echo ugreen
 else                                 echo linux
 fi
 rm -f /etc/.mr-rwprobe 2>/dev/null || true

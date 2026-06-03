@@ -19,9 +19,15 @@ case "$FAMILY" in
     ;;
   ugreen)
     # UGOS = Debian (the base image already has /etc/debian_version) + a
-    # /volume1 storage pool and NO synoinfo.conf — which is exactly the
-    # heuristic env-detector uses to classify a box as 'ugreen'.
+    # /volume1 storage pool + UGOS os-release branding. Real UGREEN units
+    # carry "UGOS"/"UGREEN" in os-release and DMI; the detector's nas_ugreen
+    # probe matches that os-release string (a definitive marker), which is
+    # both more faithful than the bare Debian+/volume1 heuristic AND robust
+    # to the CI host's DMI vendor (a cloud-VM sys_vendor like "Microsoft
+    # Corporation" would otherwise trip the generic-vendor guard and demote
+    # the box to plain linux).
     mkdir -p /volume1/docker /volume1/Data
+    printf 'ID=ugos\nID_LIKE=debian\nPRETTY_NAME="UGREEN UGOS"\n' > /etc/os-release
     ;;
   asustor)
     # Asustor ADM: /volume0 system volume + /etc/nas.conf marker, data on

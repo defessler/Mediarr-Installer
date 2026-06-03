@@ -56,13 +56,17 @@ docker compose -f test/compose.yml --profile all down -v
   up`, the Python API configuration, and `post-deploy-validate.sh` — against a
   **real** Docker daemon, per simulated family.
 - ✅ Detection: each family lays the exact markers `env-detector` keys on
-  (`/etc/synoinfo.conf` for Synology; Debian + `/volume1` for UGREEN; nothing
-  for generic), so you can confirm the wizard classifies + defaults correctly.
+  (`/etc/synoinfo.conf` for Synology; UGOS `os-release` branding + `/volume1`
+  for UGREEN; nothing for generic), so you can confirm the wizard classifies +
+  defaults correctly.
 - ⚠️ It does **not** drive the Electron UI automatically — use path 2 for that.
   A Playwright harness pointed at these SSH ports is the natural next step.
-- ⚠️ `sys_vendor`-based UGREEN detection can't be faked (it's read-only
-  `/sys`), so the UGREEN sim relies on the `Debian + /volume1` heuristic — which
-  is the same fallback that protects real units whose DMI strings are unusual.
+- ℹ️ The host's read-only `/sys/class/dmi/id/sys_vendor` can't be overridden in
+  a container, so the UGREEN sim brands `/etc/os-release` with `ID=ugos`
+  instead — a definitive marker real UGREEN units also carry. (The bare
+  `Debian + /volume1` heuristic still classifies real units whose DMI is
+  unusual, but on a cloud-VM CI host that heuristic alone would be demoted to
+  `linux` by the generic-vendor tiebreaker, so the sim uses the marker.)
 
 ## Adding an environment config
 

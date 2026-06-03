@@ -469,6 +469,11 @@ export function EnvDetectScreen() {
               {r.osVersion && (
                 <span className="font-mono text-xs text-slate-500">{r.osVersion}</span>
               )}
+              {r.systemVendor && (
+                <span className="font-mono text-xs text-slate-500" title="System vendor (DMI)">
+                  · {r.systemVendor}
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
@@ -500,6 +505,10 @@ export function EnvDetectScreen() {
                 {r.familyConfidence === 'unknown'
                   ? 'We couldn’t positively identify this NAS, so these are generic Linux defaults — double-check the Install dir + Data root on the next screen so they land on your real storage pool, not the system disk.'
                   : 'Identified by heuristic (Debian + /volume1). If this isn’t a UGREEN box, adjust the paths on the next screen.'}
+                {r.systemVendor && (
+                  <> (Reported hardware vendor:{' '}
+                  <span className="font-mono">{r.systemVendor}</span>.)</>
+                )}
               </p>
             )}
             {r.dataCandidates.length > 0 && (

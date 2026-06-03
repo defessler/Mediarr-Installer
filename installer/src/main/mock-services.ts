@@ -379,6 +379,7 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
     iptables: 'iptables v1.8.9',
     sudoMode: 'root',
     dockerGroup: false,
+    systemVendor: 'Synology Inc.',
     existingInstall: sc.existingInstall
       ? {
           hasCompose: true,

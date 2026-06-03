@@ -5,7 +5,17 @@
 # Safe to re-run — all steps are idempotent.
 #
 # Usage:
-#   sudo bash /volume1/docker/media/scripts/setup.sh
+#   sudo bash /volume1/docker/media/scripts/setup.sh [--resume | --from N]
+#
+#     --resume   Skip steps already completed in a prior run (recorded in
+#                .setup-state) and continue from the first unfinished step —
+#                as long as .env hasn't changed since. Use after a step failed
+#                partway and you've fixed the cause.
+#     --from N   Start at step N (1-12), skipping everything before it. For
+#                when you know the earlier steps are fine and just want to
+#                re-run from a specific point.
+#
+#   With no flag, every step runs (each is individually idempotent).
 
 # As of v0.3.23 the wizard drops EVERYTHING (scripts, .env, .env.example,
 # docker-compose.yml + overrides, INDEXERS.md) into a `scripts/`
@@ -28,6 +38,27 @@ if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
 else
     INSTALL_DIR="$SCRIPT_DIR"
 fi
+
+# ── Resume / partial-run flags ───────────────────────────────────────────────
+# --resume continues from the first unfinished step (per .setup-state, only if
+# .env is unchanged). --from N forces a start at step N. Default: run all steps.
+RESUME=0
+FROM_STEP=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --resume)   RESUME=1 ;;
+        --from)     shift; FROM_STEP="${1:-0}" ;;
+        --from=*)   FROM_STEP="${1#*=}" ;;
+        -h|--help)
+            grep -E '^#( |$)' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' | head -28
+            exit 0 ;;
+        *)          echo "  Note: ignoring unknown argument '$1'." ;;
+    esac
+    shift
+done
+# Guard against a non-numeric --from value.
+case "$FROM_STEP" in (*[!0-9]*|'') FROM_STEP=0 ;; esac
+STATE_FILE="$SCRIPT_DIR/.setup-state"
 
 # Mutex against concurrent runs (installer wizard + manual SSH session,
 # or two SSH sessions racing). Lock lives alongside setup.sh in the
@@ -157,6 +188,7 @@ export PYTHONDONTWRITEBYTECODE=1
 
 PASS=0
 FAIL=0
+SKIP=0
 
 # ── Detect docker compose command ────────────────────────────────────────────
 
@@ -291,9 +323,78 @@ fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Retry a command with exponential backoff. Usage:
+#   retry <max_attempts> <label> <command...>
+# Returns the command's exit status once it succeeds, or non-zero after the
+# last attempt. Used to wrap network-bound steps (image pull, NordVPN fetch)
+# so a transient registry blip or DNS hiccup doesn't fail the whole install.
+retry() {
+    local max="$1" label="$2"
+    shift 2
+    local attempt=1 delay=2
+    while true; do
+        if "$@"; then
+            return 0
+        fi
+        if [ "$attempt" -ge "$max" ]; then
+            echo "  ⚠ $label failed after ${attempt} attempt(s)."
+            return 1
+        fi
+        echo "  … $label failed (attempt ${attempt}/${max}) — retrying in ${delay}s."
+        sleep "$delay"
+        attempt=$((attempt + 1))
+        delay=$((delay * 2))
+    done
+}
+
+# ── Checkpoint / resume state ─────────────────────────────────────────────────
+# .setup-state (alongside .setup.lock in the scripts dir) records the last
+# step that completed plus a hash of .env at that time. --resume reads it to
+# skip already-finished steps; a changed .env invalidates the checkpoint so
+# the directory/firewall/validate steps re-run against the new config.
+
+# Hash .env portably: prefer a native digest tool, fall back to Python
+# (host or the throwaway container) so this works on busybox-only NAS units
+# that ship neither sha256sum nor shasum.
+compute_env_hash() {
+    [ -f "$ENV_FILE" ] || { echo "none"; return 0; }
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$ENV_FILE" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$ENV_FILE" | awk '{print $1}'
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 "$ENV_FILE" 2>/dev/null | awk '{print $NF}'
+    else
+        # Pass the path as argv[1] rather than interpolating it into the Python
+        # source — a path containing a quote/special char would otherwise break
+        # the literal (and could inject code).
+        run_python -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$ENV_FILE" 2>/dev/null || echo "nohash"
+    fi
+}
+
+# Overwrite the checkpoint with the latest completed step + the .env hash AS OF
+# NOW. Recomputed fresh (not the start-of-run snapshot) because a step can
+# legitimately edit .env mid-run — step 4 writes the fetched WireGuard key — and
+# a stale frozen hash would make the next --resume think the config changed and
+# restart from step 1. Single-record (latest only) since steps run in order.
+# Best-effort — a read-only scripts dir just means resume won't be available.
+mark_step_done() {
+    printf 'env_hash=%s\nlast_completed=%s\n' "$(compute_env_hash)" "$1" > "$STATE_FILE" 2>/dev/null || true
+}
+
 run_step() {
     local step="$1" description="$2"
     shift 2
+
+    # Resume / --from: skip steps below the computed start point. They either
+    # completed in a prior run (recorded in .setup-state) or the user asserted
+    # they're fine via --from N.
+    if [ "$step" -lt "$START_STEP" ]; then
+        echo ""
+        echo "  ⏭ Step $step ($description) — skipped (already done / --from)."
+        SKIP=$((SKIP + 1))
+        return 0
+    fi
 
     echo ""
     echo "┌─────────────────────────────────────────────"
@@ -304,6 +405,7 @@ run_step() {
         echo ""
         echo "  ✔ Step $step complete."
         PASS=$((PASS + 1))
+        mark_step_done "$step"
     else
         echo ""
         echo "  ✘ Step $step failed — fix the errors above and re-run."
@@ -316,8 +418,9 @@ abort_if_failed() {
         echo ""
         echo "============================================="
         echo "  Setup halted — fix the errors above."
-        echo "  All steps are safe to re-run."
-        echo "  sudo bash $SCRIPT_DIR/setup.sh"
+        echo "  Resume from the first unfinished step:"
+        echo "    sudo bash $SCRIPT_DIR/setup.sh --resume"
+        echo "  (or re-run without --resume — all steps are idempotent.)"
         echo "============================================="
         exit 1
     fi
@@ -587,7 +690,7 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
         # is migrated separately below — it holds the user's secrets.)
         docker-compose.yml docker-compose.no-vpn.yml
         docker-compose.test-override.yml
-        INDEXERS.md .env.example .setup.lock .payload-sha
+        INDEXERS.md .env.example .setup.lock .setup-state .payload-sha
     )
     removed=0
     for f in "${LEGACY_LOOSE[@]}"; do
@@ -621,6 +724,42 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
     fi
     if [ "$removed" -gt 0 ]; then
         echo "  ℹ Migrated $removed legacy loose file(s) out of $INSTALL_DIR — canonical copies live under scripts/ now."
+    fi
+fi
+
+# A stale .setup-state at INSTALL_DIR root (wrong location, or a pre-this-feature
+# artifact) would mislead --resume — the canonical spot is SCRIPT_DIR. Drop it.
+[ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && rm -f "$INSTALL_DIR/.setup-state" 2>/dev/null || true
+
+# Re-resolve ENV_FILE: the legacy migration above may have MOVED .env from
+# INSTALL_DIR root into SCRIPT_DIR, leaving the earlier (line ~98) resolution
+# pointing at a path that no longer exists. Re-point at the canonical copy so
+# the hash + the summary's LAN_IP read the file that's actually there now.
+ENV_FILE="$SCRIPT_DIR/.env"
+[ -f "$ENV_FILE" ] || ENV_FILE="$INSTALL_DIR/.env"
+
+# ── Resolve where to start (resume / --from) ─────────────────────────────────
+# ENV_HASH fingerprints the *final* .env (after the migration above) so a
+# checkpoint is only honoured when the config is unchanged.
+ENV_HASH="$(compute_env_hash)"
+START_STEP=1
+if [ "$FROM_STEP" -gt 0 ]; then
+    START_STEP="$FROM_STEP"
+    echo "  ▶ --from $FROM_STEP: starting at step $FROM_STEP (earlier steps skipped)."
+elif [ "$RESUME" = 1 ]; then
+    if [ -f "$STATE_FILE" ]; then
+        _saved_hash="$(grep -m1 '^env_hash=' "$STATE_FILE" 2>/dev/null | cut -d= -f2-)"
+        _last="$(grep -m1 '^last_completed=' "$STATE_FILE" 2>/dev/null | cut -d= -f2-)"
+        case "$_last" in (''|*[!0-9]*) _last=0 ;; esac
+        if [ "$_saved_hash" = "$ENV_HASH" ] && [ "$_last" -gt 0 ]; then
+            START_STEP=$((_last + 1))
+            echo "  ▶ --resume: last completed step was $_last — resuming at step $START_STEP."
+        else
+            echo "  ▶ --resume: .env changed since the last run (or no progress recorded) — running all steps."
+        fi
+        unset _saved_hash _last
+    else
+        echo "  ▶ --resume: no checkpoint found ($STATE_FILE) — running all steps."
     fi
 fi
 
@@ -665,8 +804,11 @@ exit 0'
 fi
 
 echo "  Note: fetches your WireGuard private key from the NordVPN API"
+# Network-bound: the NordVPN API call can time out on a flaky connection.
+# retry() re-runs the (idempotent) fetch with backoff. A no-op when VPN is
+# disabled — the script exits 0 on the first attempt.
 run_step 4 "Fetch NordVPN WireGuard key" \
-    bash "$SCRIPT_DIR/setup-nordvpn.sh"
+    retry 3 "NordVPN key fetch" bash "$SCRIPT_DIR/setup-nordvpn.sh"
 
 run_step 5 "Validate configuration" \
     bash "$SCRIPT_DIR/setup-validate.sh"
@@ -728,14 +870,86 @@ check_image_arch() {
     fi
 }
 
+# Free space where Docker actually stores images + container layers. This is
+# the daemon's data-root (default /var/lib/docker), which on many NAS units is
+# a DIFFERENT, smaller mount than INSTALL_DIR — the installer checks INSTALL_DIR
+# free space, but the ~10 GiB of stack images land here. A near-full data-root
+# is a classic "pull fails halfway with no space left on device" trap, so warn
+# early. Non-blocking + best-effort: skips cleanly if df/docker info don't
+# cooperate.
+MIN_DROOT_GIB=10
+check_docker_dataroot_space() {
+    command -v docker >/dev/null 2>&1 || return 0
+    local droot free_kb free_gib
+    droot=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null)
+    [ -n "$droot" ] || return 0
+    # Walk up to the nearest existing ancestor so df has a real path to stat.
+    while [ -n "$droot" ] && [ ! -d "$droot" ]; do droot=$(dirname "$droot"); done
+    [ -d "$droot" ] || return 0
+    free_kb=$(df -Pk "$droot" 2>/dev/null | awk 'NR==2 {print $4}')
+    case "$free_kb" in (*[!0-9]*|'') return 0 ;; esac
+    free_gib=$((free_kb / 1024 / 1024))
+    if [ "$free_gib" -lt "$MIN_DROOT_GIB" ]; then
+        echo "  ⚠ Docker's image store ($droot) has only ${free_gib} GiB free."
+        echo "    The stack pulls ~${MIN_DROOT_GIB} GiB of images on first run; a near-full"
+        echo "    data-root fails mid-pull with 'no space left on device'. This mount"
+        echo "    can differ from your install dir — free space here, or relocate the"
+        echo "    Docker data-root, before the pull."
+    else
+        echo "  ✔ Docker image store ($droot): ${free_gib} GiB free."
+    fi
+}
+
+# Registry egress dry-run — pull one tiny image (hello-world, ~20 KB) to confirm
+# the DAEMON can actually reach a registry and pull layers. The detector's
+# host-level curl check is unreliable (stale CAs, separate proxy), and the
+# daemon has its own network stack/DNS/proxy config — so a host that "has
+# internet" can still have a daemon that can't pull (corporate proxy, DNS, a
+# firewalled bridge). Failing here with a specific message beats 15 min into a
+# silent compose-up hang. Non-blocking (Docker Hub rate-limits / transient
+# blips shouldn't halt the install) but loud. Cleans up hello-world if we were
+# the ones who pulled it.
+check_registry_egress() {
+    command -v docker >/dev/null 2>&1 || return 0
+    local had_hw
+    had_hw=$(docker image inspect hello-world >/dev/null 2>&1 && echo 1 || echo 0)
+    if docker pull -q hello-world >/dev/null 2>&1; then
+        echo "  ✔ Docker daemon can reach the registry (pulled a test image)."
+    else
+        echo "  ⚠ Docker daemon could NOT pull a test image (hello-world)."
+        echo "    The big image pull in the next step will likely fail too. Common"
+        echo "    causes: the daemon's DNS/proxy isn't set (check /etc/docker/daemon.json"
+        echo "    + the docker service's HTTP_PROXY), an outbound firewall blocks the"
+        echo "    daemon, or Docker Hub is rate-limiting this IP. Verify with:"
+        echo "        docker pull hello-world"
+    fi
+    [ "$had_hw" = 0 ] && docker rmi hello-world >/dev/null 2>&1 || true
+}
+
 echo ""
 echo "  Pre-flight: confirming images are available for this CPU architecture..."
 check_image_arch
 
 echo ""
+echo "  Pre-flight: checking Docker's image store has room + can reach the registry..."
+check_docker_dataroot_space
+check_registry_egress
+
+# Bring the stack up. Split the pull out of `up -d` and wrap it in retry() so a
+# transient registry/network blip during the long first-run pull doesn't fail
+# the whole step — `up -d` afterwards is the authority on success and re-pulls
+# anything still missing. Runs as a function (not `bash -c`) so retry() is in
+# scope. cd into the compose root first; a failed cd must fail the step.
+start_stack() {
+    cd "$SCRIPT_DIR" || return 1
+    retry 3 "Image pull" $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES pull \
+        || echo "  ⚠ Some images didn't pull after retries — 'up -d' will try again."
+    $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d
+}
+
+echo ""
 echo "  Note: first run will pull all Docker images — this can take 5-15 minutes"
-run_step 6 "Start the stack" \
-    bash -c "cd '$SCRIPT_DIR' && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d"
+run_step 6 "Start the stack" start_stack
 
 abort_if_failed
 
@@ -818,18 +1032,24 @@ run_step 12 "Auto-confirm manual imports" \
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-LAN_IP=$(grep -m1 '^LAN_IP=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+LAN_IP=$(grep -m1 '^LAN_IP=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
 IP="${LAN_IP:-<NAS-IP>}"
 
 echo ""
 echo "============================================="
-echo "  Results: $PASS passed, $FAIL failed"
+if [ "$SKIP" -gt 0 ]; then
+    echo "  Results: $PASS passed, $FAIL failed, $SKIP skipped"
+else
+    echo "  Results: $PASS passed, $FAIL failed"
+fi
 echo "============================================="
 
 if [ $FAIL -gt 0 ]; then
     echo ""
     echo "  One or more steps failed — review the output above."
-    echo "  Fix the issue and re-run:  sudo bash $SCRIPT_DIR/setup.sh"
+    echo "  Fix the issue, then re-run to retry just the unfinished steps:"
+    echo "    sudo bash $SCRIPT_DIR/setup.sh --resume"
+    echo "  (or re-run without --resume to run every step again — all idempotent.)"
     exit 1
 fi
 

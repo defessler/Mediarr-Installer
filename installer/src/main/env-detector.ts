@@ -208,6 +208,13 @@ export async function detectEnv(
     // `doas -n true` returns 0 only when the caller has a NOPASS rule.
     'echo "===has_doas==="; command -v doas >/dev/null 2>&1 && echo y || echo n',
     'echo "===doas_nopw==="; doas -n true 2>/dev/null; echo $?',
+    // System vendor via DMI — best-effort tiebreaker for the family guess.
+    // Needs root to read /sys/.../dmi or run dmidecode; try the readable
+    // sysfs node first (no privilege), then dmidecode (root / sudo-nopasswd).
+    // Empty on hosts that block both (most non-root logins) — purely additive.
+    'echo "===dmi_vendor==="; { cat /sys/class/dmi/id/sys_vendor 2>/dev/null ' +
+      '|| sudo -n dmidecode -s system-manufacturer 2>/dev/null ' +
+      '|| dmidecode -s system-manufacturer 2>/dev/null; } | head -1',
     'echo "===whoami==="; whoami',
     'echo "===has_compose==="; [ -f ' + tq + '/docker-compose.yml ] && echo y || true',
     'echo "===has_env==="; [ -f ' + tq + '/.env ] && echo y || true',
@@ -515,6 +522,21 @@ export async function detectEnv(
   // + not Synology" for units whose DMI strings don't say "UGREEN".
   const hasVolume1 = volume1Out.startsWith('ok')
   const isDebian = section(o, 'is_debian') === 'y'
+
+  // System vendor from DMI (sysfs sys_vendor or dmidecode). Used as a
+  // tiebreaker for the weakest heuristic (Debian + /volume1 → ugreen):
+  // a real UGREEN box reports "UGREEN" and is confirmed high-confidence;
+  // a plain Debian box or VM with a stray /volume1 reports a generic /
+  // virtual vendor and should NOT be mis-tagged ugreen.
+  const dmiVendor = section(o, 'dmi_vendor').trim()
+  const dmiVendorLc = dmiVendor.toLowerCase()
+  const vendorSaysUgreen = dmiVendorLc.includes('ugreen')
+  // Vendors that prove the box is a generic PC / hypervisor, not a NAS
+  // appliance — so a /volume1 here is almost certainly user-created.
+  const vendorIsGeneric = /qemu|kvm|virtualbox|innotek|vmware|microsoft corporation|xen|bochs|parallels|standard pc|seabios|google|amazon|digitalocean|hetzner|oracle/.test(
+    dmiVendorLc,
+  )
+
   if (section(o, 'nas_synology') === 'y')        nasFamily = 'synology'
   else if (section(o, 'nas_ugreen')  === 'y')    nasFamily = 'ugreen'
   else if (section(o, 'nas_asustor') === 'y')    nasFamily = 'asustor'
@@ -524,14 +546,19 @@ export async function detectEnv(
   else if (section(o, 'nas_unraid')  === 'y')    nasFamily = 'unraid'
   else if (section(o, 'nas_truenas') === 'y')    nasFamily = 'truenas'
   else if (section(o, 'nas_omv')     === 'y')    nasFamily = 'omv'
-  else if (isDebian && hasVolume1)               nasFamily = 'ugreen'
+  else if (vendorSaysUgreen)                     nasFamily = 'ugreen'
+  // Debian + /volume1 heuristic — but only when DMI doesn't out the box
+  // as a generic PC / VM. A stray /volume1 on a QEMU/VMware/cloud guest
+  // is user-made, not a UGREEN appliance, so fall through to 'linux'.
+  else if (isDebian && hasVolume1 && !vendorIsGeneric) nasFamily = 'ugreen'
   else                                            nasFamily = 'linux'
 
   // Confidence in that classification: high when a definitive OS marker
-  // file matched, low when only the Debian+/volume1 heuristic fired
-  // (could be a plain Debian box with a stray /volume1), unknown when
-  // nothing matched and we fell through to generic 'linux'. The Detect
-  // screen nudges the user to confirm paths when it's not 'high'.
+  // file matched (or DMI vendor confirms it), low when only the
+  // Debian+/volume1 heuristic fired (could be a plain Debian box with a
+  // stray /volume1), unknown when nothing matched and we fell through to
+  // generic 'linux'. The Detect screen nudges the user to confirm paths
+  // when it's not 'high'.
   const markerMatched =
     section(o, 'nas_synology')    === 'y' ||
     section(o, 'nas_ugreen')      === 'y' ||
@@ -542,8 +569,14 @@ export async function detectEnv(
     section(o, 'nas_unraid')      === 'y' ||
     section(o, 'nas_truenas')     === 'y' ||
     section(o, 'nas_omv')         === 'y'
+  // A DMI vendor that matches the chosen family is as good as an OS marker.
+  const vendorConfirms = nasFamily === 'ugreen' && vendorSaysUgreen
   const familyConfidence: EnvDetectResult['familyConfidence'] =
-    nasFamily === 'linux' ? 'unknown' : markerMatched ? 'high' : 'low'
+    nasFamily === 'linux'
+      ? 'unknown'
+      : markerMatched || vendorConfirms
+        ? 'high'
+        : 'low'
 
   // The candidate data-share roots that actually exist on this host,
   // in the order the detection probe walked. The renderer picks one
@@ -642,6 +675,7 @@ export async function detectEnv(
     iptables: iptOK ? iptSection.replace(/\nRC=0$/, '').split('\n')[0] : null,
     sudoMode,
     dockerGroup,
+    systemVendor: dmiVendor || null,
     existingInstall,
     portConflicts,
     disk,

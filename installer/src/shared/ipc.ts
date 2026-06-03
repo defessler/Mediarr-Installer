@@ -112,6 +112,10 @@ export interface EnvDetectResult {
    *  sudo password — Docker/compose work; the few genuinely-root steps
    *  degrade with a warning. */
   dockerGroup: boolean
+  /** System vendor from DMI (sysfs sys_vendor / dmidecode), e.g. "UGREEN",
+   *  "Synology", "QEMU". null when unreadable. Used as a family tiebreaker
+   *  and shown to the user when classification confidence is below high. */
+  systemVendor: string | null
   /** Pre-existing install at targetDir, if any */
   existingInstall: ExistingInstall
   /** Ports our stack wants that are already bound by another process */
