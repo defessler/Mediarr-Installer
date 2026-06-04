@@ -69,7 +69,12 @@ import log from 'electron-log/main.js'
 import type { UpdaterState } from '../shared/ipc.js'
 
 const REPO = 'defessler/Mediarr-Installer'
-const STARTUP_DELAY_MS = 30 * 1000
+// Short, not zero: let the window paint + the renderer mount its updater-state
+// listener first, then check ~immediately on launch. The check is an async
+// main-process fetch (it never blocks the renderer), and the banner reads the
+// result via getState() on mount + the updater:state subscription, so this is
+// "checks for updates on first launch" without stalling startup.
+const STARTUP_DELAY_MS = 2 * 1000
 const PERIODIC_INTERVAL_MS = 6 * 60 * 60 * 1000  // 6 hours
 const UA = 'Mediarr-Installer-Updater'
 
@@ -626,9 +631,12 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
   ipcMain.handle('updater:cancel',   () => { cancelDownload() })
   ipcMain.handle('updater:skip',     () => { skipCurrentVersion() })
 
-  // Stagger the initial check so app launch stays snappy — the
-  // wizard's Welcome screen renders before we hit GitHub.
+  // Check for updates on first launch. A tiny delay lets the Welcome
+  // screen paint + the renderer register its updater-state listener first;
+  // then we hit GitHub. Silent so a failed check (offline / rate-limited)
+  // never pins an error banner at startup — only an actual update surfaces.
   startupTimeoutHandle = setTimeout(() => {
+    log.info('updater: running first-launch update check')
     checkForUpdates({ silent: true }).catch((e) => {
       log.error('updater: startup check failed:', e)
     })
