@@ -3,7 +3,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import confetti from 'canvas-confetti'
 import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
-  FileText, ChevronDown,
+  FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
   Newspaper, Download, MessageSquare, BarChart3, Shield,
   type LucideIcon,
@@ -50,7 +50,10 @@ export function DoneScreen() {
   const { config, sessionId, targetDir, reset } = useWizard()
   const ip = config.LAN_IP ?? '<NAS-IP>'
 
-  const [running, setRunning] = useState(false)
+  // Starts true: the screen auto-runs post-deploy validation on mount (effect
+  // below), so initializing true avoids a one-frame "Setup finished — with
+  // issues" flash before the effect sets it.
+  const [running, setRunning] = useState(true)
   const [exit, setExit] = useState<number | null>(null)
   const linesRef = useRef<string[]>([])
   const [, setTick] = useState(0)
@@ -77,12 +80,17 @@ export function DoneScreen() {
       const next = { ...cur }
       for (const line of parts) {
         const clean = stripAnsi(line)
+        // post-deploy-validate.sh names the media-server line after whichever
+        // server is live, so map the 'Plex' entry to 'Jellyfin' when deployed
+        // — otherwise the Jellyfin tile never registers and stays grey.
+        const mediaName = (config.MEDIA_SERVER || 'plex') === 'jellyfin' ? 'Jellyfin' : 'Plex'
         for (const svc of SERVICES) {
+          const name = svc.name === 'Plex' ? mediaName : svc.name
           // Anchored on the URL check lines only — ignore "container running" lines
           // so a healthy container with an unreachable WebUI doesn't register as ok.
-          if (clean.includes(`${svc.name} (http`)) {
-            if (clean.includes('✔')) next[svc.name] = 'ok'
-            else if (clean.includes('✘')) next[svc.name] = 'fail'
+          if (clean.includes(`${name} (http`)) {
+            if (clean.includes('✔')) next[name] = 'ok'
+            else if (clean.includes('✘')) next[name] = 'fail'
           }
         }
       }
@@ -155,12 +163,34 @@ export function DoneScreen() {
   const failCount = healthEntries.filter(([, h]) => h === 'fail').length
 
   const reduced = useReducedMotion()
-  const installSucceeded = exit === 0 || (failCount === 0 && okCount > 0)
+  // Honest success signal: ONLY a clean validator exit. The old fallback
+  // (failCount===0 && okCount>0) painted "success" even on a non-zero exit,
+  // so a VPN IP-leak / hardlink-EXDEV / missing-key failure was hidden behind
+  // confetti while the reachable-service tiles were all green.
+  const installSucceeded = exit === 0
+  // Media-server-aware tile NAMES. post-deploy-validate.sh names its
+  // reachability line after whichever server is live (Plex or Jellyfin), so
+  // both the tile grid AND the criticalIssues exclusion below must use these.
+  const mediaServer = config.MEDIA_SERVER || 'plex'
+  const tileNames = SERVICES.map((s) =>
+    s.name === 'Plex' && mediaServer === 'jellyfin' ? 'Jellyfin' : s.name)
+  // Validator failures that AREN'T service-reachability tiles — VPN IP-leak,
+  // hardlink copy-fallback, missing API keys, daemon issues. These were
+  // previously invisible (only "(http" tile lines fed the footer). Surface
+  // them as first-class problems. Derived from the log so no extra state.
+  // Exclude tile lines via the media-server-aware names so a Jellyfin
+  // WebUI-unreachable line isn't mis-flagged as a critical (VPN-class) issue.
+  const criticalIssues = Array.from(new Set(
+    linesRef.current
+      .map(stripAnsi)
+      .filter((l) => l.includes('✘') && !tileNames.some((n) => l.includes(`${n} (http`)))
+      .map((l) => l.replace(/.*✘\s*/, '').trim())
+      .filter(Boolean),
+  ))
 
   // Media-server-aware tile list — swap the Plex tile for Jellyfin (port
   // 8096) and drop Plex-only Tautulli when the user deployed Jellyfin, so
   // the grid matches what actually got installed.
-  const mediaServer = config.MEDIA_SERVER || 'plex'
   const displayedServices = SERVICES.flatMap((s) => {
     if (s.name === 'Plex') {
       return mediaServer === 'jellyfin' ? [{ ...s, name: 'Jellyfin', port: '8096' }] : [s]
@@ -217,12 +247,18 @@ export function DoneScreen() {
           <AnimatedCheck size={64} className="text-emerald-400" />
         </div>
         <h1 className="text-4xl font-bold tracking-tight">
-          {installSucceeded ? 'You did it!' : 'Setup complete'}
+          {installSucceeded
+            ? 'You did it!'
+            : running
+              ? 'Checking your stack…'
+              : 'Setup finished — with issues to review'}
         </h1>
         <p className="text-slate-400 mt-3 text-base max-w-md mx-auto">
           {installSucceeded
             ? 'Your media stack is live. Click any service below to open it.'
-            : 'Some services need a closer look — the grid below shows what\'s up.'}
+            : running
+              ? 'Running post-deploy validation…'
+              : 'Validation flagged problems — review them below before relying on the stack.'}
         </p>
         <div className="mt-5 flex items-center justify-center gap-3">
           <BigButton
@@ -236,6 +272,21 @@ export function DoneScreen() {
           </BigButton>
         </div>
       </motion.header>
+
+      {criticalIssues.length > 0 && (
+        <div className="rounded-lg border border-rose-600/40 bg-rose-950/20 p-4">
+          <h2 className="text-sm font-semibold text-rose-200 flex items-center gap-2">
+            <AlertTriangle size={16} aria-hidden="true" />
+            Validation flagged {criticalIssues.length} problem{criticalIssues.length > 1 ? 's' : ''}
+          </h2>
+          <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-rose-100/90">
+            {criticalIssues.slice(0, 8).map((m, i) => <li key={i}>{m}</li>)}
+          </ul>
+          <p className="mt-2 text-xs text-rose-200/70">
+            If one of these is a VPN IP-leak, your torrent traffic is NOT going through the tunnel — fix it before downloading.
+          </p>
+        </div>
+      )}
 
       {/* Service tile grid — each tile gets a staggered entrance + an
           icon (status circle) that animates between states. Clicking

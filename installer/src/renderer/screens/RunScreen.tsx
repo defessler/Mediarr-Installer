@@ -119,6 +119,16 @@ export function RunScreen() {
     // arr-config script for "set this in the UI manually" hints).
     const noteMatch = !severity && line.match(/^!\s+(.+)$/)
     if (noteMatch) { severity = 'note'; text = noteMatch[1] }
+    // Raw failures that DON'T carry our ✘ glyph and would otherwise produce
+    // zero issue entries — leaving the real failure buried in 500 log lines:
+    // a Python traceback from a crashed setup-*.py, or a docker daemon error.
+    if (!severity && /^Traceback \(most recent call last\)/.test(line)) {
+      severity = 'fail'; text = 'A setup script crashed (Python traceback) — see the log below'
+    }
+    if (!severity) {
+      const dockerErr = line.match(/^Error response from daemon:\s*(.+)$/)
+      if (dockerErr) { severity = 'fail'; text = 'Docker error: ' + dockerErr[1] }
+    }
     // Deliberately NOT matched: ℹ (U+2139). The bash/python helpers
     // use info() with that prefix for self-healing or non-actionable
     // status (CloudFlare-blocked indexers that Flaresolverr will heal

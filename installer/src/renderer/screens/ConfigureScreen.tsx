@@ -1251,7 +1251,13 @@ export function ConfigureScreen() {
           size="md"
           variant="secondary"
           icon={<ArrowLeft size={18} />}
-          onClick={() => useWizard.getState().setStep('detect')}
+          onClick={() => {
+            const { sessionId, setStep } = useWizard.getState()
+            // Edit/offline mode reaches Configure with NO SSH session;
+            // jumping Back to Detect would dead-end on "No SSH session".
+            // Go to Welcome instead. With a live session, Back → Detect.
+            setStep(sessionId ? 'detect' : 'welcome')
+          }}
         >
           Back
         </BigButton>

@@ -123,19 +123,39 @@ async function writeFile(data: OnDiskShape): Promise<void> {
   await fs.writeFile(FILE(), JSON.stringify(data, null, 2), { mode: 0o600 })
 }
 
+// Each stored blob carries a CODEC TAG so decode always uses the codec the
+// blob was WRITTEN with — never a guess from the current (possibly changed)
+// safeStorage availability. Without this, an encrypted blob read when
+// encryption is unavailable (a copied profiles.json on another machine, a
+// keychain reset, a safeStorage flip) was base64-misread into garbage and the
+// profile silently lost every saved value but host/port.
+const ENC_TAG = 'enc:' // safeStorage-encrypted (DPAPI/Keychain — machine-bound)
+const B64_TAG = 'b64:' // plaintext base64 (safeStorage was unavailable at write)
+
 function encodeBody(body: ProfileBody): string {
-  if (isEncryptionAvailable()) return encryptToBase64(JSON.stringify(body))
+  const json = JSON.stringify(body)
+  if (isEncryptionAvailable()) return ENC_TAG + encryptToBase64(json)
   // safeStorage unavailable (rare) — degrade to base64 (NOT secure, but
   // matches the user's "save passwords" intent at least mechanically).
-  return Buffer.from(JSON.stringify(body), 'utf8').toString('base64')
+  return B64_TAG + Buffer.from(json, 'utf8').toString('base64')
 }
 
 function decodeBody(blob: string): ProfileBody | null {
   if (!blob) return null
   try {
-    const json = isEncryptionAvailable()
-      ? decryptFromBase64(blob)
-      : Buffer.from(blob, 'base64').toString('utf8')
+    let json: string | null
+    if (blob.startsWith(ENC_TAG)) {
+      // Written encrypted: always attempt DECRYPT. If safeStorage can't
+      // decrypt it now (different machine / reset keychain), this throws and
+      // we return null cleanly — never a garbage base64 misread.
+      json = decryptFromBase64(blob.slice(ENC_TAG.length))
+    } else if (blob.startsWith(B64_TAG)) {
+      json = Buffer.from(blob.slice(B64_TAG.length), 'base64').toString('utf8')
+    } else {
+      // Untagged legacy blob (written before tagging) — fall back to live
+      // availability, matching how it was written. Re-saved blobs get tagged.
+      json = isEncryptionAvailable() ? decryptFromBase64(blob) : Buffer.from(blob, 'base64').toString('utf8')
+    }
     if (!json) return null
     const parsed = JSON.parse(json) as ProfileBody
     if (!parsed?.connection) return null
