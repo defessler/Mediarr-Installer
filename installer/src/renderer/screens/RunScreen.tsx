@@ -14,6 +14,7 @@ import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
 import { renderEnv, isEnabled, type EnvFormValues } from '../../shared/env-render.js'
 import { SETUP_STEPS, StepperRail, type SetupStep } from '../components/StepperRail.js'
+import { toConnectConfig } from '../../shared/connect-config.js'
 
 type Phase =
   | 'idle'
@@ -37,7 +38,7 @@ const STEP_OK_RE    = /✔\s*Step\s+(\d+)\s+complete/
 const STEP_FAIL_RE  = /✘\s*Step\s+(\d+)\s+failed/
 
 export function RunScreen() {
-  const { sessionId, targetDir, config, setConfig, setStep, activeProfileId, recordRunResult, clearRunResult } = useWizard()
+  const { sessionId, targetDir, config, setConfig, setStep, activeProfileId, recordRunResult, clearRunResult, connection, setSessionId } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<{ pct: number; file: string } | null>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -67,6 +68,18 @@ export function RunScreen() {
   /** True after we've signalled setup.sh to stop but before the stream
    *  closes — drives the Cancel button's "Stopping…" label. */
   const [canceling, setCanceling] = useState(false)
+  // Mirror `canceling` into a ref so the stream-close handler reads the LIVE
+  // value — its listener closure captures a stale `canceling` (the effect deps
+  // are [sessionId]). Lets us tell a user-Cancel apart from a real drop.
+  const cancelingRef = useRef(false)
+  useEffect(() => { cancelingRef.current = canceling }, [canceling])
+  /** True when the last run ended because the SSH connection DROPPED (stream
+   *  closed with a null exit and no Cancel in flight) rather than setup.sh
+   *  failing a step. We keep phase==='failed' so the whole failed-state UI works
+   *  unchanged, and only swap the Retry button for "Reconnect & resume". */
+  const [droppedConnection, setDroppedConnection] = useState(false)
+  /** True while reconnect-and-resume is re-establishing SSH (drives the label). */
+  const [reconnecting, setReconnecting] = useState(false)
   /** Issues parsed out of the streaming log. Surfaces failures and
    *  warnings from setup-arr-config.py et al as a tidy summary above
    *  the log panel, so the user doesn't have to scroll 500 lines to
@@ -300,6 +313,11 @@ export function RunScreen() {
     const offClose = window.installer.ssh.onStreamClose((d) => {
       if (d.channelId === CHANNEL_ID) {
         setExitCode(d.exitCode)
+        // A null exit with no Cancel in flight = the channel died (socket drop
+        // or the 30-min stall abort), not a setup.sh step failure. Flag it so
+        // the footer offers "Reconnect & resume" (re-runs setup.sh --resume from
+        // the .setup-state checkpoint) instead of a from-scratch Retry.
+        setDroppedConnection(d.exitCode === null && !cancelingRef.current)
         setCanceling(false)
         setPhase(d.exitCode === 0 ? 'done' : 'failed')
         // The remote setup.sh finished — flush + close the on-disk
@@ -419,6 +437,111 @@ export function RunScreen() {
     }
   }
 
+  /** Stream-run setup.sh on the given session and pipe its output to the log +
+   *  StepperRail. Shared by the first install (go(), resume=false) and the
+   *  reconnect-and-resume flow (resume=true → adds --resume so setup.sh skips
+   *  the steps already recorded in .setup-state). Deliberately does NOT
+   *  re-upload the payload or re-render .env: a resume must run against the
+   *  EXACT on-NAS .env — re-rendering it could change its hash (forcing a full
+   *  re-run) or blank API keys that setup-arr-config.py had discovered.
+   *
+   *  Resume correctness also relies on setup.sh's pre-step .env normalisation
+   *  (the INSTALL_DIR / MONITORED_DISK_N appends, ~setup.sh:120-164) staying
+   *  idempotent and running BEFORE the first checkpoint, so the env_hash it
+   *  records matches on the --resume re-run. Don't make that prelude mutate
+   *  .env non-idempotently or after a step completes, or resume will replay
+   *  every step (still safe — all steps are idempotent — just slower). */
+  async function streamSetup(sid: string, resume: boolean) {
+    setReconnecting(false)
+    setPhase('running-setup')
+    const setupStartTs = Date.now()
+    lastChunkAtRef.current = setupStartTs
+    const heartbeat = setInterval(() => {
+      const elapsed = Date.now() - setupStartTs
+      const sinceLast = Date.now() - lastChunkAtRef.current
+      if (sinceLast > 5_000) {
+        const m = `(still working — ${Math.floor(elapsed / 1000)}s elapsed, ${Math.floor(sinceLast / 1000)}s since last output)`
+        appendChunk(`\x1b[36m[wizard]\x1b[0m ${m}\n`)
+        window.installer.installLog.append(`[wizard] ${m}\n`).catch(() => { /* non-fatal */ })
+        lastChunkAtRef.current = Date.now()
+      }
+    }, 3_000)
+    try {
+      // Defeat block-buffering (script -qfc → stdbuf → bash|awk fflush → plain
+      // bash, in preference order) and handle both the scripts/ layout and the
+      // legacy loose-scripts path — setup.sh resolves either internally. $ARGS
+      // carries --resume on a reconnect-resume (empty otherwise).
+      const targetSh = shellQuote(`${targetDir}/scripts/setup.sh`)
+      const legacySh = shellQuote(`${targetDir}/setup.sh`)
+      const ARGS = shellQuote(resume ? '--resume' : '')
+      await window.installer.ssh.execStream({
+        sessionId: sid,
+        cmd:
+          PATH_PREFIX +
+          `export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false; ` +
+          `if [ -f ${targetSh} ]; then SETUP=${targetSh}; ` +
+          `else SETUP=${legacySh}; fi; ` +
+          `ARGS=${ARGS}; ` +
+          `echo "[wizard-debug] using setup.sh at: $SETUP $ARGS"; ` +
+          `echo "[wizard-debug] before setup.sh: $(date)"; ` +
+          `if command -v script >/dev/null 2>&1; then ` +
+          `  echo "[wizard-debug] using: script -qfc (forced pty)"; ` +
+          `  script -qfc "bash $SETUP $ARGS" /dev/null 2>&1; rc=$?; ` +
+          `elif command -v stdbuf >/dev/null 2>&1; then ` +
+          `  echo "[wizard-debug] using: stdbuf -oL -eL"; ` +
+          `  stdbuf -oL -eL bash $SETUP $ARGS 2>&1; rc=$?; ` +
+          `elif command -v awk >/dev/null 2>&1; then ` +
+          `  echo "[wizard-debug] using: bash | awk fflush"; ` +
+          `  bash $SETUP $ARGS 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
+          `else ` +
+          `  echo "[wizard-debug] using: plain bash (output may be block-buffered)"; ` +
+          `  bash $SETUP $ARGS 2>&1; rc=$?; ` +
+          `fi; ` +
+          `echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
+        sudo: true,
+        channelId: CHANNEL_ID,
+      })
+    } finally {
+      clearInterval(heartbeat)
+    }
+  }
+
+  /** Reconnect a DROPPED SSH session and resume setup.sh from its checkpoint.
+   *  Offered only after a connection drop (droppedConnection): re-establishes
+   *  SSH with the saved connection, then re-runs setup.sh --resume against the
+   *  on-NAS .env (no re-upload, no .env rewrite). The most common trigger is a
+   *  Wi-Fi blip or laptop sleep while the user is watching the install. */
+  async function reconnectAndResume() {
+    if (reconnecting) return
+    setReconnecting(true)
+    setErrorMsg(null)
+    // Keep droppedConnection===true through the reconnect window so the button
+    // reads "Reconnecting…" and the dropped-state copy stays put (phase is still
+    // 'failed' until streamSetup flips it). onStreamClose recomputes it when the
+    // resumed run ends; the catch below re-sets it on a failed reconnect.
+    appendChunk(`\x1b[36m[wizard]\x1b[0m Connection dropped — reconnecting to the NAS to resume…\n`)
+    try {
+      const r = await window.installer.ssh.connect(toConnectConfig(connection))
+      setSessionId(r.sessionId)
+      if (activeProfileId) window.installer.profiles.touch(activeProfileId).catch(() => { /* non-fatal */ })
+      try {
+        const lr = await window.installer.installLog.start('install')
+        setInstallLogPath(lr.path)
+      } catch { /* non-fatal — install still works without a local log file */ }
+      appendChunk(`\x1b[36m[wizard]\x1b[0m Reconnected. Resuming setup.sh from the last completed step…\n`)
+      setRunStartedAt(Date.now())
+      setElapsedMs(0)
+      await streamSetup(r.sessionId, true)
+    } catch (e) {
+      setReconnecting(false)
+      setDroppedConnection(true)   // keep the Reconnect button available
+      setPhase('failed')
+      setExitCode(null)
+      setErrorMsg(`Couldn’t reconnect to the NAS: ${(e as Error).message} — check it’s back online, then tap Reconnect again.`)
+      reportError('Reconnect', e)
+    }
+  }
+
   async function go() {
     if (!sessionId) {
       setErrorMsg('No SSH session. Go back and reconnect.')
@@ -426,6 +549,7 @@ export function RunScreen() {
       return
     }
     setErrorMsg(null)
+    setDroppedConnection(false)
     linesRef.current = []
     resetSteps()
     setIssues([])
@@ -727,84 +851,9 @@ export function RunScreen() {
       // more than 5s. Aggressive on purpose — long silences are the
       // worst UX, and on Synology there are real causes (slow image
       // pull, denied PTY → buffered output) where we WILL stay quiet.
-      setPhase('running-setup')
-      const setupStartTs = Date.now()
-      lastChunkAtRef.current = setupStartTs
-      const heartbeat = setInterval(() => {
-        const elapsed = Date.now() - setupStartTs
-        const sinceLast = Date.now() - lastChunkAtRef.current
-        if (sinceLast > 5_000) {
-          wlog(`(still working — ${Math.floor(elapsed / 1000)}s elapsed, ${Math.floor(sinceLast / 1000)}s since last output)`)
-          lastChunkAtRef.current = Date.now()
-        }
-      }, 3_000)
-      try {
-        // Defeat block-buffering: when stdout isn't a tty, glibc-linked
-        // programs (docker, curl, etc.) buffer ~4–8 KiB before flushing,
-        // so we see nothing on the wire until they exit. Three fallbacks
-        // in order of preference:
-        //
-        //   1. script -qfc … /dev/null  — util-linux, allocates a fresh
-        //      pty and runs the command inside it; programs see a real
-        //      tty and line-buffer.
-        //   2. stdbuf -oL -eL bash …    — coreutils; injects an LD_PRELOAD
-        //      that switches stdout/stderr to line-buffered.
-        //   3. bash … 2>&1 | awk        — busybox awk is everywhere on
-        //      Synology, and `fflush()` after each print forces the line
-        //      through the pipe immediately. We capture the bash exit
-        //      code via ${PIPESTATUS[0]} since the pipe's exit is awk's.
-        //
-        // Each branch echoes a "using: …" line so the log tells us which
-        // path actually ran when we're debugging silent installs.
-        // As of v0.3.22 the wizard drops setup.sh under scripts/ inside
-        // INSTALL_DIR. Legacy installs (loose scripts at INSTALL_DIR)
-        // are detected here so we still find setup.sh in either layout
-        // — we exec the new path when it exists and fall back to the
-        // legacy one otherwise. setup.sh itself also handles both
-        // layouts internally, so it doesn't matter which path we end
-        // up running.
-        const targetSh = shellQuote(
-          `${targetDir}/scripts/setup.sh`,
-        )
-        const legacySh = shellQuote(`${targetDir}/setup.sh`)
-        await window.installer.ssh.execStream({
-          sessionId,
-          cmd:
-            PATH_PREFIX +
-            // Force docker compose to use plain output even when its
-            // stdout is a tty (which it will be under script(1)). Without
-            // these, docker draws a multi-line spinner that floods the
-            // log with redraw frames. setup.sh also exports these, but
-            // setting them here makes us robust to older setup.sh
-            // payloads or shell variants that drop the export.
-            `export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false; ` +
-            // Pick the new scripts/ layout if it exists; fall back to
-            // the legacy loose-scripts path. setup.sh handles both
-            // layouts internally, so either path runs to completion.
-            `if [ -f ${targetSh} ]; then SETUP=${targetSh}; ` +
-            `else SETUP=${legacySh}; fi; ` +
-            `echo "[wizard-debug] using setup.sh at: $SETUP"; ` +
-            `echo "[wizard-debug] before setup.sh: $(date)"; ` +
-            `if command -v script >/dev/null 2>&1; then ` +
-            `  echo "[wizard-debug] using: script -qfc (forced pty)"; ` +
-            `  script -qfc "bash $SETUP" /dev/null 2>&1; rc=$?; ` +
-            `elif command -v stdbuf >/dev/null 2>&1; then ` +
-            `  echo "[wizard-debug] using: stdbuf -oL -eL"; ` +
-            `  stdbuf -oL -eL bash $SETUP 2>&1; rc=$?; ` +
-            `elif command -v awk >/dev/null 2>&1; then ` +
-            `  echo "[wizard-debug] using: bash | awk fflush"; ` +
-            `  bash $SETUP 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
-            `else ` +
-            `  echo "[wizard-debug] using: plain bash (output may be block-buffered)"; ` +
-            `  bash $SETUP 2>&1; rc=$?; ` +
-            `fi; ` +
-            `echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
-          sudo: true,
-          channelId: CHANNEL_ID,
-        })
-      } finally {
-        clearInterval(heartbeat)
-      }
+      // Stream-run setup.sh against the freshly-uploaded payload + .env. The
+      // exit code arrives via the stream-close handler in useEffect above.
+      await streamSetup(sessionId, false)
     } catch (e) {
       setErrorMsg((e as Error).message)
       setPhase('failed')
@@ -988,7 +1037,7 @@ export function RunScreen() {
     : phase === 'running-setup' && currentStep ? currentStep.label
     : phase === 'running-setup' ? 'Working on the next step…'
     : phase === 'done' ? 'All done — moving on'
-    : phase === 'failed' ? 'Something needs attention'
+    : phase === 'failed' ? (droppedConnection ? 'Connection dropped — reconnect to resume' : 'Something needs attention')
     : 'Starting…'
 
   return (
@@ -996,7 +1045,7 @@ export function RunScreen() {
       <header className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
-            {phase === 'failed' ? 'Install paused' : phase === 'done' ? 'Done' : 'Installing the stack'}
+            {phase === 'failed' ? (droppedConnection ? 'Connection lost' : 'Install paused') : phase === 'done' ? 'Done' : 'Installing the stack'}
           </div>
           {/* Animated status headline — re-mounts on each phase change so
               the user sees motion when work progresses, even while the
@@ -1275,28 +1324,37 @@ export function RunScreen() {
           {phase === 'failed' && (
             <span className="inline-flex items-start gap-1.5 text-amber-200/90">
               <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>
-                Install paused — tap <span className="text-slate-200 font-medium">Retry</span> to run it again,
-                or <span className="text-slate-200 font-medium">Back</span> to tweak a setting first.
-              </span>
+              {droppedConnection ? (
+                <span>
+                  Connection to the NAS dropped — tap <span className="text-slate-200 font-medium">Reconnect &amp; resume</span> to
+                  pick up where it left off. Steps that already finished are skipped.
+                </span>
+              ) : (
+                <span>
+                  Install paused — tap <span className="text-slate-200 font-medium">Retry</span> to run it again,
+                  or <span className="text-slate-200 font-medium">Back</span> to tweak a setting first.
+                </span>
+              )}
             </span>
           )}
         </div>
         <BigButton
           variant={phase === 'failed' ? 'primary' : 'secondary'}
           size="md"
-          onClick={go}
-          disabled={phase !== 'failed'}
+          onClick={droppedConnection ? reconnectAndResume : go}
+          disabled={phase !== 'failed' || reconnecting}
           title={
             phase === 'failed'
-              ? 'Run the install again from the top — your config is already saved'
+              ? (droppedConnection
+                  ? 'Reconnect to the NAS and resume setup.sh from the last completed step'
+                  : 'Run the install again from the top — your config is already saved')
               : phase === 'done'
                 ? 'Install already finished successfully'
                 : 'Available once the install has paused'
           }
           icon={<RotateCw size={18} />}
         >
-          Retry
+          {droppedConnection ? (reconnecting ? 'Reconnecting…' : 'Reconnect & resume') : 'Retry'}
         </BigButton>
         <BigButton
           variant={phase === 'done' ? 'primary' : 'secondary'}

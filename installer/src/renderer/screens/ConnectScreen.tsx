@@ -8,6 +8,7 @@ import { useWizard, type WizardStep } from '../store/wizard.js'
 import { BigButton } from '../components/BigButton.js'
 import { PasswordInput } from '../components/PasswordInput.js'
 import type { ConnectResult } from '../../shared/ipc.js'
+import { toConnectConfig } from '../../shared/connect-config.js'
 
 export function ConnectScreen() {
   const {
@@ -28,23 +29,12 @@ export function ConnectScreen() {
 
   const isNonRoot = (connection.user ?? 'root') !== 'root'
 
+  // Delegates to the shared builder so the initial connect here and the
+  // reconnect-and-resume flow in RunScreen always produce an identical config.
+  // (password / passphrase / sudoPassword are just connection.* ?? '' — see
+  // above — so passing `connection` through reproduces this exactly.)
   function commonConfig() {
-    const user = connection.user ?? 'root'
-    return {
-      host: connection.host ?? '',
-      port: connection.port ?? 22,
-      user,
-      authMethod: connection.authMethod ?? 'password',
-      password: connection.authMethod === 'password' ? password : undefined,
-      privateKeyPath: connection.authMethod === 'privateKey' ? connection.privateKeyPath : undefined,
-      passphrase: connection.authMethod === 'privateKey' ? passphrase : undefined,
-      // Only relevant when user != 'root' — ssh-service ignores it otherwise.
-      // For password-auth as a non-root user, default to reusing the SSH
-      // password since most Synology setups have the same password for both.
-      sudoPassword: user !== 'root'
-        ? (sudoPassword || (connection.authMethod === 'password' ? password : undefined))
-        : undefined,
-    } as const
+    return toConnectConfig(connection)
   }
 
   async function test() {
