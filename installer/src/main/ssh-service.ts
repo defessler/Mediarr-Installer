@@ -257,6 +257,17 @@ export async function connect(cfg: ConnectionConfig): Promise<{ sessionId: strin
   sessions.set(sessionId, { client, config: cfg, sftp: null })
   client.on('end', () => sessions.delete(sessionId))
   client.on('close', () => sessions.delete(sessionId))
+  // CRITICAL: a persistent session that loses its socket mid-install (WiFi
+  // blip, NAS sleep) emits 'error' on the ssh2 Client. ssh2's Client is an
+  // EventEmitter, so an unhandled 'error' throws and crashes the Electron
+  // main process (surfacing as a native "Startup error" dialog). Handle it:
+  // drop the dead session so subsequent ops fail cleanly with "no session"
+  // instead of taking the whole app down. Any in-flight execStream gets its
+  // own stream 'error' + watchdog (below) to unstick the UI.
+  client.on('error', (err: Error) => {
+    appendInstallLog(`\n[ssh] session ${sessionId} error: ${err?.message ?? String(err)}\n`)
+    sessions.delete(sessionId)
+  })
   return { sessionId }
 }
 
@@ -587,6 +598,37 @@ export async function execStream(args: {
       if (err) return reject(err)
       activeChannels.set(channelId, stream)
 
+      // Finish exactly once — emit the close event + resolve. Shared by the
+      // normal 'close', a stream 'error', and the inactivity watchdog, so
+      // none of those can leave the renderer stuck in "running" forever.
+      let settled = false
+      let watchdog: ReturnType<typeof setTimeout> | undefined
+      const finishClose = (code: number | null, signal: string | null, note: string) => {
+        if (settled) return
+        settled = true
+        if (watchdog) clearTimeout(watchdog)
+        activeChannels.delete(channelId)
+        appendInstallLog(note)
+        send<SshStreamClose>(IPC.evtStreamClose, { channelId, exitCode: code, signal })
+        resolve()
+      }
+      // Inactivity watchdog: a live install streams progress continuously,
+      // so a long stretch of ZERO output means a dead socket or a wedged
+      // step. Abort (TERM → close) and report a non-zero finish so the UI
+      // can recover instead of ticking its heartbeat indefinitely. Window
+      // is generous — setup.sh is idempotent + resumable, so a rare false
+      // abort just means "re-run / --resume".
+      const STALL_MS = 30 * 60 * 1000
+      const bumpWatchdog = () => {
+        if (settled) return
+        if (watchdog) clearTimeout(watchdog)
+        watchdog = setTimeout(() => {
+          try { stream.signal('TERM') } catch { try { stream.close() } catch { /* ignore */ } }
+          finishClose(null, 'STALL', `\n[ssh] channel ${channelId} aborted — no output for ${STALL_MS / 60000} min (dead connection or wedged step). The stack may still be converging on the NAS; re-run or use --resume.\n`)
+        }, STALL_MS)
+      }
+      bumpWatchdog()
+
       // Pipe sudo password to stdin only in 'password' mode (matches
       // wrapSudo, which only `sudo -S`-wraps in that mode).
       if (args.sudo && privMode(sess) === 'password' && sess.config.sudoPassword) {
@@ -594,6 +636,7 @@ export async function execStream(args: {
       }
 
       stream.on('data', (d: Buffer) => {
+        bumpWatchdog()
         const chunk = redactStreamChunk(d.toString('utf8'), secrets)
         if (!chunk) return
         send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stdout', chunk })
@@ -602,21 +645,20 @@ export async function execStream(args: {
         appendInstallLog(chunk)
       })
       stream.stderr.on('data', (d: Buffer) => {
+        bumpWatchdog()
         const chunk = redactStreamChunk(d.toString('utf8'), secrets)
         if (!chunk) return
         send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stderr', chunk })
         appendInstallLog(chunk)
       })
+      // A socket error on the channel (NAS dropped, network blip) would
+      // otherwise leave this Promise unresolved forever — the renderer hangs
+      // in 'running'. Surface it as a null-exit close so the UI moves to failed.
+      stream.on('error', (e: Error) => {
+        finishClose(null, null, `\n[ssh] channel ${channelId} stream error: ${e?.message ?? String(e)}\n`)
+      })
       stream.on('close', (code: number, signal: string) => {
-        activeChannels.delete(channelId)
-        const closeNote = `\n[ssh] channel ${channelId} closed (exit=${code ?? 'null'} signal=${signal ?? 'none'})\n`
-        appendInstallLog(closeNote)
-        send<SshStreamClose>(IPC.evtStreamClose, {
-          channelId,
-          exitCode: code ?? null,
-          signal: signal ?? null,
-        })
-        resolve()
+        finishClose(code ?? null, signal ?? null, `\n[ssh] channel ${channelId} closed (exit=${code ?? 'null'} signal=${signal ?? 'none'})\n`)
       })
     })
   })

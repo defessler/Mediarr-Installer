@@ -162,6 +162,20 @@ if [ "${#PROFILES[@]}" -gt 0 ]; then
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"
 fi
 
+# VPN off, but a gluetun container is still around — Docker's restart policy
+# brought it back after the reboot. It is an orphan relative to the no-vpn
+# project and still holds qBittorrent's published ${LAN_IP}:49156, so the
+# bridge-mode qBit would fail to bind ("port is already allocated"). Reap it
+# so the stack comes up clean.
+case "$VPN" in
+    true|1|yes|on) ;;
+    *) if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx gluetun; then
+           log "Removing leftover gluetun (VPN is off — it would hold qBittorrent's port)"
+           docker stop gluetun >/dev/null 2>&1 || true
+           docker rm gluetun >/dev/null 2>&1 || true
+       fi ;;
+esac
+
 log "Running: $COMPOSE $FILES up -d"
 
 # `up -d` respects depends_on ordering inside the project — gluetun

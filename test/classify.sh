@@ -16,7 +16,7 @@ asustor()     { [ -d /volume0 ] && [ -e /etc/nas.conf ]; }
 terramaster() { [ -d /etc/tos ] || ls /etc 2>/dev/null | grep -qiE "^tos$"; }
 zimaos()      { grep -qi "zima" /etc/os-release 2>/dev/null \
                   || { [ -d /DATA ] && { [ -e /usr/bin/casaos ] || [ -d /var/lib/casaos ]; } && ! touch /etc/.mr-rwprobe 2>/dev/null; }; }
-qnap()        { [ -f /etc/config/qpkg.conf ] || [ -d /etc/init.d/QPKG.conf ] || [ -d /share/CACHEDEV1_DATA ]; }
+qnap()        { [ -f /etc/config/qpkg.conf ] || [ -d /share/CACHEDEV1_DATA ]; }
 unraid()      { [ -f /etc/unraid-version ]; }
 truenas()     { grep -qiE "truenas|freenas" /etc/version 2>/dev/null || [ -f /etc/truenas_version ]; }
 omv()         { [ -f /etc/openmediavault/config.xml ] || dpkg -l openmediavault 2>/dev/null | grep -q "^ii"; }

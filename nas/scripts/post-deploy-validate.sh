@@ -376,7 +376,9 @@ fi
 if is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; then
     section "Plex External Access"
     if [ -z "$PUBLIC_IP" ]; then
-        fail "Could not determine public IP — check internet connectivity"
+        # Non-fatal: a public-IP lookup blip (DNS/ipify hiccup) doesn't mean
+        # the stack is broken — it only skips the external-reachability probe.
+        warn "Could not determine public IP — skipping external Plex reachability test (check internet if this persists)"
     else
         ok "Public IP: $PUBLIC_IP"
         echo "  Testing Plex on $PUBLIC_IP:32400 from outside..."
@@ -480,7 +482,9 @@ else
         "$PROWLARR_URL/api/v1/indexer" 2>/dev/null || echo '[]')
     TOTAL=$(echo "$INDEXER_LIST" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
     if [ "$TOTAL" -eq 0 ]; then
-        fail "Prowlarr has 0 indexers configured — Sonarr/Radarr/Lidarr have nothing to search"
+        # Non-fatal: the stack is up; you just have nothing to search yet.
+        # Don't red-fail a working install over a fixable config gap.
+        warn "Prowlarr has 0 indexers configured — Sonarr/Radarr/Lidarr have nothing to search"
         echo "    Re-run setup.sh to install the default indexer set, or add some manually:"
         echo "      Prowlarr → Indexers → Add Indexer"
     else
@@ -524,7 +528,10 @@ print(f'{working}|{len(indexers)}|' + ';'.join(f'{n}:{m}' for n,m in failed))
                 echo "$FAILED_LIST" | tr ';' '\n' | sed 's/^/      - /'
             fi
         else
-            fail "0 of $TOTAL indexers passed test — search will return no results"
+            # Non-fatal: at install time indexers can fail the test transiently
+            # (CloudFlare challenge that Flaresolverr clears on the first real
+            # search, rate-limits, cold caches). The stack works; warn, don't fail.
+            warn "0 of $TOTAL indexers passed test — they often clear on the first real search (CloudFlare/rate-limit); re-test in Prowlarr if it persists"
             if [ -n "$FAILED_LIST" ]; then
                 echo "    Failed indexers:"
                 echo "$FAILED_LIST" | tr ';' '\n' | sed 's/^/      - /'

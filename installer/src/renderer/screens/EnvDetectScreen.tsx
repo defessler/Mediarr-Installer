@@ -177,6 +177,16 @@ export function EnvDetectScreen() {
   const [status, setStatus] = useState<Status>('detecting')
   const [result, setResult] = useState<EnvDetectResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Bumped by the "Re-detect" button to re-run the detect effect in place,
+  // after the user fixes a flagged item (e.g. a DSM ACL grant) — the
+  // remediation copy tells them to do exactly this.
+  const [rescanNonce, setRescanNonce] = useState(0)
+  const reDetect = () => {
+    setStatus('detecting')
+    setError(null)
+    setResult(null)
+    setRescanNonce((n) => n + 1)
+  }
 
   useEffect(() => {
     if (!sessionId) {
@@ -283,7 +293,7 @@ export function EnvDetectScreen() {
       }
     })()
     return () => { cancelled = true }
-  }, [sessionId, targetDir])
+  }, [sessionId, targetDir, rescanNonce])
 
   // `tone` overrides the icon when a row is neither a clean pass nor a
   // real failure — e.g. a data dir that's "missing" but will be created
@@ -1287,6 +1297,16 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           onClick={() => setStep('connect')}
         >
           Back
+        </BigButton>
+        <BigButton
+          size="md"
+          variant="secondary"
+          icon={<Radar size={16} />}
+          onClick={reDetect}
+          disabled={status === 'detecting'}
+          title="Re-run the environment checks (after fixing a flagged item)"
+        >
+          Re-detect
         </BigButton>
         <div className="flex-1 text-sm text-center">
           {status === 'detecting' && (

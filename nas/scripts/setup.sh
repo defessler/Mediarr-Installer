@@ -313,9 +313,9 @@ is_enabled() {
 VPN_ENABLED="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')"
 VPN_ON=0
 COMPOSE_FILES="-f docker-compose.yml"
-if [ "$VPN_ENABLED" = "true" ] || [ "$VPN_ENABLED" = "1" ] || [ "$VPN_ENABLED" = "yes" ]; then
+if [ "$VPN_ENABLED" = "true" ] || [ "$VPN_ENABLED" = "1" ] || [ "$VPN_ENABLED" = "yes" ] || [ "$VPN_ENABLED" = "on" ]; then
     VPN_ON=1
-    echo "  Note: VPN_ENABLED=true — routing qBittorrent through gluetun."
+    echo "  Note: VPN_ENABLED=$VPN_ENABLED — routing qBittorrent through gluetun."
 else
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.no-vpn.yml"
     echo "  Note: VPN off (default). qBittorrent traffic will use your real public IP."
@@ -485,6 +485,7 @@ abort_if_failed() {
 stop_disabled_services() {
     local pairs=(
         "plex:ENABLE_PLEX"        "tautulli:ENABLE_PLEX"  "seerr:ENABLE_PLEX"
+        "jellyfin:ENABLE_PLEX"
         "sonarr:ENABLE_SONARR"    "radarr:ENABLE_RADARR"
         "lidarr:ENABLE_LIDARR"    "bazarr:ENABLE_BAZARR"
         "qbittorrent:ENABLE_QBITTORRENT" "gluetun:ENABLE_QBITTORRENT"
@@ -492,6 +493,7 @@ stop_disabled_services() {
         "homepage:ENABLE_HOMEPAGE"
         "recyclarr:ENABLE_RECYCLARR"
         "unpackerr:ENABLE_UNPACKERR"
+        "flaresolverr:ENABLE_FLARESOLVERR"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -526,6 +528,39 @@ stop_disabled_services() {
             stopped=$((stopped + 1))
         fi
     done
+    # VPN-mode reconcile. qBittorrent's network mode is IMMUTABLE on a live
+    # container: VPN-on it runs inside gluetun's namespace (network_mode:
+    # container:gluetun), VPN-off it runs on the bridge publishing its own
+    # ports. Toggling VPN_ENABLED between runs leaves the RUNNING qBittorrent
+    # in the wrong mode, and `compose up -d` can't change it in place — so a
+    # bare re-run errors with "container name /qbittorrent already in use" or
+    # leaves a stale container holding ${LAN_IP}:49156 → "port is already
+    # allocated". And gluetun, once VPN is turned OFF, is an orphan (not in
+    # the no-vpn project) that still holds that port. Reap both here so
+    # start_stack recreates qBittorrent cleanly in the correct mode.
+    if [ "$VPN_ON" -eq 0 ] \
+       && $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx gluetun; then
+        $CONTAINER_RUNTIME stop gluetun >/dev/null 2>&1 || true
+        $CONTAINER_RUNTIME rm   gluetun >/dev/null 2>&1 || true
+        echo "  ✔ Removed gluetun (VPN is off — it would hold qBittorrent's port)"
+        stopped=$((stopped + 1))
+    fi
+    if is_enabled ENABLE_QBITTORRENT \
+       && $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx qbittorrent; then
+        local qbmode mismatch=0
+        qbmode=$($CONTAINER_RUNTIME inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
+        if [ "$VPN_ON" -eq 1 ]; then
+            case "$qbmode" in container:*) : ;; *) mismatch=1 ;; esac   # want gluetun namespace, have bridge
+        else
+            case "$qbmode" in container:*) mismatch=1 ;; esac           # want bridge, have gluetun namespace
+        fi
+        if [ "$mismatch" -eq 1 ]; then
+            $CONTAINER_RUNTIME stop qbittorrent >/dev/null 2>&1 || true
+            $CONTAINER_RUNTIME rm   qbittorrent >/dev/null 2>&1 || true
+            echo "  ✔ Removed qBittorrent so it recreates in the correct network mode (VPN toggled)"
+            stopped=$((stopped + 1))
+        fi
+    fi
     if [ $stopped -eq 0 ]; then
         echo "  No previously-running services to remove."
     fi
@@ -994,6 +1029,29 @@ start_stack() {
     retry 3 "Image pull" $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES pull \
         || echo "  ⚠ Some images didn't pull after retries — 'up -d' will try again."
     $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d
+    local up_rc=$?
+
+    # Post-up reconcile (VPN on): the pull above may have RECREATED gluetun
+    # with a new container id. An already-running qBittorrent is welded to
+    # gluetun's OLD id (network_mode: container:gluetun is frozen at create
+    # time and immutable), so compose left it on a now-dead namespace. If
+    # qBit's frozen namespace id != the live gluetun id, rm it and bring it
+    # back up once so it rejoins the new gluetun — same fix restart-qbit.sh
+    # does, applied inline so a fresh install/update is clean without waiting
+    # for the 5-min self-heal cron.
+    if [ "$VPN_ON" -eq 1 ] && is_enabled ENABLE_QBITTORRENT; then
+        local nm gid
+        nm=$($CONTAINER_RUNTIME inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
+        gid=$($CONTAINER_RUNTIME inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+        case "$nm" in container:*) nm="${nm#container:}" ;; *) nm="" ;; esac
+        if [ -n "$nm" ] && [ -n "$gid" ] && [ "$nm" != "$gid" ]; then
+            echo "  qBittorrent is on a stale gluetun namespace — recreating it..."
+            $CONTAINER_RUNTIME rm -f qbittorrent >/dev/null 2>&1 || true
+            $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d gluetun qbittorrent
+            up_rc=$?
+        fi
+    fi
+    return $up_rc
 }
 
 echo ""

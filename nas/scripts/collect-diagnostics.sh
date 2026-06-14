@@ -132,8 +132,14 @@ if [ -f "$ENV_FILE" ]; then
         /^[ \t]*#/ || $0 !~ /=/ { print; next }
         {
             # Case-insensitive key match so e.g. a lowercase var is still caught.
+            # No bare "WIREGUARD" here: WIREGUARD_PRIVATE_KEY / _PRESHARED_KEY /
+            # _PUBLIC_KEY are already caught by KEY/PRIVATE, while
+            # WIREGUARD_ADDRESSES (the non-secret tunnel client IP) must stay
+            # visible -- it is exactly the value needed to debug a VPN that
+            # will not connect. (Keep this comment apostrophe-free: it lives
+            # inside a single-quoted awk program.)
             key = toupper($1)
-            if (key ~ /PASS|TOKEN|SECRET|KEY|PRIVATE|WIREGUARD|CLAIM|API|CRED|COOKIE|AUTH|SESSION|_PID|_USER/)
+            if (key ~ /PASS|TOKEN|SECRET|KEY|PRIVATE|CLAIM|API|CRED|COOKIE|AUTH|SESSION|_PID|_USER/)
                 print $1 "=***MASKED***"
             else
                 print

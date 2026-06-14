@@ -400,8 +400,10 @@ VPN="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')"
 FILES="-f docker-compose.yml"
 case "$VPN" in true|1|yes|on) ;; *) FILES="$FILES -f docker-compose.no-vpn.yml" ;; esac
 
+MEDIA_SERVER="$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')"
+[ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
 P=()
-is_enabled ENABLE_PLEX        && P+=("plex")
+is_enabled ENABLE_PLEX        && P+=("$MEDIA_SERVER")
 is_enabled ENABLE_SONARR      && P+=("sonarr")
 is_enabled ENABLE_RADARR      && P+=("radarr")
 is_enabled ENABLE_LIDARR      && P+=("lidarr")
@@ -410,6 +412,7 @@ is_enabled ENABLE_SABNZBD     && P+=("usenet")
 is_enabled ENABLE_HOMEPAGE    && P+=("homepage")
 is_enabled ENABLE_RECYCLARR   && P+=("recyclarr")
 is_enabled ENABLE_UNPACKERR   && P+=("unpackerr")
+is_enabled ENABLE_FLARESOLVERR && P+=("flaresolverr")
 if is_enabled ENABLE_QBITTORRENT; then
   P+=("torrenting")
   case "$VPN" in true|1|yes|on) P+=("vpn") ;; esac
@@ -419,9 +422,47 @@ fi
 echo "[wizard-update] compose files: $FILES"
 echo "[wizard-update] profiles: \${COMPOSE_PROFILES:-(none — only Prowlarr + Flaresolverr)}"
 
+# Reinstall-conflict guards (mirror setup.sh's reconcile). qBittorrent's
+# network mode is IMMUTABLE on a live container, so a VPN toggle leaves the
+# running qBit in the wrong mode → "container name /qbittorrent already in
+# use" / "port is already allocated"; and a now-orphan gluetun (VPN off)
+# still holds qBit's published port. Reap both so the up -d below is clean.
+case "$VPN" in true|1|yes|on) VPN_ON=1 ;; *) VPN_ON=0 ;; esac
+if [ "$VPN_ON" = 0 ] && docker ps -a --format '{{.Names}}' | grep -qx gluetun; then
+  docker stop gluetun >/dev/null 2>&1 || true; docker rm gluetun >/dev/null 2>&1 || true
+  echo "[wizard-update] removed stale gluetun (VPN off — it held qBittorrent's port)"
+fi
+if is_enabled ENABLE_QBITTORRENT && docker ps -a --format '{{.Names}}' | grep -qx qbittorrent; then
+  QBM="$(docker inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo '')"
+  MM=0
+  if [ "$VPN_ON" = 1 ]; then case "$QBM" in container:*) ;; *) MM=1 ;; esac
+  else case "$QBM" in container:*) MM=1 ;; esac; fi
+  if [ "$MM" = 1 ]; then
+    docker stop qbittorrent >/dev/null 2>&1 || true; docker rm qbittorrent >/dev/null 2>&1 || true
+    echo "[wizard-update] removed qBittorrent to recreate in the correct network mode (VPN toggled)"
+  fi
+fi
+
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never pull && \\
-docker compose $FILES --progress plain --ansi never up -d`
+docker compose $FILES --progress plain --ansi never up -d
+UP_RC=$?
+
+# Post-up: the pull may have recreated gluetun with a new id; a still-running
+# qBittorrent welded to the OLD id is now on a dead namespace. Recreate it
+# once so it rejoins the live gluetun (same fix restart-qbit.sh applies).
+if [ "$VPN_ON" = 1 ] && is_enabled ENABLE_QBITTORRENT; then
+  NM="$(docker inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo '')"
+  GID="$(docker inspect -f '{{.Id}}' gluetun 2>/dev/null || echo '')"
+  case "$NM" in container:*) NM="$(printf '%s' "$NM" | cut -d: -f2-)" ;; *) NM="" ;; esac
+  if [ -n "$NM" ] && [ -n "$GID" ] && [ "$NM" != "$GID" ]; then
+    echo "[wizard-update] qBittorrent on a stale gluetun namespace — recreating it"
+    docker rm -f qbittorrent >/dev/null 2>&1 || true
+    docker compose $FILES --progress plain --ansi never up -d gluetun qbittorrent
+    UP_RC=$?
+  fi
+fi
+exit $UP_RC`
 
     try {
       await window.installer.ssh.execStream({
@@ -553,8 +594,10 @@ is_enabled() {
 VPN="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')"
 FILES="-f docker-compose.yml"
 case "$VPN" in true|1|yes|on) ;; *) FILES="$FILES -f docker-compose.no-vpn.yml" ;; esac
+MEDIA_SERVER="$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')"
+[ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
 P=()
-is_enabled ENABLE_PLEX        && P+=("plex")
+is_enabled ENABLE_PLEX        && P+=("$MEDIA_SERVER")
 is_enabled ENABLE_SONARR      && P+=("sonarr")
 is_enabled ENABLE_RADARR      && P+=("radarr")
 is_enabled ENABLE_LIDARR      && P+=("lidarr")
@@ -563,6 +606,7 @@ is_enabled ENABLE_SABNZBD     && P+=("usenet")
 is_enabled ENABLE_HOMEPAGE    && P+=("homepage")
 is_enabled ENABLE_RECYCLARR   && P+=("recyclarr")
 is_enabled ENABLE_UNPACKERR   && P+=("unpackerr")
+is_enabled ENABLE_FLARESOLVERR && P+=("flaresolverr")
 if is_enabled ENABLE_QBITTORRENT; then
   P+=("torrenting")
   case "$VPN" in true|1|yes|on) P+=("vpn") ;; esac

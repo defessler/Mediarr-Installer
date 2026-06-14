@@ -103,7 +103,7 @@ export async function detectEnv(
     // /etc/config/qpkg.conf, Unraid's /etc/unraid-version, TrueNAS's
     // /etc/version content). Generic Linux is the fallback.
     'echo "===nas_synology==="; [ -f /etc/synoinfo.conf ] && echo y',
-    'echo "===nas_qnap==="; ( [ -f /etc/config/qpkg.conf ] || [ -d /etc/init.d/QPKG.conf ] || [ -d /share/CACHEDEV1_DATA ] ) && echo y',
+    'echo "===nas_qnap==="; ( [ -f /etc/config/qpkg.conf ] || [ -d /share/CACHEDEV1_DATA ] ) && echo y',
     'echo "===nas_unraid==="; [ -f /etc/unraid-version ] && echo y',
     'echo "===nas_truenas==="; ( grep -qiE "truenas|freenas" /etc/version 2>/dev/null || [ -f /etc/truenas_version ] ) && echo y',
     'echo "===nas_omv==="; ( [ -f /etc/openmediavault/config.xml ] || dpkg -l openmediavault 2>/dev/null | grep -q "^ii" ) && echo y',

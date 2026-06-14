@@ -64,6 +64,9 @@ export function RunScreen() {
   /** Path of the on-disk install log for the current run. Set when go()
    *  starts a new run; surfaces in the header so the user can open it. */
   const [installLogPath, setInstallLogPath] = useState<string | null>(null)
+  /** True after we've signalled setup.sh to stop but before the stream
+   *  closes — drives the Cancel button's "Stopping…" label. */
+  const [canceling, setCanceling] = useState(false)
   /** Issues parsed out of the streaming log. Surfaces failures and
    *  warnings from setup-arr-config.py et al as a tidy summary above
    *  the log panel, so the user doesn't have to scroll 500 lines to
@@ -287,6 +290,7 @@ export function RunScreen() {
     const offClose = window.installer.ssh.onStreamClose((d) => {
       if (d.channelId === CHANNEL_ID) {
         setExitCode(d.exitCode)
+        setCanceling(false)
         setPhase(d.exitCode === 0 ? 'done' : 'failed')
         // The remote setup.sh finished — flush + close the on-disk
         // log so it's complete on disk even if the app gets killed.
@@ -1237,6 +1241,18 @@ export function RunScreen() {
         >
           Back
         </BigButton>
+        {phase === 'running-setup' && (
+          <BigButton
+            variant="secondary"
+            size="md"
+            onClick={() => { setCanceling(true); window.installer.ssh.streamCancel(CHANNEL_ID).catch(() => { /* best-effort */ }) }}
+            disabled={canceling}
+            title="Stop the running install. setup.sh is idempotent and resumable — you can Retry afterward to pick up where it left off."
+            icon={<XCircle size={18} />}
+          >
+            {canceling ? 'Stopping…' : 'Cancel'}
+          </BigButton>
+        )}
         <div className="flex-1 text-sm text-center text-slate-400" role="status" aria-live="polite">
           {phase === 'uploading'  && `Uploading files... ${progress?.pct ?? 0}%`}
           {phase === 'writing-env' && 'Writing .env'}
