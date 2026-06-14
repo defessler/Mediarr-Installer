@@ -2537,18 +2537,19 @@ def configure_qbittorrent(base, username, password, env=None,
     # whichever fires first). Idempotent: skips when the values already
     # match what we'd set, so a power-user who tuned them stays untouched.
     #
-    # Also pin the Auto Torrent Management Mode (TMM) settings off. Why:
-    # since qBit 4.4 the defaults flip `auto_tmm_enabled` AND the three
-    # `*_changed_tmm_enabled` triggers on for new installs. Sonarr /
-    # Radarr / Lidarr's TestCategory() validator rejects a download client
-    # with a category set when `save_path_changed_tmm_enabled` is true —
-    # it returns HTTP 400 with "Lidarr will be unable to perform Completed
-    # Download Handling as configured. You can fix this in qBittorrent
-    # ('Tools -> Options...')". That aborts setup-arr-config.py mid-Step-7.
-    # Keeping TMM off means qBit obeys the save_path that the arr
-    # dictates when registering a download, and the arr's Completed
-    # Download Handling does the post-import file moves itself. This is
-    # the recommended Sonarr/Radarr/Lidarr setup per their docs.
+    # Auto Torrent Management Mode (TMM): since qBit 4.4 new installs default
+    # `auto_tmm_enabled` AND the three `*_changed_tmm_enabled` relocate triggers
+    # ON. We ship Auto-TMM ON (a user-preference default — qBit auto-sorts each
+    # new torrent into its category's folder) but pin the three RELOCATE triggers
+    # OFF (stack_essential) so qBit never moves a completed torrent out from
+    # under the arrs — keeping the content_path the arrs read back via API
+    # stable. Important (verified against Sonarr/Radarr/Lidarr source): NONE of
+    # the TMM flags are read by the arr download-client validator. The famous
+    # HTTP 400 "<arr> will be unable to perform Completed Download Handling as
+    # configured" is the share-ratio REMOVAL guard, NOT a TMM check — it fires
+    # only when a ratio / seeding-time limit is enabled AND its action is Remove.
+    # The wizard avoids it via the seeding defaults below (limits disabled,
+    # max_ratio_act = Stop), so the download-client POST always succeeds.
     # Split into two buckets: stack-essential vs. user-preference.
     # Stack-essential settings always get re-applied (the arrs need TMM
     # off or Completed Download Handling fails). User-preference settings
@@ -2556,16 +2557,25 @@ def configure_qbittorrent(base, username, password, env=None,
     # alone on reinstall so they keep whatever ratio / seed-time they
     # tuned to.
     stack_essential = {
-        # Arr-compatibility (Completed Download Handling): the arrs
-        # 400 with "Sonarr will be unable to perform Completed
-        # Download Handling as configured" when any TMM flip is on,
-        # so the wizard re-enforces these every run.
-        'auto_tmm_enabled':              False,
+        # Relocate triggers pinned OFF every run — defensive: keeps qBit from
+        # moving a completed torrent so the content_path the arrs read back stays
+        # stable. These are NOT what the arr validator checks (see the comment
+        # above — the hard-400 is the ratio-removal guard, not TMM). auto_tmm
+        # itself is a user-preference default below: ON, but yours to change.
         'torrent_changed_tmm_enabled':   False,
         'save_path_changed_tmm_enabled': False,
         'category_changed_tmm_enabled':  False,
     }
     user_preference = {
+        # Automatic Torrent Management Mode ON by default — qBit auto-sorts each
+        # new torrent into its category's folder instead of you placing it. This
+        # is a fresh-install default the wizard then LEAVES ALONE: turn it off in
+        # the WebUI and re-running setup.sh won't switch it back (the relocate
+        # triggers it depends on stay pinned off in stack_essential so the arr
+        # download-client validator never 400s). qBit still honours each arr's
+        # category, and the arrs locate completed files via qBit's API, so
+        # Completed Download Handling keeps working with TMM on.
+        'auto_tmm_enabled':              True,
         # Seed FOREVER by default — no share-ratio limit and no seeding-
         # time limit. Both master switches are OFF, so the numeric values
         # below are inert fallbacks (sane starting points if you flip a
@@ -2619,7 +2629,7 @@ def configure_qbittorrent(base, username, password, env=None,
         kept = {k: prefs.get(k) for k in user_preference if prefs.get(k) != user_preference[k]}
         if kept:
             info(
-                f"qBittorrent seeding limits: preserving user values "
+                f"qBittorrent preferences: preserving your values "
                 f"({', '.join(f'{k}={v}' for k, v in kept.items())}) — "
                 f"delete {INSTALL_MARKER_NAME} to force wizard defaults back."
             )
@@ -2639,11 +2649,11 @@ def configure_qbittorrent(base, username, password, env=None,
             if REINSTALL_PRESERVE:
                 ok("qBittorrent TMM defaults re-applied (seeding limits + queue/rate caps + autorun left at your values)")
             else:
-                ok("Seeding/queue/rate defaults + Auto-TMM off + tag-by-indexer autorun "
-                   "(compatible with Sonarr/Radarr/Lidarr Completed Download Handling)")
+                ok("Seeding/queue/rate defaults + Auto-TMM on + tag-by-indexer autorun "
+                   "(arr-compatible — relocate triggers off so Completed Download Handling works)")
             AUTOMATED['qbit_prefs'] = True
         except Exception as e:
-            warn(f"qBittorrent: couldn't set seeding/TMM defaults ({e}) — set manually in Settings → BitTorrent + Settings → Downloads (Auto TMM off)")
+            warn(f"qBittorrent: couldn't set seeding/TMM defaults ({e}) — set manually in Settings → BitTorrent + Settings → Downloads")
 
     # ── No WebUI login on the LAN ─────────────────────────────────────────────
     # qBit skips the password for any client whose IP is in this subnet
@@ -4063,10 +4073,15 @@ def main():
     # qBittorrent is now configured BEFORE the arrs (see block right
     # after Tautulli) so its prefs are arr-compatible by the time each
     # arr POSTs its download client. The block here used to live at the
-    # tail of main(); the move was required by Sonarr/Radarr/Lidarr's
-    # TestCategory() validator, which reads qBit's live prefs at client-
-    # add time and rejects the POST with HTTP 400 when Auto-TMM (or any
-    # *_changed_tmm trigger) is on. See configure_qbittorrent() comment.
+    # tail of main(); the move is required by Sonarr/Radarr/Lidarr's
+    # download-client validator, which reads qBit's live prefs at client-
+    # add time and HARD-rejects (HTTP 400) when qBit would auto-REMOVE a
+    # completed torrent — i.e. a ratio/seeding-time limit ON with the
+    # share-limit action set to Remove. The wizard pins those off
+    # (max_ratio_enabled/max_seeding_time_enabled False, action = Stop),
+    # so the POST passes. Auto-TMM is deliberately NOT pinned — it is not
+    # validated at all; it's a user-preference default. See the
+    # configure_qbittorrent() comment.
 
     # ── Bazarr ────────────────────────────────────────────────────────────────
 
