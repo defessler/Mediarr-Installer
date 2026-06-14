@@ -502,8 +502,18 @@ export function DoneScreen() {
           variant="secondary"
           icon={<RotateCcw size={16} />}
           onClick={reset}
+          title="Clear this session and start completely fresh (forgets the loaded profile selection)"
         >
           Start over
+        </BigButton>
+        <BigButton
+          size="md"
+          variant="primary"
+          icon={<CheckCircle2 size={16} />}
+          onClick={() => useWizard.getState().setStep('welcome')}
+          title="Back to the home screen — your saved profile is kept, so you can run an update or open another NAS next"
+        >
+          Done
         </BigButton>
       </div>
     </div>
