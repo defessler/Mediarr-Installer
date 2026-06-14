@@ -206,6 +206,15 @@ def media_server_kind(env):
 
 
 errors = 0
+# Subset of errors that mean a service was UNREACHABLE at its baseline (its
+# API key couldn't be read → the container isn't up). Only THESE gate the
+# install marker: an optional, non-connectivity failure (a flaky indexer, one
+# preference that wouldn't set) must NOT suppress the marker, because that
+# would make the next run treat the install as fresh and re-overwrite the
+# seeding/quality/auth settings the user customised. A genuinely-down core
+# service still blocks the marker, so a never-configured service still gets
+# its defaults on a later (working) run. See the marker write in main().
+connectivity_errors = 0
 
 # Container UID/GID for the docker-exec write probe. Set by main() from
 # .env's PUID/PGID. Default to LinuxServer's well-known 911:911 only as
@@ -227,6 +236,19 @@ def warn(msg): print(f"  {YELLOW}!{RESET}  {msg}")
 def fail(msg):
     global errors; errors += 1
     print(f"  {RED}✘{RESET}  {msg}")
+def note_unreachable():
+    # A core service was unreachable at its baseline, so we could NOT fully
+    # configure it this run. Block the install marker (see connectivity_errors
+    # above) so the next run still treats it as fresh and applies its defaults —
+    # WITHOUT, on its own, flipping the install red or changing the exit code
+    # (that stays governed by `errors`). Use this for an unreachable-but-not-
+    # fatal service the wizard only warns on (e.g. a slow-to-bind qBittorrent).
+    global connectivity_errors; connectivity_errors += 1
+def fail_unreachable(msg):
+    # A hard failure that ALSO means the service was unreachable at its baseline:
+    # flips the install red (via fail) AND blocks the install marker.
+    note_unreachable()
+    fail(msg)
 def section(title):
     print(f"\n{BOLD}━━━ {title} {'━' * max(0, 52 - len(title))}{RESET}")
 
@@ -1474,11 +1496,13 @@ def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
 def configure_sabnzbd(base, key, ini_path):
     section("SABnzbd")
     if not key:
-        fail("API key not found — is the container running?"); return
+        fail_unreachable("API key not found — is the container running?"); return
 
     resp = sab_api(base, key, {'mode': 'version'})
     if not resp:
-        fail("Can't reach SABnzbd API"); return
+        # Key was present (from .env or the host-mounted ini) but the API didn't
+        # answer — SAB is unreachable at baseline, so block the marker too.
+        fail_unreachable("Can't reach SABnzbd API"); return
     ok(f"Connected (SABnzbd {resp.get('version', '?')})")
 
     ini_modified = False
@@ -1971,7 +1995,7 @@ def configure_sabnzbd_server(base, key, host, port, user, password,
         skip("Usenet provider (USENET_HOST/USER/PASS not set in .env)")
         return
     if not key:
-        fail("SABnzbd API key not found — can't add server"); return
+        fail_unreachable("SABnzbd API key not found — can't add server"); return
 
     # Check if a server with this name already exists.
     existing_resp = sab_api(base, key, {'mode': 'get_config',
@@ -2466,6 +2490,13 @@ def configure_qbittorrent(base, username, password, env=None,
         if last_error is not None:
             warn(f"")
             warn(f"  (Last error from qBit: {last_error})")
+        # qBit never bound, so its watch-folder + seeding/rate/autorun-tag
+        # defaults didn't get applied. Block the install marker (but DON'T flip
+        # the install red — a slow qBit is not a fatal error) so the next run,
+        # once qBit's WebUI is up, still treats it as fresh and applies them.
+        # Without this, the marker would be written with qBit unconfigured and
+        # REINSTALL_PRESERVE would then suppress those defaults forever.
+        note_unreachable()
         return
 
     # Get current scan_dirs
@@ -3772,7 +3803,7 @@ def main():
         print(f"  {DIM}⏭  ENABLE_SONARR=false — skipping.{RESET}")
         SONARR_KEY = None  # so Prowlarr / Bazarr below know not to wire it
     elif not SONARR_KEY:
-        fail("API key not found — is the container running?")
+        fail_unreachable("API key not found — is the container running?")
     elif wait_ready("Sonarr", SONARR, SONARR_KEY, "/api/v3/system/status"):
         add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/TV Shows", container="sonarr")
         add_root_folder(SONARR, SONARR_KEY, "api/v3", "/data/Media/Anime/TV Shows", container="sonarr")
@@ -3824,7 +3855,7 @@ def main():
         print(f"  {DIM}⏭  ENABLE_RADARR=false — skipping.{RESET}")
         RADARR_KEY = None  # so Prowlarr / Bazarr below know not to wire it
     elif not RADARR_KEY:
-        fail("API key not found — is the container running?")
+        fail_unreachable("API key not found — is the container running?")
     elif wait_ready("Radarr", RADARR, RADARR_KEY, "/api/v3/system/status"):
         add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Movies", container="radarr")
         add_root_folder(RADARR, RADARR_KEY, "api/v3", "/data/Media/Anime/Movies", container="radarr")
@@ -3866,7 +3897,7 @@ def main():
         print(f"  {DIM}⏭  ENABLE_LIDARR=false — skipping.{RESET}")
         LIDARR_KEY = None  # so Prowlarr below knows not to wire it
     elif not LIDARR_KEY:
-        fail("API key not found — is the container running?")
+        fail_unreachable("API key not found — is the container running?")
     elif wait_ready("Lidarr", LIDARR, LIDARR_KEY, "/api/v1/system/status"):
         # Lidarr's API answers /system/status well before its DB has
         # inserted the default quality + metadata profiles (Sonarr and
@@ -3948,7 +3979,7 @@ def main():
 
     section("Prowlarr")
     if not PROWLARR_KEY:
-        fail("API key not found — is the container running?")
+        fail_unreachable("API key not found — is the container running?")
     elif wait_ready("Prowlarr", PROWLARR, PROWLARR_KEY, "/api/v1/system/status"):
         # FlareSolverr is opt-out (ENABLE_FLARESOLVERR; off on arm64). Skip the
         # proxy wiring when it isn't deployed — pointing Prowlarr at a missing
@@ -4474,14 +4505,17 @@ def main():
         print(f"\n  {GREEN}Everything's wired up — no manual steps required.{RESET}\n")
     print('═' * 52)
 
-    # Drop the marker if this run cleared cleanly. Even on fresh
-    # installs we ONLY write when errors == 0 — a half-broken first
-    # install shouldn't lock the script into "preserve" mode on the
-    # next run, because the user almost certainly needs the wizard to
-    # take another stab at the settings it failed to write the first
-    # time. Idempotent: writing the same marker on re-install is a
-    # cheap no-op.
-    if errors == 0:
+    # Drop the marker when every ENABLED service was REACHABLE (its baseline
+    # config got applied) — gated on connectivity_errors, NOT total errors.
+    # Previously any fail() (including an optional one — a flaky indexer, a
+    # single preference that wouldn't set) suppressed the marker, so the next
+    # run treated the install as fresh and re-overwrote the seeding/quality/
+    # auth settings the user had since customised in the UIs (the reported
+    # "the wizard keeps resetting my settings"). Now an optional hiccup no
+    # longer blocks it; a genuinely-DOWN core service still does, so a
+    # never-configured service still gets its defaults on a later working run.
+    # Idempotent: writing the same marker on re-install is a cheap no-op.
+    if connectivity_errors == 0:
         if write_install_marker(B):
             if not REINSTALL_PRESERVE:
                 info(
