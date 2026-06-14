@@ -47,14 +47,32 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Pick the right compose binary — v2 plugin preferred, legacy v1
-# script as fallback. Matches setup.sh's detection.
-if docker compose version >/dev/null 2>&1; then
+# Pick the container runtime + compose front-end (docker, or podman on a
+# podman-only host). Matches setup.sh / qbit-guardian.sh. Honour DOCKER_SOCK
+# from .env so a standalone run targets the right daemon.
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)"
+if [ -n "$DOCKER_SOCK" ] && [ -z "${DOCKER_HOST:-}" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+fi
+RT="docker"; COMPOSE=""
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
-else
-    echo "✘ Neither 'docker compose' nor 'docker-compose' is available."
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then COMPOSE="podman-compose"; fi
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if   [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then export DOCKER_HOST="unix:///run/podman/podman.sock"; fi
+    fi
+fi
+if [ -z "$COMPOSE" ]; then
+    echo "✘ No container compose tool found (docker compose / docker-compose / podman compose)."
     exit 1
 fi
 
@@ -106,11 +124,11 @@ echo ""
 # though the process runs — a plain restart can't fix it (HostConfig is
 # immutable); only rm+recreate rebinds it to the new namespace.
 qbit_wedged_running() {
-    [ "$(docker inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)" = "running" ] || return 1
+    [ "$($RT inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)" = "running" ] || return 1
     local nm gid
-    nm=$(docker inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
+    nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
     case "$nm" in container:*) nm="${nm#container:}" ;; *) return 1 ;; esac
-    gid=$(docker inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+    gid=$($RT inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
     # Wedged if qBit's frozen namespace id differs from the LIVE gluetun id —
     # including when gluetun is GONE (gid empty). nm is always non-empty here
     # (the container:* case guard above), so a missing gluetun reads as a
@@ -123,22 +141,22 @@ qbit_wedged_running() {
 # against the (possibly new) gluetun network namespace. Without this, `up
 # -d` may reuse the stale container and re-trigger "must join at least one
 # network" (or silently leave qBit's tunnel dead).
-if docker ps -a --format '{{.Names}}' | grep -qx qbittorrent; then
-    state=$(docker inspect --format='{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
+if $RT ps -a --format '{{.Names}}' | grep -qx qbittorrent; then
+    state=$($RT inspect --format='{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
     if [ "$state" != "running" ] || qbit_wedged_running; then
         echo "  Removing stale/wedged qbittorrent container (state=$state) so compose recreates it cleanly..."
-        docker rm -f qbittorrent >/dev/null 2>&1 || true
+        $RT rm -f qbittorrent >/dev/null 2>&1 || true
     fi
 fi
 
 # Same for gluetun if it's in a broken state. unless-stopped should
 # auto-restart but a wedged container (e.g. mid-pull, bad config
 # refresh) sometimes sticks at created/exited.
-if docker ps -a --format '{{.Names}}' | grep -qx gluetun; then
-    state=$(docker inspect --format='{{.State.Status}}' gluetun 2>/dev/null || echo missing)
+if $RT ps -a --format '{{.Names}}' | grep -qx gluetun; then
+    state=$($RT inspect --format='{{.State.Status}}' gluetun 2>/dev/null || echo missing)
     if [ "$state" != "running" ]; then
         echo "  Removing stale gluetun container (state=$state) so compose recreates it cleanly..."
-        docker rm -f gluetun >/dev/null 2>&1 || true
+        $RT rm -f gluetun >/dev/null 2>&1 || true
     fi
 fi
 
@@ -155,7 +173,7 @@ COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbi
 # documented standalone `sudo bash restart-qbit.sh` use).
 if qbit_wedged_running; then
     echo "  qBittorrent is still on a stale gluetun namespace — recreating it once more..."
-    docker rm -f qbittorrent >/dev/null 2>&1 || true
+    $RT rm -f qbittorrent >/dev/null 2>&1 || true
     COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent
 fi
 
@@ -167,8 +185,8 @@ fi
 echo ""
 echo "  Status:"
 for svc in gluetun qbittorrent; do
-    state=$(docker inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo missing)
-    health=$(docker inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null || true)
+    state=$($RT inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo missing)
+    health=$($RT inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null || true)
     [ -n "$health" ] && [ "$health" != "<no value>" ] && state="$state ($health)"
     echo "    $svc: $state"
 done

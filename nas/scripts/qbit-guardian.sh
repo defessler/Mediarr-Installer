@@ -83,20 +83,35 @@ if command -v flock >/dev/null 2>&1; then
     flock -n 200 || exit 0
 fi
 
-# ── Daemon must be up; a transient daemon-down is a non-event ──
-command -v docker >/dev/null 2>&1 || exit 0
-docker info >/dev/null 2>&1 || exit 0
+# ── Pick the container runtime (Docker or Podman) so recovery targets the
+#    right daemon on a Podman-only host ──
+RT="docker"; COMPOSE="docker compose"
+if command -v docker >/dev/null 2>&1; then
+    docker compose version >/dev/null 2>&1 || { command -v docker-compose >/dev/null 2>&1 && COMPOSE="docker-compose"; }
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then COMPOSE="podman-compose"; fi
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if   [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then export DOCKER_HOST="unix:///run/podman/podman.sock"; fi
+    fi
+fi
 
-cstate()  { docker inspect -f '{{.State.Status}}'        "$1" 2>/dev/null || echo missing; }
-chealth() { docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || echo none; }
-cid()     { docker inspect -f '{{.Id}}'                  "$1" 2>/dev/null || echo ""; }
+# ── Daemon must be up; a transient daemon-down is a non-event ──
+command -v "$RT" >/dev/null 2>&1 || exit 0
+$RT info >/dev/null 2>&1 || exit 0
+
+cstate()  { $RT inspect -f '{{.State.Status}}'        "$1" 2>/dev/null || echo missing; }
+chealth() { $RT inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || echo none; }
+cid()     { $RT inspect -f '{{.Id}}'                  "$1" 2>/dev/null || echo ""; }
 qbit_ns_id() {
-    local nm; nm=$(docker inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
+    local nm; nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
     case "$nm" in container:*) echo "${nm#container:}" ;; *) echo "" ;; esac
 }
 qbit_uptime() {
     local s t now
-    s=$(docker inspect -f '{{.State.StartedAt}}' qbittorrent 2>/dev/null) || { echo 0; return; }
+    s=$($RT inspect -f '{{.State.StartedAt}}' qbittorrent 2>/dev/null) || { echo 0; return; }
     # Normalize Go's RFC3339Nano (2026-06-13T19:12:34.123456789Z) into a form
     # BOTH GNU and busybox `date -d` accept: drop the fractional seconds +
     # trailing Z and swap 'T' for a space (parsed as local time, which lines
@@ -150,8 +165,7 @@ if [ -x "$SCRIPT_DIR/restart-qbit.sh" ]; then
 else
     # Fallback inline recreate (same ordering restart-qbit.sh uses) so the
     # guardian still self-heals on a partial install missing restart-qbit.sh.
-    COMPOSE="docker compose"; docker compose version >/dev/null 2>&1 || COMPOSE="docker-compose"
-    docker rm -f qbittorrent gluetun >/dev/null 2>&1 || true
+    $RT rm -f qbittorrent gluetun >/dev/null 2>&1 || true
     COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent >> "$LOG" 2>&1; rc=$?
 fi
 log "recovery finished rc=$rc"

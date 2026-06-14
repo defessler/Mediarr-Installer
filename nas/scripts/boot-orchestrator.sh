@@ -89,11 +89,15 @@ fi
 # Poll up to 5 minutes — typical Synology boot to Docker-ready is
 # 60-120 seconds; allow generous headroom for spinning rust + lots of
 # DSM packages restoring state.
-log "Waiting for Docker daemon..."
+# Pick the runtime up front (docker, or podman on a podman-only host) so the
+# daemon-ready wait + the gluetun reap below target it.
+RT="docker"; command -v docker >/dev/null 2>&1 || { command -v podman >/dev/null 2>&1 && RT="podman"; }
+
+log "Waiting for the $RT daemon..."
 deadline=$(($(date +%s) + 300))
-until docker info >/dev/null 2>&1; do
+until $RT info >/dev/null 2>&1; do
     if [ "$(date +%s)" -gt "$deadline" ]; then
-        log "✘ Docker daemon didn't become ready within 5min — aborting"
+        log "✘ $RT daemon didn't become ready within 5min — aborting"
         log "  Check:  systemctl status pkgctl-Docker  (or DSM Package Center)"
         exit 1
     fi
@@ -115,12 +119,17 @@ is_enabled() {
 # Compose binary detection — match setup.sh's preference (v2 plugin
 # first, legacy v1 script second). Synology DSM 7 ships the plugin
 # but some older installs still have the legacy `docker-compose`.
-if docker compose version >/dev/null 2>&1; then
+COMPOSE=""
+if [ "$RT" = docker ] && docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
-else
-    log "✘ Neither 'docker compose' nor 'docker-compose' available"
+elif [ "$RT" = podman ]; then
+    if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then COMPOSE="podman-compose"; fi
+fi
+if [ -z "$COMPOSE" ]; then
+    log "✘ No container compose tool found (docker compose / docker-compose / podman compose)"
     exit 1
 fi
 
@@ -169,10 +178,10 @@ fi
 # so the stack comes up clean.
 case "$VPN" in
     true|1|yes|on) ;;
-    *) if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx gluetun; then
+    *) if $RT ps -a --format '{{.Names}}' 2>/dev/null | grep -qx gluetun; then
            log "Removing leftover gluetun (VPN is off — it would hold qBittorrent's port)"
-           docker stop gluetun >/dev/null 2>&1 || true
-           docker rm gluetun >/dev/null 2>&1 || true
+           $RT stop gluetun >/dev/null 2>&1 || true
+           $RT rm gluetun >/dev/null 2>&1 || true
        fi ;;
 esac
 
