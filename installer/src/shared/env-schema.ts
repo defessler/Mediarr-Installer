@@ -35,6 +35,10 @@ export const envSchema = z.object({
   ENABLE_RECYCLARR: optStr,
   ENABLE_UNPACKERR: optStr,
   ENABLE_FLARESOLVERR: optStr,
+  // OPT-IN (default off, unlike the rest). The superRefine block below
+  // gates its creds + Lidarr dependency on an explicit-true check, not
+  // flagOn, so a missing key never triggers required-cred validation.
+  ENABLE_SOULSEEK: optStr,
 
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
@@ -99,6 +103,18 @@ export const envSchema = z.object({
   // doesn't care.
   QBITTORRENT_USER: optStr,
   QBITTORRENT_PASS: optStr,
+
+  // Soulseek (slskd + soularr) — optional at the schema level; the
+  // superRefine block escalates SLSKD_USER/SLSKD_PASS to required and
+  // checks the slskd API-key length only when ENABLE_SOULSEEK is
+  // explicitly true.
+  SLSKD_USER: optStr,
+  SLSKD_PASS: optStr,
+  SLSKD_API_KEY: optStr,
+  SOULARR_INTERVAL: optStr.refine(
+    (v) => !v || /^\d+$/.test(v),
+    'must be a positive integer (seconds)',
+  ),
 
   // SABnzbd usenet provider (all optional — host gates the rest)
   USENET_HOST: optStr,
@@ -218,6 +234,34 @@ export const envSchema = z.object({
     if (!v.QBITTORRENT_PASS || v.QBITTORRENT_PASS.length < 8) {
       ctx.addIssue({ code: 'custom', path: ['QBITTORRENT_PASS'],
         message: 'at least 8 characters (qBittorrent enforces this on first boot)' })
+    }
+  }
+
+  // Soulseek — OPT-IN, so gate on an explicit true (NOT flagOn, which
+  // treats a missing key as enabled). Only true/1/yes/on opts in,
+  // matching is_optin_enabled in setup.sh / setup-arr-config.py and
+  // isOptInEnabled in env-render.ts. When on: Soulseek creds are
+  // required, the slskd API key (if supplied) must be 16–255 chars
+  // (upstream constraint), and Lidarr must also be enabled (soularr
+  // reads Lidarr's wanted list — useless without it).
+  const slskOn = ['true', '1', 'yes', 'on']
+    .includes((v.ENABLE_SOULSEEK ?? '').trim().toLowerCase())
+  if (slskOn) {
+    if (!v.SLSKD_USER || v.SLSKD_USER.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['SLSKD_USER'],
+        message: 'Soulseek username required when Soulseek is enabled' })
+    }
+    if (!v.SLSKD_PASS || v.SLSKD_PASS.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['SLSKD_PASS'],
+        message: 'Soulseek password required when Soulseek is enabled' })
+    }
+    if (v.SLSKD_API_KEY && (v.SLSKD_API_KEY.length < 16 || v.SLSKD_API_KEY.length > 255)) {
+      ctx.addIssue({ code: 'custom', path: ['SLSKD_API_KEY'],
+        message: 'slskd API key must be 16–255 characters' })
+    }
+    if (!flagOn(v.ENABLE_LIDARR)) {
+      ctx.addIssue({ code: 'custom', path: ['ENABLE_SOULSEEK'],
+        message: 'Soulseek feeds Lidarr — enable Lidarr too' })
     }
   }
 

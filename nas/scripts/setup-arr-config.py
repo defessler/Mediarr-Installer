@@ -3069,6 +3069,75 @@ UNPACKERR_LIDARR_BLOCK = """\
   timeout   = "10s"\
 """
 
+# soularr config.ini — generated, overwritten on every run like
+# unpackerr.conf (the mrusse08/soularr image ships a stock config.ini we
+# must win over). Built with str.format(**kwargs), so the only braces
+# are the named {placeholders}; literal % in the [Logging] format line is
+# fine (str.format doesn't touch %).
+#
+# Path-mapping is the classic soularr failure: lidarr and slskd must
+# agree on the SAME physical files. {slskd_host} is the gluetun-published
+# LAN_IP:5030 WebUI (works VPN on AND off — same pattern as QBIT at
+# LAN_IP:49156; slskd is in gluetun's namespace, so http://slskd:5030
+# would NOT resolve for soularr on the media bridge). {lidarr_dl} is
+# Lidarr's view of the shared download dir (/data/Downloads/Soulseek);
+# the [Slskd] download_dir is soularr's own view (/downloads). Both point
+# at ${DATA_ROOT}/Downloads/Soulseek on the host.
+SOULARR_CONF = """\
+[Lidarr]
+api_key = {lidarr_key}
+host_url = {lidarr_int}
+download_dir = {lidarr_dl}
+disable_sync = False
+
+[Slskd]
+api_key = {slskd_key}
+host_url = {slskd_host}
+url_base = /
+download_dir = /downloads
+delete_searches = False
+stalled_timeout = 3600
+remote_queue_timeout = 300
+
+[Release Settings]
+use_selected_lidarr_release = False
+use_most_common_tracknum = True
+allow_multi_disc = True
+accepted_countries = Europe,Japan,United Kingdom,United States,[Worldwide],Australia,Canada
+skip_region_check = False
+accepted_formats = CD,Digital Media,Vinyl
+
+[Search Settings]
+search_timeout = 5000
+maximum_peer_queue = 50
+minimum_peer_upload_speed = 0
+minimum_filename_match_ratio = 0.8
+minimum_search_interval = 5
+allowed_filetypes = flac 24/192,flac 16/44.1,flac,mp3 320,mp3
+ignored_users =
+album_prepend_artist = False
+search_type = incrementing_page
+number_of_albums_to_grab = 10
+title_blacklist =
+search_blacklist =
+search_source = missing
+failed_import_denylist = True
+
+[Download Settings]
+download_filtering = True
+use_extension_whitelist = False
+extensions_whitelist = lrc,nfo,txt
+
+[Logging]
+level = INFO
+format = [%(levelname)s|%(module)s|L%(lineno)d] %(asctime)s: %(message)s
+datefmt = %Y-%m-%dT%H:%M:%S%z
+log_to_file = True
+log_file = soularr.log
+max_bytes = 1048576
+backup_count = 3
+"""
+
 # Recyclarr include-template recipes, keyed by the wizard's profile-pick
 # values (TRASH_SONARR_PROFILE / TRASH_RADARR_PROFILE in .env). Each
 # value is the list of TRaSH Guide templates to enable in recyclarr.yml's
@@ -3555,6 +3624,17 @@ def is_enabled(env, key):
     service selection existed have no ENABLE_* keys, so every service
     is treated as enabled (back-compat)."""
     return (env.get(key, 'true') or 'true').strip().lower() not in ('false', '0', 'no', 'off')
+
+
+def is_optin_enabled(env, key):
+    """Opt-IN semantics — the OPPOSITE default of is_enabled(). Missing or
+    empty → DISABLED; only an explicit 'true'/'1'/'yes'/'on' (any case)
+    counts as enabled. Used for ENABLE_SOULSEEK so an existing install
+    upgraded from a pre-Soulseek .env (no key) stays OFF instead of
+    silently turning Soulseek on. Mirrors is_optin_enabled in setup.sh,
+    isOptInEnabled() in env-render.ts, and the explicit-true check in
+    env-schema.ts."""
+    return (env.get(key, '') or '').strip().lower() in ('true', '1', 'yes', 'on')
 
 
 def main():
@@ -4158,6 +4238,50 @@ def main():
                 info(f"Couldn't auto-restart unpackerr ({e}) — manually: docker compose restart unpackerr")
     else:
         print(f"  {DIM}⏭  ENABLE_UNPACKERR=false — skipping.{RESET}")
+
+    section("Soularr")
+    # ENABLE_SOULSEEK is OPT-IN — use is_optin_enabled, NOT is_enabled, so a
+    # pre-Soulseek .env (no key) is treated as OFF. Same explicit-true
+    # contract as setup.sh / env-render.ts / env-schema.ts.
+    if is_optin_enabled(env, 'ENABLE_SOULSEEK'):
+        # soularr drives Lidarr ↔ slskd. It's useless without a real Lidarr
+        # API key (it reads Lidarr's wanted list), so gate on Lidarr being
+        # enabled AND configured — same pattern as the unpackerr lidarr_block.
+        if not is_enabled(env, 'ENABLE_LIDARR') or not LIDARR_KEY:
+            print(f"  {DIM}⏭  Soulseek needs Lidarr — enable Lidarr and re-run.{RESET}")
+        else:
+            # Like unpackerr.conf, MUST overwrite: the soularr image seeds a
+            # stock config.ini that would otherwise win forever.
+            conf_path = f"{B}/soularr/config/config.ini"
+            slskd_key = env.get('SLSKD_API_KEY', '')
+            new_content = SOULARR_CONF.format(
+                lidarr_key=LIDARR_KEY,
+                lidarr_int=LIDARR_INT,                  # http://lidarr:8686
+                lidarr_dl="/data/Downloads/Soulseek",   # Lidarr's view of the shared dir
+                slskd_key=slskd_key or 'REPLACE_WITH_SLSKD_KEY',
+                slskd_host=f"http://{LAN_IP}:5030",     # gluetun-published, VPN on+off
+            )
+            try:
+                with open(conf_path, 'r', encoding='utf-8') as f:
+                    old_content = f.read()
+            except FileNotFoundError:
+                old_content = ''
+            backup_before_overwrite(conf_path)
+            overwrite_config_file("Soularr", conf_path, new_content)
+            # soularr re-reads config.ini each loop, but bounce it so a fresh
+            # key/path takes effect immediately rather than next interval —
+            # mirror unpackerr's restart. Only when we have a real slskd key.
+            if slskd_key and new_content != old_content:
+                try:
+                    subprocess.run([CONTAINER_RT, 'restart', 'soularr'],
+                                   capture_output=True, timeout=30, text=True)
+                    ok("Soularr restarted to pick up the new config")
+                except Exception as e:
+                    info(f"Couldn't auto-restart soularr ({e}) — manually: docker compose restart soularr")
+            elif not slskd_key:
+                info("SLSKD_API_KEY is blank in .env — set it so soularr can drive slskd.")
+    else:
+        print(f"  {DIM}⏭  ENABLE_SOULSEEK=false — Soulseek not deployed.{RESET}")
 
     section("Recyclarr")
     if is_enabled(env, 'ENABLE_RECYCLARR'):

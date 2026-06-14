@@ -165,6 +165,17 @@ if is_enabled ENABLE_QBITTORRENT; then
     PROFILES+=("torrenting")
     case "$VPN" in true|1|yes|on) PROFILES+=("vpn") ;; esac
 fi
+# Soulseek is OPT-IN (explicit true only — a missing key must NOT enable it,
+# unlike the default-on services above). slskd shares gluetun's namespace, so
+# Soulseek also pulls in the vpn sidecar when VPN is on (same as qBittorrent).
+case "$(env_val ENABLE_SOULSEEK | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on)
+        PROFILES+=("soulseek")
+        case "$VPN" in
+            true|1|yes|on) case " ${PROFILES[*]} " in *" vpn "*) : ;; *) PROFILES+=("vpn") ;; esac ;;
+        esac
+        ;;
+esac
 
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"

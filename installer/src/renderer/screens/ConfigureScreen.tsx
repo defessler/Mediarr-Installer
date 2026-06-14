@@ -4,7 +4,7 @@ import {
   Settings2, ArrowLeft, ArrowRight,
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
-  PlaySquare, Tv, Film, Music, Download, Package, LayoutDashboard,
+  PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
   Clock, CheckCircle2, XCircle, AlertTriangle, Info,
   type LucideIcon,
 } from 'lucide-react'
@@ -19,6 +19,7 @@ import {
   PRIVATE_TRACKERS,
   BAZARR_PROVIDERS,
   isEnabled,
+  isOptInEnabled,
 } from '../../shared/env-render.js'
 import {
   VPN_PROVIDERS,
@@ -161,6 +162,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation',                                 icon: Tv,              iconColor: 'text-sky-400' },
   { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation',                              icon: Film,            iconColor: 'text-yellow-400' },
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
+  { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
@@ -178,7 +180,14 @@ function ServicesSection({
 }) {
   // Imported from env-render so the renderer, setup.sh, and setup-arr-
   // config.py all agree on what counts as disabled (0/no/off/false).
-  const isOn = (k: keyof EnvFormValues) => isEnabled(config[k] as string | undefined)
+  // ENABLE_SOULSEEK is the lone OPT-IN service: a missing/empty value
+  // means OFF, so it uses isOptInEnabled instead of the default-on
+  // isEnabled. Without this, an older profile loaded without the key
+  // would show Soulseek's toggle ON.
+  const isOn = (k: keyof EnvFormValues) =>
+    k === 'ENABLE_SOULSEEK'
+      ? isOptInEnabled(config[k] as string | undefined)
+      : isEnabled(config[k] as string | undefined)
   const enabledCount = SERVICE_TOGGLES.filter((t) => isOn(t.key)).length
 
   return (
@@ -1025,6 +1034,59 @@ export function ConfigureScreen() {
               password to be at least 8 characters.
             </p>
           )}
+        </section>
+      )}
+
+      {/* Soulseek credentials — only when Soulseek is opted in (it's the
+          one default-OFF service, so use isOptInEnabled, not isEnabled).
+          Mirrors the qBittorrent WebUI block above: a gated sub-section
+          collecting the Soulseek network account + the slskd API key
+          soularr uses. */}
+      {isOptInEnabled(config.ENABLE_SOULSEEK as string | undefined) && (
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+            <Music2 size={20} className="text-pink-400" strokeWidth={1.75} aria-hidden="true" />
+            Soulseek (slskd + soularr)
+          </h2>
+          <p className="text-sm text-slate-400">
+            slskd routes through the VPN like qBittorrent; soularr watches
+            Lidarr&apos;s wanted list and grabs matches off Soulseek.{' '}
+            <span className="text-amber-300/90">Requires Lidarr.</span> Create a
+            free Soulseek account at{' '}
+            <a
+              href="https://www.slsknet.org"
+              target="_blank"
+              rel="noreferrer"
+              className="text-emerald-400 hover:underline"
+            >
+              slsknet.org
+            </a>{' '}
+            (or in the slskd WebUI on first run).
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Soulseek username" k="SLSKD_USER" />
+            <Field label="Soulseek password" k="SLSKD_PASS" type="password" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field
+              label="slskd API key (16–255 chars)"
+              k="SLSKD_API_KEY"
+              type="password"
+              placeholder="soularr uses this to drive slskd"
+            />
+            <Field
+              label="Scan interval (seconds)"
+              k="SOULARR_INTERVAL"
+              placeholder="300"
+            />
+          </div>
+          <p className="text-xs text-slate-500">
+            The API key lets soularr talk to slskd over its REST API. Pick any
+            random 16–255-character string; soularr&apos;s generated{' '}
+            <code className="font-mono">config.ini</code> uses whatever you set
+            here. Leave the scan interval at 300s unless you have a reason to
+            change it.
+          </p>
         </section>
       )}
 

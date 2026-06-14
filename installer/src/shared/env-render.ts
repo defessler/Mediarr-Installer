@@ -27,6 +27,12 @@ export interface EnvFormValues {
   ENABLE_RECYCLARR?: string     // Quality-profile sync for sonarr/radarr
   ENABLE_UNPACKERR?: string     // Auto-extract archives in downloads
   ENABLE_FLARESOLVERR?: string  // CloudFlare bypass for Prowlarr indexers (default-on; off on arm64 — deprecated + crashes on ARM)
+  /** Soulseek: slskd (Soulseek daemon, routed through the VPN like
+   *  qBittorrent) + soularr (Lidarr ↔ slskd bridge). OPT-IN — the ONLY
+   *  default-OFF service. A missing key means OFF; emitted via
+   *  isOptInEnabled, NOT isEnabled, so existing pre-Soulseek installs
+   *  don't silently turn it on. Requires ENABLE_LIDARR. */
+  ENABLE_SOULSEEK?: string
 
   // ── TRaSH Guide profile selection
   /** Which Sonarr quality profile Recyclarr should sync from TRaSH
@@ -107,6 +113,14 @@ export interface EnvFormValues {
   // ── qBittorrent
   QBITTORRENT_USER: string
   QBITTORRENT_PASS: string
+
+  // ── Soulseek (slskd + soularr) — only used when ENABLE_SOULSEEK=true
+  SLSKD_USER?: string           // Soulseek network username
+  SLSKD_PASS?: string           // Soulseek network password
+  /** slskd REST API key soularr uses (X-API-Key). 16–255 chars; the
+   *  wizard generates one. */
+  SLSKD_API_KEY?: string
+  SOULARR_INTERVAL?: string     // soularr loop seconds (default 300)
 
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
@@ -301,6 +315,22 @@ export const ENABLE_DISABLED_VALUES = new Set(['false', '0', 'no', 'off'])
 export const isEnabled = (v: string | undefined): boolean =>
   !ENABLE_DISABLED_VALUES.has((v ?? '').trim().toLowerCase())
 
+/** Opt-IN counterpart to isEnabled — the OPPOSITE default. Returns true
+ *  ONLY for an explicit true/1/yes/on (any case); missing, empty, or
+ *  anything else is false. Used for ENABLE_SOULSEEK so a pre-Soulseek
+ *  .env (no key) stays OFF on upgrade instead of being treated as
+ *  enabled by isEnabled's default-on rule.
+ *
+ *  CRITICAL: the enabled set here MUST match is_optin_enabled in
+ *  setup.sh, is_optin_enabled in setup-arr-config.py, and the explicit-
+ *  true check in env-schema.ts's superRefine. All four layers must agree
+ *  that only true/1/yes/on opts a user IN, or the wizard, the launcher,
+ *  the configurator, and the validator will disagree about whether
+ *  Soulseek is on. */
+export const ENABLE_OPTIN_VALUES = new Set(['true', '1', 'yes', 'on'])
+export const isOptInEnabled = (v: string | undefined): boolean =>
+  ENABLE_OPTIN_VALUES.has((v ?? '').trim().toLowerCase())
+
 export function renderEnv(v: EnvFormValues): string {
   // Normalize the media-server pick once — drives which server-specific
   // lines (PLEX_CLAIM vs JELLYFIN_API_KEY) carry a value and which
@@ -388,6 +418,16 @@ export function renderEnv(v: EnvFormValues): string {
     '# qBittorrent WebUI',
     line('QBITTORRENT_USER', v.QBITTORRENT_USER),
     line('QBITTORRENT_PASS', v.QBITTORRENT_PASS),
+    '',
+    '# Soulseek (slskd via VPN + soularr → Lidarr). OPT-IN; off by default.',
+    '# A missing ENABLE_SOULSEEK key counts as OFF (unlike every other',
+    '# ENABLE_* above) — emitted via isOptInEnabled so existing pre-Soulseek',
+    '# installs never silently gain Soulseek on upgrade. Requires Lidarr.',
+    line('ENABLE_SOULSEEK', isOptInEnabled(v.ENABLE_SOULSEEK) ? 'true' : 'false'),
+    line('SLSKD_USER', v.SLSKD_USER),
+    line('SLSKD_PASS', v.SLSKD_PASS),
+    line('SLSKD_API_KEY', v.SLSKD_API_KEY),
+    line('SOULARR_INTERVAL', v.SOULARR_INTERVAL || '300'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

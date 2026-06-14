@@ -136,6 +136,23 @@ qbit_wedged_running() {
     [ "$nm" != "$gid" ]
 }
 
+# Soulseek's slskd shares gluetun's namespace exactly like qBittorrent, so it
+# has the identical stale-namespace wedge. When ENABLE_SOULSEEK is on (opt-in,
+# explicit-true only), heal it in the same passes. The compose up below then
+# brings up + re-welds both behind one gluetun.
+SOULSEEK_ON=0
+case "$(env_val ENABLE_SOULSEEK | tr '[:upper:]' '[:lower:]')" in true|1|yes|on) SOULSEEK_ON=1 ;; esac
+slskd_wedged_running() {
+    [ "$($RT inspect -f '{{.State.Status}}' slskd 2>/dev/null || echo missing)" = "running" ] || return 1
+    local nm gid
+    nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' slskd 2>/dev/null || echo "")
+    case "$nm" in container:*) nm="${nm#container:}" ;; *) return 1 ;; esac
+    gid=$($RT inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+    [ "$nm" != "$gid" ]
+}
+UP_PROFILES="vpn,torrenting"; UP_SVCS="gluetun qbittorrent"
+if [ "$SOULSEEK_ON" -eq 1 ]; then UP_PROFILES="$UP_PROFILES,soulseek"; UP_SVCS="$UP_SVCS slskd"; fi
+
 # If qBittorrent's container exists but is dead, OR is running but pinned to
 # a destroyed gluetun namespace, remove it so compose recreates it cleanly
 # against the (possibly new) gluetun network namespace. Without this, `up
@@ -146,6 +163,15 @@ if $RT ps -a --format '{{.Names}}' | grep -qx qbittorrent; then
     if [ "$state" != "running" ] || qbit_wedged_running; then
         echo "  Removing stale/wedged qbittorrent container (state=$state) so compose recreates it cleanly..."
         $RT rm -f qbittorrent >/dev/null 2>&1 || true
+    fi
+fi
+
+# Same for slskd (Soulseek), which is in gluetun's namespace too.
+if [ "$SOULSEEK_ON" -eq 1 ] && $RT ps -a --format '{{.Names}}' | grep -qx slskd; then
+    state=$($RT inspect --format='{{.State.Status}}' slskd 2>/dev/null || echo missing)
+    if [ "$state" != "running" ] || slskd_wedged_running; then
+        echo "  Removing stale/wedged slskd container (state=$state) so compose recreates it cleanly..."
+        $RT rm -f slskd >/dev/null 2>&1 || true
     fi
 fi
 
@@ -160,7 +186,7 @@ if $RT ps -a --format '{{.Names}}' | grep -qx gluetun; then
     fi
 fi
 
-COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent
+COMPOSE_PROFILES=$UP_PROFILES $COMPOSE -f docker-compose.yml up -d $UP_SVCS
 
 # Post-up reconcile. Compose recreates a service whose own spec changed, but
 # it will NOT recreate an ALREADY-RUNNING qBittorrent just because gluetun
@@ -171,10 +197,11 @@ COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbi
 # frozen namespace id no longer matches the LIVE gluetun, rm it and bring it
 # up once more so a single run fully heals the wedge (matters most for the
 # documented standalone `sudo bash restart-qbit.sh` use).
-if qbit_wedged_running; then
-    echo "  qBittorrent is still on a stale gluetun namespace — recreating it once more..."
-    $RT rm -f qbittorrent >/dev/null 2>&1 || true
-    COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent
+if qbit_wedged_running || { [ "$SOULSEEK_ON" -eq 1 ] && slskd_wedged_running; }; then
+    echo "  A gluetun-namespaced container is still on a stale namespace — recreating once more..."
+    if qbit_wedged_running; then $RT rm -f qbittorrent >/dev/null 2>&1 || true; fi
+    if [ "$SOULSEEK_ON" -eq 1 ] && slskd_wedged_running; then $RT rm -f slskd >/dev/null 2>&1 || true; fi
+    COMPOSE_PROFILES=$UP_PROFILES $COMPOSE -f docker-compose.yml up -d $UP_SVCS
 fi
 
 # Quick post-up sanity. The depends_on:service_healthy gate inside

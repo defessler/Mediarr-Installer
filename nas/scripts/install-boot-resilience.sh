@@ -44,8 +44,14 @@ is_enabled() { local v; v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"; case "
 # Boot hook is stack-wide; the self-heal cron is qBit+VPN only.
 VPN_ON=0
 case "$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')" in true|1|yes|on) VPN_ON=1 ;; esac
+# slskd shares gluetun's namespace like qBittorrent, so the self-heal guardian
+# is wanted when Soulseek is on too. ENABLE_SOULSEEK is OPT-IN (explicit true
+# only — a missing key must NOT arm the guardian), unlike default-on qBittorrent.
+is_optin() { case "$(env_val "$1" | tr '[:upper:]' '[:lower:]')" in true|1|yes|on) return 0 ;; *) return 1 ;; esac; }
 INSTALL_GUARD=0
-[ "$VPN_ON" -eq 1 ] && is_enabled ENABLE_QBITTORRENT && INSTALL_GUARD=1
+if [ "$VPN_ON" -eq 1 ] && { is_enabled ENABLE_QBITTORRENT || is_optin ENABLE_SOULSEEK; }; then
+    INSTALL_GUARD=1
+fi
 
 BOOT_TAG='# mediarr-boot'
 GUARD_TAG='# mediarr-guardian'

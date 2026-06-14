@@ -311,6 +311,22 @@ is_enabled() {
     esac
 }
 
+# Opt-IN semantics: the OPPOSITE default of is_enabled. A missing or empty
+# key counts as DISABLED; only an explicit true / 1 / yes / on opts in.
+# Used for ENABLE_SOULSEEK (and any future opt-in service) so an existing
+# install upgraded from a pre-Soulseek .env — which has no ENABLE_SOULSEEK
+# key — stays OFF instead of silently turning Soulseek on. Mirrors
+# isOptInEnabled() in env-render.ts / the explicit-true check in
+# env-schema.ts / is_optin_enabled in setup-arr-config.py.
+is_optin_enabled() {
+    local val
+    val="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$val" in
+        true|1|yes|on) return 0 ;;
+        *)             return 1 ;;
+    esac
+}
+
 # ── Choose compose files based on VPN_ENABLED in .env ────────────────────────
 # VPN is OFF by default. When VPN_ENABLED is anything other than 'true' / '1'
 # / 'yes', the no-vpn override is applied — gluetun is excluded and
@@ -366,6 +382,20 @@ is_enabled ENABLE_FLARESOLVERR && PROFILES+=("flaresolverr")
 if is_enabled ENABLE_QBITTORRENT; then
     PROFILES+=("torrenting")
     [ $VPN_ON -eq 1 ] && PROFILES+=("vpn")
+fi
+# Soulseek is OPT-IN (default off) — use is_optin_enabled, NOT is_enabled,
+# so a pre-Soulseek .env (no key) stays off. slskd lives in gluetun's
+# namespace, so when VPN is on Soulseek must ALSO pull in the "vpn"
+# sidecar (same coupling as qBittorrent). The case-guard avoids a
+# duplicate "vpn" entry when both qBittorrent and Soulseek are on.
+if is_optin_enabled ENABLE_SOULSEEK; then
+    PROFILES+=("soulseek")
+    if [ $VPN_ON -eq 1 ]; then
+        case " ${PROFILES[*]} " in
+            *" vpn "*) : ;;
+            *)         PROFILES+=("vpn") ;;
+        esac
+    fi
 fi
 
 if [ ${#PROFILES[@]} -gt 0 ]; then
@@ -501,14 +531,21 @@ stop_disabled_services() {
         "recyclarr:ENABLE_RECYCLARR"
         "unpackerr:ENABLE_UNPACKERR"
         "flaresolverr:ENABLE_FLARESOLVERR"
+        "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
         container="${pair%:*}"
         flag="${pair#*:}"
         # Service is enabled → leave the container alone, up -d will
-        # (re-)create or update it as needed.
-        is_enabled "$flag" && continue
+        # (re-)create or update it as needed. ENABLE_SOULSEEK is OPT-IN, so
+        # use the explicit-true helper; the default-on is_enabled would
+        # treat a missing key as "enabled" and never reap slskd/soularr.
+        if [ "$flag" = "ENABLE_SOULSEEK" ]; then
+            is_optin_enabled "$flag" && continue
+        else
+            is_enabled "$flag" && continue
+        fi
         # Service is disabled but the container exists → stop + remove.
         if $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
             $CONTAINER_RUNTIME stop "$container" >/dev/null 2>&1 || true
@@ -568,6 +605,27 @@ stop_disabled_services() {
             stopped=$((stopped + 1))
         fi
     fi
+    # slskd inherits the exact same immutable-network-mode wedge as
+    # qBittorrent (VPN-on: container:gluetun namespace; VPN-off: bridge).
+    # Toggling VPN_ENABLED strands the running slskd on the wrong mode and
+    # `compose up -d` can't change it in place. Reap it on mismatch so
+    # start_stack recreates it cleanly. Opt-in: only when Soulseek is on.
+    if is_optin_enabled ENABLE_SOULSEEK \
+       && $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx slskd; then
+        local slmode slmismatch=0
+        slmode=$($CONTAINER_RUNTIME inspect -f '{{.HostConfig.NetworkMode}}' slskd 2>/dev/null || echo "")
+        if [ "$VPN_ON" -eq 1 ]; then
+            case "$slmode" in container:*) : ;; *) slmismatch=1 ;; esac   # want gluetun namespace, have bridge
+        else
+            case "$slmode" in container:*) slmismatch=1 ;; esac           # want bridge, have gluetun namespace
+        fi
+        if [ "$slmismatch" -eq 1 ]; then
+            $CONTAINER_RUNTIME stop slskd >/dev/null 2>&1 || true
+            $CONTAINER_RUNTIME rm   slskd >/dev/null 2>&1 || true
+            echo "  ✔ Removed slskd so it recreates in the correct network mode (VPN toggled)"
+            stopped=$((stopped + 1))
+        fi
+    fi
     if [ $stopped -eq 0 ]; then
         echo "  No previously-running services to remove."
     fi
@@ -615,6 +673,13 @@ check_port_conflicts() {
     # if another torrent client on the NAS already holds 6881.
     is_enabled ENABLE_SABNZBD     && pairs+=("sabnzbd:49155")
     is_enabled ENABLE_HOMEPAGE    && pairs+=("homepage:3000")
+    # slskd's WebUI (5030) is published by GLUETUN when VPN is on (slskd
+    # uses network_mode: container:gluetun) — the ":$port->" published-port
+    # match below handles that indirection exactly like qBittorrent's
+    # 49156. Opt-in, so use the explicit-true helper. 50300 (Soulseek peer
+    # listen) is omitted for the same reason 6881 is: best-effort + owned
+    # by gluetun-or-slskd depending on VPN mode.
+    is_optin_enabled ENABLE_SOULSEEK && pairs+=("slskd:5030")
 
     local conflicts=""
     local pair port svc
@@ -700,6 +765,10 @@ wait_for_services() {
     # wait list buys ~30-60s of extra settle time and dramatically
     # reduces the retry-storm during configuration.
     is_enabled ENABLE_QBITTORRENT && services="$services qbittorrent"
+    # slskd shares gluetun's namespace when VPN is on, exactly like
+    # qBittorrent — `.State.Status` is the only readiness signal. soularr
+    # is a plain bridge service. Opt-in, so use the explicit-true helper.
+    is_optin_enabled ENABLE_SOULSEEK && services="$services slskd soularr"
 
     echo ""
     echo "  Waiting for containers to become healthy..."
@@ -1061,6 +1130,21 @@ start_stack() {
             up_rc=$?
         fi
     fi
+    # Same stale-namespace reconcile for slskd — it shares gluetun's
+    # namespace under the soulseek profile exactly like qBittorrent, so a
+    # gluetun recreate welds it to a dead namespace too. Opt-in only.
+    if [ "$VPN_ON" -eq 1 ] && is_optin_enabled ENABLE_SOULSEEK; then
+        local slnm slgid
+        slnm=$($CONTAINER_RUNTIME inspect -f '{{.HostConfig.NetworkMode}}' slskd 2>/dev/null || echo "")
+        slgid=$($CONTAINER_RUNTIME inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+        case "$slnm" in container:*) slnm="${slnm#container:}" ;; *) slnm="" ;; esac
+        if [ -n "$slnm" ] && [ -n "$slgid" ] && [ "$slnm" != "$slgid" ]; then
+            echo "  slskd is on a stale gluetun namespace — recreating it..."
+            $CONTAINER_RUNTIME rm -f slskd >/dev/null 2>&1 || true
+            $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d gluetun slskd
+            up_rc=$?
+        fi
+    fi
     return $up_rc
 }
 
@@ -1206,6 +1290,7 @@ is_enabled ENABLE_LIDARR      && echo "  Lidarr       http://${IP}:49154"
 echo "  Prowlarr     http://${IP}:49150"
 is_enabled ENABLE_SABNZBD     && echo "  SABnzbd      http://${IP}:49155"
 is_enabled ENABLE_QBITTORRENT && echo "  qBittorrent  http://${IP}:49156"
+is_optin_enabled ENABLE_SOULSEEK && echo "  slskd        http://${IP}:5030"
 is_enabled ENABLE_BAZARR      && echo "  Bazarr       http://${IP}:49153"
 is_enabled ENABLE_PLEX        && echo "  Seerr        http://${IP}:5056"
 { is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; } && echo "  Tautulli     http://${IP}:8181"

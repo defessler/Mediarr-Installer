@@ -432,8 +432,14 @@ services:
       - OPENVPN_USER=${OPENVPN_USER:-}
       - OPENVPN_PASSWORD=${OPENVPN_PASSWORD:-}
       - SERVER_COUNTRIES=${VPN_COUNTRIES}
-      # Allow LAN to reach the qBittorrent WebUI through the VPN container
-      - FIREWALL_INPUT_PORTS=49156
+      # Allow LAN to reach the qBittorrent (49156) AND slskd (5030) WebUIs
+      # through the VPN container. Comma-separated. slskd shares this
+      # namespace (network_mode: container:gluetun) under the "soulseek"
+      # profile, so its WebUI is published on gluetun (see the 5030 entry
+      # in ports: below). The rule is harmless when Soulseek is off —
+      # it's a firewall allow-rule, not a proxy, so nothing answers on
+      # 5030 but gluetun still starts fine.
+      - FIREWALL_INPUT_PORTS=49156,5030
       # FIREWALL_OUTBOUND_SUBNETS = the LAN subnet(s) + the local
       # docker bridge subnet, which gluetun explicitly ALLOWS to bypass
       # the killswitch. Without this, sibling containers reaching qBit
@@ -484,6 +490,13 @@ services:
       - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data="json={\"listen_port\":{{PORT}}}" "http://127.0.0.1:49156/api/v2/app/setPreferences" 2>/dev/null'
     ports:
       - ${LAN_IP}:49156:49156
+      # slskd WebUI, published ON gluetun because slskd shares this
+      # namespace (network_mode: container:gluetun) under the "soulseek"
+      # profile. The host bind succeeds whether or not slskd is running;
+      # gluetun only starts when the "vpn" profile is active (qBit or
+      # Soulseek enabled), so this never binds 5030 on a media-server-
+      # only install.
+      - ${LAN_IP}:5030:5030
       # NOTE: 6881 is NOT published here. With VPN_ENABLED=true the
       # incoming BT peer traffic enters via the VPN tunnel + gluetun's
       # FIREWALL_INPUT_PORTS (49156 only in this stack) — publishing
@@ -537,6 +550,49 @@ services:
       - ${INSTALL_DIR}/qbittorrent/config:/config
       - ${INSTALL_DIR}/qbittorrent/custom-cont-init.d:/custom-cont-init.d:ro
       - ${DATA_ROOT}/Downloads/Torrents:/downloads
+    logging: *logging
+    restart: unless-stopped
+
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    # Opt-in Soulseek daemon (default OFF). setup.sh adds the "soulseek"
+    # profile to COMPOSE_PROFILES only when ENABLE_SOULSEEK is explicitly
+    # true (is_optin_enabled, NOT the default-on is_enabled).
+    profiles: ["soulseek"]
+    # Mirror qBittorrent: live inside gluetun's network namespace so ALL
+    # Soulseek traffic egresses through the VPN. The WebUI (5030) is
+    # published ON gluetun (see gluetun's ports: + FIREWALL_INPUT_PORTS=
+    # ...,5030). A container in network_mode: container:gluetun cannot
+    # also declare networks:/security_opt: — same form as qBittorrent.
+    network_mode: "container:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      # Soulseek network credentials (free account; create one in the
+      # slskd WebUI or the Soulseek desktop client).
+      - SLSKD_SLSK_USERNAME=${SLSKD_USER}
+      - SLSKD_SLSK_PASSWORD=${SLSKD_PASS}
+      # REST API key soularr uses (X-API-Key header). Setting this env var
+      # alone mints a working Administrator key; it works alongside WebUI
+      # auth, which stays ENABLED on the LAN-published port. 16–255 chars.
+      - SLSKD_API_KEY=${SLSKD_API_KEY}
+      # Downloads to the shared host dir; incomplete stays inside /app so
+      # partial files never appear to Lidarr.
+      - SLSKD_DOWNLOADS_DIR=/downloads
+      # No remote (web) config — config is env-driven + immutable.
+      - SLSKD_REMOTE_CONFIGURATION=false
+      # Peer listen port. With NordVPN there is NO inbound port-forward,
+      # so this is best-effort outbound; search/browse quality is degraded
+      # (documented upstream). Kept at the default for PF-capable providers.
+      - SLSKD_SLSK_LISTEN_PORT=50300
+    volumes:
+      - ${INSTALL_DIR}/slskd/config:/app
+      - ${DATA_ROOT}/Downloads/Soulseek:/downloads
     logging: *logging
     restart: unless-stopped
 
@@ -699,6 +755,38 @@ services:
     volumes:
       - ${INSTALL_DIR}/unpackerr/config:/config
       - ${DATA_ROOT}:/data
+    logging: *logging
+    restart: unless-stopped
+
+  soularr:
+    image: mrusse08/soularr:latest
+    container_name: soularr
+    # Opt-in Lidarr ↔ slskd bridge (default OFF, same "soulseek" profile
+    # as slskd). Runs on the media bridge so it resolves `lidarr` by DNS;
+    # it reaches slskd's WebUI via the gluetun-published LAN_IP:5030
+    # written into its config.ini (slskd is in gluetun's namespace, not a
+    # media-bridge DNS name). Same pattern as Sonarr → qBit LAN_IP:49156.
+    profiles: ["soulseek"]
+    networks: [media]
+    security_opt: *security
+    # No depends_on [lidarr, slskd]: lidarr is independently profile-gated
+    # (a hard dep on a profile-excluded service fails compose validation —
+    # same rule as recyclarr/unpackerr above), and slskd lives in gluetun's
+    # namespace, not on this bridge. soularr retries over HTTP each loop,
+    # so boot order doesn't matter.
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      # soularr runs an internal daemon loop, not a one-shot — no host
+      # cron needed. Seconds between scan cycles.
+      - SCRIPT_INTERVAL=${SOULARR_INTERVAL:-300}
+      # WebUI off — config is file-driven (config.ini, generated by
+      # setup-arr-config.py) and the bridge surfaces nothing to click.
+      - WEBUI_ENABLED=false
+    volumes:
+      - ${INSTALL_DIR}/soularr/config:/data
+      - ${DATA_ROOT}/Downloads/Soulseek:/downloads
     logging: *logging
     restart: unless-stopped
 

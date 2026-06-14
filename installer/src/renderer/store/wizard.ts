@@ -128,6 +128,12 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_RECYCLARR: 'true',
   ENABLE_UNPACKERR: 'true',
   ENABLE_FLARESOLVERR: 'true',
+  // Soulseek is OPT-IN — the only default-OFF service. A fresh wizard run
+  // therefore renders ENABLE_SOULSEEK=false; the user turns it on
+  // explicitly on the Configure screen (it needs Lidarr).
+  ENABLE_SOULSEEK: 'false',
+  // soularr scan-loop interval (seconds). Only used when Soulseek is on.
+  SOULARR_INTERVAL: '300',
 
   PUID: '1026',
   PGID: '100',

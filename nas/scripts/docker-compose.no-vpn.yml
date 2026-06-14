@@ -27,3 +27,18 @@ services:
     # compose v2.20+; if the user is on something older, edit setup.sh
     # to use a fully separate compose file instead of this override.
     depends_on: !reset null
+
+  # slskd moves to the media bridge with its own published WebUI port
+  # when VPN is off (mirror of the qBittorrent override above). The
+  # Soulseek peer listen port (50300) is published best-effort, like
+  # qBit's 6881. soularr can now reach slskd as http://slskd:5030 on the
+  # bridge, but setup-arr-config.py writes the LAN_IP:5030 form
+  # unconditionally so one config.ini works in both VPN modes.
+  slskd:
+    network_mode: bridge
+    networks:
+      - media
+    ports:
+      - ${LAN_IP}:5030:5030
+      - 50300:50300
+    depends_on: !reset null

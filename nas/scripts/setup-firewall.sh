@@ -148,6 +148,12 @@ add_rules() {
         iptables -I INPUT -p tcp --dport 6881 -j ACCEPT
         iptables -I INPUT -p udp --dport 6881 -j ACCEPT
     fi
+    # Soulseek slskd WebUI (5030) — OPT-IN (explicit true only, unlike the
+    # default-on services above). slskd is gluetun-namespaced; this opens the
+    # LAN→WebUI path the same way 49156 does for qBittorrent.
+    case "$(grep -m1 '^ENABLE_SOULSEEK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5030 -j ACCEPT ;;
+    esac
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 3000 -j ACCEPT
     fi
@@ -198,6 +204,9 @@ remove_rules() {
     iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49156 -j ACCEPT 2>/dev/null
     iptables -D INPUT -p tcp --dport 6881 -j ACCEPT 2>/dev/null
     iptables -D INPUT -p udp --dport 6881 -j ACCEPT 2>/dev/null
+
+    # Soulseek slskd WebUI (via Gluetun)
+    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 5030 -j ACCEPT 2>/dev/null
 
     # Seerr
     iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 5056 -j ACCEPT 2>/dev/null

@@ -62,9 +62,15 @@ env_val()    { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//'
 is_enabled() { local v; v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"; case "$v" in false|0|no|off) return 1 ;; *) return 0 ;; esac; }
 is_true()    { case "$1" in true|1|yes|on) return 0 ;; *) return 1 ;; esac; }
 
-# ── Gate: VPN on + qBit enabled (runtime re-check, defence in depth) ──
+# ── Gate: VPN on + (qBittorrent OR Soulseek) enabled. Both share gluetun's
+#    namespace and the same wedge. qBit is default-on (is_enabled); Soulseek is
+#    OPT-IN (is_true → explicit true/1/yes/on only — a missing key must NOT
+#    arm the guardian for it). ──
 is_true "$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')" || exit 0
-is_enabled ENABLE_QBITTORRENT || exit 0
+QBIT_ON=0; SOULSEEK_ON=0
+is_enabled ENABLE_QBITTORRENT && QBIT_ON=1
+is_true "$(env_val ENABLE_SOULSEEK | tr '[:upper:]' '[:lower:]')" && SOULSEEK_ON=1
+[ "$QBIT_ON" -eq 1 ] || [ "$SOULSEEK_ON" -eq 1 ] || exit 0
 
 # ── Honour a custom/Podman socket the same way setup.sh does, so the
 #    recovery targets the right daemon (cron inherits a bare env) ──
@@ -109,6 +115,10 @@ qbit_ns_id() {
     local nm; nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
     case "$nm" in container:*) echo "${nm#container:}" ;; *) echo "" ;; esac
 }
+slskd_ns_id() {
+    local nm; nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' slskd 2>/dev/null || echo "")
+    case "$nm" in container:*) echo "${nm#container:}" ;; *) echo "" ;; esac
+}
 qbit_uptime() {
     local s t now
     s=$($RT inspect -f '{{.State.StartedAt}}' qbittorrent 2>/dev/null) || { echo 0; return; }
@@ -135,23 +145,41 @@ webui_ok() {
 }
 
 GS=$(cstate gluetun); GH=$(chealth gluetun); GID=$(cid gluetun)
-QS=$(cstate qbittorrent)
 WEDGED=0; REASON=""
 
 if   [ "$GS" != "running" ]; then
     WEDGED=1; REASON="gluetun is $GS"
 elif [ "$GH" = "starting" ]; then
     exit 0                                          # VPN warmup window — abstain, quiet
-elif [ "$QS" != "running" ]; then
-    WEDGED=1; REASON="qbittorrent is $QS"
 else
-    NSID=$(qbit_ns_id)
-    if [ -n "$NSID" ] && [ -n "$GID" ] && [ "$NSID" != "$GID" ]; then
-        WEDGED=1; REASON="qbit namespace stale (welded to $(short "$NSID")…, gluetun now $(short "$GID")…)"
-    elif [ "$GH" = "healthy" ] || [ "$GH" = "none" ]; then
-        AGE=$(qbit_uptime)
-        if [ "$AGE" -ge "$GRACE_SECONDS" ] && ! webui_ok; then
-            WEDGED=1; REASON="qbit WebUI unreachable on LAN:$QBIT_PORT (up ${AGE}s, gluetun healthy)"
+    # qBittorrent (if enabled): not-running / stale-namespace / WebUI backstop.
+    if [ "$QBIT_ON" -eq 1 ]; then
+        QS=$(cstate qbittorrent)
+        if [ "$QS" != "running" ]; then
+            WEDGED=1; REASON="qbittorrent is $QS"
+        else
+            NSID=$(qbit_ns_id)
+            if [ -n "$NSID" ] && [ -n "$GID" ] && [ "$NSID" != "$GID" ]; then
+                WEDGED=1; REASON="qbit namespace stale (welded to $(short "$NSID")…, gluetun now $(short "$GID")…)"
+            elif [ "$GH" = "healthy" ] || [ "$GH" = "none" ]; then
+                AGE=$(qbit_uptime)
+                if [ "$AGE" -ge "$GRACE_SECONDS" ] && ! webui_ok; then
+                    WEDGED=1; REASON="qbit WebUI unreachable on LAN:$QBIT_PORT (up ${AGE}s, gluetun healthy)"
+                fi
+            fi
+        fi
+    fi
+    # slskd (if Soulseek enabled): same not-running / stale-namespace wedge.
+    # No WebUI backstop — slskd has no cheap unauthenticated liveness probe.
+    if [ "$WEDGED" -eq 0 ] && [ "$SOULSEEK_ON" -eq 1 ]; then
+        SS=$(cstate slskd)
+        if [ "$SS" != "running" ]; then
+            WEDGED=1; REASON="slskd is $SS"
+        else
+            SNSID=$(slskd_ns_id)
+            if [ -n "$SNSID" ] && [ -n "$GID" ] && [ "$SNSID" != "$GID" ]; then
+                WEDGED=1; REASON="slskd namespace stale (welded to $(short "$SNSID")…, gluetun now $(short "$GID")…)"
+            fi
         fi
     fi
 fi
@@ -160,13 +188,18 @@ fi
 
 rotate_log
 log "WEDGED: $REASON — recovering"
-if [ -x "$SCRIPT_DIR/restart-qbit.sh" ]; then
+if [ "$QBIT_ON" -eq 1 ] && [ -x "$SCRIPT_DIR/restart-qbit.sh" ]; then
+    # restart-qbit.sh does the ordered gluetun→qBit recreate AND heals slskd in
+    # the same pass when Soulseek is on (SOULSEEK_ON detected there too).
     bash "$SCRIPT_DIR/restart-qbit.sh" >> "$LOG" 2>&1; rc=$?
 else
-    # Fallback inline recreate (same ordering restart-qbit.sh uses) so the
-    # guardian still self-heals on a partial install missing restart-qbit.sh.
-    $RT rm -f qbittorrent gluetun >/dev/null 2>&1 || true
-    COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent >> "$LOG" 2>&1; rc=$?
+    # qBit off (Soulseek-only) or no restart-qbit.sh — inline recreate whatever
+    # is enabled, ordered behind gluetun (same approach restart-qbit.sh uses).
+    _rm="gluetun"; _up="gluetun"; _pr="vpn"
+    [ "$QBIT_ON" -eq 1 ]     && { _rm="$_rm qbittorrent"; _up="$_up qbittorrent"; _pr="$_pr,torrenting"; }
+    [ "$SOULSEEK_ON" -eq 1 ] && { _rm="$_rm slskd";       _up="$_up slskd";       _pr="$_pr,soulseek"; }
+    $RT rm -f $_rm >/dev/null 2>&1 || true
+    COMPOSE_PROFILES=$_pr $COMPOSE -f docker-compose.yml up -d $_up >> "$LOG" 2>&1; rc=$?
 fi
 log "recovery finished rc=$rc"
 exit "$rc"

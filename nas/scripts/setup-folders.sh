@@ -77,6 +77,11 @@ CONFIG_DIRS=(
     "$INSTALL_DIR/recyclarr/config"
     "$INSTALL_DIR/unpackerr/config"
     "$INSTALL_DIR/homepage/config"
+    # Soulseek (opt-in). slskd keeps its config in /app; soularr in /data.
+    # slskd is NOT a linuxserver image (no self-chown safety net) and runs as
+    # PUID:PGID, so these MUST be owned up front or it can't write its config.
+    "$INSTALL_DIR/slskd/config"
+    "$INSTALL_DIR/soularr/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -114,6 +119,10 @@ DATA_DIRS=(
     "$DATA_ROOT/.recycle/sonarr"
     "$DATA_ROOT/.recycle/radarr"
     "$DATA_ROOT/.recycle/lidarr"
+    # Soulseek (opt-in) shared download dir: slskd + soularr see it as
+    # /downloads, Lidarr imports it as /data/Downloads/Soulseek. Must be
+    # PUID:PGID-owned so slskd can write + Lidarr can hardlink/import.
+    "$DATA_ROOT/Downloads/Soulseek"
 )
 
 # ── Create and chown ───────────────────────────────────────────────────────────
