@@ -104,6 +104,28 @@ jobs:
       - name: List release files
         run: ls -la release-files/
 
+      # Build the release body from the TAGGED COMMIT'S message — the
+      # `vX.Y.Z: …` subject + body IS that version's changelog, so every
+      # release documents what actually changed instead of repeating a
+      # static template. A short standard footer (download + auto-update)
+      # is appended. checkout above uses fetch-depth: 0 so the tag + its
+      # commit message are available to `git show`.
+      - name: Build release notes
+        run: |
+          {
+            echo "## $(git show -s --format=%s "$GITHUB_REF_NAME")"
+            echo
+            git show -s --format=%b "$GITHUB_REF_NAME"
+            echo
+            echo "---"
+            echo
+            echo "**Download:** \`mediarr-installer-win-unpacked.zip\` — extract anywhere on your Windows machine and run \`Mediarr Installer.exe\`."
+            echo
+            echo "Existing installs update in place: the wizard polls GitHub Releases, shows a **New version** banner on the Welcome screen, and applies the update on **Restart & install**. Saved profiles in \`%APPDATA%\\mediarr-installer\\\` survive updates."
+          } > "$RUNNER_TEMP/RELEASE_NOTES.md"
+          echo "----- release notes -----"
+          cat "$RUNNER_TEMP/RELEASE_NOTES.md"
+
       # draft: false so the in-app updater (which hits
       # /repos/.../releases?per_page=10 — which DOES include drafts in
       # the response but we filter them out at the client) discovers
@@ -114,44 +136,5 @@ jobs:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           draft: false
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: release-files/*
-          body: |
-            ## Mediarr Installer — ${{ github.ref_name }}
-
-            Desktop wizard that installs the Arr stack onto your Synology
-            NAS over SSH. Wraps the bash + Python automation in `nas/`.
-
-            ### Download
-
-            **`mediarr-installer-win-unpacked.zip`** — extract anywhere
-            on your Windows machine and run `Mediarr Installer.exe`.
-
-            ### Updates
-
-            Future updates apply themselves automatically:
-            1. The wizard polls GitHub Releases every 6 hours.
-            2. When a new release is found, you'll see a "New version"
-               banner on the Welcome screen.
-            3. Click **Install update** to download in the background,
-               then **Restart & install** when prompted — the wizard
-               swaps itself in place and relaunches.
-
-            ### Migrating from v0.3.x or earlier
-
-            v0.4.0 drops the NSIS installer. If you currently have an
-            NSIS-installed copy (Start Menu shortcut → "Mediarr
-            Installer"), do this once:
-
-            1. Download the zip below, extract to a new folder of your
-               choice (e.g. `C:\Tools\Mediarr Installer\`).
-            2. Run `Mediarr Installer.exe`.
-            3. Uninstall the old NSIS install via Settings → Apps →
-               "Mediarr Installer". Your saved profiles live in
-               `%APPDATA%\mediarr-installer\` and survive the swap.
-
-            From then on, in-place updates keep you current with one
-            click — no more downloads.
-
-            See [installer/PLAN.md](https://github.com/${{ github.repository }}/blob/master/installer/PLAN.md)
-            for the architecture and roadmap.

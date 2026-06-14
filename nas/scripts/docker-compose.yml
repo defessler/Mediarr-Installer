@@ -145,9 +145,8 @@ services:
     # arr wiring in setup-arr-config.py stay identical.
     image: ${SEERR_IMAGE:-ghcr.io/seerr-team/seerr:latest}
     container_name: seerr
-    # Available under BOTH media-server profiles. Compose drops the
-    # depends_on entry for whichever server isn't in the active profile
-    # set, so listing both is safe.
+    # Available under BOTH media-server profiles so it starts under
+    # whichever server is active (plex OR jellyfin — never both at once).
     profiles: ["plex", "jellyfin"]
     init: true
     # The Seerr image runs as user `node` (UID 1000) by default. Forcing
@@ -161,7 +160,12 @@ services:
     user: "${PUID}:${PGID}"
     networks: [media]
     security_opt: *security
-    depends_on: [plex, jellyfin]
+    # No depends_on the media server: plex and jellyfin are mutually
+    # exclusive profiles, so one is ALWAYS absent from the active project.
+    # A hard depends_on on a profile-excluded service FAILS compose
+    # validation ("service seerr depends on undefined service plex") — it
+    # is NOT silently dropped. Seerr reaches the server over HTTP and is
+    # wired up post-deploy, so it doesn't need the server to start first.
     environment:
       - TZ=${TZ}
     ports:
@@ -346,7 +350,10 @@ services:
     profiles: ["bazarr"]
     networks: [media]
     security_opt: *security
-    depends_on: [sonarr, radarr]
+    # No depends_on [sonarr, radarr]: those arrs are independently profile-
+    # gated (movies-only / TV-only installs disable one), and a hard dep on
+    # a profile-excluded service fails compose validation. Bazarr polls the
+    # arrs over HTTP + retries, so boot order doesn't matter.
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -570,7 +577,11 @@ services:
     user: "${PUID}:${PGID}"
     networks: [media]
     security_opt: *security
-    depends_on: [sonarr, radarr]
+    # No depends_on [sonarr, radarr]: those arrs are independently profile-
+    # gated (a movies-only or TV-only install disables one), and a hard dep
+    # on a profile-excluded service fails compose validation. Recyclarr
+    # syncs to the arrs over HTTP on a schedule/trigger + retries, so it
+    # doesn't need them up first.
     environment:
       - TZ=${TZ}
       - RECYCLARR_CREATE_CONFIG=true
@@ -593,11 +604,12 @@ services:
     image: python:3.12-alpine
     container_name: recyclarr-trigger
     networks: [media]
-    # depends_on retained for startup ordering when Recyclarr IS in the
-    # compose run. Compose silently drops the dep when `recyclarr` is
-    # filtered out by its profile, so this doesn't block the trigger
-    # from starting in Recyclarr-disabled stacks.
-    depends_on: [recyclarr]
+    # No depends_on recyclarr: this trigger is always-on (no profile) but
+    # recyclarr IS profile-gated, so when Recyclarr is disabled the dep
+    # would point at a service absent from the project — which fails
+    # compose validation ("depends on undefined service recyclarr") rather
+    # than being silently dropped. The trigger reaches recyclarr via
+    # docker.sock at click-time, not boot, so start ordering isn't needed.
     ports:
       - ${LAN_IP}:8889:8888
     volumes:
@@ -666,7 +678,10 @@ services:
     profiles: ["unpackerr"]
     networks: [media]
     security_opt: *security
-    depends_on: [sonarr, radarr]
+    # No depends_on [sonarr, radarr]: those arrs are independently profile-
+    # gated (movies-only / TV-only installs disable one), and a hard dep on
+    # a profile-excluded service fails compose validation. Unpackerr talks
+    # to the arrs over HTTP + retries, so boot order doesn't matter.
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
