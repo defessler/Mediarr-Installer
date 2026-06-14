@@ -24,7 +24,10 @@ const EXCLUDED_NAMES = new Set(['.env', 'migration', 'node_modules', '__pycache_
 // File globs (matched against the relative posix path). .pyc files are
 // excluded both for size and because they're CPython-major-tied — a
 // 3.10 .pyc would be ignored on a NAS running 3.12 anyway.
-const EXCLUDED_GLOBS = [/\.DS_Store$/, /Thumbs\.db$/, /\.pyc$/]
+// .log / .lock catch runtime artifacts the helper scripts (boot-orchestrator,
+// qbit-guardian) write into scripts/ during local testing — they must never be
+// bundled + uploaded over a live NAS's logs.
+const EXCLUDED_GLOBS = [/\.DS_Store$/, /Thumbs\.db$/, /\.pyc$/, /\.log$/, /\.lock$/]
 
 const toPosix = (p) => p.split(sep).join(posix.sep)
 

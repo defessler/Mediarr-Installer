@@ -380,18 +380,42 @@ else
 fi
 QB_WHITELIST="127.0.0.0/8,$QB_LAN"
 
-# Signature is the full whitelist string — bump means re-write existing
-# configs whose whitelist no longer matches. Trips on subnet change too,
-# so users renumbering their LAN get the new value next install.
-QB_SIGNATURE="WebUI\\\\AuthSubnetWhitelist=$QB_WHITELIST"
+# "Have WE configured this conf before?" is detected by the PRESENCE of
+# structural settings we write that qBittorrent's own defaults never have:
+# AuthSubnetWhitelistEnabled=true and HostHeaderValidation=false. This is
+# deliberately VALUE-INDEPENDENT. Earlier versions keyed on the full
+# AuthSubnetWhitelist VALUE, so renumbering your LAN (or a wizard change in
+# how the subnet is derived) flipped the signature and triggered a FULL
+# rewrite of the minimal template — which silently wiped every user-tuned
+# key qBittorrent persists in this same file: seed/ratio limits, global
+# speed caps, max-active-torrent counts. That was the "qBit forgets my
+# settings every time I run the installer" bug. Now, once our conf is in
+# place we leave it ENTIRELY alone (delete the file to reset to defaults).
+# A qBittorrent-self-written conf from a botched first install has NEITHER
+# marker (qBit defaults are Enabled=false and HostHeaderValidation
+# absent/true), so those still get rewritten + recovered as before.
+# NOTE: 127.0.0.0/8 is always whitelisted, so gluetun's loopback port-
+# forward command keeps working; a stale LAN entry only means the browser
+# gets the normal login prompt (never a lockout), so not re-deriving it on
+# every run is a safe trade for never clobbering user settings.
+QB_MARK_A='WebUI\AuthSubnetWhitelistEnabled=true'
+QB_MARK_B='WebUI\HostHeaderValidation=false'
+# Dedicated value-independent sentinel, written into a [Mediarr] section of
+# the template below. Unlike MARK_A/MARK_B it mirrors NO WebUI control, so it
+# survives even if the user flips both auth toggles back toward qBit's
+# defaults (the one residual way the marker check could otherwise misfire and
+# clobber settings). MARK_A/B are kept so confs written BEFORE this sentinel
+# existed are still recognised as already-configured.
+QB_MARK_C='ConfManagedBy=mediarr-wizard'
 WROTE_CONF=false
 
 if [ -z "$QB_PASS" ]; then
     echo "  ⚠ QBITTORRENT_PASS empty in .env — qBittorrent will boot with"
     echo "    a random temp password (see 'docker logs qbittorrent' once it's up)."
-elif [ -f "$QB_CONF_FILE" ] && grep -qF "$QB_SIGNATURE" "$QB_CONF_FILE" 2>/dev/null; then
-    echo "  ⏭ $QB_CONF_FILE already has our signature — leaving user's changes alone."
-    echo "    To reset to wizard defaults: delete that file and re-run setup.sh."
+elif [ -f "$QB_CONF_FILE" ] && { grep -qF "$QB_MARK_C" "$QB_CONF_FILE" 2>/dev/null || grep -qF "$QB_MARK_A" "$QB_CONF_FILE" 2>/dev/null || grep -qF "$QB_MARK_B" "$QB_CONF_FILE" 2>/dev/null; }; then
+    echo "  ⏭ qBittorrent already configured — preserving your settings as-is"
+    echo "    (seed/ratio limits, speed caps, active-torrent counts are kept)."
+    echo "    To reset to wizard defaults: delete $QB_CONF_FILE and re-run setup.sh."
 else
     mkdir -p "$QB_CONF_DIR"
     # Generate the PBKDF2-HMAC-SHA512 hash (100k iters — what qBittorrent's
@@ -429,6 +453,13 @@ print("@ByteArray("+base64.b64encode(salt).decode()+":"+base64.b64encode(key).de
         cat > "$QB_CONF_FILE" <<EOF
 [LegalNotice]
 Accepted=true
+
+[Mediarr]
+# Value-independent sentinel: a re-run greps for ConfManagedBy to know it
+# already configured this conf and must leave your settings alone, even if
+# you later change the WebUI auth toggles. qBit/QSettings round-trips this
+# unknown key verbatim; no WebUI control touches it.
+ConfManagedBy=mediarr-wizard
 
 [BitTorrent]
 Session\\DefaultSavePath=/downloads/Completed

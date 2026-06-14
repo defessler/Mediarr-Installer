@@ -15,6 +15,7 @@ import { AnimatedCheck } from '../components/AnimatedCheck.js'
 import { BigButton } from '../components/BigButton.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
+import { isEnabled } from '../../shared/env-render.js'
 
 // Per-service glyph + accent. Same vocabulary the Configure screen uses
 // for the Services checklist, so a user who learned "Sonarr is the sky-
@@ -397,6 +398,20 @@ export function DoneScreen() {
               {' '}<span className="font-mono text-emerald-400">http://{ip}:49155 → Status</span>.
             </li>
           )}
+          <li>
+            Boot resilience was set up where your platform supports it — the
+            stack auto-starts in dependency order on reboot, so qBittorrent
+            doesn&rsquo;t get stranded on &ldquo;must join at least one
+            network.&rdquo; If the install log showed a{' '}
+            <span className="font-mono">⚠</span> or{' '}
+            <span className="font-mono">ℹ</span> for this step (e.g. QNAP, or a
+            non-root run), wire the boot task manually using the steps it printed.
+            {(config.VPN_ENABLED ?? 'false').toLowerCase() === 'true' &&
+              isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
+              <>{' '}A self-heal task also recovers qBittorrent automatically if
+              gluetun is ever recreated under it (after a VPN update or crash).</>
+            )}
+          </li>
         </ul>
       </section>
 

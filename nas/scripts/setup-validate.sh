@@ -61,7 +61,7 @@ fi
 [ -f "$ENV_FILE" ]  && ok ".env exists"       || fail ".env not found — copy .env.example to .env and fill in your values"
 [ -r "$ENV_FILE" ]  && ok ".env is readable"  || fail ".env is not readable — run setup-chmod.sh"
 
-for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh boot-orchestrator.sh restart-qbit.sh recyclarr-sync.sh fix-imports.sh tune-arrs.sh stop-all.sh; do
+for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh boot-orchestrator.sh restart-qbit.sh install-boot-resilience.sh qbit-guardian.sh recyclarr-sync.sh fix-imports.sh tune-arrs.sh stop-all.sh; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         [ -x "$SCRIPT_DIR/$script" ] && ok "$script is executable" || fail "$script is not executable — run setup-chmod.sh"
     else

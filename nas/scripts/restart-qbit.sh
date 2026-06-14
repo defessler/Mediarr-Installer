@@ -98,14 +98,35 @@ fi
 echo "  VPN is on — bringing up gluetun then qBittorrent (gluetun must be healthy first)."
 echo ""
 
-# If qBittorrent's container exists but is dead, remove it so compose
-# recreates it cleanly against the (possibly new) gluetun network
-# namespace. Without this, `up -d` may try to reuse the stale container
-# and re-trigger the "must join at least one network" error.
+# Detect a qBit that is state=running but welded to a STALE gluetun
+# namespace (gluetun was rm+recreated under it). Docker resolves
+# network_mode: container:gluetun to gluetun's container ID at qBit-create
+# time and freezes it in HostConfig.NetworkMode as 'container:<id>'. If
+# that id no longer matches the LIVE gluetun id, qBit's tunnel is dead even
+# though the process runs — a plain restart can't fix it (HostConfig is
+# immutable); only rm+recreate rebinds it to the new namespace.
+qbit_wedged_running() {
+    [ "$(docker inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)" = "running" ] || return 1
+    local nm gid
+    nm=$(docker inspect -f '{{.HostConfig.NetworkMode}}' qbittorrent 2>/dev/null || echo "")
+    case "$nm" in container:*) nm="${nm#container:}" ;; *) return 1 ;; esac
+    gid=$(docker inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+    # Wedged if qBit's frozen namespace id differs from the LIVE gluetun id —
+    # including when gluetun is GONE (gid empty). nm is always non-empty here
+    # (the container:* case guard above), so a missing gluetun reads as a
+    # mismatch, which is correct: qBit's tunnel is dead either way.
+    [ "$nm" != "$gid" ]
+}
+
+# If qBittorrent's container exists but is dead, OR is running but pinned to
+# a destroyed gluetun namespace, remove it so compose recreates it cleanly
+# against the (possibly new) gluetun network namespace. Without this, `up
+# -d` may reuse the stale container and re-trigger "must join at least one
+# network" (or silently leave qBit's tunnel dead).
 if docker ps -a --format '{{.Names}}' | grep -qx qbittorrent; then
     state=$(docker inspect --format='{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
-    if [ "$state" != "running" ]; then
-        echo "  Removing stale qbittorrent container (state=$state) so compose recreates it cleanly..."
+    if [ "$state" != "running" ] || qbit_wedged_running; then
+        echo "  Removing stale/wedged qbittorrent container (state=$state) so compose recreates it cleanly..."
         docker rm -f qbittorrent >/dev/null 2>&1 || true
     fi
 fi
@@ -122,6 +143,21 @@ if docker ps -a --format '{{.Names}}' | grep -qx gluetun; then
 fi
 
 COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent
+
+# Post-up reconcile. Compose recreates a service whose own spec changed, but
+# it will NOT recreate an ALREADY-RUNNING qBittorrent just because gluetun
+# was recreated under it with a new id (there's no --always-recreate-deps by
+# default). That can leave qBit welded to the old, now-dead namespace — e.g.
+# when gluetun was merely exited (so the qBit-removal gate above saw matching
+# ids and spared it), then got recreated here. If qBit is running but its
+# frozen namespace id no longer matches the LIVE gluetun, rm it and bring it
+# up once more so a single run fully heals the wedge (matters most for the
+# documented standalone `sudo bash restart-qbit.sh` use).
+if qbit_wedged_running; then
+    echo "  qBittorrent is still on a stale gluetun namespace — recreating it once more..."
+    docker rm -f qbittorrent >/dev/null 2>&1 || true
+    COMPOSE_PROFILES=vpn,torrenting $COMPOSE -f docker-compose.yml up -d gluetun qbittorrent
+fi
 
 # Quick post-up sanity. The depends_on:service_healthy gate inside
 # compose ensures gluetun was healthy when qbit started, but it's

@@ -730,7 +730,9 @@ if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
         setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh
         setup-arr-config.py recyclarr-trigger.py recyclarr-sync.sh
         restart-qbit.sh tune-arrs.sh fix-imports.sh stop-all.sh
-        boot-orchestrator.sh boot-orchestrator.log
+        boot-orchestrator.sh boot-orchestrator.log .boot-orchestrator.lock
+        install-boot-resilience.sh qbit-guardian.sh qbit-guardian.log
+        .qbit-guardian.lock
         # v0.3.24 also moved the compose files + .env.example + docs +
         # .payload-sha into scripts/. Pre-v0.3.24 installs leave these
         # orphaned at the root after sync — clean them up too. (.env
@@ -1077,6 +1079,16 @@ echo "        the target media but the parser couldn't auto-confirm)"
 run_step 12 "Auto-confirm manual imports" \
     run_python_besteffort "$SCRIPT_DIR/auto-manual-import.py"
 
+# ── Boot + self-heal resilience (best-effort, unnumbered) ─────────────────────
+# Auto-wire a boot hook (boot-orchestrator.sh) + a periodic qBittorrent self-heal
+# (qbit-guardian.sh) so NAS reboots and gluetun recreations never strand qBit on
+# "must join at least one network". UNNUMBERED on purpose: it must run on EVERY
+# pass (including --resume / --from N) so existing installs pick it up, and it
+# must never flip the install red — install-boot-resilience.sh is idempotent and
+# graceful-degrades to printed manual steps, always exiting 0. Not part of the
+# run_step / .setup-state accounting, so it never strands resume.
+bash "$SCRIPT_DIR/install-boot-resilience.sh" || true
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 LAN_IP=$(grep -m1 '^LAN_IP=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
@@ -1224,16 +1236,18 @@ echo "    Control Panel → Task Scheduler → Create → Scheduled Task →"
 echo "    User-defined script → run as root, schedule = weekly:"
 echo "      python3 $SCRIPT_DIR/auto-manual-import.py"
 echo ""
-echo "  ── Boot ordering (RECOMMENDED) ────────────────"
-echo "  On NAS reboot, qBittorrent can get stuck on 'must join at least"
-echo "  one network' because Docker restarts containers in arbitrary"
-echo "  order — qBit sometimes tries before gluetun's namespace exists."
-echo "  Fix: wire a boot-time task that brings the stack up via compose"
-echo "  (which respects depends_on)."
-echo ""
-echo "  DSM → Control Panel → Task Scheduler → Create → Triggered Task"
-echo "    Task name:  Mediarr stack — boot orchestrator"
-echo "    User:       root"
-echo "    Event:      Boot-up"
-echo "    Run command:"
-echo "      bash $SCRIPT_DIR/boot-orchestrator.sh"
+echo "  ── Boot + self-heal resilience ────────────────"
+echo "  setup.sh tried to wire this up for you — see the 'Boot + self-heal"
+echo "  resilience' section in the output above for what installed on THIS"
+echo "  platform:"
+echo "    • Boot hook — brings the stack up in dependency order on every"
+echo "      reboot (gluetun before qBittorrent), so qBit never gets stuck"
+echo "      on 'must join at least one network'. (Manual on QNAP.)"
+echo "    • Self-heal — when VPN + qBittorrent are on, a check runs every"
+echo "      5 min and recovers qBit if gluetun is recreated under it."
+echo "  If that section printed a ⚠ or ℹ (e.g. QNAP, a non-root run, or an"
+echo "  unknown platform), wire the boot hook manually:"
+echo "    DSM → Control Panel → Task Scheduler → Triggered Task → Boot-up,"
+echo "      run as root:  bash $SCRIPT_DIR/boot-orchestrator.sh"
+echo "    Linux/UGREEN →  sudo crontab -e, add:"
+echo "      @reboot sleep 30 && bash $SCRIPT_DIR/boot-orchestrator.sh"

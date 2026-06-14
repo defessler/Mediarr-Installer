@@ -40,7 +40,7 @@ for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-n
 done
 
 # Helper scripts — user-invoked from CLI or Task Scheduler.
-for script in restart-qbit.sh recyclarr-sync.sh fix-imports.sh tune-arrs.sh stop-all.sh boot-orchestrator.sh; do
+for script in restart-qbit.sh recyclarr-sync.sh fix-imports.sh tune-arrs.sh stop-all.sh boot-orchestrator.sh install-boot-resilience.sh qbit-guardian.sh; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
         echo "  ✔ $script"

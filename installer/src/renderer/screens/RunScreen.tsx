@@ -683,6 +683,10 @@ export function RunScreen() {
           `mkdir -p ${shellQuote(`${targetDir}/scripts`)}; ` +
           `[ -f ${shellQuote(envLegacy)} ] && cp -p ${shellQuote(envLegacy)} ${shellQuote(`${envLegacy}.backup-${ts}`)} && echo "backed up legacy .env"; ` +
           `[ -f ${shellQuote(envScripts)} ] && cp -p ${shellQuote(envScripts)} ${shellQuote(`${envScripts}.backup-${ts}`)} && echo "backed up scripts/.env"; ` +
+          // Prune: keep only the 3 newest .env backups per location so
+          // repeated re-installs/updates don't pile them up. busybox-safe
+          // (no `xargs -r`): the while-read loop is a no-op on empty input.
+          `for d in ${shellQuote(envLegacy)} ${shellQuote(envScripts)}; do ls -1t "$d".backup-* 2>/dev/null | tail -n +4 | while read -r f; do rm -f "$f"; done; done; ` +
           `echo "(done)"`,
         sudo: true,
       }).then((r) => wlog(r.stdout.trim() || '(done)'))

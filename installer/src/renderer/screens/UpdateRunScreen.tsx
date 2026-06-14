@@ -51,7 +51,7 @@ const CHANNEL_ID = 'compose-update'
 const HELPER_CONTAINERS: readonly string[] = ['recyclarr-trigger']
 
 type Phase = 'idle' | 'running' | 'done' | 'failed'
-type Action = 'pull' | 'sync' | 'homepage' | `step-${number}` | null
+type Action = 'full' | 'pull' | 'sync' | 'homepage' | `step-${number}` | null
 
 export function UpdateRunScreen() {
   const { sessionId, targetDir, setStep } = useWizard()
@@ -335,6 +335,45 @@ export function UpdateRunScreen() {
     }
   }
 
+  /** The "just make my NAS current" action — the canonical way to deliver
+   *  wizard fixes to an existing install. Syncs the bundled payload, then
+   *  runs setup.sh END-TO-END against the .env ALREADY on the NAS. We do
+   *  NOT re-render/overwrite .env here: that keeps every on-NAS value
+   *  intact (notably the API keys the configurator discovered and wrote
+   *  back, which the wizard form blanks). setup.sh is idempotent +
+   *  REINSTALL_PRESERVE-aware, so this preserves data, configs and secrets
+   *  while applying every script fix — and it's what installs the boot
+   *  hook + qBittorrent self-heal for users who only ever click Update. */
+  async function updateStack() {
+    if (!sessionId || phase === 'running') return
+    reset()
+    setLastAction('full')
+    setPhase('running')
+
+    const synced = await syncPayload()
+    if (!synced) return    // syncPayload already set phase=failed
+
+    wlog('Re-running setup.sh against your existing .env (idempotent — your data, configs and secrets are preserved)...')
+    try {
+      await window.installer.ssh.execStream({
+        sessionId,
+        cmd:
+          PATH_PREFIX +
+          // v0.3.23+ keeps setup.sh under scripts/; fall back to the
+          // install root for pre-v0.3.23 layouts that haven't migrated.
+          `cd ${shellQuote(targetDir)} && ` +
+          `if [ -f scripts/setup.sh ]; then cd scripts; fi && ` +
+          `bash setup.sh`,
+        sudo: true,
+        channelId: CHANNEL_ID,
+      })
+    } catch (e) {
+      setErrorMsg((e as Error).message)
+      setPhase('failed')
+      reportError('Update stack to latest', e)
+    }
+  }
+
   /** Pull newer images and recreate containers. Same .env-aware
    *  compose-files + COMPOSE_PROFILES dance setup.sh does, inlined
    *  as bash. Doesn't sync scripts first — this is purely about
@@ -568,7 +607,8 @@ docker compose $FILES --progress plain --ansi never up -d`
 
   const running = phase === 'running'
   const lastActionLabel =
-    lastAction === 'pull' ? 'Pull + recreate containers'
+    lastAction === 'full' ? 'Update stack to latest'
+    : lastAction === 'pull' ? 'Pull + recreate containers'
     : lastAction === 'sync' ? 'Sync wizard scripts'
     : lastAction === 'homepage' ? 'Refresh dashboard'
     : lastAction && lastAction.startsWith('step-')
@@ -617,6 +657,41 @@ docker compose $FILES --progress plain --ansi never up -d`
           </div>
         </div>
       </motion.header>
+
+      {/* Primary update path — what most users want: bring the NAS fully
+          current (latest scripts + a full idempotent setup.sh re-run)
+          without re-walking the whole Configure wizard. This is the only
+          action that runs setup.sh end-to-end, so it's how script fixes
+          (incl. the qBittorrent boot hook + self-heal) reach an existing
+          install. Sits above the targeted actions. */}
+      <section className="shrink-0">
+        <div className="rounded-lg border border-emerald-600/40 bg-emerald-950/20 p-4 flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-base text-emerald-200">Update stack to latest</h3>
+            <p className="text-sm text-slate-300 mt-1">
+              Syncs the newest wizard scripts and re-runs{' '}
+              <code className="font-mono bg-slate-800 px-1 rounded">setup.sh</code> against your existing{' '}
+              <code className="font-mono bg-slate-800 px-1 rounded">.env</code> — applies every fix (including the
+              qBittorrent boot &amp; self-heal hooks) while preserving your data, configs and secrets.
+            </p>
+            <p className="text-xs text-slate-400 mt-1 italic">
+              The recommended way to pick up a new wizard release. Idempotent — safe to run anytime.
+            </p>
+          </div>
+          <BigButton
+            size="md"
+            variant="primary"
+            onClick={updateStack}
+            disabled={running}
+            loading={running && lastAction === 'full'}
+            icon={!(running && lastAction === 'full') ? <Play size={15} fill="currentColor" /> : undefined}
+          >
+            {running && lastAction === 'full' ? 'Updating…' : 'Update to latest'}
+          </BigButton>
+        </div>
+      </section>
+
+      <p className="text-xs text-slate-500 shrink-0 -mb-1">Or run a targeted action:</p>
 
       {/* Action picker — four cards in a 2x2 grid. Disabled while one
           is running so the user can't kick off a second action mid-

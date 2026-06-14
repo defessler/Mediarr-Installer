@@ -2523,26 +2523,27 @@ def configure_qbittorrent(base, username, password, env=None,
         'category_changed_tmm_enabled':  False,
     }
     user_preference = {
-        'max_ratio_enabled':             True,
+        # Seed FOREVER by default — no share-ratio limit and no seeding-
+        # time limit. Both master switches are OFF, so the numeric values
+        # below are inert fallbacks (sane starting points if you flip a
+        # limit on in the WebUI). Nothing is ever auto-paused or auto-
+        # removed for hitting a seed limit.
+        'max_ratio_enabled':             False,
         'max_ratio':                     2.0,
-        # Share-limit action — fires when EITHER max_ratio OR
-        # max_seeding_time below is hit (qBit uses one shared action).
-        # API enum: -1=no action, 0=Stop/Pause, 1=Remove (keeps files),
-        # 2=EnableSuperSeeding, 3=Remove+Delete files. Pinned to 0 so
-        # completed torrents stay in the list (paused) rather than
-        # silently disappearing — losing the torrent destroys seeding
-        # history and the user's ability to re-cross-seed later, and
-        # paused torrents don't count against max_active_* either way.
+        # Share-limit action IF you enable a limit later (qBit uses one
+        # shared action for ratio + seeding-time). API enum: -1=no action,
+        # 0=Stop/Pause, 1=Remove (keeps files), 2=EnableSuperSeeding,
+        # 3=Remove+Delete files. Pinned to 0 so a completed torrent is
+        # NEVER auto-deleted — it would only pause. Losing a torrent
+        # destroys seeding history and the ability to re-cross-seed later.
         'max_ratio_act':                 0,
-        'max_seeding_time_enabled':      True,
-        'max_seeding_time':              14400,    # minutes = 10 days
-        # Queue limits — torrents past max_active_torrents queue up
-        # instead of all running at once, which keeps the WebUI responsive
-        # and the per-process FD/socket budget under control on large
-        # libraries. Counts: downloads (active grab slots) <= uploads
-        # (seeding slots) <= total active. queueing_enabled is the
-        # master switch — without it qBit ignores the three caps.
-        'queueing_enabled':              True,
+        'max_seeding_time_enabled':      False,
+        'max_seeding_time':              14400,    # minutes = 10 days (inert)
+        # Queueing OFF → UNLIMITED active torrents / downloads / uploads.
+        # queueing_enabled is the master switch; with it off qBit ignores
+        # the three caps below (kept as sane values for if you turn the
+        # queue on in the UI).
+        'queueing_enabled':              False,
         'max_active_downloads':          20,
         'max_active_uploads':            500,
         'max_active_torrents':           500,
@@ -3431,6 +3432,26 @@ def overwrite_config_file(label, path, content):
         ok(f"{label} config written → {path}")
     except Exception as e:
         fail(f"{label} config: {e}")
+
+
+def backup_before_overwrite(path, keep=3):
+    """Copy an existing config to <path>.before-mediarr-<ts>.bak before it
+    gets regenerated, so a user's hand-edits stay recoverable. Best-effort
+    (never fails the run); prunes to the most recent `keep` backups; no-op
+    when the file is absent (fresh install)."""
+    try:
+        if not os.path.exists(path):
+            return
+        import glob, shutil, time
+        shutil.copy2(path, f"{path}.before-mediarr-{time.strftime('%Y%m%d-%H%M%S')}.bak")
+        backups = sorted(glob.glob(f"{path}.before-mediarr-*.bak"))
+        for old in backups[:-keep]:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+    except Exception:
+        pass  # a backup failure must never abort configuration
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -4390,6 +4411,11 @@ def main():
         overwrite_config_file("Homepage settings",
             f"{homepage_cfg}/settings.yaml",
             render_homepage_settings(env))
+        # widgets.yaml is the Homepage file users are most likely to hand-
+        # customise (extra widgets, weather, custom API tiles), and it's
+        # regenerated every run (see note above). Back it up first so an
+        # edit is recoverable instead of silently lost.
+        backup_before_overwrite(f"{homepage_cfg}/widgets.yaml")
         overwrite_config_file("Homepage widgets",
             f"{homepage_cfg}/widgets.yaml",
             render_homepage_widgets(env))
