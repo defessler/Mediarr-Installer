@@ -251,12 +251,25 @@ done
 
 section "Firewall"
 
+# The installer only APPLIES iptables rules + installs the rc.d boot script
+# on Synology/DSM — setup.sh guards its firewall step on /etc/synoinfo.conf
+# and skips it on every other NAS family, where the user manages the firewall
+# through their own UI. Mirror that guard here. Without it, this section
+# false-fails every service port (no rules were ever added → setup.sh aborts
+# at step 5 when validate runs as root) and tells the user to run a DSM-only
+# `cp … /usr/local/etc/rc.d/…` command whose target directory doesn't exist.
+if [ ! -f /etc/synoinfo.conf ]; then
+    warn "Firewall validation skipped — not DSM. The installer doesn't manage"
+    warn "  iptables here; open the stack ports in your NAS firewall UI (Unraid,"
+    warn "  QTS, ufw / firewalld, …) if your host runs one."
+    SKIP_FIREWALL=1
+    NOT_DSM=1
 # Root-required: iptables -L always needs CAP_NET_ADMIN. Detect non-root
 # invocation and skip the firewall section with a clear hint, rather
 # than reporting every port as failed (the silent failure mode is
 # misleading — looks like the firewall rules are missing when really
 # we just couldn't read them).
-if [ "$(id -u)" -ne 0 ]; then
+elif [ "$(id -u)" -ne 0 ]; then
     warn "Skipping firewall checks — re-run with sudo to inspect iptables rules."
     SKIP_FIREWALL=1
 else
@@ -290,11 +303,16 @@ check_port 5056  "Seerr"
 check_port 8181  "Tautulli"
 check_port 3000  "Homepage"
 
-if [ -f /usr/local/etc/rc.d/media-firewall.sh ]; then
-    ok "Firewall script installed in rc.d (survives reboots)"
-else
-    warn "Firewall script not installed in rc.d — rules won't survive a reboot"
-    warn "Run: sudo cp $SCRIPT_DIR/setup-firewall.sh /usr/local/etc/rc.d/media-firewall.sh && sudo chmod 755 /usr/local/etc/rc.d/media-firewall.sh"
+# The rc.d boot script is DSM-only (setup.sh installs it just on Synology).
+# Off-DSM there's no rc.d to populate, so skip this persistence check entirely
+# rather than emit a remediation command that can't run.
+if [ "${NOT_DSM:-0}" -ne 1 ]; then
+    if [ -f /usr/local/etc/rc.d/media-firewall.sh ]; then
+        ok "Firewall script installed in rc.d (survives reboots)"
+    else
+        warn "Firewall script not installed in rc.d — rules won't survive a reboot"
+        warn "Run: sudo cp $SCRIPT_DIR/setup-firewall.sh /usr/local/etc/rc.d/media-firewall.sh && sudo chmod 755 /usr/local/etc/rc.d/media-firewall.sh"
+    fi
 fi
 
 # ── Docker ────────────────────────────────────────────────────────────────────
