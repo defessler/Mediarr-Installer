@@ -2645,6 +2645,44 @@ def configure_qbittorrent(base, username, password, env=None,
         except Exception as e:
             warn(f"qBittorrent: couldn't set seeding/TMM defaults ({e}) — set manually in Settings → BitTorrent + Settings → Downloads (Auto TMM off)")
 
+    # ── No WebUI login on the LAN ─────────────────────────────────────────────
+    # qBit skips the password for any client whose IP is in this subnet
+    # whitelist, so browsers on the user's home network reach the dashboard
+    # directly (off-LAN access still needs the password). Applied on EVERY run
+    # via the API — even when the conf above was preserved — so a renumbered LAN
+    # (or a conf written before this existed) still gets the right subnet, while
+    # touching ONLY these access keys and never the user's tuned seed/rate
+    # settings. 127.0.0.0/8 stays whitelisted so gluetun's loopback port-forward
+    # command and these in-container API calls keep bypassing the password.
+    # Mirrors setup-folders.sh's AuthSubnetWhitelist derivation (LAN_SUBNET, else
+    # a /24 from LAN_IP, else the all-RFC1918 fallback).
+    _lan_subnet = (env.get('LAN_SUBNET') or '').strip()
+    _lan_ip     = (env.get('LAN_IP') or '').strip()
+    _m = re.match(r'^(\d+\.\d+\.\d+)\.\d+$', _lan_ip)
+    if _lan_subnet:
+        _lan_nets = [s.strip() for s in _lan_subnet.split(',') if s.strip()]
+    elif _m:
+        _lan_nets = [f"{_m.group(1)}.0/24"]
+    else:
+        _lan_nets = ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12']
+    qb_auth = {
+        'bypass_local_auth':                    True,
+        'bypass_auth_subnet_whitelist_enabled': True,
+        # qBit returns/stores this newline-joined, so join the same way for a
+        # clean idempotent compare below.
+        'bypass_auth_subnet_whitelist':         '\n'.join(['127.0.0.0/8'] + _lan_nets),
+    }
+    if all(prefs.get(k) == v for k, v in qb_auth.items()):
+        skip(f"WebUI LAN auth bypass ({', '.join(_lan_nets)} — no login on your network)")
+    else:
+        try:
+            set_data = urlencode({'json': json.dumps(qb_auth)}).encode()
+            opener.open(f"{base}/api/v2/app/setPreferences", set_data, timeout=10)
+            ok(f"WebUI: no login needed from the LAN ({', '.join(_lan_nets)} bypasses the password)")
+        except Exception as e:
+            warn(f"qBittorrent: couldn't set the LAN auth bypass ({e}) — enable it by hand in "
+                 f"Settings → Web UI → 'Bypass authentication for clients in whitelisted IP subnets'")
+
     # Catch-up tagging for any torrents added BEFORE the autorun was
     # wired (re-running setup.sh after the user has been using the
     # stack). On a fresh install this is a no-op — empty torrent list.
