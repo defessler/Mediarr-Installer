@@ -1,7 +1,7 @@
 #!/bin/bash
 # ── Post-Deploy Validation ──
 #
-# Run after docker compose up -d to verify the stack is working correctly.
+# Run after $COMPOSE up -d to verify the stack is working correctly.
 # Checks containers, dashboard pages, VPN, and media visibility.
 #
 # Usage:
@@ -51,6 +51,38 @@ is_enabled() {
     esac
 }
 
+# ── Container runtime (Docker or Podman) ──────────────────────────────────────
+# Mirror setup.sh / collect-diagnostics.sh so validation works on a Podman-only
+# host too — otherwise every $RT inspect/exec/logs below fails and a perfectly
+# healthy Podman stack gets reported as a FAILED install at this step. DOCKER_SOCK
+# in .env (set when Podman is the runtime) → export DOCKER_HOST so the CLI reaches
+# the right socket; then pick the runtime CLI + compose front-end.
+DOCKER_SOCK="$(env_val DOCKER_SOCK)"
+if [ -n "$DOCKER_SOCK" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+fi
+RT="docker"
+COMPOSE="docker compose"
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then COMPOSE="podman-compose"; fi
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then
+            export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then
+            export DOCKER_HOST="unix:///run/podman/podman.sock"
+        fi
+    fi
+fi
+
 # VPN flag — used to gate the gluetun checks.
 vpn_on() {
     local val
@@ -98,7 +130,7 @@ is_enabled ENABLE_RECYCLARR   && CONTAINERS+=(recyclarr recyclarr-trigger)
 is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 
 for container in "${CONTAINERS[@]}"; do
-    STATUS=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
+    STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
     if [ "$STATUS" = "running" ]; then
         ok "$container is running"
     elif [ -z "$STATUS" ]; then
@@ -122,12 +154,12 @@ done
 # "qbittorrent is not running" without a cause. Catch it here so the
 # user sees the actual fix.
 if is_enabled ENABLE_QBITTORRENT && vpn_on; then
-    GLUETUN_STATE=$(docker inspect -f '{{.State.Status}}' gluetun 2>/dev/null || echo missing)
-    QBIT_STATE=$(docker inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
+    GLUETUN_STATE=$($RT inspect -f '{{.State.Status}}' gluetun 2>/dev/null || echo missing)
+    QBIT_STATE=$($RT inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
     if [ "$GLUETUN_STATE" != "running" ] && [ "$QBIT_STATE" != "running" ]; then
         warn "qBittorrent can't start — gluetun is $GLUETUN_STATE. Fix:"
         warn "    bash $SCRIPT_DIR/restart-qbit.sh"
-        warn "  (or check gluetun's VPN credentials:  docker compose logs gluetun --tail 50)"
+        warn "  (or check gluetun's VPN credentials:  $COMPOSE logs gluetun --tail 50)"
     fi
 fi
 
@@ -182,7 +214,7 @@ check_url_lenient() {
 #       gluetun's network namespace, so when gluetun's VPN tunnel
 #       fails (bad WG key, etc.) qBit's WebUI never becomes
 #       reachable. Fix: restart-qbit.sh after fixing gluetun, OR
-#       check `docker compose logs gluetun --tail 50`.
+#       check `$COMPOSE logs gluetun --tail 50`.
 #   (c) Container not running                   — install left it
 #       wedged (the install log usually has a "qBittorrent's WebUI
 #       isn't responding after 80s of retries" warning). Recovery is
@@ -197,19 +229,19 @@ check_qbit() {
         return
     fi
     local qbit_state gluetun_state gluetun_health
-    qbit_state=$(docker inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
-    gluetun_state=$(docker inspect -f '{{.State.Status}}' gluetun 2>/dev/null || echo missing)
-    gluetun_health=$(docker inspect -f '{{.State.Health.Status}}' gluetun 2>/dev/null || echo none)
+    qbit_state=$($RT inspect -f '{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
+    gluetun_state=$($RT inspect -f '{{.State.Status}}' gluetun 2>/dev/null || echo missing)
+    gluetun_health=$($RT inspect -f '{{.State.Health.Status}}' gluetun 2>/dev/null || echo none)
     if [ "$qbit_state" = "missing" ]; then
         fail "$label ($url) — container missing. Run: bash $SCRIPT_DIR/restart-qbit.sh"
     elif [ "$qbit_state" != "running" ]; then
         fail "$label ($url) — container is $qbit_state. Run: bash $SCRIPT_DIR/restart-qbit.sh"
     elif vpn_on && [ "$gluetun_state" != "running" ]; then
         fail "$label ($url) — gluetun is $gluetun_state (qBit shares its network)."
-        fail "    Run: bash $SCRIPT_DIR/restart-qbit.sh   (or check 'docker compose logs gluetun --tail 50')"
+        fail "    Run: bash $SCRIPT_DIR/restart-qbit.sh   (or check '$COMPOSE logs gluetun --tail 50')"
     elif vpn_on && [ "$gluetun_health" = "unhealthy" ]; then
         fail "$label ($url) — gluetun is unhealthy (qBit shares its network). VPN credentials may be wrong."
-        fail "    Check:  docker compose logs gluetun --tail 50"
+        fail "    Check:  $COMPOSE logs gluetun --tail 50"
     else
         # Container's up, network's healthy, WebUI still doesn't answer.
         # On Synology spinning rust + non-trivial resume data this is
@@ -236,7 +268,7 @@ check_qbit() {
         # generic "migrat" prefix or "webui" hit) — the kind of thing
         # that points at root cause vs. routine init noise.
         local logs
-        logs=$(docker logs --tail 40 qbittorrent 2>&1 || true)
+        logs=$($RT logs --tail 40 qbittorrent 2>&1 || true)
         local relevant
         relevant=$(echo "$logs" | grep -iE 'error|denied|fatal|cannot|unable to|refused|address already in use|conflict|crash|bad config|invalid|aborted|terminated' | head -10 || true)
         if [ -n "$relevant" ]; then
@@ -248,10 +280,10 @@ check_qbit() {
         fi
         echo "$logs" | tail -30 | sed 's/^/      /'
         echo "    Recovery options:"
-        echo "      1. Full log:  docker logs qbittorrent --tail 200"
+        echo "      1. Full log:  $RT logs qbittorrent --tail 200"
         echo "      2. Restart:   bash $SCRIPT_DIR/restart-qbit.sh"
         echo "      3. If qBit is in a config-crash loop, reset its config:"
-        echo "           docker compose stop qbittorrent"
+        echo "           $COMPOSE stop qbittorrent"
         echo "           rm /volume1/docker/media/qbittorrent/config/qBittorrent/qBittorrent.conf"
         echo "           bash $SCRIPT_DIR/setup.sh   (regenerates the conf + restarts qBit)"
     fi
@@ -260,7 +292,7 @@ check_qbit() {
 # Diagnostic check for Tautulli. A bare HTTP-000 here is almost always
 # a "still booting" condition — Tautulli's first-boot writes config.ini,
 # then re-reads it, which takes 30-90s on slower NASes. setup-arr-
-# config.py only does `docker compose stop tautulli` + `docker compose
+# config.py only does `$COMPOSE stop tautulli` + `$COMPOSE
 # up -d tautulli` (returns once the container is starting, not healthy)
 # so the post-deploy check can fire before Tautulli has bound its port.
 check_tautulli() {
@@ -273,13 +305,13 @@ check_tautulli() {
         return
     fi
     local state restart_count
-    state=$(docker inspect -f '{{.State.Status}}' tautulli 2>/dev/null || echo missing)
-    restart_count=$(docker inspect -f '{{.RestartCount}}' tautulli 2>/dev/null || echo 0)
+    state=$($RT inspect -f '{{.State.Status}}' tautulli 2>/dev/null || echo missing)
+    restart_count=$($RT inspect -f '{{.RestartCount}}' tautulli 2>/dev/null || echo 0)
     if [ "$state" = "missing" ]; then
-        fail "$label ($url) — container missing. Run: docker compose up -d tautulli"
+        fail "$label ($url) — container missing. Run: $COMPOSE up -d tautulli"
         return
     elif [ "$state" != "running" ]; then
-        fail "$label ($url) — container is $state. Run: docker compose up -d tautulli"
+        fail "$label ($url) — container is $state. Run: $COMPOSE up -d tautulli"
         return
     fi
     # Container is "running" but WebUI not serving. Two possibilities:
@@ -293,7 +325,7 @@ check_tautulli() {
     if [ "$restart_count" -gt 1 ]; then
         fail "$label ($url) — container is crash-looping (RestartCount=$restart_count)."
         local logs
-        logs=$(docker logs --tail 20 tautulli 2>&1 || true)
+        logs=$($RT logs --tail 20 tautulli 2>&1 || true)
         local relevant
         relevant=$(echo "$logs" | grep -iE 'error|denied|fatal|fail|cannot|unable|refused|exception|traceback' | head -6 || true)
         if [ -n "$relevant" ]; then
@@ -304,9 +336,9 @@ check_tautulli() {
             echo "$logs" | tail -10 | sed 's/^/      /'
         fi
         echo "    Recovery:"
-        echo "      1. Full log:  docker logs tautulli --tail 100"
+        echo "      1. Full log:  $RT logs tautulli --tail 100"
         echo "      2. Reset config (loses Tautulli-only state, NOT Plex history):"
-        echo "           docker compose stop tautulli"
+        echo "           $COMPOSE stop tautulli"
         echo "           mv /volume1/docker/media/tautulli/config/config.ini{,.broken-\$(date +%Y%m%d-%H%M%S)}"
         echo "           bash $SCRIPT_DIR/setup.sh"
     else
@@ -314,7 +346,7 @@ check_tautulli() {
         warn "$label ($url) — container is running but not serving HTTP yet."
         warn "    Tautulli's first boot can take 60-90s on slower NASes. Wait, then re-run:"
         warn "      bash $SCRIPT_DIR/post-deploy-validate.sh"
-        warn "    Still 000? Check:  docker logs tautulli --tail 50"
+        warn "    Still 000? Check:  $RT logs tautulli --tail 50"
     fi
 }
 
@@ -396,11 +428,11 @@ fi
 
 # Only meaningful when the user actually opted into VPN-wrapped torrenting
 # (VPN_ENABLED=true AND ENABLE_QBITTORRENT=true). Otherwise gluetun isn't
-# running and `docker exec gluetun` would fail; skip with a clear note.
+# running and `$RT exec gluetun` would fail; skip with a clear note.
 if is_enabled ENABLE_QBITTORRENT && vpn_on; then
     section "Gluetun VPN"
     echo "  Checking VPN IP..."
-    VPN_IP=$(docker exec gluetun wget -qO- --timeout=10 https://api.ipify.org 2>/dev/null)
+    VPN_IP=$($RT exec gluetun wget -qO- --timeout=10 https://api.ipify.org 2>/dev/null)
     if [ -z "$VPN_IP" ]; then
         fail "Could not get IP through Gluetun — VPN may not be connected"
     else
@@ -414,7 +446,7 @@ fi
 
 # ── Media Visibility ──────────────────────────────────────────────────────────
 
-# docker exec'ing into disabled arrs fails ("no such container") and
+# $RT exec'ing into disabled arrs fails ("no such container") and
 # false-fails the post-deploy. Each media check needs its container to
 # exist — gate them on the matching ENABLE_*.
 
@@ -427,7 +459,7 @@ check_media() {
     local path="$2"
     local label="$3"
     local count
-    count=$(docker exec "$container" find "$path" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
+    count=$($RT exec "$container" find "$path" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
     if [ "$count" -gt 0 ]; then
         ok "$label — $count items found ($container:$path)"
     else
