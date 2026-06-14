@@ -862,29 +862,22 @@ run_step 2 "Create data and config directories" \
 #
 # Going through run_step in BOTH branches so the wizard's stepper rail
 # parses a matching "Step 3 complete" marker and advances the progress
-# bar regardless of which path was taken. The non-Synology skip body
-# emits the same final "✔ Step 3 complete" line, just after a "what
-# you need to do" hint for the user.
+# bar regardless of which path was taken. On non-DSM we run the read-only
+# diagnose-firewall.sh (family-aware GUIDANCE — detects an active host
+# firewall and prints the exact ports to open; never writes a rule), which
+# also emits a clean exit 0 so run_step records "✔ Step 3 complete".
 if [ -f /etc/synoinfo.conf ]; then
     run_step 3 "Apply firewall rules" \
         bash "$SCRIPT_DIR/setup-firewall.sh"
 else
-    # Use a here-doc instead of inline echo args so the message can
-    # contain any character (apostrophes, parens, em dashes) without
-    # tripping the surrounding shell quoting — an earlier version had
-    # echo "The wizard's firewall step" which terminated the single-
-    # quoted bash -c body early and made bash -n fail.
-    run_step 3 "Apply firewall rules" bash -c 'cat <<MSG
-  ⏭ Synology-specific firewall integration skipped — not DSM.
-    The wizard step installs DSM-style rc.d rules that no other NAS
-    family uses. On this host, open the stack ports in your NAS firewall
-    UI (Unraid Settings → Network, QTS Control Panel → Security, ufw /
-    firewalld / OPNsense — whatever applies). Required ports:
-      32400 (Plex), 3000 (Homepage), 5056 (Seerr),
-      8181 (Tautulli), 8191 (Flaresolverr),
-      49150–49156 (arrs + qBittorrent + SAB).
-MSG
-exit 0'
+    # Can't safely write firewall rules off-DSM (no rc.d boot dir, and the
+    # host firewall — if any — is the user's to manage). Instead of a static
+    # "open these ports" blurb, diagnose-firewall.sh inspects the actual host
+    # firewall (ufw/firewalld/nftables/iptables) and prints copy-paste unblock
+    # commands for ONLY the enabled services' ports — or confirms nothing is
+    # blocking. Read-only and always exits 0, so the step never goes red.
+    run_step 3 "Apply firewall rules" \
+        bash "$SCRIPT_DIR/diagnose-firewall.sh"
 fi
 
 echo "  Note: fetches your WireGuard private key from the NordVPN API"

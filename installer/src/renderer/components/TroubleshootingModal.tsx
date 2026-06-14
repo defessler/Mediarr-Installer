@@ -578,6 +578,20 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
   -d '{"name": "DownloadedAlbumsScan", "path": "/data/Downloads/Usenet/complete/music"}'`,
   },
 
+  // ── Can't reach a dashboard from another device ──────────────────────
+  {
+    category: 'Can\'t open a dashboard from another device',
+    symptom: 'A service loads on the NAS itself but not from my laptop / phone on the same network',
+    cause:
+      'The intuitive culprit — a host firewall (ufw / firewalld / iptables) — is usually NOT the cause for this stack. Docker publishes the service ports via DNAT/FORWARD, which bypasses the host INPUT chain, so a default-deny INPUT firewall does not actually block them. The real causes are almost always (1) your router or access point has "client isolation" enabled so LAN devices can\'t reach each other, or (2) rarely, a custom DROP rule in Docker\'s DOCKER-USER chain. (Synology DSM manages its own firewall via setup-firewall.sh.)',
+    fix:
+      'Run the bundled, read-only triage script. It lists exactly which LAN ports your enabled services publish, checks the one host chain that can actually block them (DOCKER-USER), flags the ufw/firewalld caveats, and points you at the usual real cause (router/AP isolation) — printing precise commands without ever changing a firewall rule itself.',
+    command:
+      `# Read-only — inspects your firewall and PRINTS guidance, never modifies it:
+sudo bash <INSTALL_DIR>/diagnose-firewall.sh`,
+    family: ['ugreen', 'unraid', 'qnap', 'omv', 'truenas', 'linux', 'asustor', 'terramaster', 'zimaos'],
+  },
+
   // ── Homepage ────────────────────────────────────────────────────────
   {
     category: 'Homepage dashboard',

@@ -32,7 +32,7 @@ fi
 echo ""
 echo "Setting permissions on scripts..."
 # Core setup scripts — run by setup.sh in order.
-for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh; do
+for script in setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh diagnose-firewall.sh setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
         chmod 755 "$SCRIPT_DIR/$script"
         echo "  ✔ $script"
