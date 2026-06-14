@@ -31,6 +31,7 @@ Still requires manual setup after:
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -38,6 +39,17 @@ import xml.etree.ElementTree as ET
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
+
+
+# Container runtime CLI (docker | podman). Honour CONTAINER_RUNTIME from the
+# environment (setup.sh's pick) so a Podman-only host configures against the same
+# runtime the install used; else detect it docker-first the same way setup.sh
+# does. The exec / restart / inspect calls below are syntax-identical across
+# docker and podman, so swapping the binary name is all that's needed.
+CONTAINER_RT = (
+    os.environ.get('CONTAINER_RUNTIME')
+    or ('docker' if shutil.which('docker') else ('podman' if shutil.which('podman') else 'docker'))
+)
 
 
 def _find_install_dir():
@@ -620,7 +632,7 @@ def container_can_write(container, path, as_uid=None, as_gid=None):
     permission denial."""
     import subprocess
     test_file = f"{path.rstrip('/')}/.mediarr-write-test"
-    cmd = ["docker", "exec"]
+    cmd = [CONTAINER_RT, "exec"]
     if as_uid is not None:
         user = f"{as_uid}"
         if as_gid is not None:
@@ -1890,7 +1902,7 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
     # which override files are active.
     try:
         subprocess.run(
-            ['docker', 'restart', '-t', '15', 'tautulli'],
+            [CONTAINER_RT, 'restart', '-t', '15', 'tautulli'],
             check=True, capture_output=True, timeout=90, text=True,
         )
     except subprocess.CalledProcessError as e:
@@ -1918,7 +1930,7 @@ def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
         time.sleep(2)
         try:
             r = subprocess.run(
-                ['docker', 'inspect', '-f', '{{.State.Status}}', 'tautulli'],
+                [CONTAINER_RT, 'inspect', '-f', '{{.State.Status}}', 'tautulli'],
                 capture_output=True, timeout=5, text=True,
             )
             state = (r.stdout or '').strip()
@@ -4086,7 +4098,7 @@ def main():
             # config file written after the container is up has no
             # effect until restart.
             try:
-                subprocess.run(['docker', 'restart', 'unpackerr'],
+                subprocess.run([CONTAINER_RT, 'restart', 'unpackerr'],
                                capture_output=True, timeout=30, text=True)
                 ok("Unpackerr restarted to pick up the new keys")
             except Exception as e:
@@ -4325,7 +4337,7 @@ def main():
                 # recyclarr.yml resolve. Capture output and return the
                 # CompletedProcess for caller to handle.
                 return subprocess.run(
-                    ['docker', 'exec', 'recyclarr', 'recyclarr', 'sync'],
+                    [CONTAINER_RT, 'exec', 'recyclarr', 'recyclarr', 'sync'],
                     capture_output=True, timeout=120, text=True,
                 )
             try:
@@ -4587,7 +4599,7 @@ def homepage_only_main():
     import subprocess
     try:
         r = subprocess.run(
-            ['docker', 'restart', 'homepage'],
+            [CONTAINER_RT, 'restart', 'homepage'],
             capture_output=True, timeout=30, text=True,
         )
         if r.returncode == 0:

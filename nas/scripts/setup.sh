@@ -243,6 +243,13 @@ else
     echo "Install Docker (or Podman + a compose front-end) first."
     exit 1
 fi
+# Export so the child scripts (setup-folders.sh, setup-arr-config.py, …) inherit
+# the runtime we picked instead of re-detecting — keeps them consistent on the
+# narrow host that has the docker CLI but only a podman compose front-end. (The
+# run_python container path below deliberately does NOT forward it: that
+# container ships the docker CLI talking to the mounted socket, so 'docker' is
+# the right value inside it.)
+export CONTAINER_RUNTIME
 
 # ── Python runner (host python3, else a throwaway container) ──────────────────
 # The config steps (setup-arr-config.py + the indexer/import helpers) and the
@@ -277,7 +284,7 @@ run_python() {
         -w "$SCRIPT_DIR" \
         -e INSTALL_DIR="$INSTALL_DIR" \
         --entrypoint sh \
-        python:3-alpine \
+        docker.io/python:3-alpine \
         -c 'command -v docker >/dev/null 2>&1 || apk add --no-cache docker-cli >/dev/null 2>&1 || true; exec python3 "$@"' _ "$@"
 }
 # Best-effort variant for the optional steps — never fails the install.
@@ -617,11 +624,21 @@ check_port_conflicts() {
         # netstat present on every supported NAS family. Match :PORT
         # followed by whitespace to avoid catching :49152x or :4915.
         if netstat -lnt 2>/dev/null | awk -v p=":$port$" '$4 ~ p { found=1 } END { exit !found }'; then
-            # Port is bound. Is it by OUR container of the same name?
-            # If yes, it's not a conflict — compose will recreate that
-            # container in step 6. If no, something foreign is holding
-            # the port and step 6 will fail.
-            if ! $CONTAINER_RUNTIME ps --format '{{.Names}}' 2>/dev/null | grep -qx "$svc"; then
+            # Port is bound. Is it PUBLISHED by one of OUR running containers?
+            # If yes, it's not a conflict — compose will recreate/reuse that
+            # container in the next step. If no container publishes it, some-
+            # thing foreign holds the port and the compose-up would fail.
+            #
+            # Check by published host port, NOT by container name. Under VPN,
+            # qBittorrent's WebUI (49156) is published by GLUETUN — qBit uses
+            # network_mode: container:gluetun — and the qbittorrent container is
+            # often stopped/wedged on a re-install (the classic "qBit lost its
+            # network" state). A name match on "$svc" then sees no running
+            # "qbittorrent" and wrongly flags our OWN gluetun-fronted port as a
+            # foreign conflict, halting the install. Matching ":$port->" in any
+            # container's published-ports list handles the gluetun indirection
+            # (and a stopped qBit) and works the same on docker + podman.
+            if ! $CONTAINER_RUNTIME ps --format '{{.Ports}}' 2>/dev/null | grep -q ":$port->"; then
                 conflicts="$conflicts $svc:$port"
             fi
         fi

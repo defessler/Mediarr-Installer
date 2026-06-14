@@ -57,6 +57,10 @@ export function UpdateRunScreen() {
   const { sessionId, targetDir, setStep } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [lastAction, setLastAction] = useState<Action>(null)
+  /** Whether the action controls (primary card + targeted-action grid) are
+   *  shown. Collapsing them hands the full height to the log — which is what
+   *  the user wants while a run streams. Auto-collapses when a run starts. */
+  const [showActions, setShowActions] = useState(true)
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   /** Selected step in the dropdown — defaults to step 8 (the most common
@@ -101,6 +105,11 @@ export function UpdateRunScreen() {
     })
     return () => { offData(); offClose() }
   }, [sessionId])
+
+  // Auto-collapse the action controls when a run starts so the log gets the
+  // full height — that's when the user wants to watch output, not pick actions.
+  // They can reopen them from the header toggle.
+  useEffect(() => { if (phase === 'running') setShowActions(false) }, [phase])
 
   // Reset on each action start so a previous run's output doesn't
   // confuse the user. We DON'T clear lastAction — the label "last
@@ -686,6 +695,14 @@ docker compose $FILES --progress plain --ansi never up -d`
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowActions((v) => !v)}
+            className="text-xs px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors shrink-0"
+            title={showActions ? 'Hide the update controls to see more of the log' : 'Show the update actions'}
+          >
+            {showActions ? 'Hide actions ▴' : 'Show actions ▾'}
+          </button>
           {linesRef.current.length > 0 && (
             <LogActions
               lines={linesRef.current}
@@ -702,6 +719,7 @@ docker compose $FILES --progress plain --ansi never up -d`
         </div>
       </motion.header>
 
+      {showActions && (<>
       {/* Primary update path — what most users want: bring the NAS fully
           current (latest scripts + a full idempotent setup.sh re-run)
           without re-walking the whole Configure wizard. This is the only
@@ -810,6 +828,7 @@ docker compose $FILES --progress plain --ansi never up -d`
           </div>
         </div>
       </section>
+      </>)}
 
       <div className="flex-1 min-h-0">
         <LogPanel lines={linesRef.current} />

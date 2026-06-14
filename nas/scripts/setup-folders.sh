@@ -21,6 +21,16 @@ else
     ENV_FILE="$INSTALL_DIR_DEFAULT/.env"
 fi
 
+# Container runtime (docker | podman). Honour CONTAINER_RUNTIME if setup.sh
+# exported one, else detect docker-first the same way setup.sh does — so a
+# Podman-only host can still generate the qBit password hash and restart qBit
+# (the run / ps / restart commands below are syntax-identical across both).
+RT="${CONTAINER_RUNTIME:-}"
+if [ -z "$RT" ]; then
+    RT=docker
+    command -v docker >/dev/null 2>&1 || { command -v podman >/dev/null 2>&1 && RT=podman; }
+fi
+
 # Read PUID/PGID from .env — required, no fallback
 if [ ! -f "$ENV_FILE" ]; then
     echo "Error: .env not found at $ENV_FILE"
@@ -431,7 +441,7 @@ print("@ByteArray("+base64.b64encode(salt).decode()+":"+base64.b64encode(key).de
     if command -v python3 >/dev/null 2>&1; then
         HASH=$(printf '%s\n' "$QB_PASS" | python3 -c "$QB_HASH_PY")
     else
-        HASH=$(printf '%s\n' "$QB_PASS" | docker run --rm -i python:3-alpine python3 -c "$QB_HASH_PY")
+        HASH=$(printf '%s\n' "$QB_PASS" | $RT run --rm -i docker.io/python:3-alpine python3 -c "$QB_HASH_PY")
     fi
     if [ -z "$HASH" ]; then
         echo "  ✘ qBittorrent password-hash generation failed (no host python3,"
@@ -505,13 +515,13 @@ fi
 # `docker compose up -d` later only recreates containers whose IMAGE
 # changed, not bind-mounted config files. Restart explicitly.
 if [ "$WROTE_CONF" = true ]; then
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^qbittorrent$'; then
+    if $RT ps --format '{{.Names}}' 2>/dev/null | grep -q '^qbittorrent$'; then
         echo "  Restarting qbittorrent so it picks up the new credentials..."
-        if docker restart qbittorrent >/dev/null 2>&1; then
+        if $RT restart qbittorrent >/dev/null 2>&1; then
             echo "  ✔ qbittorrent restarted"
         else
-            echo "  ⚠ docker restart qbittorrent failed — please run it manually:"
-            echo "      docker compose restart qbittorrent"
+            echo "  ⚠ $RT restart qbittorrent failed — please run it manually:"
+            echo "      $RT compose restart qbittorrent"
         fi
     fi
 fi
