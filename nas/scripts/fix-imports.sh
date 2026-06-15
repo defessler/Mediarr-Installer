@@ -50,6 +50,30 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
+# Pick the container runtime (docker, or podman on a podman-only host).
+# Matches restart-qbit.sh. Honour DOCKER_SOCK from .env so a standalone
+# run targets the right daemon.
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)"
+if [ -n "$DOCKER_SOCK" ] && [ -z "${DOCKER_HOST:-}" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+fi
+RT="docker"
+# This script uses only the runtime CLI (ps/exec), never compose — so pick the
+# runtime on `command -v docker` alone (don't require a compose front-end the
+# way restart-qbit.sh does). Only fall back to podman on a docker-less host.
+if command -v docker >/dev/null 2>&1; then
+    :
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if   [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then export DOCKER_HOST="unix:///run/podman/podman.sock"; fi
+    fi
+fi
+
 env_val() { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r'; }
 
 # Default-on opt-out semantics matching the rest of the toolchain.
@@ -94,7 +118,7 @@ fi
 # step + post-install instructions handle); if they're not, every
 # `docker exec` below would error in a confusing way. Catch it once
 # at the top with a clear message.
-if ! docker ps >/dev/null 2>&1; then
+if ! $RT ps >/dev/null 2>&1; then
     echo "✘ docker not reachable from this shell."
     echo "  Either the daemon's down, or your user isn't in the 'docker' group."
     echo "  Try: sudo bash $0"
@@ -224,12 +248,12 @@ is_enabled ENABLE_LIDARR && dump_stuck Lidarr "http://$LAN_IP:49154/api/v1" "$LI
 
 count_dir() {
     local container=$1 path=$2
-    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
+    if ! $RT ps --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
         printf "    %-50s — (container not running)\n" "$container:$path"
         return
     fi
     local count
-    count=$(docker exec "$container" find "$path" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
+    count=$($RT exec "$container" find "$path" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
     printf "    %-50s — %s items\n" "$container:$path" "$count"
 }
 

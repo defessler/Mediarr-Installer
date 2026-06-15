@@ -75,6 +75,31 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+# Pick the container runtime (docker, or podman on a podman-only host).
+# Matches restart-qbit.sh. Honour DOCKER_SOCK from .env so a standalone
+# run targets the right daemon.
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)"
+if [ -n "$DOCKER_SOCK" ] && [ -z "${DOCKER_HOST:-}" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+fi
+RT="docker"
+# This script uses only the runtime CLI (stop/start/run), never compose — so
+# pick the runtime on `command -v docker` alone (don't require a compose
+# front-end the way restart-qbit.sh does). Fall back to podman only on a
+# docker-less host.
+if command -v docker >/dev/null 2>&1; then
+    :
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if   [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then export DOCKER_HOST="unix:///run/podman/podman.sock"; fi
+    fi
+fi
+
 # Pull values from .env without `source`-ing it (which would
 # execute any shell expansion in the values). grep + cut is safer
 # for an installer-controlled file.
@@ -130,7 +155,7 @@ vacuum_arr() {
     # Stop the container so the DB isn't locked. `docker stop` waits
     # up to its grace period; the arrs handle SIGTERM cleanly.
     echo "    Stopping $name..."
-    docker stop "$name" >/dev/null 2>&1
+    $RT stop "$name" >/dev/null 2>&1
 
     # Need sqlite3 binary. Synology DSM 7 has it in /usr/bin/sqlite3
     # under recent versions; fall back to running it via a tiny
@@ -175,7 +200,7 @@ vacuum_arr() {
         # as a literal prefix rather than a glob (SC2295).
         rel_db="${full_path#"$INSTALL_DIR"/}"
         sqlite3_result=0
-        docker run --rm -v "$INSTALL_DIR:/wd" -w /wd alpine:latest \
+        $RT run --rm -v "$INSTALL_DIR:/wd" -w /wd alpine:latest \
             sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 "$1" "VACUUM; REINDEX;"' \
             -- "/wd/$rel_db" 2>"$ERR_FILE" || sqlite3_result=$?
     fi
@@ -185,7 +210,7 @@ vacuum_arr() {
         rm -f "$ERR_FILE"
         echo "    Restoring backup..."
         cp "$bak" "$full_path"
-        docker start "$name" >/dev/null 2>&1
+        $RT start "$name" >/dev/null 2>&1
         return 1
     fi
     rm -f "$ERR_FILE"
@@ -198,7 +223,7 @@ vacuum_arr() {
     # on next compose up, but we want it running NOW so the user can
     # use it again immediately.
     echo "    Starting $name..."
-    docker start "$name" >/dev/null 2>&1
+    $RT start "$name" >/dev/null 2>&1
 }
 
 if [ "$SKIP_VACUUM" -eq 0 ]; then
@@ -351,6 +376,6 @@ if [ "$DRY_RUN" -eq 1 ]; then
 else
     echo "  Try Sonarr / Seerr / etc. now. Page nav should be noticeably faster."
     echo "  If it's STILL slow, the remaining suspect is Plex hogging the box:"
-    echo "    docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'"
+    echo "    $RT stats --no-stream"
 fi
 echo "=============================================="

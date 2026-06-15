@@ -43,14 +43,32 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Pick the right compose binary — v2 plugin preferred, legacy v1
-# script as fallback. Matches setup.sh's detection.
-if docker compose version >/dev/null 2>&1; then
+# Pick the container runtime + compose front-end (docker, or podman on a
+# podman-only host). Matches restart-qbit.sh. Honour DOCKER_SOCK from .env
+# so a standalone run targets the right daemon.
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)"
+if [ -n "$DOCKER_SOCK" ] && [ -z "${DOCKER_HOST:-}" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+fi
+RT="docker"; COMPOSE=""
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
-else
-    echo "✘ Neither 'docker compose' nor 'docker-compose' is available."
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then COMPOSE="podman-compose"; fi
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if   [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then export DOCKER_HOST="unix:///run/podman/podman.sock"; fi
+    fi
+fi
+if [ -z "$COMPOSE" ]; then
+    echo "✘ No container compose tool found (docker compose / docker-compose / podman compose)."
     exit 1
 fi
 
@@ -103,7 +121,7 @@ echo ""
 # when no container references it, but external networks or stranded
 # networks from old installs sometimes survive. Surface them but
 # don't auto-delete — could clobber unrelated stacks.
-STRAY=$(docker network ls --format '{{.Name}}' | grep -E '^(media|mediarr|nas)_' || true)
+STRAY=$($RT network ls --format '{{.Name}}' | grep -E '^(media|mediarr|nas)_' || true)
 if [ -n "$STRAY" ]; then
     echo "  Note: these docker networks are still defined (delete manually if unused):"
     echo "$STRAY" | sed 's/^/    /'
@@ -113,12 +131,12 @@ fi
 LEFTOVERS=""
 for c in prowlarr flaresolverr plex jellyfin tautulli seerr sonarr radarr lidarr \
          bazarr qbittorrent gluetun sabnzbd homepage recyclarr unpackerr; do
-    if docker ps --format '{{.Names}}' | grep -qx "$c"; then
+    if $RT ps --format '{{.Names}}' | grep -qx "$c"; then
         LEFTOVERS="$LEFTOVERS $c"
     fi
 done
 if [ -n "$LEFTOVERS" ]; then
     echo ""
     echo "  ⚠ Still running:$LEFTOVERS"
-    echo "    Force-stop them with:  docker stop$LEFTOVERS"
+    echo "    Force-stop them with:  $RT stop$LEFTOVERS"
 fi

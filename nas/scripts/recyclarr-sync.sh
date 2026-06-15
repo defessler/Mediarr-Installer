@@ -66,13 +66,42 @@ RECYCLARR_CONFIG_DIR="$INSTALL_DIR/recyclarr/config"
 STAMP_FILE="$RECYCLARR_CONFIG_DIR/.last-sync"
 LOG_FILE="$RECYCLARR_CONFIG_DIR/sync.log"
 
+# Pick the container runtime + compose front-end (docker, or podman on a
+# podman-only host). Matches restart-qbit.sh. Honour DOCKER_SOCK from .env
+# so a standalone run targets the right daemon.
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)"
+if [ -n "$DOCKER_SOCK" ] && [ -z "${DOCKER_HOST:-}" ]; then
+    case "$DOCKER_SOCK" in
+        unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
+        *)                        export DOCKER_HOST="unix://$DOCKER_SOCK" ;;
+    esac
+fi
+RT="docker"; COMPOSE=""
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+elif command -v podman >/dev/null 2>&1; then
+    RT="podman"
+    if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
+    elif command -v podman-compose >/dev/null 2>&1; then COMPOSE="podman-compose"; fi
+    if [ -z "${DOCKER_HOST:-}" ]; then
+        if   [ -S "$HOME/.local/share/containers/podman/podman.sock" ]; then export DOCKER_HOST="unix://$HOME/.local/share/containers/podman/podman.sock"
+        elif [ -S /run/podman/podman.sock ]; then export DOCKER_HOST="unix:///run/podman/podman.sock"; fi
+    fi
+fi
+if [ -z "$COMPOSE" ]; then
+    echo "✘ No container compose tool found (docker compose / docker-compose / podman compose)."
+    exit 1
+fi
+
 # Verify the container is running. We don't try to `docker compose up
 # -d recyclarr` automatically — the user's compose profile selection
 # might exclude recyclarr deliberately, and we shouldn't override
 # that without consent. If the container isn't running, surface why.
-if ! docker ps --format '{{.Names}}' | grep -qx 'recyclarr'; then
+if ! $RT ps --format '{{.Names}}' | grep -qx 'recyclarr'; then
     echo "✘ recyclarr container isn't running."
-    echo "  Bring it up first:  docker compose --profile recyclarr up -d recyclarr"
+    echo "  Bring it up first:  $COMPOSE --profile recyclarr up -d recyclarr"
     echo "  Or set ENABLE_RECYCLARR=true in .env and re-run setup.sh."
     exit 1
 fi
@@ -84,7 +113,7 @@ fi
 # failure rather than die silently.
 echo "── recyclarr sync starting at $(date -Is) ──" | tee -a "$LOG_FILE"
 rc=0
-docker exec recyclarr recyclarr sync 2>&1 | tee -a "$LOG_FILE" || rc=$?
+$RT exec recyclarr recyclarr sync 2>&1 | tee -a "$LOG_FILE" || rc=$?
 
 if [ "$rc" -eq 0 ]; then
     # Write the .last-sync stamp Homepage's tile reads. Same format
@@ -102,7 +131,7 @@ else
     #   - Sonarr / Radarr down (gluetun timeout, container restart loop)
     #   - recyclarr.yml hand-edit introduced a YAML syntax error
     echo "✘ recyclarr sync exited with rc=$rc" | tee -a "$LOG_FILE"
-    echo "  Inspect:  docker exec recyclarr recyclarr sync   (run interactively)"
+    echo "  Inspect:  $RT exec recyclarr recyclarr sync   (run interactively)"
     echo "  Or:       tail -50 $LOG_FILE"
     exit "$rc"
 fi
