@@ -54,6 +54,14 @@ export function DoneScreen() {
   // below), so initializing true avoids a one-frame "Setup finished — with
   // issues" flash before the effect sets it.
   const [running, setRunning] = useState(true)
+  // Re-entrancy guard for runValidate(). This MUST be separate from the
+  // `running` state: `running` starts true (for the no-flash reason above),
+  // so if runValidate() gated on it, the auto-run would no-op forever and the
+  // Done screen would hang on "Checking…" for every install. The ref tracks
+  // an actually-in-flight validation (cleared only when the stream closes or
+  // setup fails), so a real double-click on "Re-check" is still prevented
+  // without blocking the initial run.
+  const runningRef = useRef(false)
   const [exit, setExit] = useState<number | null>(null)
   const linesRef = useRef<string[]>([])
   const [, setTick] = useState(0)
@@ -112,13 +120,15 @@ export function DoneScreen() {
     const offClose = window.installer.ssh.onStreamClose((d) => {
       if (d.channelId !== VALIDATE_CHANNEL) return
       setExit(d.exitCode)
+      runningRef.current = false
       setRunning(false)
     })
     return () => { offData(); offClose() }
   }, [sessionId])
 
   async function runValidate() {
-    if (!sessionId || running) return
+    if (!sessionId || runningRef.current) return
+    runningRef.current = true
     linesRef.current = []
     setHealth({})
     setExit(null)
@@ -142,6 +152,7 @@ export function DoneScreen() {
       })
     } catch (e) {
       linesRef.current.push(`Error: ${(e as Error).message}`)
+      runningRef.current = false
       setRunning(false)
       reportError('Post-deploy validate', e)
     }

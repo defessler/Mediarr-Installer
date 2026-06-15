@@ -138,8 +138,14 @@ if [ -f "$ENV_FILE" ]; then
             # visible -- it is exactly the value needed to debug a VPN that
             # will not connect. (Keep this comment apostrophe-free: it lives
             # inside a single-quoted awk program.)
+            # CUSTOM|JSON catch the two free-form escape-hatch blobs whose KEY
+            # name looks innocent but whose VALUE carries nested secrets:
+            # CUSTOM_VPN_ENV (holds WIREGUARD_PRIVATE_KEY / OPENVPN_PASSWORD)
+            # and CUSTOM_INDEXERS_JSON (each entry holds a live apiKey). Without
+            # these tokens the name-based mask wrote both verbatim into the
+            # shareable bundle.
             key = toupper($1)
-            if (key ~ /PASS|TOKEN|SECRET|KEY|PRIVATE|CLAIM|API|CRED|COOKIE|AUTH|SESSION|_PID|_USER/)
+            if (key ~ /PASS|TOKEN|SECRET|KEY|PRIVATE|CLAIM|API|CRED|COOKIE|AUTH|SESSION|_PID|_USER|CUSTOM|JSON/)
                 print $1 "=***MASKED***"
             else
                 print
@@ -173,6 +179,7 @@ scrub_secrets() {
         -e 's/([Cc]ookie:[[:space:]]*)[^[:space:]"'"'"']+/\1***/g' \
         -e 's/([Tt]oken[=:"[:space:]]+)[A-Za-z0-9._-]{8,}/\1***/g' \
         -e 's/([Pp]ass(word)?[=:"[:space:]]+)[^[:space:]"'"'"']+/\1***/g' \
+        -e 's/(provided for this session:[[:space:]]*)[^[:space:]"'"'"']+/\1***/g' \
         -e 's/([Ww][Ii][Rr][Ee][Gg][Uu][Aa][Rr][Dd]_[Pp][Rr][Ii][Vv][Aa][Tt][Ee]_[Kk][Ee][Yy][=:[:space:]]+)[^[:space:]"'"'"']+/\1***/g'
 }
 # Tail logs ONE service at a time (low fd pressure on Synology) for every

@@ -107,13 +107,19 @@ esac
 check_var "QBITTORRENT_USER"
 check_var "QBITTORRENT_PASS"
 
-# API keys are auto-discovered from config.xml after first boot — warn only
+# Arr API keys are auto-grabbed from each app's config.xml by
+# setup-arr-config.py on every run, so a blank value in .env is the EXPECTED,
+# fully self-healing state — NOT something the user must fix. Emit it as an
+# informational ✔ (ok) rather than a ⚠ (warn): the wizard folds warn lines into
+# its "Needs Action" list, which made these auto-grabbed keys look like a
+# problem the user had to chase down. A genuinely missing key is caught later,
+# at config time, by setup-arr-config.py (fail_unreachable when the key is None).
 check_var_warn() {
     local key="$1"
     local val
     val=$(env_val "$key")
     if [ -z "$val" ]; then
-        warn "$key not set — auto-discovered from config.xml by setup-arr-config.py"
+        ok "$key blank in .env — auto-grabbed from config.xml at config time (nothing to set)"
     else
         ok "$key is set"
     fi
@@ -291,7 +297,18 @@ check_port() {
 # won't be bound by anything so iptables will (correctly) say no rule
 # exists for them, which would false-fail this validator. Prowlarr stays
 # always-on.
-is_enabled ENABLE_PLEX        && check_port 32400 "Plex"
+# Media server: setup-firewall.sh opens 8096 for Jellyfin or 32400 for Plex,
+# and ONLY when ENABLE_PLEX (the media-server master toggle) is on. Mirror that
+# branch exactly — otherwise a Jellyfin install false-fails on the absent Plex
+# 32400 rule, and a media-server-off install false-fails too, halting a
+# perfectly correct install at step 5's abort_if_failed.
+if is_enabled ENABLE_PLEX; then
+    if [ "$MEDIA_SERVER" = "jellyfin" ]; then
+        check_port 8096 "Jellyfin"
+    else
+        check_port 32400 "Plex"
+    fi
+fi
 check_port 49150 "Prowlarr"
 is_enabled ENABLE_RADARR      && check_port 49151 "Radarr"
 is_enabled ENABLE_SONARR      && check_port 49152 "Sonarr"
@@ -299,9 +316,14 @@ is_enabled ENABLE_BAZARR      && check_port 49153 "Bazarr"
 is_enabled ENABLE_LIDARR      && check_port 49154 "Lidarr"
 is_enabled ENABLE_SABNZBD     && check_port 49155 "SABnzbd"
 is_enabled ENABLE_QBITTORRENT && check_port 49156 "qBittorrent"
-check_port 5056  "Seerr"
-check_port 8181  "Tautulli"
-check_port 3000  "Homepage"
+# Seerr runs under either media server but only when the media-server stack is
+# enabled; Tautulli is Plex-only (firewall skips it for Jellyfin); Homepage
+# gates on its own toggle. All three mirror setup-firewall.sh's conditions.
+is_enabled ENABLE_PLEX        && check_port 5056  "Seerr"
+if is_enabled ENABLE_PLEX && [ "$MEDIA_SERVER" != "jellyfin" ]; then
+    check_port 8181 "Tautulli"
+fi
+is_enabled ENABLE_HOMEPAGE    && check_port 3000  "Homepage"
 
 # The rc.d boot script is DSM-only (setup.sh installs it just on Synology).
 # Off-DSM there's no rc.d to populate, so skip this persistence check entirely

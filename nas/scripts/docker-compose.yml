@@ -586,6 +586,13 @@ services:
       - SLSKD_DOWNLOADS_DIR=/downloads
       # No remote (web) config — config is env-driven + immutable.
       - SLSKD_REMOTE_CONFIGURATION=false
+      # WebUI/REST bind port. MUST be set: slskd defaults to 5000, but the
+      # whole stack targets 5030 — gluetun publishes ${LAN_IP}:5030:5030,
+      # FIREWALL_INPUT_PORTS opens 5030, the host firewall opens 5030, and
+      # soularr connects to :5030. Omitting this leaves slskd on 5000 so the
+      # published port maps to nothing: WebUI unreachable + soularr fails
+      # every loop, in BOTH VPN and no-VPN modes.
+      - SLSKD_HTTP_PORT=5030
       # Peer listen port. With NordVPN there is NO inbound port-forward,
       # so this is best-effort outbound; search/browse quality is degraded
       # (documented upstream). Kept at the default for PF-capable providers.

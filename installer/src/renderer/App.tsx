@@ -427,9 +427,16 @@ export function App() {
           // Disable steps that aren't reachable yet:
           //  - any step past welcome needs a profile
           //  - session-required steps need an active SSH session
+          //  - while a remote op is running (busy), lock navigation to
+          //    OTHER steps: leaving Run/Update/Migrate mid-flight unmounts
+          //    the screen and discards its state while setup.sh keeps
+          //    running on the NAS, and returning + re-entering would race a
+          //    second run against the first. The current step stays clickable
+          //    (a harmless no-op) so the rail doesn't look frozen.
           const disabled =
             (s.id !== 'welcome' && !activeProfileId) ||
-            (STEPS_NEEDING_SESSION.includes(s.id) && !sessionId)
+            (STEPS_NEEDING_SESSION.includes(s.id) && !sessionId) ||
+            (busy && s.id !== step)
           // Tailwind can't generate class names from interpolated
           // strings, so the two accent palettes are hand-spelled.
           const cls =
@@ -473,9 +480,11 @@ export function App() {
                     (mode === 'update' ? 'ring-sky-400/60' : 'ring-emerald-400/60') : '')
                 }
                 title={disabled
-                  ? (s.id !== 'welcome' && !activeProfileId
-                    ? 'Select a profile first'
-                    : 'Connect to your NAS first')
+                  ? (busy && s.id !== step
+                    ? 'Wait for the current operation to finish before navigating away'
+                    : s.id !== 'welcome' && !activeProfileId
+                      ? 'Select a profile first'
+                      : 'Connect to your NAS first')
                   : `Go to ${s.label}`}
               >
                 <span className="font-mono text-xs">{i + 1}</span>

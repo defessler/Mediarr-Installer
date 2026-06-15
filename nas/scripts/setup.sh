@@ -489,7 +489,17 @@ run_step() {
         echo ""
         echo "  ✔ Step $step complete."
         PASS=$((PASS + 1))
-        mark_step_done "$step"
+        # Only advance the resume checkpoint while the run is still clean.
+        # mark_step_done records last_completed=<step>, and --resume restarts
+        # at last_completed+1. If an EARLIER step already failed (FAIL>0) but a
+        # later step happens to succeed, marking it here would advance the
+        # checkpoint PAST the failed step — so --resume would skip the failed
+        # step entirely and print "Setup complete!". Gating on FAIL==0 keeps
+        # the checkpoint as an unbroken prefix, so --resume always lands on the
+        # first step that didn't finish.
+        if [ "$FAIL" -eq 0 ]; then
+            mark_step_done "$step"
+        fi
     else
         echo ""
         echo "  ✘ Step $step failed — fix the errors above and re-run."

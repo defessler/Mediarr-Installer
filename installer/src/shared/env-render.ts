@@ -271,15 +271,26 @@ function renderVpnBlock(v: EnvFormValues): string[] {
     return out
   }
   const provider = findVpnProvider(v.VPN_PROVIDER)
-  // VPN_PROVIDER + VPN_TYPE come from the registry, not the user's
-  // form state — picking Surfshark must always emit VPN_TYPE=openvpn
-  // even if the form's VPN_TYPE field is stale from a NordVPN default.
-  out.push(line('VPN_PROVIDER', provider.id))
-  out.push(line('VPN_TYPE', provider.vpnType))
-  out.push(line('VPN_COUNTRIES', v.VPN_COUNTRIES))
-  // The provider knows which gluetun env vars it needs and how to
-  // build them from the collected form values.
+  // The provider knows which gluetun env vars it needs and how to build
+  // them from the collected form values. Compute first so the 'custom'
+  // escape hatch can surface the user's pasted VPN_SERVICE_PROVIDER /
+  // VPN_TYPE as the canonical keys below.
   const gluetunEnv = provider.toGluetunEnv(v)
+  // VPN_PROVIDER + VPN_TYPE normally come from the registry, not the
+  // user's form state — picking Surfshark must always emit
+  // VPN_TYPE=openvpn even if the form's VPN_TYPE is a stale NordVPN
+  // default. EXCEPTION: the 'custom' provider's whole purpose is to let a
+  // power-user run a gluetun provider we don't model, so its real
+  // VPN_SERVICE_PROVIDER / VPN_TYPE (parsed from the pasted CUSTOM_VPN_ENV)
+  // must win — otherwise compose feeds gluetun a literal provider 'custom'
+  // as wireguard (VPN_SERVICE_PROVIDER=${VPN_PROVIDER}, VPN_TYPE=${VPN_TYPE}),
+  // and the escape hatch can never select any real provider.
+  const isCustom = provider.id === 'custom'
+  out.push(line('VPN_PROVIDER',
+    isCustom ? (gluetunEnv.VPN_SERVICE_PROVIDER || provider.id) : provider.id))
+  out.push(line('VPN_TYPE',
+    isCustom ? (gluetunEnv.VPN_TYPE || provider.vpnType) : provider.vpnType))
+  out.push(line('VPN_COUNTRIES', v.VPN_COUNTRIES))
   for (const [k, val] of Object.entries(gluetunEnv)) {
     // Skip VPN_SERVICE_PROVIDER / VPN_TYPE / SERVER_COUNTRIES — already
     // emitted under their canonical keys above, gluetun reads either name.

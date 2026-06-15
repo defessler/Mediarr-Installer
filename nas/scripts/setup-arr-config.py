@@ -868,8 +868,27 @@ def add_remote_path_mapping(base, key, api, host, remote, local, container=None)
     existing = GET(base, key, f"/{api}/remotePathMapping")
     if existing is None:
         fail("Remote path mapping: can't reach API"); return
-    if any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
-        skip(f"Remote path: {remote} → {local}"); return
+    # Match on host AND remotePath. A mapping with the same remotePath but a
+    # DIFFERENT host is stale — a VPN on/off reinstall flips the qBit client's
+    # host between 'gluetun' (VPN on) and 'qbittorrent' (off). The arr matches
+    # remote-path mappings against the download client's host, so a left-behind
+    # mapping with the old host silently breaks path translation and imports
+    # fail with "path does not exist". Migrate it in place instead of skipping.
+    match = next((m for m in existing
+                  if m.get('remotePath', '').rstrip('/') == remote.rstrip('/')), None)
+    if match is not None:
+        if (match.get('host') or '') == host:
+            skip(f"Remote path: {host} {remote} → {local}"); return
+        old_host = match.get('host')
+        updated = dict(match)
+        updated['host'] = host
+        updated['localPath'] = local
+        res = PUT(base, key, f"/{api}/remotePathMapping/{match.get('id')}", updated)
+        if res is not None:
+            ok(f"Remote path: {host} {remote} → {local} (migrated from host '{old_host}')")
+        else:
+            fail(f"Remote path: {host} {remote} → {local} (host migration failed)")
+        return
 
     # Pre-flight write check: same Synology shared-folder ACL trap as
     # root folders. The arr validates that `local` is writable from
@@ -3462,12 +3481,17 @@ def render_homepage_services(env, ip):
         out.extend(automation)
         out.append("")
 
-    # Downloads section — SAB (usenet) + qBit (torrenting).
+    # Downloads section — SAB (usenet) + qBit (torrenting) + slskd (Soulseek
+    # music, opt-in). slskd is the lone OPT-IN service so it uses
+    # is_optin_enabled (explicit-true), not the default-on is_enabled — and its
+    # WebUI is published by gluetun on 5030 (see SLSKD_HTTP_PORT in compose).
     downloads = []
     if is_enabled(env, 'ENABLE_SABNZBD'):
         downloads.append(block("SABnzbd",     f"http://{ip}:49155", "Usenet client",         "sabnzbd.png"))
     if is_enabled(env, 'ENABLE_QBITTORRENT'):
         downloads.append(block("qBittorrent", f"http://{ip}:49156", "Torrent client (VPN)",  "qbittorrent.png"))
+    if is_optin_enabled(env, 'ENABLE_SOULSEEK'):
+        downloads.append(block("slskd",       f"http://{ip}:5030",  "Soulseek — music (VPN)", "slskd.png"))
     if downloads:
         out.append("- Downloads:")
         out.extend(downloads)
@@ -3987,6 +4011,13 @@ def main():
                 configure_plex_notification(SONARR, SONARR_KEY, "api/v3", plex_token, on_episode_file=True)
         if ARR_USER and ARR_PASS:
             configure_auth(SONARR, SONARR_KEY, "api/v3", ARR_USER, ARR_PASS)
+    else:
+        # wait_ready timed out — config.xml exists (key non-None) but the HTTP
+        # API never bound in time, so NONE of the configuration above ran. Block
+        # the install marker (mirrors SABnzbd/qBittorrent's unreachable paths)
+        # so the next working run re-applies Sonarr's baseline instead of seeing
+        # a false REINSTALL_PRESERVE for a service that was never configured.
+        note_unreachable()
 
     # ── Radarr ────────────────────────────────────────────────────────────────
 
@@ -4029,6 +4060,10 @@ def main():
                 configure_plex_notification(RADARR, RADARR_KEY, "api/v3", plex_token, on_episode_file=False)
         if ARR_USER and ARR_PASS:
             configure_auth(RADARR, RADARR_KEY, "api/v3", ARR_USER, ARR_PASS)
+    else:
+        # wait_ready timed out — see Sonarr block. Block the marker so a later
+        # working run re-applies Radarr's baseline.
+        note_unreachable()
 
     # ── Lidarr ────────────────────────────────────────────────────────────────
 
@@ -4114,6 +4149,10 @@ def main():
                 configure_plex_notification(LIDARR, LIDARR_KEY, "api/v1", plex_token, on_episode_file=False)
         if ARR_USER and ARR_PASS:
             configure_auth(LIDARR, LIDARR_KEY, "api/v1", ARR_USER, ARR_PASS)
+    else:
+        # wait_ready timed out — see Sonarr block. Block the marker so a later
+        # working run re-applies Lidarr's baseline.
+        note_unreachable()
 
     # ── Prowlarr ──────────────────────────────────────────────────────────────
 
@@ -4149,6 +4188,11 @@ def main():
         configure_backup_schedule(PROWLARR, PROWLARR_KEY, "api/v1")
         if ARR_USER and ARR_PASS:
             configure_auth(PROWLARR, PROWLARR_KEY, "api/v1", ARR_USER, ARR_PASS)
+    else:
+        # wait_ready timed out — see Sonarr block. Prowlarr is the indexer hub;
+        # block the marker so a later working run re-applies its baseline (apps,
+        # proxy, auth) rather than treating it as already-configured.
+        note_unreachable()
 
     # qBittorrent is now configured BEFORE the arrs (see block right
     # after Tautulli) so its prefs are arr-compatible by the time each
@@ -4814,7 +4858,15 @@ def recyclarr_only_main():
         print("ENABLE_RECYCLARR=false in .env — nothing to regenerate.")
         sys.exit(0)
 
-    B = script_dir
+    # Resolve the base dir from INSTALL_DIR, exactly like main() (line ~3699).
+    # In the v0.3.23+ layout this script lives in INSTALL_DIR/scripts/, so a
+    # bare script_dir points one level too deep: the arr config.xml reads below
+    # would miss, AND recyclarr.yml would be written to
+    # INSTALL_DIR/scripts/recyclarr/config — a stray dir the recyclarr
+    # container does NOT mount (it mounts INSTALL_DIR/recyclarr/config). The
+    # net effect was that changing a TRaSH profile in the trigger UI reported
+    # success but `recyclarr sync` kept reading the OLD config.
+    B = env.get('INSTALL_DIR') or script_dir or '/volume1/docker/media'
 
     section("Recyclarr-only regenerate")
 
