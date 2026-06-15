@@ -223,7 +223,13 @@ def read_env(path):
                 if not line or line.startswith('#') or '=' not in line:
                     continue
                 k, _, v = line.partition('=')
-                v = v.split('#')[0].strip()
+                # Strip an inline ' #comment' (whitespace-anchored) but PRESERVE
+                # a '#' embedded in the value — a subtitle-provider password
+                # like p@ss#word must survive intact — then strip the surrounding
+                # quotes the wizard's ESCAPE adds around special-char values.
+                # Mirrors read_env() in setup-arr-config.py; the old bare
+                # split('#') corrupted any credential containing '#'.
+                v = re.split(r'\s#', v, 1)[0].strip().strip('"').strip("'")
                 if v:
                     env[k.strip()] = v
     except FileNotFoundError:
