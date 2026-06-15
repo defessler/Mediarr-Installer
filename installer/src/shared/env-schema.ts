@@ -213,6 +213,8 @@ export const envSchema = z.object({
   TORRENTLEECH_RSSKEY: optStr,
   HDTORRENTS_USER: optStr,
   HDTORRENTS_PASS: optStr,
+  RUTRACKER_USER: optStr,
+  RUTRACKER_PASS: optStr,
   BTN_API_KEY: optStr,
   MTV_API_KEY: optStr,
   PTP_USER: optStr,

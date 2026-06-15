@@ -35,6 +35,7 @@ Usage:
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from urllib.request import Request, urlopen
@@ -228,6 +229,19 @@ PRIVATE_TORRENT_INDEXERS = [
     ("Redacted",        "Redacted",        {"apiKey":   "RED_API_KEY"}),
     # Orpheus Network — invite-only music tracker.
     ("Orpheus",         "Orpheus",         {"apiKey":   "ORPHEUS_API_KEY"}),
+    # ── General-purpose, music-strong ───────────────────────────────
+    # RuTracker — huge Russian semi-private tracker; the single best
+    # general source for music / full discographies (also strong on
+    # everything else). It's a NATIVE Prowlarr C# indexer (RuTracker.cs),
+    # NOT a Cardigann YAML def, and its schema Name is "RuTracker.org" —
+    # use that verbatim so _find_schema hits the exact-match branch and
+    # can't trip the ambiguity guard. Auth is username/password
+    # (RuTrackerSettings : UserPassTorrentBaseSettings → "username" /
+    # "password" fields). RuTracker is CloudFlare/User-Agent gated, so
+    # the FlareSolverr tag the main loop auto-attaches is what gets it
+    # past the add-time reachability test. Free account (signup is in
+    # Russian); only added when both creds are set in .env.
+    ("RuTracker.org",   "RuTracker.org",   {"username": "RUTRACKER_USER", "password": "RUTRACKER_PASS"}),
 ]
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -957,7 +971,13 @@ def read_env(path):
                 if not line or line.startswith('#') or '=' not in line:
                     continue
                 k, _, v = line.partition('=')
-                v = v.split('#')[0].strip()
+                # Strip an inline ' #comment' (whitespace-anchored) but PRESERVE
+                # a '#' embedded in the value — a user-chosen tracker password
+                # like p@ss#word must survive intact — then strip the surrounding
+                # quotes the wizard's ESCAPE adds around special-char values.
+                # Mirrors read_env() in setup-arr-config.py; the old bare
+                # split('#') corrupted any credential containing '#'.
+                v = re.split(r'\s#', v, 1)[0].strip().strip('"').strip("'")
                 if v:
                     env[k.strip()] = v
     except FileNotFoundError:

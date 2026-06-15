@@ -218,6 +218,12 @@ export interface EnvFormValues {
   TORRENTLEECH_RSSKEY?: string
   HDTORRENTS_USER?: string
   HDTORRENTS_PASS?: string
+  /** RuTracker — huge Russian general tracker with deep music /
+   *  discography coverage. Free account (the signup form is in
+   *  Russian). Username/password auth; setup-indexers.py adds it only
+   *  when BOTH are set (opt-in by credential presence, no ENABLE_ flag). */
+  RUTRACKER_USER?: string
+  RUTRACKER_PASS?: string
 
   // ── Custom user-defined indexers (JSON catalogue)
   // The wizard exposes an in-app editor for one or more user-supplied
@@ -529,6 +535,8 @@ export function renderEnv(v: EnvFormValues): string {
     line('TORRENTLEECH_RSSKEY', v.TORRENTLEECH_RSSKEY),
     line('HDTORRENTS_USER', v.HDTORRENTS_USER),
     line('HDTORRENTS_PASS', v.HDTORRENTS_PASS),
+    line('RUTRACKER_USER', v.RUTRACKER_USER),
+    line('RUTRACKER_PASS', v.RUTRACKER_PASS),
     line('BTN_API_KEY', v.BTN_API_KEY),
     line('MTV_API_KEY', v.MTV_API_KEY),
     line('PTP_USER', v.PTP_USER),
@@ -695,7 +703,7 @@ export const USENET_INDEXERS: IndexerDef[] = [
     href: 'https://nzbfinder.ws', note: 'Paid account. Strong general coverage.',
     fields: [{ key: 'NZBFINDER_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'paid'],
+    tags: ['general', 'music', 'paid'],
   },
   {
     id: 'NZBPLANET_API_KEY', name: 'NZBPlanet',
@@ -747,7 +755,7 @@ export const USENET_INDEXERS: IndexerDef[] = [
     note: 'Paid account. General-purpose, long-running indexer.',
     fields: [{ key: 'NZBSU_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'paid'],
+    tags: ['general', 'music', 'paid'],
   },
 ]
 
@@ -924,6 +932,20 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
     ],
     category: 'tracker-private',
     tags: ['movies', 'tv', 'application'],
+  },
+  // ── General-purpose, music-strong ─────────────────────────────
+  {
+    id: 'RUTRACKER_USER', name: 'RuTracker.org', href: 'https://rutracker.org',
+    note: 'Huge Russian general tracker with deep music / discography coverage. Free account (the signup form is in Russian). CloudFlare-gated, so it needs FlareSolverr — which the installer disables on arm64 NAS hardware, where RuTracker will not work.',
+    fields: [
+      { key: 'RUTRACKER_USER', label: 'Username' },
+      { key: 'RUTRACKER_PASS', label: 'Password', password: true },
+    ],
+    category: 'tracker-private',
+    // 'free' is load-bearing: it suppresses the 'paid' tag indexerTags()
+    // otherwise derives for every 'tracker-private' def, so RuTracker is
+    // correctly classed free. Don't drop it in a tidy-up.
+    tags: ['music', 'general', 'free', 'free-signup'],
   },
   // ── TV focused ────────────────────────────────────────────────
   {
