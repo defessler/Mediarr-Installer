@@ -11,10 +11,12 @@ was the deliberately-unbuilt **Deezer** feature.
 re-run idempotency are all genuinely solid, most with scar-tissue comments naming the exact
 bug they fixed. The findings below are concentrated rough edges, not systemic problems.
 
-**Status (updated 2026-06-15):** every finding with a clear-correct, low-risk fix has now
-been **shipped** across v0.10.3–v0.10.9 (see below). What remains needs *your* decision —
-design choices, a security default with breakage risk, or platform fixes that can't be
-verified without that hardware. Pick any and I'll implement it.
+**Status (updated 2026-06-15, through v0.11.0):** every finding with a clear-correct,
+low-risk fix has now been **shipped** across v0.10.3–v0.11.0 (see below) — most recently the
+resume-on-Retry fix (H4) and the cross-platform boot-hook accuracy (M3/M4). What remains
+needs *your* decision: a security default with real breakage risk (M10), a fail-closed leak
+check that could false-positive (H5), or internal/platform/polish items that can't be
+verified without the hardware. Pick any and I'll implement it.
 
 ---
 
@@ -37,6 +39,19 @@ verified without that hardware. Pick any and I'll implement it.
 - **v0.10.10** — **M6** importing a profile jumps straight to Connect with it active;
   **H3 (partial)** a blocking Configure error now expands all groups so no flagged field
   stays hidden (the humanize-labels / click-to-jump part of H3 remains).
+- **v0.10.11** — **M1** re-installs carry forward discovered `*_API_KEY` values from the
+  on-NAS `.env` instead of briefly blanking them.
+- **v0.10.12** — **H3 (rest)** Configure validation errors name the field (humanised
+  labels) instead of a raw env key.
+- **v0.10.13** — **H1 (subset)** VPN-off installs fail fast on Compose < 2.20 /
+  podman-compose (can't parse the `!reset` override) instead of hanging for ~10 min.
+- **v0.10.14** — Done-screen health summary is honest about a still-booting service: a
+  `⚠`-warned AzuraCast/Seerr/slskd shows "not ready yet" instead of silently inflating the
+  green "All N reachable" count.
+- **v0.11.0** — **H4** a normal-failure Retry resumes from the failed step (vs replaying
+  from step 1, fallback-safe to a full re-run on any config edit); **M3** Unraid drops the
+  dead `update_cron` call + points at the User Scripts boot hook; **M4** QNAP's
+  reboot-coverage note is accurate per VPN state (Docker restart policy vs the guardian).
 
 ---
 
@@ -188,28 +203,32 @@ verified without that hardware. Pick any and I'll implement it.
 ## Remaining — needs your call
 
 Everything below requires a decision, a test environment I don't have, or carries enough
-risk that doing it blind is worse than waiting. **The single biggest unblocker is a way to
-test compose + dashboard behavior** — a NAS, or even a local Docker host — which would let me
-safely verify **H1 / M10 / M3 / M4** (the high-impact items) without risking the default
-install for everyone. (L6 was assessed and intentionally skipped: it's purely preventive —
-the real leak vector is already redacted and `.env` secrets never hit stdout.) The rest:
+risk that doing it blind is worse than waiting. With **H1, H2, H3, H4, M1–M9, M11** now
+shipped, the remaining items are:
 
-- **Design choices.** **H1** — the `!reset` compose tag breaks the *default* install on
-  Podman / older-Compose / QNAP (**highest user impact**; fix is hard-fail-with-a-clear-
-  message vs shipping two standalone compose files). **H3** — the Configure validation-error
-  UX (auto-open the offending group, humanize the labels). **H4** — Retry rewrites `.env` and
-  drops the resume checkpoint. **H5** — continuous VPN leak-checking vs today's install-time
-  snapshot.
-- **Security default with breakage risk.** **M10** — `HOMEPAGE_ALLOWED_HOSTS=*` alongside the
-  docker.sock mount; tightening the default to the LAN set could break reverse-proxy setups,
-  so it's your call.
-- **Platform fixes I can't verify without the hardware.** **M3** (Unraid boot hook /
-  `update_cron`), **M4** (QNAP has no boot hook or guardian on the VPN-off default), **L3**
-  (non-DSM firewall persistence).
-- **Core-flow / judgment.** **M1** full-wizard `.env` API-key blanking window (self-healing
-  today), **M6** post-import flow (auto-advance vs highlight; install vs update), **L2**
-  resume-hash fragility, **L4** EnvDetect "Re-detect vs Reconnect" affordance, **L6** broaden
-  log redaction to `.env` secrets (defense-in-depth; needs cross-IPC plumbing).
+- **Security default with real breakage risk.** **M10** — `HOMEPAGE_ALLOWED_HOSTS=*`
+  alongside the docker.sock mount (DNS-rebinding hardening). Tightening the default to the
+  LAN set would *silently break* reverse-proxy / custom-hostname dashboard access on the
+  next re-install — categorically different from the platform fixes (which only repair
+  broken setups). Wants a test env, or an explicit OK to ship the safest version (preserve
+  any existing value, LAN default for fresh installs only, `*` as a documented opt-out +
+  loud warning).
+- **A fail-closed check that could false-positive.** **H5** — continuous VPN leak detection
+  in the guardian (compare gluetun exit IP vs host IP; `docker pause` qBit on a match).
+  Genuine security value, but a false positive would pause a healthy torrent client — wants
+  validation against a real tunnel first.
+- **Internal hardening that touches a tested core path.** **L2** — the resume checkpoint
+  trusts a single env_hash whose prelude mutates `.env` every run (benign normalisation can
+  force a full replay; a future non-idempotent prelude edit would silently break resume).
+  More relevant now that H4 leans on resume. Fixable, but wants care + ideally a test run.
+- **Platform fix I can't verify.** **L3** — non-DSM firewall persistence (an opt-in
+  systemd / firewalld permanent rule + re-check).
+- **Low-value / assessed.** **L4** (EnvDetect "Re-detect vs Reconnect" — first confirm the
+  same-session re-scan actually misses a freshly-installed Docker; a reconnect→re-scan
+  affordance already exists) and **L6** (broaden log redaction to `.env` secrets — purely
+  preventive; the real leak vector is already redacted and `.env` secrets never hit stdout).
 
-**My recommendation: H1 first** (highest user impact). Tell me which to take and I'll
+**The single biggest unblocker is still a way to test compose + dashboard behaviour** — a
+NAS, or even a local Docker host — which would let me safely verify M10 / H5 / L2 / L3
+without risking working installs. Tell me which to take (or provide a test target) and I'll
 implement, verify, and ship it the same way as the rest.
