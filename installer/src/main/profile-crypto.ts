@@ -40,7 +40,11 @@ const pbkdf2Async = promisify(pbkdf2)
 
 export const EXPORT_FORMAT_VERSION = 'mediarr-profile/v1'
 const KDF_NAME = 'PBKDF2-SHA256'
-const KDF_ITERS = 200_000
+// 600k PBKDF2-SHA256 iterations (OWASP 2023 guidance) — the export envelope
+// can sit in cloud-synced folders / email and is brute-forceable offline, so
+// the KDF cost matters. Decrypt reads `iters` from the envelope, so older 200k
+// files still open; only newly-written exports use the higher count.
+const KDF_ITERS = 600_000
 const KDF_SALT_LEN = 16
 const KDF_KEY_LEN = 32
 const CIPHER_NAME = 'AES-256-GCM'

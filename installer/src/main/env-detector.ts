@@ -724,8 +724,8 @@ export async function detectEnv(
     dataCandidates,
     suggestedInstallDir: familyDefaults.installDir,
     suggestedDataRoot:   familyDefaults.dataRoot,
-    suggestedPuid:       pickFamilyIdDefaults(nasFamily).puid,
-    suggestedPgid:       pickFamilyIdDefaults(nasFamily).pgid,
+    suggestedPuid:       pickFamilyIdDefaults(nasFamily, vendorSaysUgreen).puid,
+    suggestedPgid:       pickFamilyIdDefaults(nasFamily, vendorSaysUgreen).pgid,
     cpuArch,
     kernelOs,
     ramMB,
@@ -752,11 +752,19 @@ export async function detectEnv(
  *  populates from the real /etc/passwd. */
 function pickFamilyIdDefaults(
   family: EnvDetectResult['nasFamily'],
+  // UGREEN's gid-10 (`admin`) default only holds on a REAL UGOS box. When the
+  // 'ugreen' family came from the low-confidence Debian+/volume1 heuristic
+  // (no DMI vendor match), gid 10 is `wheel` on a plain Debian host — the wrong
+  // group, so the arr containers would chown config to a group the SSH user
+  // isn't in. Pass the DMI-confirmed signal so the UGOS-specific gid is only
+  // applied when we're actually sure; otherwise use the generic 1000/100.
+  ugreenConfirmed = false,
 ): { puid: string; pgid: string } {
   switch (family) {
     case 'synology': return { puid: '1026', pgid: '100' }
-    // UGOS first admin user is uid 1000, primary group `admin` = gid 10.
-    case 'ugreen':   return { puid: '1000', pgid: '10'  }
+    // UGOS first admin user is uid 1000, primary group `admin` = gid 10 — but
+    // only when DMI confirms UGREEN; the heuristic-only case uses 1000/100.
+    case 'ugreen':   return ugreenConfirmed ? { puid: '1000', pgid: '10' } : { puid: '1000', pgid: '100' }
     // Asustor admin / TerraMaster first user / generic NAS: 1000 + group
     // `users`(100). (Asustor's admin is sometimes uid 999, TerraMaster's is
     // uid 0 — the /etc/passwd dropdown corrects either.)

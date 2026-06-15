@@ -48,7 +48,9 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
 
   const score = strength(pass)
   const confirmsMatch = pass.length > 0 && pass === confirm
-  const tooWeak = score === 0
+  // Require score >= 2 (i.e. at least 12 characters) — this file bundles every
+  // secret and is brute-forceable offline, so a 12+ char floor is the minimum.
+  const tooWeak = score < 2
   const canExport = !busy && !!pass && confirmsMatch && !tooWeak
 
   // ESC closes the dialog (unless we're mid-export — the user almost
@@ -237,7 +239,7 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
             onClick={doExport}
             title={
               !pass ? 'Enter a passphrase'
-              : tooWeak ? 'Passphrase is too weak'
+              : tooWeak ? 'Use a longer passphrase (at least 12 characters)'
               : !confirmsMatch ? 'Confirm the passphrase'
               : 'Save to a file'
             }
