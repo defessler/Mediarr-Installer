@@ -203,11 +203,19 @@ if [ -f /etc/unraid-version ]; then
             printf '@reboot sleep 30 && /bin/bash %s >/dev/null 2>&1\n' "$BOOT_SH"
             [ "$INSTALL_GUARD" -eq 1 ] && printf '*/5 * * * * /bin/bash %s >/dev/null 2>&1\n' "$GUARD_SH"
         } > "$CRON"
-        if update_cron 2>/dev/null; then
-            echo "  ✔ Boot + self-heal cron written to $CRON and loaded (update_cron)"
-        else
-            echo "  ✔ Cron written to $CRON (loads on next array start)"
-        fi
+        # NOTE: earlier builds called update_cron here — but that's an Unraid
+        # webGUI helper, NOT a command on PATH in this script's context, so the
+        # call always failed (the message below was always the one that ran).
+        # Dynamix reconciles /boot/config/plugins/dynamix/*.cron at every array
+        # start, so the cron loads then either way — no need to invoke it.
+        echo "  ✔ Cron written to $CRON (dynamix loads it at your next array start)."
+        # @reboot honoring varies by dcron build, and every container carries
+        # restart: unless-stopped (Docker brings the stack back at array start
+        # regardless). For a GUARANTEED, strictly-ordered boot — gluetun before
+        # qBittorrent on a VPN setup — the reliable hook is the User Scripts
+        # plugin, which runs after the array + Docker are up:
+        echo "    For guaranteed ordered boot, add in the User Scripts plugin as"
+        echo "    'At First Array Start Only':  bash $BOOT_SH"
     else
         manual_hint "/boot/config missing" unraid
     fi
@@ -241,11 +249,22 @@ if [ -f /etc/config/qpkg.conf ] || [ -d /share/CACHEDEV1_DATA ]; then
         [ "$INSTALL_GUARD" -eq 1 ] && manual_hint "/etc/config/crontab not writable" qnap
     fi
     # QTS boot scripting (autorun.sh) needs a Control-Panel toggle + a
-    # per-model DOM mount we can't do unattended — the */5 guardian recovers
-    # qBit within 5 min of boot, so the missing boot hook is non-fatal.
-    echo "  ℹ Boot hook is manual on QNAP (the 5-min self-heal covers reboots):"
-    echo "      enable Control Panel → Hardware → 'Run user defined startup"
-    echo "      processes', then add to autorun.sh: bash $BOOT_SH"
+    # per-model DOM mount we can't do unattended. It's non-fatal either way:
+    # every container carries restart: unless-stopped, so QTS's Docker brings
+    # the stack back on reboot; and on a VPN setup the */5 guardian recovers a
+    # gluetun-namespace-wedged qBittorrent within 5 min. A boot hook only buys
+    # a faster, strictly-ordered start. Keep the reboot-coverage note accurate
+    # to the VPN state — the guardian is only installed when INSTALL_GUARD=1.
+    if [ "$INSTALL_GUARD" -eq 1 ]; then
+        echo "  ℹ Reboots are covered: Docker's restart policy brings the stack"
+        echo "    back, and the 5-min self-heal recovers qBittorrent."
+    else
+        echo "  ℹ Reboots are covered by Docker's restart policy (every container"
+        echo "    is restart: unless-stopped)."
+    fi
+    echo "    For a faster, strictly-ordered boot, enable Control Panel → Hardware"
+    echo "    → 'Run user defined startup processes', then add to autorun.sh:"
+    echo "      bash $BOOT_SH"
     exit 0
 fi
 
