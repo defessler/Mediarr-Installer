@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Settings2, ArrowLeft, ArrowRight,
@@ -902,6 +902,14 @@ export function ConfigureScreen() {
     setStep('run')
   }
 
+  // Live validity for the footer claim + Continue: re-derived on every config
+  // change (the SAME parse go() runs), so the footer never falsely asserts
+  // "Ready to install" on an invalid config and the state can't get stuck after
+  // a failed attempt. Continue stays clickable so go() can surface the specific
+  // issues on demand — but go() itself refuses to advance while invalid, so a
+  // click on an incomplete config shows the fixes instead of proceeding.
+  const liveValid = useMemo(() => envSchema.safeParse(config).success, [config])
+
   // Collapsible-group open/closed state. Services is open on entry; the
   // rest collapse so the screen reads as a short, scannable list. jumpTo
   // opens the target group, then scrolls to its anchor on the next frame.
@@ -1534,21 +1542,22 @@ export function ConfigureScreen() {
           Back
         </BigButton>
         <div className="flex-1 text-sm text-center">
-          {errors.length > 0 ? (
+          {liveValid ? (
+            <span className="text-emerald-300">✓ Ready to install</span>
+          ) : errors.length > 0 ? (
             <span className="text-rose-300">
               ✘ {errors.length} {errors.length === 1 ? 'thing to fix' : 'things to fix'} above
             </span>
           ) : (
-            <span className="text-emerald-300">✓ Ready to install</span>
+            <span className="text-amber-300">Complete the required fields, then Continue</span>
           )}
         </div>
         <BigButton
           size="md"
           variant="primary"
           trailingIcon={<ArrowRight size={18} />}
-          disabled={errors.length > 0}
           onClick={go}
-          title={errors.length > 0 ? 'Fix the issues above first' : 'Move to the install step'}
+          title={liveValid ? 'Move to the install step' : 'Continue to see what still needs filling in'}
         >
           Continue
         </BigButton>

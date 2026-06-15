@@ -382,6 +382,27 @@ fi
 MEDIA_SERVER="$(env_val MEDIA_SERVER | tr '[:upper:]' '[:lower:]')"
 [ "$MEDIA_SERVER" = "jellyfin" ] || MEDIA_SERVER="plex"
 
+# FlareSolverr's bundled Chromium crash-loops on arm64. The wizard's Detect
+# screen disables it there, but a manual `bash setup.sh`, an imported x86
+# profile, or a re-run on a pre-arm64-logic .env would re-arm the crash-loop.
+# Normalize ENABLE_FLARESOLVERR=false in .env on ARM so EVERY downstream gate
+# (the profile below, wait_for_services, check_port_conflicts,
+# stop_disabled_services, AND post-deploy-validate) consistently sees it off —
+# not just this one profile line. Idempotent: once false, is_enabled returns
+# false and this is a no-op on re-runs.
+case "$(uname -m 2>/dev/null)" in
+    aarch64|arm64|armv7l|armv6l)
+        if is_enabled ENABLE_FLARESOLVERR; then
+            if grep -q '^ENABLE_FLARESOLVERR=' "$ENV_FILE" 2>/dev/null; then
+                sed -i 's|^ENABLE_FLARESOLVERR=.*|ENABLE_FLARESOLVERR=false|' "$ENV_FILE"
+            else
+                printf 'ENABLE_FLARESOLVERR=false\n' >> "$ENV_FILE"
+            fi
+            echo "  Note: FlareSolverr disabled on $(uname -m) — its bundled Chromium crash-loops on ARM."
+        fi
+        ;;
+esac
+
 PROFILES=()
 is_enabled ENABLE_PLEX        && PROFILES+=("$MEDIA_SERVER")
 is_enabled ENABLE_SONARR      && PROFILES+=("sonarr")

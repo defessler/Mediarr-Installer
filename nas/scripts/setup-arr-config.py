@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from urllib.request import Request, urlopen
@@ -360,8 +361,25 @@ def set_env_value(env_path, key, value):
         lines.append(f"{key}={value}\n")
         changed = True
     if changed:
-        with open(env_path, 'w', encoding='utf-8') as f:
-            f.writelines(lines)
+        # Atomic write: .env holds every secret, and this runs up to ~7x per
+        # install — a crash / power-loss mid-write must never leave it truncated
+        # or half-written. Write a sibling temp file, fsync, then os.replace
+        # (atomic rename on POSIX) so readers always see the whole old or whole
+        # new file. mkstemp creates the temp 0600, matching .env's mode.
+        d = os.path.dirname(env_path) or '.'
+        fd, tmp = tempfile.mkstemp(dir=d, prefix='.env-', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, env_path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     return changed
 
 def read_arr_key(config_xml):
