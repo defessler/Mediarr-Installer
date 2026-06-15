@@ -11,22 +11,29 @@ was the deliberately-unbuilt **Deezer** feature.
 re-run idempotency are all genuinely solid, most with scar-tissue comments naming the exact
 bug they fixed. The findings below are concentrated rough edges, not systemic problems.
 
-**This is a triage list for your review** — nothing here is fixed except the two isolated,
-verified-safe items already shipped. Pick what's worth doing and I'll implement.
+**Status (updated 2026-06-15):** every finding with a clear-correct, low-risk fix has now
+been **shipped** across v0.10.3–v0.10.9 (see below). What remains needs *your* decision —
+design choices, a security default with breakage risk, or platform fixes that can't be
+verified without that hardware. Pick any and I'll implement it.
 
 ---
 
-## ✅ Fixed in v0.10.3 (isolated, verified-safe)
+## ✅ Shipped (v0.10.3 – v0.10.9)
 
-- **Update "Refresh dashboard" wrote to an unmounted path → silent no-op.**
-  `homepage_only_main()` used `script_dir/homepage/config` (one level too deep) instead of
-  `INSTALL_DIR/homepage/config` (what Homepage mounts), so the Update screen's *Refresh
-  dashboard* reported success while the real config stayed stale. The identical bug was
-  already fixed for the recyclarr twin; homepage was missed. `setup-arr-config.py:5227`.
-- **Homepage `services.yaml`/`settings.yaml` clobbered with no backup.** Only `widgets.yaml`
-  was backed up before overwrite; power-user custom tiles (services) + theme/layout
-  (settings) were silently lost on every re-run / refresh. Added `backup_before_overwrite`
-  in both `main()` and `homepage_only_main()`. `setup-arr-config.py:5100,5240`.
+- **v0.10.3** — *Refresh dashboard* wrote to an unmounted path (silent no-op), now fixed;
+  Homepage `services.yaml`/`settings.yaml` backed up before regen.
+- **v0.10.4** — **H2** FlareSolverr disabled on arm64 at the `setup.sh` layer (no more
+  crash-loop via manual run / imported profile); **M5** Configure footer + Continue reflect
+  validity live (no false "Ready"); **L1** `.env` written atomically.
+- **v0.10.5** — **M7** platform-neutral "Before you begin" copy (non-Synology users).
+- **v0.10.6** — **M11** qBit WebUI auth fails **closed** (loopback only) when LAN_IP is
+  unreadable, instead of opening to all RFC1918.
+- **v0.10.7** — **L7** profile-export passphrase floor (12+ chars) + PBKDF2 200k→600k;
+  **M2** UGREEN gid-10 default only applied on DMI-confirmed UGREEN, not the heuristic.
+- **v0.10.8** — **M9** custom-VPN passthrough drops killswitch-weakening keys (`FIREWALL=off`,
+  internet-wide `FIREWALL_OUTBOUND_SUBNETS`).
+- **v0.10.9** — **M8** Cancel can no longer freeze the install screen (timeout safety-net →
+  unlock, resumable).
 
 ---
 
@@ -175,17 +182,27 @@ verified-safe items already shipped. Pick what's worth doing and I'll implement.
 
 ---
 
-## Suggested sequencing
+## Remaining — needs your call
 
-1. **Quick high-value wins (S effort, low risk):** H2 (arm64 setup.sh gate), M5 (reactive
-   Configure footer), M9 (re-assert FIREWALL=on), M11 (qBit fail-closed), L1 (atomic .env
-   write). These are isolated and clearly correct — a natural "v0.10.4 hardening" batch.
-2. **The default-path HIGH:** H1 (`!reset` compose) — highest user impact (breaks default
-   installs on Podman/older-Compose/QNAP) but needs a design call (hard-fail vs standalone
-   compose files).
-3. **First-run UX:** H3 (validation trap) + M6/M7 (import advance, platform-neutral Welcome).
-4. **VPN assurance:** H5 (continuous leak check) + M4/M3 (QNAP/Unraid boot reconcile).
-5. **The rest** as capacity allows.
+Everything below requires a decision or a capability that's yours, not a clear-correct
+autonomous fix, so it's deliberately *not* been done:
 
-Tell me which of these to take and I'll implement + verify + ship them the same way as the
-music work.
+- **Design choices.** **H1** — the `!reset` compose tag breaks the *default* install on
+  Podman / older-Compose / QNAP (**highest user impact**; fix is hard-fail-with-a-clear-
+  message vs shipping two standalone compose files). **H3** — the Configure validation-error
+  UX (auto-open the offending group, humanize the labels). **H4** — Retry rewrites `.env` and
+  drops the resume checkpoint. **H5** — continuous VPN leak-checking vs today's install-time
+  snapshot.
+- **Security default with breakage risk.** **M10** — `HOMEPAGE_ALLOWED_HOSTS=*` alongside the
+  docker.sock mount; tightening the default to the LAN set could break reverse-proxy setups,
+  so it's your call.
+- **Platform fixes I can't verify without the hardware.** **M3** (Unraid boot hook /
+  `update_cron`), **M4** (QNAP has no boot hook or guardian on the VPN-off default), **L3**
+  (non-DSM firewall persistence).
+- **Core-flow / judgment.** **M1** full-wizard `.env` API-key blanking window (self-healing
+  today), **M6** post-import flow (auto-advance vs highlight; install vs update), **L2**
+  resume-hash fragility, **L4** EnvDetect "Re-detect vs Reconnect" affordance, **L6** broaden
+  log redaction to `.env` secrets (defense-in-depth; needs cross-IPC plumbing).
+
+**My recommendation: H1 first** (highest user impact). Tell me which to take and I'll
+implement, verify, and ship it the same way as the rest.
