@@ -532,7 +532,7 @@ export function WelcomeScreen() {
                 <Terminal size={16} className="text-slate-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
-                SSH is enabled on the NAS (Control Panel &rarr; Terminal &amp; SNMP).
+                SSH is enabled on your NAS (on Synology: Control Panel &rarr; Terminal &amp; SNMP).
               </span>
             </li>
             <li className="flex items-start gap-3">
@@ -540,7 +540,7 @@ export function WelcomeScreen() {
                 <Boxes size={16} className="text-sky-300" strokeWidth={1.75} aria-hidden="true" />
               </span>
               <span>
-                Docker (Container Manager) is installed via Synology Package Center.
+                Docker is installed (on Synology it&rsquo;s &ldquo;Container Manager&rdquo; in Package Center; UGREEN, QNAP, and Unraid have their own app store).
               </span>
             </li>
             <li className="flex items-start gap-3">
