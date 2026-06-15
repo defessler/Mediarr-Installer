@@ -277,7 +277,13 @@ def read_env(path):
                 if not line or line.startswith('#') or '=' not in line:
                     continue
                 k, _, v = line.partition('=')
-                v = v.split('#')[0].strip()
+                # Strip an inline ' #comment' (whitespace-anchored) but PRESERVE
+                # a '#' embedded in the value — a password like p@ss#word must
+                # survive intact. Then strip surrounding quotes the wizard's
+                # ESCAPE adds around such values. Splitting on the first bare
+                # '#' (the old behavior) silently corrupted any cred/API key
+                # containing '#'.
+                v = re.split(r'\s#', v, 1)[0].strip().strip('"').strip("'")
                 if v:
                     env[k.strip()] = v
     except FileNotFoundError:
@@ -2487,6 +2493,12 @@ def configure_qbittorrent(base, username, password, env=None,
         warn("       docker compose restart qbittorrent")
         warn(f"       sudo bash {install_dir}/setup.sh")
         warn("Watched folder not configured — set manually in Settings → Downloads → Watched folders")
+        # qBit was NOT configured this run (wrong creds → no watch folder, no
+        # seeding/queueing defaults). Block the install marker like the slow-boot
+        # branch below, so once the user fixes the password the next run treats
+        # qBit as fresh and re-applies its defaults instead of REINSTALL_PRESERVE
+        # suppressing them forever.
+        note_unreachable()
         return
     else:
         # qBittorrent's WebUI didn't bind in 5 minutes. Real symptom:

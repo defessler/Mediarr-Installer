@@ -338,7 +338,7 @@ fi
 # env_val helper — same idea as in setup-nordvpn.sh, scoped here so this
 # script doesn't depend on a sourced helper module.
 env_val() {
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
 }
 
 # Default-on opt-out check, matching the rest of the toolchain.

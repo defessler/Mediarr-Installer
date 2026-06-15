@@ -98,6 +98,12 @@ let mainWindow: BrowserWindow | null = null
 let lastState: UpdaterState = { kind: 'idle' }
 let pendingUpdate: PendingUpdate | null = null
 let installInProgress = false
+/** True for the whole download+extract span. Guards downloadUpdate against a
+ *  second concurrent invocation — both the footer "Install vX" trigger and the
+ *  WhatsNew banner call download(), and either is double-clickable before the
+ *  first 'downloading' state round-trips back to disable/occlude it. A second
+ *  run would rmSync the in-flight zip and overwrite the abort handle. */
+let downloadInProgress = false
 let intervalHandle: NodeJS.Timeout | null = null
 let startupTimeoutHandle: NodeJS.Timeout | null = null
 /** AbortController for the in-flight download. Non-null only while
@@ -269,7 +275,23 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
  *  `7z a` step zips the win-unpacked folder by name), so after
  *  extraction we resolve down into the single wrapping directory.
  *  We tolerate a flat layout too in case the workflow ever changes. */
+/** Public entry point: serialize downloads so a duplicate request can't wipe
+ *  the in-flight zip. Delegates to downloadUpdateImpl exactly once, clearing
+ *  the guard in a finally so a failed/cancelled attempt can be retried. */
 async function downloadUpdate(): Promise<void> {
+  if (downloadInProgress) {
+    log.warn('updater: download already in progress — ignoring duplicate request')
+    return
+  }
+  downloadInProgress = true
+  try {
+    await downloadUpdateImpl()
+  } finally {
+    downloadInProgress = false
+  }
+}
+
+async function downloadUpdateImpl(): Promise<void> {
   if (installInProgress) {
     log.warn('updater: download requested while install already in progress')
     return
@@ -359,6 +381,15 @@ async function downloadUpdate(): Promise<void> {
     if (update.sizeBytes > 0 && onDisk !== update.sizeBytes) {
       throw new Error(
         `download incomplete (${onDisk} of ${update.sizeBytes} bytes) — please try the update again`,
+      )
+    } else if (update.sizeBytes === 0 && onDisk < 1_000_000) {
+      // No asset size from the GitHub API to match against (and we can't trust
+      // Content-Length — it may be the gzip transfer size, not the zip size).
+      // Fall back to a minimum-plausible-size floor: a real build is 100+ MB,
+      // whereas a truncated body or an error page that happens to start with
+      // "PK" is tiny. Closes the gap the magic-byte check alone would miss.
+      throw new Error(
+        `downloaded file is too small to be a valid build (${onDisk} bytes) — please try the update again`,
       )
     }
     const magic = Buffer.alloc(4)
@@ -557,12 +588,30 @@ function extractZip(zipPath: string, destDir: string): Promise<void> {
       ['-NoProfile', '-NonInteractive', '-Command', script],
       { windowsHide: true })
     let stderr = ''
+    let settled = false
+    // Hard timeout. The renderer now shows a BLOCKING update overlay during
+    // extraction, so a wedged PowerShell (AV real-time scan, a locked file, a
+    // hung decompress) would otherwise freeze the entire app with no way out.
+    // 5 minutes is ~30x a normal ~100 MB extract; on expiry we kill the
+    // process and reject, which surfaces a dismissible error in the overlay.
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { ps.kill() } catch { /* already exited */ }
+      reject(new Error('extraction timed out after 5 minutes — please try the update again'))
+    }, 5 * 60 * 1000)
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
     ps.stderr.on('data', (c: Buffer) => { stderr += c.toString() })
-    ps.on('error', reject)
-    ps.on('exit', (code) => {
+    ps.on('error', (e) => settle(() => reject(e)))
+    ps.on('exit', (code) => settle(() => {
       if (code === 0) resolve()
       else reject(new Error(`PowerShell extract exited ${code}: ${stderr.trim() || 'no error output'}`))
-    })
+    }))
   })
 }
 

@@ -35,7 +35,7 @@ ENV_FILE="$SCRIPT_DIR/.env"
 
 # Read a single .env value (comment-stripped, trimmed). Empty if absent.
 env_val() {
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
 }
 
 DATA_ROOT="$(env_val DATA_ROOT)"

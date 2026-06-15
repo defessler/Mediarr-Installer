@@ -198,7 +198,7 @@ SKIP=0
 # (env_val isn't defined yet — inline the read. ENV_FILE is resolved above.)
 # DOCKER_SOCK is a PLAIN socket path (so the compose bind mount can use it);
 # DOCKER_HOST needs a unix:// URI. Accept either form and normalise.
-DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs)"
+DOCKER_SOCK="$(grep -m1 '^DOCKER_SOCK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs)"
 if [ -n "$DOCKER_SOCK" ]; then
     case "$DOCKER_SOCK" in
         unix://*|tcp://*|ssh://*) export DOCKER_HOST="$DOCKER_SOCK" ;;
@@ -295,7 +295,7 @@ run_python_besteffort() { run_python "$@" || true; }
 # Small helper for reading a value out of .env, strips inline comments
 # and surrounding whitespace. Returns empty string if the key is absent.
 env_val() {
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
 }
 
 # Default-ON semantics: missing or empty key counts as enabled, only

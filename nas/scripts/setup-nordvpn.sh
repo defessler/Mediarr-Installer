@@ -35,7 +35,7 @@ fi
 
 # Helper for reading values out of .env (strips inline comments + whitespace).
 env_val() {
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
 }
 
 # Skip entirely when the user has opted out of VPN. setup.sh applies

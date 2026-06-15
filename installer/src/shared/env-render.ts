@@ -241,8 +241,15 @@ const ESCAPE = (v: string) => {
   // or special chars; escape embedded backslashes, double quotes,
   // dollar signs, and backticks (the last two trigger expansion inside
   // double quotes).
+  //
+  // '#' is in the quote-trigger set too: an unquoted value containing '#'
+  // (e.g. a password like p@ss#word) is read by the NAS-side parsers as an
+  // inline comment and silently truncated at the '#'. Quoting it makes both
+  // the ad-hoc grep/sed readers AND compose's own ${VAR} expansion treat the
+  // '#' as data. (The readers were also fixed to only strip a whitespace-
+  // anchored ' #comment'; quoting is the belt to that suspenders.)
   if (v === '') return ''
-  if (/[\s"$`\\]/.test(v)) {
+  if (/[\s"$`\\#]/.test(v)) {
     return `"${v.replace(/([\\"$`])/g, '\\$1')}"`
   }
   return v

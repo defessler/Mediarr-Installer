@@ -58,7 +58,7 @@ rotate_log() {
 
 # Read a single .env value (comment-stripped, \r-stripped, trimmed). Don't
 # source .env — a value with shell metachars would execute.
-env_val()    { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs; }
+env_val()    { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs; }
 is_enabled() { local v; v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"; case "$v" in false|0|no|off) return 1 ;; *) return 0 ;; esac; }
 is_true()    { case "$1" in true|1|yes|on) return 0 ;; *) return 1 ;; esac; }
 

@@ -406,9 +406,12 @@ export function App() {
           </AnimatePresence>
           <button
             type="button"
-            onClick={() => setStep('welcome')}
-            className="ml-2 inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors"
-            title="Switch to a different profile"
+            disabled={busy}
+            onClick={() => { if (!busy) setStep('welcome') }}
+            className="ml-2 inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline disabled:hover:text-emerald-400"
+            title={busy
+              ? 'Wait for the current operation to finish before switching profiles'
+              : 'Switch to a different profile'}
           >
             <Users size={13} aria-hidden="true" />
             switch

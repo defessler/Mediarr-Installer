@@ -109,7 +109,7 @@ log "✔ Docker daemon ready"
 # the file — values containing spaces / special chars would execute
 # as bash expressions and either break or pose a security risk.
 env_val() {
-    grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
 }
 is_enabled() {
     local v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"

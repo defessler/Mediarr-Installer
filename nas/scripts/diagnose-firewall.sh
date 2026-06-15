@@ -52,7 +52,7 @@ cmd()  { echo "      $1"; }   # an indented copy-paste command
 # ── Read a single .env value / flag (default-on semantics, like the rest) ──────
 env_val() {
     [ -n "$ENV_FILE" ] || { echo ""; return; }
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
 }
 is_enabled() {
     local val

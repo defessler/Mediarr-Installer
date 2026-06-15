@@ -38,7 +38,7 @@ else
 fi
 ENV_FILE="$SCRIPT_DIR/.env"; [ -f "$ENV_FILE" ] || ENV_FILE="$COMPOSE_DIR/.env"
 
-env_val()    { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '\r' | xargs; }
+env_val()    { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs; }
 is_enabled() { local v; v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"; case "$v" in false|0|no|off) return 1 ;; *) return 0 ;; esac; }
 
 # Boot hook is stack-wide; the self-heal cron is qBit+VPN only.
