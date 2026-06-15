@@ -896,6 +896,14 @@ export function ConfigureScreen() {
     const parsed = envSchema.safeParse(config)
     if (!parsed.success) {
       setErrors(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`))
+      // Un-hide every flagged field. The error list references env keys whose
+      // inputs may live inside collapsed groups (all but Services start
+      // collapsed), so a first-timer can be blocked by a field they literally
+      // can't see (e.g. the required qBittorrent password under "Downloads &
+      // VPN"). Expand all groups so every flagged input is reachable. (A
+      // targeted open-only-the-offending-group would need a field→group map;
+      // opening all is the simple, robust version.)
+      setOpenGroups(CONFIG_GROUPS.reduce((acc, g) => { acc[g.id] = true; return acc }, {} as Record<string, boolean>))
       return
     }
     setErrors([])

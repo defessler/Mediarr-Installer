@@ -6,7 +6,7 @@ import {
   Terminal, Boxes, UserCircle, Sparkles, Lock,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
-import { reportError, useErrors } from '../store/errors.js'
+import { reportError } from '../store/errors.js'
 import type { AppInfo, SavedProfile } from '../../shared/ipc.js'
 import { ExportProfileDialog } from '../components/ExportProfileDialog.js'
 import { ImportProfileDialog } from '../components/ImportProfileDialog.js'
@@ -567,10 +567,13 @@ export function WelcomeScreen() {
           onClose={() => setImporting(false)}
           onImported={(p) => {
             refresh()
-            useErrors.getState().pushInfo(
-              'Profile imported',
-              `"${p.label}" is ready — click Install or Update to use it.`,
-            )
+            // Make the just-imported profile active and jump straight to
+            // Connect — reuses pickProfile (the same path as choosing a profile
+            // from the list), so the user isn't dropped back onto the list to
+            // hunt for the new card. Defaults to install mode (the common case
+            // for a freshly imported NAS config); they can switch to Update
+            // from Connect if they're re-pointing at an already-installed stack.
+            pickProfile(p.id, 'install')
           }}
         />
       )}
