@@ -361,6 +361,49 @@ else
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.no-vpn.yml"
     echo "  Note: VPN off (default). qBittorrent traffic will use your real public IP."
     echo "  Set VPN_ENABLED=true in .env and re-run to enable gluetun routing."
+    # !reset GUARD — fail fast instead of hanging. The no-vpn override drops
+    # qBittorrent's gluetun dependency via `depends_on: !reset null` (Compose
+    # Spec 2.20+). podman-compose can't parse it, and docker-compose v1 / docker
+    # compose <2.20 SILENTLY IGNORE it, so qBittorrent waits forever for a
+    # gluetun the no-vpn project never starts — the install hangs at "Start the
+    # stack" for the full timeout, then fails with a generic error. Catch it
+    # here with an actionable message. Only the VPN-off path uses this override.
+    # Blocks ONLY when we're confident (podman-compose, or a definite <2.20);
+    # an unparseable/odd version is treated as modern so we never false-block.
+    # NOTE: shipped without a live cross-runtime test — verify on podman /
+    # pre-2.20 hosts before relying on it.
+    case "$COMPOSE" in
+        *podman-compose*)
+            echo ""
+            echo "  ✘ podman-compose can't run the VPN-off config — it can't parse the"
+            echo "    Compose 2.20+ '!reset' tag the no-vpn override uses, so the stack"
+            echo "    would hang on start. Pick one:"
+            echo "      • Turn the VPN on (VPN_ENABLED=true in .env) — qBittorrent then"
+            echo "        runs inside gluetun and needs no override; or"
+            echo "      • Use 'docker compose' v2.20+; or"
+            echo "      • Remove qBittorrent's 'depends_on: gluetun' from"
+            echo "        docker-compose.yml and run without docker-compose.no-vpn.yml."
+            exit 1
+            ;;
+    esac
+    _cv="$($COMPOSE version --short 2>/dev/null || $COMPOSE version 2>/dev/null | sed -n 's/.*v\([0-9.]*\).*/\1/p' | head -1)"
+    if [ -n "$_cv" ]; then
+        _cmaj="$(echo "$_cv" | cut -d. -f1)"
+        _cmin="$(echo "$_cv" | cut -d. -f2)"
+        case "$_cmaj" in (''|*[!0-9]*) _cmaj="" ;; esac
+        case "$_cmin" in (''|*[!0-9]*) _cmin=0 ;; esac
+        if [ -n "$_cmaj" ] && { [ "$_cmaj" -lt 2 ] || { [ "$_cmaj" -eq 2 ] && [ "$_cmin" -lt 20 ]; }; }; then
+            echo ""
+            echo "  ✘ Your Docker Compose (v$_cv) is too old for the VPN-off config — it"
+            echo "    uses a v2.20+ feature ('!reset') that older Compose silently ignores,"
+            echo "    which hangs the stack on start. Pick one:"
+            echo "      • Upgrade Compose to v2.20+ (Synology: Container Manager → Update); or"
+            echo "      • Turn the VPN on (VPN_ENABLED=true in .env); or"
+            echo "      • Remove qBittorrent's 'depends_on: gluetun' from docker-compose.yml"
+            echo "        and run without docker-compose.no-vpn.yml."
+            exit 1
+        fi
+    fi
 fi
 
 # ── Build COMPOSE_PROFILES from ENABLE_* flags in .env ───────────────────────
