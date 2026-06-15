@@ -882,7 +882,39 @@ export function RunScreen() {
       }).then((r) => wlog(r.stdout.trim() || '(done)'))
 
       wlog(`Writing ${envScripts} (${Object.keys(config).filter((k) => (config as Record<string, unknown>)[k]).length} populated keys)...`)
-      const envText = renderEnv(config as EnvFormValues)
+      let envText = renderEnv(config as EnvFormValues)
+      // M1: a full re-install re-renders .env with the auto-discovered API-key
+      // lines blank (renderEnv can't know them — setup-arr-config.py re-reads
+      // them from each arr's config.xml every run). That self-heals, but it
+      // leaves a brief window of empty keys and can lose a key whose ONLY copy
+      // was .env (an arr that hasn't booted yet). Carry forward any non-empty
+      // discovered keys from the existing on-NAS .env into the fresh render.
+      // Best-effort: any failure falls back to the plain render (today's
+      // behaviour), so this can only help, never break the install.
+      try {
+        const DISCOVERED = [
+          'SONARR_API_KEY', 'RADARR_API_KEY', 'LIDARR_API_KEY', 'PROWLARR_API_KEY',
+          'SABNZBD_API_KEY', 'BAZARR_API_KEY', 'SEERR_API_KEY',
+        ]
+        const cur = await window.installer.ssh.exec({
+          sessionId,
+          cmd: `cat ${shellQuote(envScripts)} 2>/dev/null || cat ${shellQuote(envLegacy)} 2>/dev/null || true`,
+          sudo: true,
+        })
+        const existing = cur.stdout || ''
+        let carried = 0
+        for (const key of DISCOVERED) {
+          const m = existing.match(new RegExp(`^${key}=(.+)$`, 'm'))
+          const val = m?.[1]?.trim()
+          // Only fill a key the fresh render left blank, and only from a
+          // non-empty existing value.
+          if (val && new RegExp(`^${key}=[ \\t]*$`, 'm').test(envText)) {
+            envText = envText.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${val}`)
+            carried++
+          }
+        }
+        if (carried > 0) wlog(`Carried forward ${carried} existing API key(s) from your current .env`)
+      } catch { /* best-effort — fall back to the plain render */ }
       await window.installer.sftp.writeFile({
         sessionId,
         remotePath: envScripts,
