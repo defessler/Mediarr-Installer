@@ -854,6 +854,17 @@ check_port_conflicts() {
         return 0
     fi
 
+    # Snapshot the host ports OUR running containers publish, ONCE — used below
+    # to exclude a port that IS bound but bound by US (compose will reuse the
+    # container). `{{.Ports}}` lists BOTH single mappings (":49156->49156") and
+    # RANGE mappings: AzuraCast publishes its Icecast stream ports as one range,
+    # "<ip>:8000-8029->8000-8029". The old per-port ":$port->" grep matched the
+    # single form ONLY, so it never recognised our own AzuraCast already holding
+    # 8000 and false-flagged it as a foreign conflict — halting a re-install that
+    # had a prior AzuraCast still running. The range-aware test below fixes that.
+    local published_snapshot
+    published_snapshot="$($CONTAINER_RUNTIME ps --format '{{.Ports}}' 2>/dev/null)"
+
     local conflicts=""
     local pair port svc
     for pair in "${pairs[@]}"; do
@@ -878,7 +889,15 @@ check_port_conflicts() {
             # foreign conflict, halting the install. Matching ":$port->" in any
             # container's published-ports list handles the gluetun indirection
             # (and a stopped qBit) and works the same on docker + podman.
-            if ! $CONTAINER_RUNTIME ps --format '{{.Ports}}' 2>/dev/null | grep -q ":$port->"; then
+            # Pull every host-side mapping from the snapshot — ":N->" or a range
+            # ":LO-HI->" — and test whether $port is that single port OR falls
+            # inside that range (8000 ∈ 8000-8029). A match means our own
+            # container already publishes it, so it is NOT a foreign conflict.
+            if ! printf '%s\n' "$published_snapshot" \
+                 | grep -oE ':[0-9]+(-[0-9]+)?->' \
+                 | sed 's/^://; s/->$//' \
+                 | awk -F- -v p="$port" \
+                     'NF==1 && $1==p { f=1 } NF==2 && p>=$1 && p<=$2 { f=1 } END { exit !f }'; then
                 conflicts="$conflicts $svc:$port"
             fi
         fi

@@ -3804,21 +3804,11 @@ def render_homepage_services(env, ip):
             media.append(block("Plex",     f"http://{ip}:32400/web", "Media server",   "plex.png",      f"http://{ip}:32400"))
             media.append(block("Tautulli", f"http://{ip}:8181",      "Plex analytics", "tautulli.png"))
             media.append(block("Seerr",    f"http://{ip}:5056",      "Request movies & TV", "overseerr.png"))
-            # Plexamp — the web player for music stations + smart
-            # playlists from the user's own Plex library (Plex installs
-            # only). WHY no siteMonitor: this is an EXTERNAL app at
-            # plexamp.plex.tv (it connects to the user's server; we don't
-            # host it), so pinging it as a health check would be
-            # meaningless — it's plex.tv's uptime, not the NAS's. Emit a
-            # raw tile (not block(), which always appends a siteMonitor)
-            # so Homepage simply shows no status dot — same no-monitor
-            # pattern as the Recyclarr/maintenance tile.
-            media.append(
-                f"    - Plexamp:\n"
-                f"        href: https://plexamp.plex.tv\n"
-                f"        description: Music stations + playlists\n"
-                f"        icon: plexamp.png"
-            )
+            # NOTE: no Plexamp tile here. Plexamp is an EXTERNAL app
+            # (plexamp.plex.tv) the user runs on their own devices, not a NAS
+            # service — a dashboard tile that just deep-links to plex.tv adds
+            # clutter without a health signal. How to set up Plexamp is covered
+            # on the Done screen + docs/MUSIC-PLAYBACK.md instead.
     if media:
         out.append("- Media:")
         out.extend(media)
