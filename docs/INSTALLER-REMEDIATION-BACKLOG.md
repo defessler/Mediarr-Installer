@@ -34,6 +34,9 @@ verified without that hardware. Pick any and I'll implement it.
   internet-wide `FIREWALL_OUTBOUND_SUBNETS`).
 - **v0.10.9** — **M8** Cancel can no longer freeze the install screen (timeout safety-net →
   unlock, resumable).
+- **v0.10.10** — **M6** importing a profile jumps straight to Connect with it active;
+  **H3 (partial)** a blocking Configure error now expands all groups so no flagged field
+  stays hidden (the humanize-labels / click-to-jump part of H3 remains).
 
 ---
 
@@ -184,8 +187,12 @@ verified without that hardware. Pick any and I'll implement it.
 
 ## Remaining — needs your call
 
-Everything below requires a decision or a capability that's yours, not a clear-correct
-autonomous fix, so it's deliberately *not* been done:
+Everything below requires a decision, a test environment I don't have, or carries enough
+risk that doing it blind is worse than waiting. **The single biggest unblocker is a way to
+test compose + dashboard behavior** — a NAS, or even a local Docker host — which would let me
+safely verify **H1 / M10 / M3 / M4** (the high-impact items) without risking the default
+install for everyone. (L6 was assessed and intentionally skipped: it's purely preventive —
+the real leak vector is already redacted and `.env` secrets never hit stdout.) The rest:
 
 - **Design choices.** **H1** — the `!reset` compose tag breaks the *default* install on
   Podman / older-Compose / QNAP (**highest user impact**; fix is hard-fail-with-a-clear-
