@@ -11,6 +11,8 @@ downloaded automatically.
 
 > Want to **play** your music as stations/playlists? See
 > [Play your music like stations + playlists (Plexamp)](./MUSIC-PLAYBACK.md).
+> Want your own **24/7 broadcast radio**? See
+> [Build your own radio stations (AzuraCast)](./MUSIC-RADIO.md).
 
 ---
 

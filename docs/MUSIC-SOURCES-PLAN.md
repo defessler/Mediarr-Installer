@@ -1,7 +1,12 @@
 # Lidarr Music-Source Implementation Plan
 
 **Project:** Mediarr Installer | **Author:** Architect | **Date:** 2026-06-14
-**Status:** Plan for review — flags product decisions for Doug inline
+**Status:** ⚠️ **PLANNING DOC — not user documentation.** Shipped status as of v0.10.1:
+**Phase 1 (RuTracker) + Phase 1b (Usenet-music tags) shipped in v0.10.0**; Phase 3
+(Soulseek) shipped earlier. **Phase 2 (Deezer plugins) is researched but NOT implemented** —
+see [MUSIC-SOURCES-DEEZER-RESEARCH.md](MUSIC-SOURCES-DEEZER-RESEARCH.md). Note PD-1 is
+**resolved**: RuTracker is a *native C# Prowlarr indexer* (`RuTracker.cs`), schema name
+`RuTracker.org` — **not** a Cardigann definition as the Phase 1 text below assumes.
 
 ---
 

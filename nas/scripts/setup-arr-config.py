@@ -3960,8 +3960,12 @@ def render_homepage_settings(env):
     out.append("  Automation:")
     out.append("    style: row")
     out.append("    columns: 3")
-    # Downloads — only when at least one downloader is on
-    if is_enabled(env, 'ENABLE_SABNZBD') or is_enabled(env, 'ENABLE_QBITTORRENT'):
+    # Downloads — only when at least one downloader is on. Soulseek (opt-in)
+    # adds the slskd tile to the Downloads SECTION in render_homepage_services,
+    # so the layout gate must include it too — otherwise a Soulseek-only
+    # downloader (SAB + qBit both off) emits a Downloads section with no
+    # matching layout key and Homepage warns. Mirror the section gate exactly.
+    if is_enabled(env, 'ENABLE_SABNZBD') or is_enabled(env, 'ENABLE_QBITTORRENT') or is_optin_enabled(env, 'ENABLE_SOULSEEK'):
         out.append("  Downloads:")
         out.append("    style: row")
         out.append("    columns: 2")

@@ -15,6 +15,8 @@ not.
 
 > Want the simpler, instant kind of "station" just for yourself? See
 > [Play your music like stations + playlists (Plexamp)](./MUSIC-PLAYBACK.md).
+> Need to fill your music library first? See
+> [Music downloads with Soulseek](./MUSIC-SETUP.md) (plus the music indexers in the wizard).
 
 ---
 

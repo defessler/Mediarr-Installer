@@ -177,6 +177,19 @@ If you can't get AvistaZ, the public-only setup works for most current-season K-
 
 ---
 
+## Music — recommended mix
+
+Lidarr draws from the same indexer pool as Sonarr/Radarr, plus dedicated music trackers. In rough order of value:
+
+1. **Redacted (RED) (private, invite/interview)** — the premier music tracker (What.CD lineage); unmatched depth + quality. API-key auth.
+2. **Orpheus (OPS) (private, invite)** — the other top-tier music tracker, a great RED complement. API-key auth.
+3. **RuTracker (free signup)** — a huge Russian general tracker with deep music / full-discography coverage; the single best *free* music source. Username/password auth, CloudFlare-gated so it routes through FlareSolverr (which the installer disables on arm64 — no RuTracker there). The signup form is in Russian.
+4. **NZBFinder / NZB.su (paid usenet)** — both carry music alongside their general coverage; worth it if you already run usenet.
+
+All are opt-in — added only when you supply credentials. In the wizard they appear under **Configure → Find indexers** with the **Music** filter; the keys live in `.env.example`.
+
+---
+
 ## What's not included + why
 
 A non-exhaustive list of indexers we deliberately don't ship + the reason:

@@ -1,6 +1,8 @@
 # Deezer (Lidarr plugins) — Phase 2 source-verified research
 
-**Status:** Research complete, implementation-ready (pending one live smoke test).
+**Status:** ⚠️ **PLANNING / RESEARCH DOC — the Deezer feature is NOT implemented or shipped.**
+Research is complete and implementation-ready *pending one live smoke test*; this describes
+what a future Phase 2 *would* build, not a current feature. Not user documentation.
 **Date:** 2026-06-15
 **Scope:** Resolves the open questions in `MUSIC-SOURCES-PLAN.md` §2 (Phase 2) and §3
 (Risks A/B, PD-2/PD-3/PD-5/PD-6) **from authoritative source code**, so the build is

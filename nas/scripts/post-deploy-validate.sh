@@ -146,6 +146,9 @@ is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 # AzuraCast (broadcast radio) is OPT-IN — explicit-true gate so a pre-
 # AzuraCast .env isn't expected to have the container.
 is_optin_enabled ENABLE_AZURACAST && CONTAINERS+=(azuracast)
+# Soulseek (opt-in music download) — slskd WebUI + the soularr bridge daemon.
+# Explicit-true gate so a pre-Soulseek .env isn't expected to have them.
+is_optin_enabled ENABLE_SOULSEEK && CONTAINERS+=(slskd soularr)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -417,6 +420,14 @@ is_enabled ENABLE_RECYCLARR   && check_url "Recyclarr trigger" "http://$LAN_IP:8
 # wizard's Done screen scrapes to light up its AzuraCast health tile.
 is_optin_enabled ENABLE_AZURACAST && check_url_lenient "AzuraCast" "http://$LAN_IP:49157" \
     "AzuraCast is heavy — first boot can take a few minutes while it sets up its database. Wait, then re-run."
+# slskd (opt-in Soulseek client). Its WebUI is published on 5030 (by gluetun
+# when VPN is on, directly when off — works either way). Like qBittorrent it
+# shares gluetun's network namespace, so the WebUI can still read 000 right at
+# end-of-install while the VPN handshake settles — lenient check → warn not
+# fail. The "slskd (http" line is what the wizard's Done screen scrapes for its
+# health tile (mirrors the AzuraCast pattern above).
+is_optin_enabled ENABLE_SOULSEEK && check_url_lenient "slskd" "http://$LAN_IP:5030" \
+    "slskd shares the VPN's network — if VPN is on, give the tunnel a moment to settle, then re-run."
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
@@ -657,6 +668,7 @@ if is_enabled ENABLE_HOMEPAGE; then
         # is fine here: we only append when is_optin_enabled already proved the
         # key is an explicit true, so both helpers agree.
         is_optin_enabled ENABLE_AZURACAST && EXPECTED_TILES+=("ENABLE_AZURACAST:AzuraCast")
+        is_optin_enabled ENABLE_SOULSEEK  && EXPECTED_TILES+=("ENABLE_SOULSEEK:slskd")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

@@ -5,7 +5,7 @@ import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
-  Newspaper, Download, MessageSquare, BarChart3, Shield, Radio,
+  Newspaper, Download, MessageSquare, BarChart3, Shield, Radio, Music2,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -22,9 +22,10 @@ import { isEnabled, isOptInEnabled } from '../../shared/env-render.js'
 // blue TV icon" on Configure recognises it again here. Two new entries
 // for things that don't appear on Configure (Prowlarr always-on, Seerr
 // derived from Plex stack, Tautulli derived, Flaresolverr always-on).
-// AzuraCast is opt-in: it's listed here for its glyph + health wiring but
-// filtered out of the rendered grid (displayedServices) unless the user
-// explicitly enabled it — so non-radio users never see a stray grey tile.
+// AzuraCast and slskd (Soulseek) are opt-in: they're listed here for their
+// glyph + health wiring but filtered out of the rendered grid
+// (displayedServices) unless the user explicitly enabled each — so users who
+// didn't opt in never see a stray grey tile.
 const SERVICES: {
   name: string
   port: string
@@ -45,6 +46,7 @@ const SERVICES: {
   { name: 'Tautulli',     port: '8181',                          icon: BarChart3,       iconColor: 'text-cyan-400' },
   { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
   { name: 'AzuraCast',    port: '49157',                         icon: Radio,           iconColor: 'text-rose-400' },
+  { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'fail'
@@ -215,6 +217,9 @@ export function DoneScreen() {
     // the user explicitly enabled it; otherwise it'd sit grey forever for
     // everyone who didn't. isOptInEnabled = explicit-true only (missing → off).
     if (s.name === 'AzuraCast' && !isOptInEnabled(config.ENABLE_AZURACAST)) return []
+    // slskd (Soulseek) is opt-in too — same treatment as AzuraCast: only show
+    // its tile when the user explicitly enabled Soulseek.
+    if (s.name === 'slskd' && !isOptInEnabled(config.ENABLE_SOULSEEK)) return []
     return [s]
   })
 
