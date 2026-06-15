@@ -49,7 +49,7 @@ const SERVICES: {
   { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
 ]
 
-type ServiceHealth = 'unknown' | 'ok' | 'fail'
+type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
 const VALIDATE_CHANNEL = 'post-deploy-validate'
 
 export function DoneScreen() {
@@ -88,8 +88,14 @@ export function DoneScreen() {
 
     // Update per-service health by scanning each new complete line for the
     // patterns post-deploy-validate.sh emits:
-    //   "  ✔ Homepage (http://...) — HTTP 200"
-    //   "  ✘ Sonarr (http://...) — HTTP 000 (not reachable)"
+    //   "  ✔ Homepage (http://...) — HTTP 200"                  → ok
+    //   "  ⚠ AzuraCast (http://...) — not serving HTTP yet. …"  → warn (still booting)
+    //   "  ✘ Sonarr (http://...) — HTTP 000 (not reachable)"    → fail
+    // The ⚠ case matters: heavy / lenient services (AzuraCast, Seerr, slskd,
+    // and qBit/Tautulli's slow-boot path) emit a WARN — not an ok — when their
+    // WebUI isn't serving yet. Without a 'warn' bucket those tiles stayed
+    // 'unknown' and silently dropped out of the footer's "All N reachable"
+    // count, so a still-booting AzuraCast read as a green all-clear.
     setHealth((cur) => {
       const next = { ...cur }
       for (const line of parts) {
@@ -105,6 +111,7 @@ export function DoneScreen() {
           if (clean.includes(`${name} (http`)) {
             if (clean.includes('✔')) next[name] = 'ok'
             else if (clean.includes('✘')) next[name] = 'fail'
+            else if (clean.includes('⚠')) next[name] = 'warn'
           }
         }
       }
@@ -178,6 +185,11 @@ export function DoneScreen() {
   const healthEntries = Object.entries(health)
   const okCount = healthEntries.filter(([, h]) => h === 'ok').length
   const failCount = healthEntries.filter(([, h]) => h === 'fail').length
+  // Services whose WebUI isn't serving HTTP yet — the validator emitted ⚠, not
+  // ✔/✘ (e.g. a still-booting AzuraCast, or Seerr awaiting its first-run
+  // wizard). Tracked so the footer can't claim "All N reachable" while one of
+  // the user's services is still unproven.
+  const warnCount = healthEntries.filter(([, h]) => h === 'warn').length
 
   const reduced = useReducedMotion()
   // Honest success signal: ONLY a clean validator exit. The old fallback
@@ -319,14 +331,20 @@ export function DoneScreen() {
         {displayedServices.map((s, i) => {
           const url = `http://${ip}:${s.port}`
           const h = health[s.name] ?? 'unknown'
-          const StatusIcon = h === 'ok' ? CheckCircle2 : h === 'fail' ? XCircle : Circle
+          const StatusIcon =
+            h === 'ok' ? CheckCircle2
+            : h === 'fail' ? XCircle
+            : h === 'warn' ? AlertTriangle
+            : Circle
           const statusColor =
             h === 'ok' ? 'text-emerald-400'
             : h === 'fail' ? 'text-rose-400'
+            : h === 'warn' ? 'text-amber-400'
             : 'text-slate-600'
           const ringColor =
             h === 'ok' ? 'hover:border-emerald-600/40 hover:bg-emerald-950/20'
             : h === 'fail' ? 'hover:border-rose-600/40 hover:bg-rose-950/20'
+            : h === 'warn' ? 'hover:border-amber-600/40 hover:bg-amber-950/20'
             : 'hover:border-slate-600 hover:bg-slate-800/70'
           const ServiceIcon = s.icon
           return (
@@ -368,7 +386,7 @@ export function DoneScreen() {
                   screen readers from voicing both "checkmark" + "ok". */}
               <StatusIcon size={18} className={`shrink-0 ${statusColor}`} strokeWidth={2} aria-hidden="true" />
               <span className="sr-only">
-                Status: {h === 'ok' ? 'healthy' : h === 'fail' ? 'not responding' : 'unknown'}
+                Status: {h === 'ok' ? 'healthy' : h === 'fail' ? 'not responding' : h === 'warn' ? 'not ready yet' : 'unknown'}
               </span>
               <ExternalLink size={16} className="text-slate-500 shrink-0" aria-hidden="true" />
             </motion.button>
@@ -522,10 +540,20 @@ export function DoneScreen() {
               <Circle size={14} className="text-slate-600" aria-hidden="true" />
               Validation pending
             </span>
-          ) : failCount === 0 ? (
+          ) : failCount === 0 && warnCount === 0 ? (
             <span className="text-emerald-300 inline-flex items-center gap-1.5">
               <CheckCircle2 size={16} aria-hidden="true" />
               All {okCount} services reachable
+            </span>
+          ) : failCount === 0 ? (
+            // No hard failures, but one or more services aren't serving HTTP yet
+            // (a still-booting AzuraCast, Seerr awaiting its wizard, etc.). Don't
+            // claim "All reachable" — name the not-ready count honestly.
+            <span className="text-amber-300 inline-flex items-center gap-1.5">
+              <CheckCircle2 size={16} className="text-emerald-400" aria-hidden="true" />
+              {okCount} reachable,
+              <AlertTriangle size={16} className="text-amber-400" aria-hidden="true" />
+              {warnCount} not ready yet — see grid above
             </span>
           ) : (
             <span className="text-amber-300 inline-flex items-center gap-1.5">
