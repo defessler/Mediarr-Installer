@@ -3027,7 +3027,12 @@ def configure_qbittorrent(base, username, password, env=None,
     elif _m:
         _lan_nets = [f"{_m.group(1)}.0/24"]
     else:
-        _lan_nets = ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12']
+        # No usable LAN info — fail CLOSED: whitelist nothing beyond loopback,
+        # so LAN browsers get the normal login prompt instead of an all-RFC1918
+        # password bypass. LAN_IP is effectively always set by the wizard, so
+        # this only affects rare hand-runs. Mirrors setup-folders.sh.
+        _lan_nets = []
+    _bypass_desc = ', '.join(_lan_nets) if _lan_nets else None
     qb_auth = {
         'bypass_local_auth':                    True,
         'bypass_auth_subnet_whitelist_enabled': True,
@@ -3036,12 +3041,18 @@ def configure_qbittorrent(base, username, password, env=None,
         'bypass_auth_subnet_whitelist':         '\n'.join(['127.0.0.0/8'] + _lan_nets),
     }
     if all(prefs.get(k) == v for k, v in qb_auth.items()):
-        skip(f"WebUI LAN auth bypass ({', '.join(_lan_nets)} — no login on your network)")
+        if _bypass_desc:
+            skip(f"WebUI LAN auth bypass ({_bypass_desc} — no login on your network)")
+        else:
+            skip("WebUI auth: login required on the LAN (no LAN_IP to scope a bypass — strict by default)")
     else:
         try:
             set_data = urlencode({'json': json.dumps(qb_auth)}).encode()
             opener.open(f"{base}/api/v2/app/setPreferences", set_data, timeout=10)
-            ok(f"WebUI: no login needed from the LAN ({', '.join(_lan_nets)} bypasses the password)")
+            if _bypass_desc:
+                ok(f"WebUI: no login needed from the LAN ({_bypass_desc} bypasses the password)")
+            else:
+                ok("WebUI auth: kept strict — login required on the LAN (no LAN_IP to scope a bypass)")
         except Exception as e:
             warn(f"qBittorrent: couldn't set the LAN auth bypass ({e}) — enable it by hand in "
                  f"Settings → Web UI → 'Bypass authentication for clients in whitelisted IP subnets'")

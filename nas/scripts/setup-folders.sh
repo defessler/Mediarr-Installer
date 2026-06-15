@@ -430,8 +430,9 @@ echo "Writing qBittorrent config (with WebUI credentials)..."
 #   2. The LAN subnet — derived from LAN_IP in .env so only the user's
 #      actual home network bypasses auth, not the union of all RFC1918
 #      ranges. Narrows attack surface against compromised IoT devices
-#      on the same LAN. Falls back to all-RFC1918 (legacy behavior) when
-#      LAN_IP isn't readable.
+#      on the same LAN. Fails CLOSED (loopback only — login required on the
+#      LAN) when LAN_IP isn't readable, rather than opening the password
+#      bypass to all of RFC1918.
 LAN_IP_VAL=$(env_val LAN_IP)
 LAN_SUBNET_VAL=$(env_val LAN_SUBNET)
 if [ -n "$LAN_SUBNET_VAL" ]; then
@@ -439,10 +440,23 @@ if [ -n "$LAN_SUBNET_VAL" ]; then
 elif [[ "$LAN_IP_VAL" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
     QB_LAN="${BASH_REMATCH[1]}.0/24"
 else
-    # No LAN info — fall back to all-RFC1918 (matches pre-v0.3 default).
-    QB_LAN="192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+    # No LAN info — fail CLOSED. Whitelist only loopback (below) and leave the
+    # normal login prompt for LAN browsers, rather than auto-bypassing the
+    # password for ALL of RFC1918. The old fail-OPEN default handed
+    # unauthenticated qBit control (add torrents, change save paths) to any
+    # device on any private network — the exact compromised-IoT threat the /24
+    # narrowing exists to address. LAN_IP is effectively always set by the
+    # wizard, so this strict path only affects rare hand-runs.
+    QB_LAN=""
 fi
-QB_WHITELIST="127.0.0.0/8,$QB_LAN"
+# Loopback is ALWAYS whitelisted — gluetun's port-forward + WebUI reconnect
+# need it (without 127.0.0.0/8 qBit 403s on every reconnect). The LAN subnet is
+# appended only when we actually know it; a missing LAN_IP must NOT fall open.
+if [ -n "$QB_LAN" ]; then
+    QB_WHITELIST="127.0.0.0/8,$QB_LAN"
+else
+    QB_WHITELIST="127.0.0.0/8"
+fi
 
 # "Have WE configured this conf before?" is detected by the PRESENCE of
 # structural settings we write that qBittorrent's own defaults never have:
