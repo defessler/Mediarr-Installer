@@ -35,6 +35,17 @@ interface WizardState {
   mode: WizardMode
   setMode: (m: WizardMode) => void
 
+  /** True while a screen is mid-flight on a long remote operation that
+   *  must not be interrupted — a setup.sh install (RunScreen), a stack
+   *  update (UpdateRunScreen), or a migrate import (MigrateScreen). The
+   *  in-place app updater quits the app and swaps its own binary, so
+   *  letting the user trigger a self-update during a live SSH job would
+   *  kill it mid-run. App.tsx disables the footer "Install vX" trigger
+   *  while this is set. Transient — never persisted; each screen sets it
+   *  on start and clears it on done/failed/unmount. */
+  busy: boolean
+  setBusy: (b: boolean) => void
+
   /** id of the currently-loaded profile. Required to enter the wizard
    *  past the Welcome screen. */
   activeProfileId: string | null
@@ -173,6 +184,9 @@ export const useWizard = create<WizardState>()(
       mode: 'install',
       setMode: (mode) => set({ mode }),
 
+      busy: false,
+      setBusy: (busy) => set({ busy }),
+
       activeProfileId: null,
       setActiveProfileId: (activeProfileId) => set({ activeProfileId }),
 
@@ -282,12 +296,14 @@ export const useWizard = create<WizardState>()(
     {
       name: 'nas-installer-wizard',
       // Profiles are now the source of truth for connection + config.
-      // We only persist the lightweight bits: which step the user was on,
-      // which mode, and which profile was active. Connection / config
-      // come back via profile:load when the wizard re-launches.
+      // We persist only the lightweight bits: which profile was active
+      // (so it re-hydrates) and the per-profile run-result map.
+      // Connection / config come back via profile:load when the wizard
+      // re-launches. We deliberately DON'T persist `step` or `mode` —
+      // the app always opens on the Welcome (Start) tab so the user picks
+      // a profile + Install/Update/Migrate fresh each launch, rather than
+      // being dropped mid-flow into a stale step with no SSH session.
       partialize: (s) => ({
-        step: s.step,
-        mode: s.mode,
         activeProfileId: s.activeProfileId,
         activeProfileLabel: s.activeProfileLabel,
         // Persist the per-profile run result map so the WelcomeScreen
@@ -296,6 +312,18 @@ export const useWizard = create<WizardState>()(
         // tiny object per profile, cleared when a fresh install
         // succeeds — no risk of unbounded growth.
         lastRuns: s.lastRuns,
+      }),
+      // Force the entry point on every rehydrate. Belt-and-suspenders:
+      // even a localStorage blob written by an OLDER app version (which
+      // DID persist step/mode) gets normalised back to the Start tab in
+      // install mode, so "always start at the start tab" holds across the
+      // upgrade boundary too.
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as Partial<WizardState>),
+        step: 'welcome',
+        mode: 'install',
+        busy: false,
       }),
     },
   ),

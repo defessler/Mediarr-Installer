@@ -38,7 +38,7 @@ const STEP_OK_RE    = /✔\s*Step\s+(\d+)\s+complete/
 const STEP_FAIL_RE  = /✘\s*Step\s+(\d+)\s+failed/
 
 export function RunScreen() {
-  const { sessionId, targetDir, config, setConfig, setStep, activeProfileId, recordRunResult, clearRunResult, connection, setSessionId } = useWizard()
+  const { sessionId, targetDir, config, setConfig, setStep, activeProfileId, recordRunResult, clearRunResult, connection, setSessionId, setBusy } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<{ pct: number; file: string } | null>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -102,6 +102,21 @@ export function RunScreen() {
   /** Last time we received a chunk on the setup.sh stream — drives the
    *  heartbeat in go() so the user knows we're not frozen. */
   const lastChunkAtRef = useRef<number>(Date.now())
+
+  // Publish a global "busy" flag while an install (or a single-step
+  // re-run) is in flight, so App.tsx can disable the in-place app-updater
+  // trigger — self-updating quits + swaps the binary, which would kill a
+  // live setup.sh job. Cleared automatically once phase settles on
+  // done/failed, and on unmount as a safety net.
+  useEffect(() => {
+    const active =
+      phase === 'uploading' ||
+      phase === 'writing-env' ||
+      phase === 'running-setup' ||
+      rerunningStep !== null
+    setBusy(active)
+  }, [phase, rerunningStep, setBusy])
+  useEffect(() => () => setBusy(false), [setBusy])
 
   function resetSteps() {
     setSteps(SETUP_STEPS.map((s) => ({ ...s })))

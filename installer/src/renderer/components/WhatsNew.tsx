@@ -185,9 +185,15 @@ export function WhatsNew({ info }: Props) {
   //                 it yet; click → background download.
   // - 'progress'  — download in flight; show progress bar + Cancel.
   // - 'error'     — error banner only, no action button.
+  // extracting / installing are transient active-update states owned by
+  // the global blocking UpdateOverlay (which sits on top of this banner),
+  // but map them to progress/install here too so the banner never flashes
+  // a false "error" in the brief window before the overlay paints.
   const mode: 'install' | 'download' | 'progress' | 'error' =
     updater.kind === 'downloaded'   ? 'install'
+    : updater.kind === 'installing'  ? 'install'
     : updater.kind === 'downloading' ? 'progress'
+    : updater.kind === 'extracting'  ? 'progress'
     : updater.kind === 'available'   ? 'download'
     : 'error'
 

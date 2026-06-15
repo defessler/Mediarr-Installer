@@ -334,11 +334,14 @@ export function WelcomeScreen() {
                       </div>
                     </div>
 
-                    {/* Primary action — Install. Always the biggest, most
-                        prominent button on the row. "Install" is the
-                        verb a child understands; everything else
-                        (Update / Migrate / Edit) goes in the overflow
-                        menu so it doesn't compete for attention. */}
+                    {/* Primary actions — Install + Update side by side so
+                        the two modes are equally discoverable. "Install"
+                        is the full first-time setup; "Update" pulls new
+                        images + re-applies fixes to an already-installed
+                        stack. The visual hierarchy (filled green vs.
+                        outlined) signals which is the first-run default
+                        without hiding Update behind a menu. Edit / Migrate
+                        / Export stay in the gear overflow. */}
                     <div className="flex items-center gap-2">
                       <BigButton
                         size="md"
@@ -347,8 +350,19 @@ export function WelcomeScreen() {
                         loading={busy === p.id}
                         disabled={busy !== null}
                         onClick={() => pickProfile(p.id, 'install')}
+                        title={`Full install / re-install of the stack on ${p.label}`}
                       >
                         Install
+                      </BigButton>
+                      <BigButton
+                        size="md"
+                        variant="secondary"
+                        icon={<RefreshCw size={17} />}
+                        disabled={busy !== null}
+                        onClick={() => pickProfile(p.id, 'update')}
+                        title={`Update the already-installed stack on ${p.label} — pull new images and re-apply fixes`}
+                      >
+                        Update
                       </BigButton>
                       <button
                         onClick={() => setOverflowOpenId(overflowOpenId === p.id ? null : p.id)}
@@ -378,7 +392,7 @@ export function WelcomeScreen() {
                         role="menu"
                         aria-label={`Actions for ${p.label}`}
                       >
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-700/60">
+                        <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-700/60">
                           <BigButton
                             size="sm" variant="ghost"
                             icon={<Edit3 size={16} />}
@@ -386,14 +400,6 @@ export function WelcomeScreen() {
                             onClick={() => pickProfile(p.id, 'edit')}
                           >
                             Edit
-                          </BigButton>
-                          <BigButton
-                            size="sm" variant="ghost"
-                            icon={<RefreshCw size={16} />}
-                            disabled={busy !== null}
-                            onClick={() => pickProfile(p.id, 'update')}
-                          >
-                            Update
                           </BigButton>
                           <BigButton
                             size="sm" variant="ghost"
@@ -411,7 +417,7 @@ export function WelcomeScreen() {
                           >
                             Export
                           </BigButton>
-                          <div className="col-span-2 sm:col-span-4 mt-1">
+                          <div className="col-span-3 mt-1">
                             <AnimatePresence mode="wait" initial={false}>
                               {confirmDeleteId === p.id ? (
                                 <motion.div

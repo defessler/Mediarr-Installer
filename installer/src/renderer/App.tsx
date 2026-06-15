@@ -9,6 +9,7 @@ import { useErrors, reportError } from './store/errors.js'
 import { ToastTray } from './components/ToastTray.js'
 import { TroubleshootingModal } from './components/TroubleshootingModal.js'
 import { ScreenTransition } from './components/ScreenTransition.js'
+import { UpdateOverlay } from './components/UpdateOverlay.js'
 import { useProfileAutosave } from './hooks/useProfileAutosave.js'
 import { WelcomeScreen } from './screens/WelcomeScreen.js'
 import { ConnectScreen } from './screens/ConnectScreen.js'
@@ -48,6 +49,7 @@ const MIGRATE_STEPS: { id: WizardStep; label: string }[] = [
 export function App() {
   const step = useWizard((s) => s.step)
   const mode = useWizard((s) => s.mode)
+  const busy = useWizard((s) => s.busy)
   const sessionId = useWizard((s) => s.sessionId)
   const activeProfileId = useWizard((s) => s.activeProfileId)
   const activeProfileLabel = useWizard((s) => s.activeProfileLabel)
@@ -89,6 +91,19 @@ export function App() {
    *  page; now it runs the same in-place flow. */
   const [updaterState, setUpdaterState] = useState<UpdaterState>({ kind: 'idle' })
 
+  // Blocking-overlay bookkeeping. Once an in-place update is committed
+  // (download starts), a full-screen overlay locks the wizard until the
+  // update finishes or the user backs out — see UpdateOverlay.
+  //   updateInFlight — true from the moment a download starts until the
+  //     state returns to a non-update resting kind. Lets a mid-update
+  //     ERROR (which could fire from any screen the download was kicked
+  //     off on) surface in the overlay instead of vanishing.
+  //   restartDeferred — the user hit "Install on next launch" at the
+  //     downloaded stage; hide the overlay but keep the footer's
+  //     "Restart to update" pill so they can finish whenever.
+  const [updateInFlight, setUpdateInFlight] = useState(false)
+  const [restartDeferred, setRestartDeferred] = useState(false)
+
   // Subscribe to the updater event stream so the button reacts to the
   // outcome of `updater.check()` calls (both ours and the auto-check
   // at startup) and the footer pill mirrors the latest available
@@ -101,13 +116,28 @@ export function App() {
   useEffect(() => {
     const off = window.installer.updater?.onState?.((s) => {
       setUpdaterState(s)
+      // Blocking-overlay lifecycle. A download starting opens the
+      // overlay and clears any prior "install later" deferral; the
+      // extracting/installing/downloaded states keep it open; an error
+      // is left to the overlay IFF we were mid-update (handled by NOT
+      // resetting the flag here); any resting kind closes it.
+      if (s.kind === 'downloading') {
+        setUpdateInFlight(true)
+        setRestartDeferred(false)
+      } else if (s.kind === 'extracting' || s.kind === 'installing' || s.kind === 'downloaded') {
+        setUpdateInFlight(true)
+      } else if (s.kind !== 'error') {
+        setUpdateInFlight(false)
+        setRestartDeferred(false)
+      }
       // checkState only drives the manual "Check for updates" button's
       // transient feedback; the in-place control is driven by
       // updaterState directly.
       if (s.kind === 'not-available') {
         setCheckState('up-to-date')
         setTimeout(() => setCheckState((c) => (c === 'up-to-date' ? 'idle' : c)), 4000)
-      } else if (s.kind === 'available' || s.kind === 'downloaded' || s.kind === 'downloading') {
+      } else if (s.kind === 'available' || s.kind === 'downloaded'
+        || s.kind === 'downloading' || s.kind === 'extracting' || s.kind === 'installing') {
         setCheckState('idle')
       } else if (s.kind === 'error') {
         setCheckState('error')
@@ -516,10 +546,15 @@ export function App() {
             {updaterState.kind === 'available' && (
               <button
                 type="button"
-                onClick={() => { void window.installer.updater?.download() }}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
-                title={`Download v${updaterState.version} and install it in place — no manual download needed`}
-                aria-label={`Install update v${updaterState.version} in place`}
+                disabled={busy}
+                onClick={() => { if (!busy) void window.installer.updater?.download() }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700/50 text-emerald-100 hover:bg-emerald-600/60 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-700/50"
+                title={busy
+                  ? 'Finish the current install / update / migrate before updating the app'
+                  : `Download v${updaterState.version} and install it in place — no manual download needed`}
+                aria-label={busy
+                  ? `Update v${updaterState.version} available — finish the current operation first`
+                  : `Install update v${updaterState.version} in place`}
               >
                 <Download size={13} aria-hidden="true" />
                 Install v{updaterState.version}
@@ -672,6 +707,28 @@ export function App() {
             pgid={wizardConfig.PGID}
             sessionId={sessionId}
             onClose={() => setHelpOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Blocking in-place-update overlay — locks the entire wizard
+          (stepper, screen, footer) while an app update downloads,
+          extracts, or installs, so the user can't navigate away or kick
+          off a remote operation while the app is swapping its own binary.
+          A deferred "install on next launch" hides it; a mid-update error
+          keeps it up so the failure is seen rather than swallowed. */}
+      <AnimatePresence>
+        {(updaterState.kind === 'downloading'
+          || updaterState.kind === 'extracting'
+          || updaterState.kind === 'installing'
+          || (updaterState.kind === 'downloaded' && !restartDeferred)
+          || (updaterState.kind === 'error' && updateInFlight)) && (
+          <UpdateOverlay
+            state={updaterState}
+            onCancel={() => { void window.installer.updater?.cancel() }}
+            onInstall={() => { void window.installer.updater?.install() }}
+            onDefer={() => setRestartDeferred(true)}
+            onDismissError={() => setUpdateInFlight(false)}
           />
         )}
       </AnimatePresence>

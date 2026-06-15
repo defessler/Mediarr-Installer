@@ -312,7 +312,17 @@ export type UpdaterState =
   | { kind: 'available'; version: string; releaseNotes?: string; htmlUrl?: string }
   | { kind: 'not-available' }
   | { kind: 'downloading'; percent: number; bytesPerSecond: number; transferred: number; total: number }
+  // Unpacking the downloaded zip into the staging dir. Emitted between
+  // the final 100% download tick and the `downloaded` state so the
+  // blocking update overlay can show "Extracting…" instead of a bar
+  // frozen at 100% (extraction of the ~200 MB build takes a few seconds).
+  | { kind: 'extracting'; version: string }
   | { kind: 'downloaded'; version: string; releaseNotes?: string; htmlUrl?: string }
+  // The user clicked "Restart to finish" — the swap helper is spawned
+  // and the app is about to quit (~500 ms). Lets the overlay show a
+  // terminal "Restarting…" state instead of an interactive button the
+  // user could double-click during the quit window.
+  | { kind: 'installing'; version: string }
   | { kind: 'error'; message: string }
 
 // ── Connection profiles ───────────────────────────────────────────────────────

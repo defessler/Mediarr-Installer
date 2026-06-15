@@ -51,11 +51,14 @@
 
 import { app, BrowserWindow, ipcMain } from 'electron'
 import {
+  closeSync,
   createWriteStream,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -311,26 +314,60 @@ async function downloadUpdate(): Promise<void> {
     const reader = Readable.fromWeb(
       res.body as unknown as import('stream/web').ReadableStream,
     )
-    reader.on('data', (chunk: Buffer) => {
-      received += chunk.length
-      // Throttle progress broadcasts to ~6/s (every 150ms) — anything
-      // higher just floods IPC and the renderer's spring-easing
-      // animation can't keep up anyway.
-      const now = Date.now()
-      if (now - lastBroadcastAt >= 150) {
-        const elapsed = (now - startedAt) / 1000
-        const bps = elapsed > 0 ? received / elapsed : 0
-        broadcast({
-          kind: 'downloading',
-          percent: total > 0 ? Math.round((received / total) * 100) : 0,
-          bytesPerSecond: Math.round(bps),
-          transferred: received,
-          total,
-        })
-        lastBroadcastAt = now
-      }
-    })
-    await pipeline(reader, out)
+    // Count bytes + emit progress INSIDE the pipeline (an async-generator
+    // stage) rather than via a separate reader.on('data') listener. A raw
+    // 'data' listener flips the stream into flowing mode before pipeline()
+    // attaches its writer, which can drop the first chunk(s) — i.e. the zip's
+    // PK header — leaving a file that fails extraction with the cryptic
+    // "Found invalid data while decoding". Threading every chunk through the
+    // generator guarantees it reaches `out` exactly once, in order, with
+    // backpressure intact.
+    await pipeline(
+      reader,
+      async function* (source: AsyncIterable<Buffer>) {
+        for await (const chunk of source) {
+          received += chunk.length
+          // Throttle progress broadcasts to ~6/s (every 150ms) — more just
+          // floods IPC and the renderer's easing can't keep up anyway.
+          const now = Date.now()
+          if (now - lastBroadcastAt >= 150) {
+            const elapsed = (now - startedAt) / 1000
+            const bps = elapsed > 0 ? received / elapsed : 0
+            broadcast({
+              kind: 'downloading',
+              percent: total > 0 ? Math.round((received / total) * 100) : 0,
+              bytesPerSecond: Math.round(bps),
+              transferred: received,
+              total,
+            })
+            lastBroadcastAt = now
+          }
+          yield chunk
+        }
+      },
+      out,
+    )
+
+    // Integrity gate. A truncated download or a wrong-content body (a GitHub
+    // error page / un-followed redirect) must NOT proceed to extraction — that
+    // surfaces as the cryptic "PowerShell extract exited 1: Found invalid data
+    // while decoding". Verify the file matches the asset's known size and
+    // starts with the zip magic (PK\x03\x04). Compare against the GitHub API
+    // asset size (the true zip size), NOT Content-Length, which can be the
+    // gzip transfer size if the CDN compressed the response.
+    const onDisk = statSync(zipPath).size
+    if (update.sizeBytes > 0 && onDisk !== update.sizeBytes) {
+      throw new Error(
+        `download incomplete (${onDisk} of ${update.sizeBytes} bytes) — please try the update again`,
+      )
+    }
+    const magic = Buffer.alloc(4)
+    const fd = openSync(zipPath, 'r')
+    try { readSync(fd, magic, 0, 4, 0) } finally { closeSync(fd) }
+    if (!(magic[0] === 0x50 && magic[1] === 0x4b)) {
+      throw new Error('downloaded file is not a valid .zip (got an error page?) — please try the update again')
+    }
+
     // One final 100% tick so the bar visibly fills before we flip to
     // the extracting state.
     broadcast({
@@ -376,6 +413,11 @@ async function downloadUpdate(): Promise<void> {
   }
 
   // ── Extract ──────────────────────────────────────────────────────
+  // Flip to the dedicated `extracting` state so the renderer's blocking
+  // overlay shows progress instead of a download bar pinned at 100%.
+  // Unpacking the ~200 MB build is a few CPU-bound seconds with no byte
+  // counter to drive a bar, hence an indeterminate state.
+  broadcast({ kind: 'extracting', version: update.version })
   try {
     log.info(`updater: extracting to ${stagingDir}`)
     await extractZip(zipPath, stagingDir)
@@ -462,6 +504,11 @@ async function installUpdate(): Promise<void> {
     return
   }
   installInProgress = true
+  // Tell the renderer we're committing to the restart so the overlay
+  // swaps its "Restart now" button for a terminal "Restarting…" message
+  // — the app quits ~500 ms after the helper spawns, so an interactive
+  // button here would just invite a confusing double-click.
+  broadcast({ kind: 'installing', version: pendingUpdate.version })
   try {
     const exePath = app.getPath('exe')
     const installDir = dirname(exePath)

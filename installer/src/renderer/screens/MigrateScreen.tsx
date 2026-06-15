@@ -93,6 +93,7 @@ type ImportResult = { title: string; status: 'ok' | 'updated' | 'fail'; message?
 export function MigrateScreen() {
   const reduced = useReducedMotion()
   const { sessionId, targetDir, setStep } = useWizard()
+  const setBusy = useWizard((s) => s.setBusy)
   // Source connection info persists on the active profile (encrypted),
   // so closing the wizard or switching screens doesn't make the user
   // re-paste four URLs + four credentials. Reads via per-field
@@ -154,6 +155,15 @@ export function MigrateScreen() {
 
   const [importing, setImporting] = useState(false)
   const [results, setResults] = useState<ImportResult[]>([])
+
+  // Publish the global "busy" flag while any migrate fetch or import is
+  // in flight, so the in-place app-updater trigger in App.tsx is disabled
+  // — self-updating quits the app, which would abort a half-finished
+  // import. Cleared when all flows go idle and on unmount.
+  useEffect(() => {
+    setBusy(fetching || importing || qbitFetching || qbitImporting)
+  }, [fetching, importing, qbitFetching, qbitImporting, setBusy])
+  useEffect(() => () => setBusy(false), [setBusy])
 
   // Auto-scroll behavior for both result lists, mirroring the install
   // log on the Run screen: scroll to bottom as items append, yield to

@@ -54,7 +54,7 @@ type Phase = 'idle' | 'running' | 'done' | 'failed'
 type Action = 'full' | 'pull' | 'sync' | 'homepage' | `step-${number}` | null
 
 export function UpdateRunScreen() {
-  const { sessionId, targetDir, setStep } = useWizard()
+  const { sessionId, targetDir, setStep, setBusy } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [lastAction, setLastAction] = useState<Action>(null)
   /** Whether the action controls (primary card + targeted-action grid) are
@@ -110,6 +110,13 @@ export function UpdateRunScreen() {
   // full height — that's when the user wants to watch output, not pick actions.
   // They can reopen them from the header toggle.
   useEffect(() => { if (phase === 'running') setShowActions(false) }, [phase])
+
+  // Publish the global "busy" flag while a stack action streams, so the
+  // in-place app-updater trigger in App.tsx is disabled — self-updating
+  // quits the app, which would sever the live SSH action. Cleared on
+  // done/failed and on unmount.
+  useEffect(() => { setBusy(phase === 'running') }, [phase, setBusy])
+  useEffect(() => () => setBusy(false), [setBusy])
 
   // Reset on each action start so a previous run's output doesn't
   // confuse the user. We DON'T clear lastAction — the label "last
