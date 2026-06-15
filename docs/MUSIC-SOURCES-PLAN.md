@@ -89,6 +89,13 @@ A private/login Cardigann tracker authenticated by username+password. It **must*
 
 ### Phase 2 — Deezer plugin (opt-in plugins Lidarr image) — **RECOMMENDED, Effort: L**
 
+> ⚠️ **Before implementing, read [`MUSIC-SOURCES-DEEZER-RESEARCH.md`](MUSIC-SOURCES-DEEZER-RESEARCH.md)** —
+> the Phase 2 unknowns below (PD-2 install endpoint, PD-3 ARL, PD-5 snapshot) are now
+> **source-verified**, and it **corrects this section**: install is a Lidarr *command*
+> (`POST /api/v1/command {name:"InstallPlugin"}` + a mandatory separate `Restart`), and the
+> **ARL belongs on the Deezer *indexer*, not the download client** (Step 5c below is wrong).
+> Downgrade is confirmed config-bricking, so the config snapshot (PD-5) is **mandatory**.
+
 Switches Lidarr to the **plugins** build (`ghcr.io/hotio/lidarr:pr-plugins`) only when the user opts in, then auto-installs the Deezer plugin and (if an ARL is supplied) wires the Deezer download-client/indexer. This is the headline feature and the highest-risk one (nightly image, live-verified API). Greenfield: repo-wide grep for `deezer|pr-plugins|hotio/lidarr|installPlugin` returned **zero** matches.
 
 **Opt-in design — mirrors `MEDIA_SERVER`/`SEERR_IMAGE` exactly:**
