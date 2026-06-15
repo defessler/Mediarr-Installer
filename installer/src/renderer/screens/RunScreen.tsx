@@ -92,6 +92,22 @@ export function RunScreen() {
   // are [sessionId]). Lets us tell a user-Cancel apart from a real drop.
   const cancelingRef = useRef(false)
   useEffect(() => { cancelingRef.current = canceling }, [canceling])
+  // Safety net for a swallowed Cancel. streamCancel is best-effort; if the
+  // remote command ignores the signal (or the close event never arrives), the
+  // stream never closes, onStreamClose never fires, and `canceling` would stay
+  // true forever — pinning the UI on "Stopping…" with Back + the stepper
+  // busy-locked, recoverable only by restarting the app. After a grace period,
+  // force-unlock locally: setup.sh is idempotent/resumable, so dropping to
+  // 'failed' is safe (the user can Retry to resume, or navigate away). The
+  // normal path clears `canceling` well within the window, cancelling this.
+  useEffect(() => {
+    if (!canceling) return
+    const t = setTimeout(() => {
+      setCanceling(false)
+      setPhase((p) => (p === 'running-setup' ? 'failed' : p))
+    }, 15_000)
+    return () => clearTimeout(t)
+  }, [canceling])
   /** True when the last run ended because the SSH connection DROPPED (stream
    *  closed with a null exit and no Cancel in flight) rather than setup.sh
    *  failing a step. We keep phase==='failed' so the whole failed-state UI works
