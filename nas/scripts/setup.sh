@@ -272,15 +272,33 @@ run_python() {
         return $?
     fi
     # Throwaway python container via whichever runtime is active (docker or
-    # podman). Mount the resolved runtime socket (DOCKER_HOST's unix:// path
-    # when set — Podman — else the default Docker socket) so the script can
-    # shell out to the container CLI for the rare steps that need it.
-    local _sock="${DOCKER_HOST#unix://}"
-    [ -n "$_sock" ] || _sock="/var/run/docker.sock"
+    # podman). Give the in-container docker CLI a way to reach the SAME daemon
+    # this script is using, so the script can shell out to it for the rare
+    # steps that need it. How we do that depends on DOCKER_HOST's scheme:
+    #   unix://PATH  → bind-mount PATH at the default socket location.
+    #   (unset)      → bind-mount the default /var/run/docker.sock.
+    #   tcp://, ssh://→ there is NO local socket to mount; pass -e DOCKER_HOST
+    #                  so the CLI dials the remote daemon over the host network.
+    # The old code did `-v "${DOCKER_HOST#unix://}":...` unconditionally — a
+    # no-op strip for tcp://host:2375 / ssh://host, so it bind-mounted a
+    # literal "tcp://host:2375" path (docker creates it as an empty dir) and
+    # the CLI inside still had no working endpoint. Branch on the scheme.
+    local _docker_args=()
+    case "$DOCKER_HOST" in
+        tcp://*|ssh://*)
+            _docker_args+=(-e "DOCKER_HOST=$DOCKER_HOST")
+            ;;
+        unix://*)
+            _docker_args+=(-v "${DOCKER_HOST#unix://}":/var/run/docker.sock)
+            ;;
+        *)  # unset/empty (normal local Docker) — mount the default socket.
+            _docker_args+=(-v /var/run/docker.sock:/var/run/docker.sock)
+            ;;
+    esac
     "$CONTAINER_RUNTIME" run --rm -i --network host \
         -v "$SCRIPT_DIR":"$SCRIPT_DIR" \
         -v "$INSTALL_DIR":"$INSTALL_DIR" \
-        -v "$_sock":/var/run/docker.sock \
+        "${_docker_args[@]}" \
         -w "$SCRIPT_DIR" \
         -e INSTALL_DIR="$INSTALL_DIR" \
         --entrypoint sh \
@@ -686,19 +704,56 @@ check_port_conflicts() {
     # slskd's WebUI (5030) is published by GLUETUN when VPN is on (slskd
     # uses network_mode: container:gluetun) — the ":$port->" published-port
     # match below handles that indirection exactly like qBittorrent's
-    # 49156. Opt-in, so use the explicit-true helper. 50300 (Soulseek peer
-    # listen) is omitted for the same reason 6881 is: best-effort + owned
-    # by gluetun-or-slskd depending on VPN mode.
-    is_optin_enabled ENABLE_SOULSEEK && pairs+=("slskd:5030")
+    # 49156. 50300 (Soulseek peer listen) is omitted for the same reason
+    # 6881 is: best-effort + owned by gluetun-or-slskd depending on VPN mode.
+    #
+    # 5030 must be pre-checked whenever GLUETUN will run, not just when
+    # Soulseek is opted in: gluetun publishes ${LAN_IP}:5030:5030
+    # unconditionally in its ports: block, and the "vpn" profile starts
+    # gluetun when VPN is on AND qBittorrent is enabled — even with
+    # Soulseek off. Gating solely on ENABLE_SOULSEEK would let a foreign
+    # 5030 holder slip past the pre-check and fail gluetun's bind late in
+    # compose up. Gate on (gluetun-will-run) OR (Soulseek opted in); the
+    # case-guard avoids a duplicate slskd:5030 entry when both hold.
+    if is_optin_enabled ENABLE_SOULSEEK \
+       || { [ "$VPN_ON" -eq 1 ] && is_enabled ENABLE_QBITTORRENT; }; then
+        case " ${pairs[*]} " in
+            *" slskd:5030 "*) : ;;
+            *)                pairs+=("slskd:5030") ;;
+        esac
+    fi
+
+    # Snapshot the listening sockets ONCE, up front. netstat is NOT
+    # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
+    # separate package), so the old per-port `netstat -lnt 2>/dev/null`
+    # silently produced no output there — the awk then saw nothing, never
+    # set `found`, and reported EVERY port as free. That fails OPEN: the
+    # whole pre-check no-ops and the late compose-up bind error returns.
+    # Prefer `ss -ltn` (ships in iproute2, present on every modern NAS
+    # including UGREEN), fall back to `netstat -lnt`, and if NEITHER tool
+    # exists, skip the pre-check explicitly rather than pretend all ports
+    # are free — compose-up's own bind error is the backstop then.
+    local listen_snapshot=""
+    if command -v ss >/dev/null 2>&1; then
+        listen_snapshot="$(ss -ltn 2>/dev/null)"
+    elif command -v netstat >/dev/null 2>&1; then
+        listen_snapshot="$(netstat -lnt 2>/dev/null)"
+    else
+        echo "  ⏭ Skipping port pre-check (no ss/netstat on this host)."
+        echo "    If a port is already taken, compose up will report it below."
+        return 0
+    fi
 
     local conflicts=""
     local pair port svc
     for pair in "${pairs[@]}"; do
         svc="${pair%:*}"
         port="${pair#*:}"
-        # netstat present on every supported NAS family. Match :PORT
-        # followed by whitespace to avoid catching :49152x or :4915.
-        if netstat -lnt 2>/dev/null | awk -v p=":$port$" '$4 ~ p { found=1 } END { exit !found }'; then
+        # Match :PORT at the end of the socket's local-address column
+        # ($4 in both `ss -ltn` and `netstat -lnt` output) so we don't
+        # catch :49152x or :4915. Reads the snapshot captured above, so
+        # this works identically whether ss or netstat produced it.
+        if printf '%s\n' "$listen_snapshot" | awk -v p=":$port$" '$4 ~ p { found=1 } END { exit !found }'; then
             # Port is bound. Is it PUBLISHED by one of OUR running containers?
             # If yes, it's not a conflict — compose will recreate/reuse that
             # container in the next step. If no container publishes it, some-
@@ -922,8 +977,20 @@ ENV_FILE="$SCRIPT_DIR/.env"
 # ENV_HASH fingerprints the *final* .env (after the migration above) so a
 # checkpoint is only honoured when the config is unchanged.
 ENV_HASH="$(compute_env_hash)"
+# There are exactly this many numbered run_step calls below (1..N). --from is
+# validated against it: without an upper bound, `--from 99` would make every
+# run_step skip (step < START_STEP is always true), do NOTHING, and still
+# print "✔ Setup complete!" — a silent no-op that looks like success. Reject
+# an out-of-range value loudly instead. Keep this in sync if steps are added.
+TOTAL_STEPS=12
 START_STEP=1
 if [ "$FROM_STEP" -gt 0 ]; then
+    if [ "$FROM_STEP" -gt "$TOTAL_STEPS" ]; then
+        echo "✘ --from $FROM_STEP is out of range — there are only $TOTAL_STEPS steps (1-$TOTAL_STEPS)."
+        echo "  Re-run with a step in that range, e.g. --from $TOTAL_STEPS to run just the last step,"
+        echo "  or drop --from entirely to run the whole install (every step is idempotent)."
+        exit 1
+    fi
     START_STEP="$FROM_STEP"
     echo "  ▶ --from $FROM_STEP: starting at step $FROM_STEP (earlier steps skipped)."
 elif [ "$RESUME" = 1 ]; then

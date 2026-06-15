@@ -16,9 +16,32 @@
 
 services:
   qbittorrent:
+    # CAVEAT (intentional, do not "fix" casually): declaring BOTH
+    # network_mode: bridge AND networks: [media] is spec-incompatible per
+    # the Compose reference, but it has been the VPN-off default since
+    # v0.3.24 and works on the Compose versions this installer targets
+    # (DSM Container Manager / UGREEN). The effect users rely on is qBit
+    # landing on the br-media bridge (so arrs resolve it by name) with its
+    # WebUI/BT ports published. A "correct" rewrite (drop network_mode and
+    # keep only networks: [media]) risks changing the published-port /
+    # name-resolution behavior on the exact older Compose builds here, so
+    # it is left as-is. Do NOT switch this to `network_mode: !reset` — the
+    # !reset tag needs Compose 2.20+ and would hard-fail VPN-off installs
+    # on the pre-2.20 builds setup-validate.sh only warns about.
     network_mode: bridge
     networks:
       - media
+    # Re-assert the no-new-privileges hardening here. In VPN mode qBit is
+    # in network_mode: container:gluetun and MUST omit security_opt (Docker
+    # rejects security_opt on a namespace-sharing container) — it inherits
+    # gluetun's. With VPN off qBit runs on the bridge in its OWN namespace,
+    # so the base file's *security hardening no longer reaches it and this
+    # override would silently ship qBit WITHOUT no-new-privileges. Spelled
+    # out literally (not the base file's *security anchor) because YAML
+    # anchors do not cross compose -f file boundaries; the value matches
+    # x-security in docker-compose.yml.
+    security_opt:
+      - no-new-privileges:true
     ports:
       - ${LAN_IP}:49156:49156
       - 6881:6881
@@ -38,6 +61,13 @@ services:
     network_mode: bridge
     networks:
       - media
+    # Same reasoning as the qBittorrent override above: in VPN mode slskd is
+    # in gluetun's namespace and omits security_opt; with VPN off it runs on
+    # the bridge in its own namespace, so re-assert no-new-privileges here or
+    # the hardening invariant is lost in no-vpn mode. Literal value (anchors
+    # don't cross -f boundaries); matches x-security in docker-compose.yml.
+    security_opt:
+      - no-new-privileges:true
     ports:
       - ${LAN_IP}:5030:5030
       - 50300:50300

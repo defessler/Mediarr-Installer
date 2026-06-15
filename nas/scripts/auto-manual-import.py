@@ -425,11 +425,16 @@ def _lidarr_file_payload(candidate, download_id):
     album = candidate.get('album') or {}
     tracks = candidate.get('tracks') or []
     track_ids = [t['id'] for t in tracks if t.get('id')]
-    if not album.get('id') or not track_ids:
+    # Guard artist.id alongside album/tracks. Lidarr rejects a ManualImport
+    # file whose artistId is null (it can't attach the track to an artist),
+    # and candidate['artist'] is sometimes an unmatched stub with no 'id' —
+    # so without this check we'd POST artistId: None and the whole command
+    # fails. Same orphan-skip rationale as the album/track guards.
+    if not artist.get('id') or not album.get('id') or not track_ids:
         return None
     return {
         'path':         candidate['path'],
-        'artistId':     artist.get('id'),
+        'artistId':     artist['id'],
         'albumId':      album['id'],
         'trackIds':     track_ids,
         'quality':      candidate.get('quality') or {},

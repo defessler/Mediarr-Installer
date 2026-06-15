@@ -132,44 +132,85 @@ def wait_ready(base, key, retries=24, interval=5):
 
 # ── Provider helpers ──────────────────────────────────────────────────────────
 
+def _apply_one(settings, display, provider_id, provider_settings):
+    """Mutate a settings dict to enable a single provider (+ its creds).
+    Returns the mutated settings. Shared by the batch and one-at-a-time
+    paths so both build the payload identically."""
+    general = settings.get('general', {})
+    enabled = set(general.get('enabled_providers') or [])
+    enabled.add(provider_id)
+    general['enabled_providers'] = sorted(enabled)
+    settings['general'] = general
+    # Merge any provider-specific credentials into settings
+    if provider_settings:
+        section_data = settings.get(provider_id, {})
+        section_data.update(provider_settings)
+        settings[provider_id] = section_data
+    return settings
+
+
 def enable_providers(base, key, to_add):
     """Enable a list of (display_name, provider_id, optional_settings_dict) in Bazarr.
-    Fetches settings once, applies all changes, then saves in a single POST."""
+
+    Fetches settings once, applies all changes, then saves in a single POST.
+    If that batch POST fails, falls back to enabling providers ONE AT A
+    TIME so a single bad provider can't drop the whole batch.
+
+    Why the fallback: Bazarr validates the entire settings payload on
+    the save POST. One unknown/renamed provider_id (Subscene-style
+    upstream removals happen regularly) makes Bazarr 500 the single
+    all-providers POST, which silently undoes EVERY enable in the batch —
+    the user ends up with no new providers even though most were valid.
+    Saving each pending provider on its own (re-fetching fresh settings
+    each time so already-saved ones are preserved) isolates the bad apple:
+    it alone reports failure, the rest stick."""
     settings = GET(base, key, "/api/system/settings")
     if settings is None:
         fail("Cannot reach Bazarr API"); return
 
-    general  = settings.get('general', {})
-    enabled  = set(general.get('enabled_providers') or [])
-    changed  = False
+    enabled  = set(settings.get('general', {}).get('enabled_providers') or [])
+    pending  = []   # (display, provider_id, provider_settings) not yet enabled
 
     for display, provider_id, provider_settings in to_add:
         if provider_id in enabled:
             skip(f"{display} (already enabled)")
             continue
+        pending.append((display, provider_id, provider_settings))
 
-        enabled.add(provider_id)
-        changed = True
-
-        # Merge any provider-specific credentials into settings
-        if provider_settings:
-            section_data = settings.get(provider_id, {})
-            section_data.update(provider_settings)
-            settings[provider_id] = section_data
-
-        ok(f"{display}")
-
-    if not changed:
+    if not pending:
         return
 
-    general['enabled_providers'] = sorted(enabled)
-    settings['general'] = general
+    # Batch attempt: apply every pending provider onto one settings dict
+    # and save in a single POST (the fast common path).
+    for display, provider_id, provider_settings in pending:
+        _apply_one(settings, display, provider_id, provider_settings)
 
-    result = POST(base, key, "/api/system/settings", settings)
-    if result is not None:
+    if POST(base, key, "/api/system/settings", settings) is not None:
+        for display, _pid, _ps in pending:
+            ok(f"{display}")
         ok("Settings saved")
-    else:
-        fail("Failed to save settings")
+        return
+
+    # Batch failed — most likely one invalid provider_id poisoned the
+    # whole payload. Retry each pending provider individually so the
+    # valid ones still get saved. Re-fetch fresh settings each iteration
+    # so we build on the last successful save, never on the rejected
+    # batch body.
+    warn("Batch save failed — enabling providers one at a time to isolate the bad one")
+    saved_any = False
+    for display, provider_id, provider_settings in pending:
+        fresh = GET(base, key, "/api/system/settings")
+        if fresh is None:
+            fail(f"{display}: cannot reach Bazarr API to save")
+            continue
+        _apply_one(fresh, display, provider_id, provider_settings)
+        if POST(base, key, "/api/system/settings", fresh) is not None:
+            ok(f"{display}")
+            saved_any = True
+        else:
+            fail(f"{display}: rejected by Bazarr (likely an invalid/renamed provider id) — skipped")
+    if saved_any:
+        ok("Settings saved")
 
 # ── Read config ───────────────────────────────────────────────────────────────
 

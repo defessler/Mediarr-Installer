@@ -219,16 +219,26 @@ fi
 # ════════════════════════════════════════════════════════════════════════
 if [ -f /etc/config/qpkg.conf ] || [ -d /share/CACHEDEV1_DATA ]; then
     CRON=/etc/config/crontab
-    if [ "$INSTALL_GUARD" -eq 1 ]; then
-        if [ -w "$CRON" ] || { [ ! -e "$CRON" ] && [ -w /etc/config ]; }; then
+    if [ -w "$CRON" ] || { [ ! -e "$CRON" ] && [ -w /etc/config ]; }; then
+        if [ "$INSTALL_GUARD" -eq 1 ]; then
             # /etc/config/crontab is space-separated, 5 fields + command, no
             # user field (runs as root). Set idempotently, then reload.
             crontab_file_set "$CRON" "*/5 * * * * /bin/bash $GUARD_SH >/dev/null 2>&1 $GUARD_TAG" "$GUARD_TAG"
             crontab "$CRON" 2>/dev/null
             echo "  ✔ Self-heal cron added to $CRON (every 5 min, reloaded)"
+        elif crontab_file_unset "$CRON" "$GUARD_TAG"; then
+            # Reconcile the OFF-path like every other platform: a prior run with
+            # VPN+qBit/Soulseek on left a */5 guardian line; with them now off it
+            # must be removed, else an orphaned guardian keeps probing/“healing”
+            # a stack that should be idle. Reload so QTS drops it immediately.
+            crontab "$CRON" 2>/dev/null
+            echo "  ✔ Removed stale self-heal cron (VPN/qBit off)"
         else
-            echo "  ⚠ $CRON not writable — skipping self-heal cron."
+            echo "  ⏭ Self-heal cron skipped — only needed when VPN_ENABLED=true + qBittorrent on"
         fi
+    else
+        echo "  ⚠ $CRON not writable — skipping self-heal cron."
+        [ "$INSTALL_GUARD" -eq 1 ] && manual_hint "/etc/config/crontab not writable" qnap
     fi
     # QTS boot scripting (autorun.sh) needs a Control-Panel toggle + a
     # per-model DOM mount we can't do unattended — the */5 guardian recovers

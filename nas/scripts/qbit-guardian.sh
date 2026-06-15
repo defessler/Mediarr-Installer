@@ -90,10 +90,16 @@ if command -v flock >/dev/null 2>&1; then
 fi
 
 # ── Pick the container runtime (Docker or Podman) so recovery targets the
-#    right daemon on a Podman-only host ──
-RT="docker"; COMPOSE="docker compose"
+#    right daemon on a Podman-only host. Resolve COMPOSE by POSITIVE assignment
+#    (start empty), like restart-qbit.sh: the old `COMPOSE="docker compose"`
+#    default was a trap — when docker exists but `docker compose` is absent AND
+#    docker-compose isn't installed either, the `||{…&&…}` short-circuits and
+#    leaves COMPOSE at that bogus default, so recovery would shell out to a
+#    front-end that can't run. ──
+RT="docker"; COMPOSE=""
 if command -v docker >/dev/null 2>&1; then
-    docker compose version >/dev/null 2>&1 || { command -v docker-compose >/dev/null 2>&1 && COMPOSE="docker-compose"; }
+    if   docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"
+    elif command -v docker-compose >/dev/null 2>&1; then COMPOSE="docker-compose"; fi
 elif command -v podman >/dev/null 2>&1; then
     RT="podman"
     if podman compose version >/dev/null 2>&1; then COMPOSE="podman compose"
@@ -107,6 +113,11 @@ fi
 # ── Daemon must be up; a transient daemon-down is a non-event ──
 command -v "$RT" >/dev/null 2>&1 || exit 0
 $RT info >/dev/null 2>&1 || exit 0
+# No usable compose front-end resolved → can't recreate the stack. Bail quietly
+# (a missing tool is a config issue, not an incident worth logging every 5 min).
+# The inline-recovery path AND the restart-qbit.sh delegation both shell out to
+# $COMPOSE, so guard here once rather than letting an empty/bogus value through.
+[ -n "$COMPOSE" ] || exit 0
 
 cstate()  { $RT inspect -f '{{.State.Status}}'        "$1" 2>/dev/null || echo missing; }
 chealth() { $RT inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || echo none; }
@@ -146,6 +157,14 @@ webui_ok() {
 
 GS=$(cstate gluetun); GH=$(chealth gluetun); GID=$(cid gluetun)
 WEDGED=0; REASON=""
+# FORCE_RECREATE arms only for the WebUI-backstop wedge: a qBit that is RUNNING
+# with a CURRENT gluetun namespace but a dead WebUI. restart-qbit.sh's normal
+# gates spare a running+namespace-current container (state ok, ids match), so
+# without telling it to force, delegating that case would be a no-op and the
+# guardian would re-detect the same wedge every 5 min forever. The not-running
+# and stale-namespace cases need no force — restart-qbit.sh already rm+recreates
+# those on its own, so leave them on the lighter conditional path.
+FORCE_RECREATE=0
 
 if   [ "$GS" != "running" ]; then
     WEDGED=1; REASON="gluetun is $GS"
@@ -164,7 +183,8 @@ else
             elif [ "$GH" = "healthy" ] || [ "$GH" = "none" ]; then
                 AGE=$(qbit_uptime)
                 if [ "$AGE" -ge "$GRACE_SECONDS" ] && ! webui_ok; then
-                    WEDGED=1; REASON="qbit WebUI unreachable on LAN:$QBIT_PORT (up ${AGE}s, gluetun healthy)"
+                    WEDGED=1; FORCE_RECREATE=1
+                    REASON="qbit WebUI unreachable on LAN:$QBIT_PORT (up ${AGE}s, gluetun healthy)"
                 fi
             fi
         fi
@@ -190,11 +210,19 @@ rotate_log
 log "WEDGED: $REASON — recovering"
 if [ "$QBIT_ON" -eq 1 ] && [ -x "$SCRIPT_DIR/restart-qbit.sh" ]; then
     # restart-qbit.sh does the ordered gluetun→qBit recreate AND heals slskd in
-    # the same pass when Soulseek is on (SOULSEEK_ON detected there too).
-    bash "$SCRIPT_DIR/restart-qbit.sh" >> "$LOG" 2>&1; rc=$?
+    # the same pass when Soulseek is on (SOULSEEK_ON detected there too). For the
+    # WebUI-backstop wedge, pass the reason as the force arg so it recreates the
+    # running-but-dead container instead of sparing it (see FORCE_RECREATE above).
+    if [ "$FORCE_RECREATE" -eq 1 ]; then
+        bash "$SCRIPT_DIR/restart-qbit.sh" "$REASON" >> "$LOG" 2>&1; rc=$?
+    else
+        bash "$SCRIPT_DIR/restart-qbit.sh" >> "$LOG" 2>&1; rc=$?
+    fi
 else
     # qBit off (Soulseek-only) or no restart-qbit.sh — inline recreate whatever
     # is enabled, ordered behind gluetun (same approach restart-qbit.sh uses).
+    # This path already does an unconditional rm+up, so it heals a dead WebUI
+    # without needing a separate force flag.
     _rm="gluetun"; _up="gluetun"; _pr="vpn"
     [ "$QBIT_ON" -eq 1 ]     && { _rm="$_rm qbittorrent"; _up="$_up qbittorrent"; _pr="$_pr,torrenting"; }
     [ "$SOULSEEK_ON" -eq 1 ] && { _rm="$_rm slskd";       _up="$_up slskd";       _pr="$_pr,soulseek"; }

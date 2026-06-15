@@ -435,12 +435,18 @@ if is_enabled ENABLE_QBITTORRENT && vpn_on; then
     VPN_IP=$($RT exec gluetun wget -qO- --timeout=10 https://api.ipify.org 2>/dev/null)
     if [ -z "$VPN_IP" ]; then
         fail "Could not get IP through Gluetun — VPN may not be connected"
+    elif [ -z "$PUBLIC_IP" ]; then
+        # Leak check is a COMPARISON: gluetun's exit IP must differ from the
+        # host's bare public IP. With no public IP to compare against (the
+        # earlier ipify lookup failed — exactly the degraded-network case),
+        # claiming "VPN is active" would be false confidence: VPN_IP simply
+        # can't equal an empty string, so the happy branch fires by accident.
+        # Warn that it's inconclusive instead of green-lighting a possible leak.
+        warn "Gluetun has an exit IP ($VPN_IP) but the host's public IP was unavailable — can't confirm the VPN isn't leaking; re-run when internet is stable"
+    elif [ "$VPN_IP" = "$PUBLIC_IP" ]; then
+        fail "VPN IP matches your public IP — traffic is NOT going through the VPN"
     else
-        if [ "$VPN_IP" = "$PUBLIC_IP" ]; then
-            fail "VPN IP matches your public IP — traffic is NOT going through the VPN"
-        else
-            ok "VPN is active — qBittorrent traffic exits via $VPN_IP"
-        fi
+        ok "VPN is active — qBittorrent traffic exits via $VPN_IP"
     fi
 fi
 

@@ -76,7 +76,12 @@ if [ -z "$COMPOSE" ]; then
     exit 1
 fi
 
-env_val() { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r'; }
+# Read a single .env value the SAME way setup.sh / qbit-guardian.sh do:
+# strip a trailing whitespace-anchored " #comment" (NOT a # embedded in a
+# value), drop \r, trim. Without the comment-strip a line like
+# `VPN_ENABLED=true   # on` would parse as "true   # on" and fall through
+# the true|1|yes|on case to VPN_OFF — silently taking the wrong network path.
+env_val() { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs; }
 
 VPN_ENABLED="$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]' | xargs)"
 QBIT_ENABLED="$(env_val ENABLE_QBITTORRENT | tr '[:upper:]' '[:lower:]' | xargs)"
@@ -92,28 +97,55 @@ case "$VPN_ENABLED" in
     *)             VPN_ON=0 ;;
 esac
 
+# Unconditional-recreate request. The guardian (qbit-guardian.sh) detects a
+# qBit that is running with a CURRENT gluetun namespace but whose WebUI is
+# DEAD (its backstop signal: process up, port not serving). That is NOT the
+# stale-namespace wedge the gates below catch (ids still match), so without a
+# force path `up -d` would see a healthy-looking qBit and leave it untouched —
+# the guardian would "recover" in a no-op loop. Two ways to ask for it: env
+# FORCE=1, or a non-empty first arg (a human-readable reason, which the
+# guardian passes). Either makes us rm+recreate qBit (and slskd, when Soulseek
+# is on) regardless of state so the WebUI backstop actually heals.
+FORCE_REASON="${1:-}"
+case "$(printf '%s' "${FORCE:-}" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) FORCE=1 ;;
+    *)             FORCE=0 ;;
+esac
+[ -n "$FORCE_REASON" ] && { FORCE=1; echo "  Force-recreate requested: $FORCE_REASON"; }
+
 # ── No-VPN path ───────────────────────────────────────────────────────────────
 # qBittorrent runs on the bridge network via docker-compose.no-vpn.yml.
-# A regular restart is fine — gluetun isn't involved.
+# A regular restart is fine — gluetun isn't involved. With FORCE (e.g. a
+# WebUI-dead-but-running qBit), a plain `restart` may not clear the fault, so
+# recreate the container from scratch instead.
 if [ $VPN_ON -eq 0 ]; then
-    echo "  VPN is off — restarting qBittorrent on the bridge network."
-    COMPOSE_PROFILES=torrenting $COMPOSE -f docker-compose.yml -f docker-compose.no-vpn.yml restart qbittorrent
+    if [ "$FORCE" -eq 1 ]; then
+        echo "  VPN is off — force-recreating qBittorrent on the bridge network."
+        COMPOSE_PROFILES=torrenting $COMPOSE -f docker-compose.yml -f docker-compose.no-vpn.yml up -d --force-recreate qbittorrent
+    else
+        echo "  VPN is off — restarting qBittorrent on the bridge network."
+        COMPOSE_PROFILES=torrenting $COMPOSE -f docker-compose.yml -f docker-compose.no-vpn.yml restart qbittorrent
+    fi
     echo "  ✔ qBittorrent restarted."
     exit 0
 fi
 
 # ── VPN-on path ───────────────────────────────────────────────────────────────
 # Must order this carefully:
-#   1. Bring up (or keep up) gluetun. depends_on inside compose handles
-#      the wait-for-healthy IF we use `up -d` (not `restart`).
-#   2. Once gluetun is healthy, recreate qBittorrent against gluetun's
-#      live network namespace.
+#   1. Bring up (or keep up) gluetun.
+#   2. Recreate qBittorrent against gluetun's live network namespace.
 #
-# `up -d gluetun qbittorrent` with both profiles in COMPOSE_PROFILES
-# does both steps in one shot — compose respects the depends_on chain
-# and waits for gluetun's healthcheck to pass before starting qbit.
+# NOTE on ordering: qBit uses `network_mode: container:gluetun`, which forces
+# its compose dep to the SHORT-LIST form `depends_on: [gluetun]` (the long
+# `condition: service_healthy` form is NOT allowed alongside container: — see
+# docker-compose.yml). The short form only waits for gluetun to START, NOT to
+# be HEALTHY. So `up -d gluetun qbittorrent` orders start, but does NOT
+# guarantee the tunnel is up before qBit starts. qBit's `unless-stopped` +
+# this guardian's recovery loop close that gap (a qBit that came up against a
+# not-yet-healthy gluetun gets re-welded on the next pass). Don't add a healthy
+# claim back here — the compose file deliberately drops that gate.
 
-echo "  VPN is on — bringing up gluetun then qBittorrent (gluetun must be healthy first)."
+echo "  VPN is on — bringing up gluetun then qBittorrent."
 echo ""
 
 # Detect a qBit that is state=running but welded to a STALE gluetun
@@ -158,19 +190,26 @@ if [ "$SOULSEEK_ON" -eq 1 ]; then UP_PROFILES="$UP_PROFILES,soulseek"; UP_SVCS="
 # against the (possibly new) gluetun network namespace. Without this, `up
 # -d` may reuse the stale container and re-trigger "must join at least one
 # network" (or silently leave qBit's tunnel dead).
+# FORCE also removes it even when state=running and the namespace id still
+# matches: that is exactly the WebUI-dead-but-running case (the guardian's
+# backstop) which neither the state nor the wedge test catches, so without the
+# FORCE arm `up -d` would spare the broken container and the recreate would be
+# a no-op.
 if $RT ps -a --format '{{.Names}}' | grep -qx qbittorrent; then
     state=$($RT inspect --format='{{.State.Status}}' qbittorrent 2>/dev/null || echo missing)
-    if [ "$state" != "running" ] || qbit_wedged_running; then
-        echo "  Removing stale/wedged qbittorrent container (state=$state) so compose recreates it cleanly..."
+    if [ "$FORCE" -eq 1 ] || [ "$state" != "running" ] || qbit_wedged_running; then
+        echo "  Removing stale/wedged/forced qbittorrent container (state=$state) so compose recreates it cleanly..."
         $RT rm -f qbittorrent >/dev/null 2>&1 || true
     fi
 fi
 
-# Same for slskd (Soulseek), which is in gluetun's namespace too.
+# Same for slskd (Soulseek), which is in gluetun's namespace too. (slskd has no
+# WebUI backstop in the guardian, but honour FORCE here too for consistency so
+# a forced heal recreates the whole gluetun-namespaced set in one pass.)
 if [ "$SOULSEEK_ON" -eq 1 ] && $RT ps -a --format '{{.Names}}' | grep -qx slskd; then
     state=$($RT inspect --format='{{.State.Status}}' slskd 2>/dev/null || echo missing)
-    if [ "$state" != "running" ] || slskd_wedged_running; then
-        echo "  Removing stale/wedged slskd container (state=$state) so compose recreates it cleanly..."
+    if [ "$FORCE" -eq 1 ] || [ "$state" != "running" ] || slskd_wedged_running; then
+        echo "  Removing stale/wedged/forced slskd container (state=$state) so compose recreates it cleanly..."
         $RT rm -f slskd >/dev/null 2>&1 || true
     fi
 fi
@@ -204,10 +243,10 @@ if qbit_wedged_running || { [ "$SOULSEEK_ON" -eq 1 ] && slskd_wedged_running; };
     COMPOSE_PROFILES=$UP_PROFILES $COMPOSE -f docker-compose.yml up -d $UP_SVCS
 fi
 
-# Quick post-up sanity. The depends_on:service_healthy gate inside
-# compose ensures gluetun was healthy when qbit started, but it's
-# possible the VPN tunnel drops moments after. Surface gluetun's
-# health state and qBit's running state so the user sees green/red
+# Quick post-up sanity. qBit's `container:` dep means compose does NOT gate
+# its start on gluetun being HEALTHY (only on gluetun having started — see the
+# VPN-on note above), and the tunnel can drop moments later regardless. Surface
+# gluetun's health state and qBit's running state so the user sees green/red
 # without having to docker-inspect manually.
 echo ""
 echo "  Status:"

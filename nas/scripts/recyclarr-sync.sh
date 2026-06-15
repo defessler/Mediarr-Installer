@@ -52,14 +52,19 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Load INSTALL_DIR / TRASH_*_PROFILE so we can write the timestamp file
-# in the right place and stamp it with the profile picks. set -a /
-# set +a auto-exports every var the .env defines, but only for the
-# duration of the source — wrapped in a subshell-ish block via braces.
-set -a
-# shellcheck disable=SC1091
-. ./.env
-set +a
+# Read the handful of values we need (INSTALL_DIR + the two TRASH_*
+# profile picks) WITHOUT `source`-ing .env. Every sibling script reads
+# .env this way precisely to avoid executing its contents under
+# `set -euo pipefail`: a hand-edited unquoted value containing a space
+# or shell metachar would, when sourced, either abort the script (a
+# parse/word-split error trips errexit) or worse, execute. grep + cut
+# treats each value as inert text. Matches tune-arrs.sh's env_val().
+env_val() {
+    grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs
+}
+INSTALL_DIR=$(env_val INSTALL_DIR)
+TRASH_SONARR_PROFILE=$(env_val TRASH_SONARR_PROFILE)
+TRASH_RADARR_PROFILE=$(env_val TRASH_RADARR_PROFILE)
 
 INSTALL_DIR="${INSTALL_DIR:-$COMPOSE_DIR}"
 RECYCLARR_CONFIG_DIR="$INSTALL_DIR/recyclarr/config"

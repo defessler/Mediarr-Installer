@@ -219,6 +219,24 @@ vacuum_arr() {
     size_after=$(du -h "$full_path" 2>/dev/null | cut -f1)
     echo "    ✔ Vacuumed (size: $size_before → $size_after)"
 
+    # Prune old per-run backups. This script is marketed as safe to re-run
+    # weekly, but each run drops a full-size .before-vacuum-<ts> copy next
+    # to the DB. Left unbounded that accretes one whole DB-sized file per
+    # arr per run forever — re-creating the exact disk-pressure problem the
+    # vacuum is meant to relieve. We only reach here AFTER a clean vacuum
+    # (the failure path restored + returned above), so keeping the newest 2
+    # backups — this run's, plus the prior one as a second fallback — is a
+    # safe known-good chain. `ls -1t` orders newest-first by mtime (so the
+    # copy we just made always survives); tail -n +3 selects everything
+    # past the first two for deletion.
+    local old_baks
+    old_baks=$(ls -1t "$full_path".before-vacuum-* 2>/dev/null | tail -n +3)
+    if [ -n "$old_baks" ]; then
+        echo "$old_baks" | while IFS= read -r stale; do
+            rm -f "$stale" && echo "    Pruned old backup → ${stale##*/}"
+        done
+    fi
+
     # Restart the arr. unless-stopped policy means it'd auto-start
     # on next compose up, but we want it running NOW so the user can
     # use it again immediately.

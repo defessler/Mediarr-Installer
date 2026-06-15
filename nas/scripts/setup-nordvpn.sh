@@ -85,6 +85,44 @@ esac
 
 # ── NordVPN-specific path below ──
 
+# Python runner (host python3, else a throwaway python:3-alpine container).
+# Only the NordVPN path needs Python (to parse the API JSON), so this is
+# scoped here. Without a fallback, a Docker/Podman-only NAS (no host
+# python3) would die at the parse step below and — because the parse
+# failure is reported as "check your access token" — send the user chasing
+# a perfectly valid token. setup.sh and setup-folders.sh already use this
+# exact "host python3 → else container" shape; mirror it so the fetch works
+# wherever they do. The JSON parse is pure stdlib reading stdin (no docker
+# socket, no network from inside the container), so the container form is
+# minimal: `run --rm -i <image> python3 ...`.
+#
+# When invoked by setup.sh we inherit the runtime it already picked via the
+# exported CONTAINER_RUNTIME; standalone (per the usage header) we detect it
+# ourselves so this still works run by hand.
+run_python() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 "$@"
+        return $?
+    fi
+    local _rt="${CONTAINER_RUNTIME:-}"
+    if [ -z "$_rt" ]; then
+        if command -v docker >/dev/null 2>&1; then
+            _rt="docker"
+        elif command -v podman >/dev/null 2>&1; then
+            _rt="podman"
+        fi
+    fi
+    if [ -z "$_rt" ]; then
+        # No host python3 and no container runtime — there's nothing left to
+        # run the parser with. Say so honestly instead of letting the caller
+        # blame the token.
+        echo "  ✘ python3 not found on host, and no Docker/Podman to run the" >&2
+        echo "    container fallback. Install python3 (or Docker), then re-run." >&2
+        return 127
+    fi
+    "$_rt" run --rm -i docker.io/python:3-alpine python3 "$@"
+}
+
 # If a key is already populated (the wizard fetches it on the host
 # machine and writes it before running setup.sh), nothing to do.
 # Check both env-var names: WIREGUARD_PRIVATE_KEY is the new generic
@@ -117,17 +155,29 @@ fi
 
 echo ""
 echo "  Fetching private key from NordVPN API..."
+# Pass the access token via a 0600 --netrc-file instead of `-u token:$TOKEN`
+# on the curl argv. On a multi-user NAS the argv is world-readable through
+# `ps` / /proc/<pid>/cmdline for the lifetime of the request, which would
+# leak the NordVPN token to any other local user. curl's --netrc-file does
+# the same HTTP Basic auth (login=token, password=<token>) for the matching
+# host, so behaviour is identical — only the credential is no longer on argv.
+# The temp file is created with a restrictive umask and removed on exit.
+NETRC_FILE=$(mktemp 2>/dev/null) || NETRC_FILE="$ENV_FILE.netrc.$$"
+trap 'rm -f "$NETRC_FILE"' EXIT
+( umask 077; : > "$NETRC_FILE" )  # ensure 0600 before any secret is written
+printf 'machine api.nordvpn.com login token password %s\n' "$ACCESS_TOKEN" > "$NETRC_FILE"
 # Parse JSON properly via python3 (already required by the rest of the
 # stack) instead of grep | cut. The old regex broke silently when
 # NordVPN's response changed whitespace / field ordering, leaving an
 # empty PRIVATE_KEY with no diagnostic. Python parses + raises if the
 # expected key is absent so we surface the actual API response.
-RAW=$(curl -s -u "token:$ACCESS_TOKEN" https://api.nordvpn.com/v1/users/services/credentials)
+RAW=$(curl -s --netrc-file "$NETRC_FILE" https://api.nordvpn.com/v1/users/services/credentials)
+rm -f "$NETRC_FILE"; trap - EXIT  # token no longer needed; drop it immediately
 if [ -z "$RAW" ]; then
     echo "  ✘ NordVPN API returned an empty body — check internet connectivity."
     exit 1
 fi
-PYTHON_OUT=$(printf '%s' "$RAW" | python3 -c '
+PYTHON_OUT=$(printf '%s' "$RAW" | run_python -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -141,6 +191,16 @@ if not key:
     sys.exit(0)
 print(key)
 ' 2>&1)
+PY_STATUS=$?
+# Surface a no-python3-and-no-runtime failure (run_python returns 127) on its
+# own, so it isn't misread below as a bad/expired token. The parser itself
+# always exits 0 and signals problems via the ERROR: prefix, so any non-zero
+# here is the runner failing to start, not the JSON being bad.
+if [ "$PY_STATUS" -ne 0 ]; then
+    echo "  ✘ Could not run the JSON parser to read the NordVPN response:"
+    echo "      ${PYTHON_OUT:-(no output)}"
+    exit 1
+fi
 if [[ "$PYTHON_OUT" == ERROR:* ]]; then
     echo "  ✘ Failed to parse NordVPN API response:"
     echo "      $PYTHON_OUT"

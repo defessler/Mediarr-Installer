@@ -338,8 +338,18 @@ def get_or_create_tag(base, key, label):
 
 # ── Add indexer ───────────────────────────────────────────────────────────────
 
-def _post_indexer(base, key, name, schema):
+def _post_indexer(base, key, name, schema, verify_name=None):
     """POST the indexer schema; classify 400 errors into clean messages.
+
+    verify_name: the name the indexer is actually SAVED under, used for
+    the post-add existence check. For fuzzy-resolved public indexers the
+    caller passes a display string like "Nyaa → Nyaa.si" as `name` (nice
+    for logs) but Prowlarr stores it under the resolved schema name
+    ("Nyaa.si"). Verifying the display string against the saved list
+    never matches and fired a bogus "POST returned success but indexer
+    NOT in Prowlarr's list" warning on every fuzzy-resolved add. When
+    verify_name is given we check the list against IT; otherwise we fall
+    back to `name` (the exact-match case where they're identical).
 
     Network-level transient failures (status=None) get one retry with
     a 3-second backoff before being demoted to warn(). Real-world install
@@ -348,12 +358,27 @@ def _post_indexer(base, key, name, schema):
     — a single retry catches the steady-state case, and a warn (not fail)
     means a flaky network doesn't false-fail the whole install over
     indexers that can be re-added from the Prowlarr UI in seconds."""
+    check_name = verify_name or name
     result, status, err = POST(base, key, "/api/v1/indexer", schema)
     # One retry on transient network errors. status=None means the HTTP
     # call itself didn't complete (timeout, connection reset, DNS), not
     # a Prowlarr-side rejection — most often clears within a few seconds.
     if result is None and status is None:
         time.sleep(3)
+        result, status, err = POST(base, key, "/api/v1/indexer", schema)
+    # Retry on SQLite-busy for the brand-new add too. Prowlarr serializes
+    # all writes through one SQLite handle; a fresh-container install runs
+    # Sync Apps + parallel indexer reachability tests at the same time, so
+    # our POST can lose the write lock and come back 400 "database is
+    # locked". Without this retry the lock error fell through to the
+    # error-classification block below and (because the message also tends
+    # to mention "Unable to connect to indexer …") got misread as a stale-
+    # URL/unreachable indexer and silently demoted to info() — the indexer
+    # was never added. Same 8×5s patience as the PUT/credential paths.
+    retries = 0
+    while result is None and _is_db_locked(err) and retries < 8:
+        retries += 1
+        time.sleep(5)
         result, status, err = POST(base, key, "/api/v1/indexer", schema)
     if result is not None:
         # Verify the indexer actually persisted. Prowlarr has been
@@ -368,7 +393,7 @@ def _post_indexer(base, key, name, schema):
         # field (like AvistaZ's pid/passkey) might be misnamed in
         # our env-to-schema mapping.
         verify = GET(base, key, "/api/v1/indexer") or []
-        if any(i.get('name', '').lower() == name.lower() for i in verify):
+        if any(i.get('name', '').lower() == check_name.lower() for i in verify):
             ok(f"{name}")
         else:
             schema_fields = [f.get('name', '?') for f in schema.get('fields', [])]
@@ -384,6 +409,17 @@ def _post_indexer(base, key, name, schema):
         err_lower = err.lower()
         if 'unique' in err_lower:
             skip(f"{name} (already added)")
+            return
+        # Still locked after the 8 retries above? Do NOT fall through to
+        # the forceSave/stale-URL classifier — a lock body usually also
+        # reads "Unable to connect to indexer …", which the connectivity
+        # branch below would misread as a dead mirror and silently demote
+        # to info(), dropping a perfectly-good brand-new indexer. forceSave
+        # can't help either: it still has to take the same write lock.
+        # Surface it honestly as the transient contention it is so the
+        # user knows a re-run will add it.
+        if _is_db_locked(err):
+            warn(f"{name}: Prowlarr DB was locked (write contention) — re-run step 8 to add it")
             return
         # Prowlarr's POST /api/v1/indexer runs a synchronous test of the
         # indexer's reachability as part of validation, and returns 400
@@ -488,6 +524,12 @@ def _find_schema(name, schemas):
 def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=None):
     """Add a public torrent indexer to Prowlarr.
 
+    Returns the name the indexer is actually stored under (the resolved
+    schema name for fuzzy matches like "Nyaa" → "Nyaa.si", else `name`),
+    or None if nothing was added. main() collects these so
+    apply_public_settings() can match indexers by their REAL stored name
+    rather than the catalog name.
+
     flaresolverr_tag_id: if provided, attached to the indexer's tags
     so Prowlarr routes the indexer's HTTP requests through the
     FlareSolverr proxy. Mandatory for CloudFlare-protected indexers
@@ -496,7 +538,7 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
     safe to apply to non-CloudFlare indexers too: Flaresolverr just
     passes their requests through transparently."""
     if name.lower() in existing_names:
-        skip(f"{name} (already added)"); return
+        skip(f"{name} (already added)"); return name
 
     overrides = INDEXER_OVERRIDES.get(name, {})
     schema, resolved_name = _find_schema(name, schemas)
@@ -527,11 +569,17 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
             info(f"{name}: not in this Prowlarr build's definitions{hint} — skip (update Prowlarr or add via its UI)")
         else:
             fail(f"{name}: not found in Prowlarr{hint}")
-        return
+        return None
 
     if resolved_name != name and resolved_name.lower() in existing_names:
-        skip(f"{name} → {resolved_name} (already added)"); return
+        skip(f"{name} → {resolved_name} (already added)"); return resolved_name
 
+    # Deep-copy before mutating. _find_schema hands back the SAME schema
+    # dict that lives in the shared `schemas` list; the assignments below
+    # (name/enable/tags/BaseUrl override) would otherwise scribble onto
+    # that shared object and bleed into any later add that reuses it.
+    # add_newznab already copies for this reason — match it here.
+    schema = json.loads(json.dumps(schema))
     schema['name'] = resolved_name
     schema['enable'] = True
     schema['appProfileId'] = 1
@@ -556,7 +604,12 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
         info(f"{name}: overriding bundled BaseUrl → {bu} (the Prowlarr-shipped URL was rejecting reachability tests due to upstream domain rotation)")
 
     display = f"{name} → {resolved_name}" if resolved_name != name else name
-    _post_indexer(base, key, display, schema)
+    # verify_name = the resolved schema name: Prowlarr saves the indexer
+    # under "Nyaa.si", not the "Nyaa → Nyaa.si" display string, so the
+    # post-add existence check must look for the resolved name or it
+    # false-warns "POST returned success but indexer NOT in list".
+    _post_indexer(base, key, display, schema, verify_name=resolved_name)
+    return resolved_name
 
 def _set_field_case_insensitive(schema, field_name, value):
     """Find a field in schema['fields'] by case-insensitive name match
@@ -620,11 +673,23 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
             if requested_value == '':
                 continue    # empty .env value = "don't touch"
             stored = current_fields_ci.get(fname.lower())
-            # Prowlarr returns password-type fields as empty string when
-            # GETing the indexer back (security feature — they don't echo
-            # creds). So we can't reliably diff passwords. Apply unless
-            # we KNOW the stored value matches.
-            if stored != requested_value:
+            # Prowlarr returns password-type fields (apiKey/password/
+            # cookie/passkey/...) as "" when GETing the indexer back — a
+            # security feature, it never echoes secrets. That means for a
+            # blanked secret `stored == ""` ALWAYS differs from the real
+            # `requested_value`, so a naive `stored != requested` marks it
+            # changed on EVERY run and re-PATCHes the indexer needlessly.
+            # Prowlarr re-validates creds against the tracker on PATCH, so
+            # that fired a credential test against rate-limited indexers
+            # every single re-run — the Althub "HTTP 429 every run" report.
+            # Fix: a blanked ("") stored value is unknowable, not proof of
+            # change — never count it as changed on its own. Only treat a
+            # field as changed when its stored value is PRESENT (non-empty)
+            # AND differs. A genuine change to some OTHER (non-secret) field
+            # still trips `changed`, and the apply-loop below re-writes ALL
+            # non-empty field values — so a legit edit still re-pushes the
+            # secrets alongside it.
+            if stored not in (None, '') and stored != requested_value:
                 changed.append(fname)
         if not changed:
             skip(f"{name} (already added, creds match)")
@@ -663,6 +728,11 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         fail(f"{name}: implementation '{implementation}' not found in Prowlarr")
         return
 
+    # Deep-copy before mutating — _find_schema returns the shared schema
+    # object out of `schemas`, and setting name/tags/creds on it in place
+    # would contaminate it for any later add that reuses the same
+    # implementation. add_newznab already copies for this reason.
+    schema = json.loads(json.dumps(schema))
     schema['name'] = name
     schema['enable'] = True
     schema['appProfileId'] = 1
@@ -687,7 +757,12 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
     _post_indexer(base, key, name, schema)
 
 def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1):
-    """Set priority and seed time on all public (no-login) indexers."""
+    """Set priority and seed time on all public (no-login) indexers.
+
+    public_names must be the names the indexers are actually STORED under
+    in Prowlarr (resolved schema names like "Nyaa.si"), not the raw
+    catalog labels — see the caller in main(). Matching catalog labels
+    here would skip every fuzzy-resolved indexer."""
     indexers = GET(base, key, "/api/v1/indexer") or []
     public_lower = {n.lower() for n in public_names}
 
@@ -752,7 +827,17 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
                 # rollback if they re-fill the .env later.
                 continue
             stored = current_fields.get(fname)
-            if stored != requested:
+            # Same blanked-secret trap as add_private_indexer: Prowlarr
+            # returns apiKey as "" on GET (never echoes secrets), so
+            # `"" != requested` would mark apiKey changed on EVERY run and
+            # re-PATCH the indexer — re-validating the key against the
+            # provider each time and tripping rate limits (the Althub
+            # "HTTP 429 every run" report). A "" stored value is unknowable,
+            # not proof of change: only count a field changed when its
+            # stored value is PRESENT and differs. If baseUrl (non-secret)
+            # genuinely changes, `changed` still trips and the apply-loop
+            # below re-writes apiKey too — so a legit edit re-pushes creds.
+            if stored not in (None, '') and stored != requested:
                 changed.append(fname)
         if not changed:
             skip(f"{name} (already added, creds match)")
@@ -937,9 +1022,20 @@ def main():
     # ── Public torrent indexers ───────────────────────────────────────────────
 
     section("Public Torrent Indexers")
+    # Collect the names indexers are ACTUALLY stored under. add_indexer
+    # resolves fuzzy catalog names ("Nyaa" → "Nyaa.si") and returns the
+    # real stored name; apply_public_settings needs THAT to find the
+    # indexer (matching the catalog name would silently skip every
+    # fuzzy-resolved public indexer's priority/seedTime tuning).
+    public_stored_names = set()
     for name in PUBLIC_TORRENT_INDEXERS:
-        add_indexer(PROWLARR, PROWLARR_KEY, name, schemas, existing_names,
-                    flaresolverr_tag_id=flaresolverr_tag_id)
+        resolved = add_indexer(PROWLARR, PROWLARR_KEY, name, schemas, existing_names,
+                               flaresolverr_tag_id=flaresolverr_tag_id)
+        # Keep the catalog name as a fallback too, so an indexer that was
+        # already present (returns its own name) or any path that returns
+        # None still gets covered by its catalog name.
+        public_stored_names.add((resolved or name).lower())
+        public_stored_names.add(name.lower())
 
     # ── Usenet indexers ───────────────────────────────────────────────────────
 
@@ -1047,7 +1143,11 @@ def main():
     # ── Public indexer settings ───────────────────────────────────────────────
 
     section("Public Indexer Settings")
-    apply_public_settings(PROWLARR, PROWLARR_KEY, PUBLIC_TORRENT_INDEXERS)
+    # Pass the RESOLVED stored names (incl. fuzzy matches like "Nyaa.si"),
+    # not the raw catalog list — otherwise fuzzy-resolved indexers never
+    # get their priority/seedTime applied because they're stored under a
+    # name the catalog doesn't contain.
+    apply_public_settings(PROWLARR, PROWLARR_KEY, public_stored_names)
 
     # ── Summary ───────────────────────────────────────────────────────────────
 

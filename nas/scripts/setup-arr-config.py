@@ -816,8 +816,16 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
     existing_client = next((c for c in existing if c['name'] == name), None)
     if existing_client:
         field_map = {f['name']: i for i, f in enumerate(existing_client.get('fields', []))}
+        # Write-only secrets (qBit's password, SABnzbd's apiKey) come back
+        # BLANK on GET — the arr never echoes a stored credential. Comparing
+        # our intended value against that blank read-back always shows a
+        # diff, so an otherwise-unchanged client would be re-PUT on every
+        # single run (never a real skip). Exclude those fields from the
+        # change-detection compare; an unchanged client is then a true skip.
+        # (We still write them in the PUT below if anything else changed.)
+        SECRET_FIELDS = ('password', 'apiKey')
         needs_update = any(
-            fname in field_map and
+            fname in field_map and fname not in SECRET_FIELDS and
             existing_client['fields'][field_map[fname]].get('value') != fval
             for fname, fval in field_overrides.items()
         )
@@ -867,8 +875,32 @@ def add_download_client(base, key, api, name, implementation, field_overrides):
     for fname, fval in field_overrides.items():
         if fname in field_map:
             schema['fields'][field_map[fname]]['value'] = fval
+
+    # First attempt.
     result = POST(base, key, f"/{api}/downloadclient{fs}", schema)
-    ok(f"Download client: {name}") if result else fail(f"Download client: {name}")
+    if result:
+        ok(f"Download client: {name}")
+        return
+
+    # No response on the create POST. Unlike root folders / path mappings
+    # this path had NO retry, so a transient connection reset or a
+    # "database is locked" 409/500 during Step 7 (the arr is busy doing
+    # its own first-run housekeeping) permanently dropped the download
+    # client for the whole run — Sonarr/Radarr then have nothing to send
+    # grabs to. Mirror add_root_folder: one short retry with a re-GET
+    # confirm, so a client that DID land (response lost on the wire) is
+    # recognised instead of being re-POSTed into a duplicate.
+    for attempt in range(1, 3):
+        time.sleep(5)
+        verify = GET(base, key, f"/{api}/downloadclient")
+        if verify and any(c['name'] == name for c in verify):
+            ok(f"Download client: {name} (added on retry {attempt})")
+            return
+        result = POST(base, key, f"/{api}/downloadclient{fs}", schema)
+        if result:
+            ok(f"Download client: {name} (added on retry {attempt})")
+            return
+    fail(f"Download client: {name}")
 
 def add_remote_path_mapping(base, key, api, host, remote, local, container=None):
     existing = GET(base, key, f"/{api}/remotePathMapping")
@@ -909,27 +941,42 @@ def add_remote_path_mapping(base, key, api, host, remote, local, container=None)
             return
 
     payload = {"host": host, "remotePath": remote, "localPath": local}
+
+    # An arr returns HTTP 500 on a duplicate mapping POST, so historically
+    # we treated ANY 500 as "already there → skip". But a genuine server
+    # error (the arr mid-restart, a DB lock) is ALSO a 500, and silently
+    # skipping it leaves the import path unmapped while showing a green
+    # skip. Confirm a real same-host+path mapping exists before trusting
+    # the 500 — otherwise fall through to the retry below.
+    def _mapping_present():
+        cur = GET(base, key, f"/{api}/remotePathMapping")
+        return bool(cur) and any(
+            m.get('remotePath', '').rstrip('/') == remote.rstrip('/')
+            and (m.get('host') or '') == host
+            for m in cur
+        )
+
     result, status = POST_status(base, key, f"/{api}/remotePathMapping", payload)
     if result is not None:
         ok(f"Remote path: {host} {remote} → {local}")
         return
-    if status == 500:
-        skip(f"Remote path: {remote} → {local} (already configured)")
+    if status == 500 and _mapping_present():
+        skip(f"Remote path: {host} {remote} → {local} (already configured)")
         return
 
-    # One short retry for genuine timing race.
+    # One short retry for a genuine timing race (or a 500 we couldn't
+    # confirm as a duplicate above).
     for attempt in range(1, 3):
         time.sleep(5)
-        existing = GET(base, key, f"/{api}/remotePathMapping")
-        if existing and any(m.get('remotePath', '').rstrip('/') == remote.rstrip('/') for m in existing):
+        if _mapping_present():
             ok(f"Remote path: {host} {remote} → {local} (added on retry {attempt})")
             return
         result, status = POST_status(base, key, f"/{api}/remotePathMapping", payload)
         if result is not None:
             ok(f"Remote path: {host} {remote} → {local} (added on retry {attempt})")
             return
-        if status == 500:
-            skip(f"Remote path: {remote} → {local} (already configured)")
+        if status == 500 and _mapping_present():
+            skip(f"Remote path: {host} {remote} → {local} (already configured)")
             return
     fail(f"Remote path: {host} {remote} → {local}")
     if not container:
@@ -3875,10 +3922,24 @@ def main():
         # to SABnzbd's news servers via the API. Otherwise the user wires it
         # up manually at http://<NAS>:49155 → Config → Servers.
         USENET_HOST = env.get('USENET_HOST', '')
-        USENET_PORT = int(env.get('USENET_PORT') or 563)
+        # Guard the int() like PUID/PGID above: a fat-fingered .env value
+        # (e.g. USENET_PORT=563s) would otherwise raise ValueError here and
+        # abort the ENTIRE configurator before a single arr is wired up.
+        # Fall back to the SSL-news default rather than killing the run;
+        # warn so the typo is visible. Catch ValueError/TypeError only so a
+        # Ctrl-C still stops us.
+        try:
+            USENET_PORT = int(env.get('USENET_PORT') or 563)
+        except (ValueError, TypeError):
+            warn(f"USENET_PORT='{env.get('USENET_PORT')}' isn't a number — using 563")
+            USENET_PORT = 563
         USENET_USER = env.get('USENET_USER', '')
         USENET_PASS = env.get('USENET_PASS', '')
-        USENET_CONNECTIONS = int(env.get('USENET_CONNECTIONS') or 8)
+        try:
+            USENET_CONNECTIONS = int(env.get('USENET_CONNECTIONS') or 8)
+        except (ValueError, TypeError):
+            warn(f"USENET_CONNECTIONS='{env.get('USENET_CONNECTIONS')}' isn't a number — using 8")
+            USENET_CONNECTIONS = 8
         USENET_SSL = (env.get('USENET_SSL', '1').strip() not in ('0', 'false', 'False', ''))
         USENET_NAME = env.get('USENET_NAME', 'primary')
 

@@ -95,7 +95,11 @@ esac
 # part of the stack, including ones whose ENABLE_* got flipped to
 # false since last install. `--remove-orphans` is the belt-and-
 # braces on top of that.
-PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn homepage recyclarr unpackerr flaresolverr)
+# "soulseek" is opt-in (slskd + soularr, default OFF) but MUST be listed
+# here for the same reason as every other profile: if it was ever enabled,
+# its containers are up, and omitting the profile leaves slskd/soularr
+# orphaned after `down` (compose only stops profiles it's told about).
+PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn soulseek homepage recyclarr unpackerr flaresolverr)
 
 # Pick the right compose files. When VPN was off at install time, the
 # no-vpn override is part of the active config; loading it on down
@@ -129,8 +133,11 @@ fi
 
 # Quick sanity: anything left running with one of our container names?
 LEFTOVERS=""
+# slskd + soularr included so the soulseek profile's containers are part
+# of the leftover safety-check too (they're the ones the omitted profile
+# above used to strand silently).
 for c in prowlarr flaresolverr plex jellyfin tautulli seerr sonarr radarr lidarr \
-         bazarr qbittorrent gluetun sabnzbd homepage recyclarr unpackerr; do
+         bazarr qbittorrent gluetun sabnzbd slskd soularr homepage recyclarr unpackerr; do
     if $RT ps --format '{{.Names}}' | grep -qx "$c"; then
         LEFTOVERS="$LEFTOVERS $c"
     fi

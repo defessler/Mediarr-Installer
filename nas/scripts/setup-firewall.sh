@@ -85,13 +85,21 @@ if [ -n "$ENV_FILE" ]; then
     [ "$_ms" = "jellyfin" ] && MEDIA_SERVER="jellyfin"
 fi
 
+# Every rule quotes "$LOCAL_SUBNET": it is derived from an unvalidated
+# LAN_IP/LAN_SUBNET in .env, and leaving it bare would let a stray space
+# or glob char word-split the CIDR — silently widening the match or
+# making iptables reject the rule. Quoting keeps -I and -D using the
+# identical spec so the remove-then-add idempotency below holds.
 add_rules() {
-    # DSM (always open — needed to manage the NAS itself)
-    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5000 -j ACCEPT
-    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5002 -j ACCEPT
+    # DSM (always open — needed to manage the NAS itself). 5000 = DSM HTTP,
+    # 5001 = DSM HTTPS — the admin port documented throughout this repo. The
+    # old rule opened 5002, which DSM binds to nothing, so on a deny-default
+    # firewall a LAN admin could not reach DSM over HTTPS at all.
+    iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5000 -j ACCEPT
+    iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5001 -j ACCEPT
 
     # SSH
-    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 22 -j ACCEPT
+    iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 22 -j ACCEPT
 
     # Plex (bridge network — 32400 is the main HTTP port).
     # Discovery ports below are OPTIONAL — Plex.tv's cloud discovery
@@ -110,38 +118,38 @@ add_rules() {
             # Jellyfin HTTP (8096). DLNA (1900/udp) + client discovery
             # (7359/udp) are optional and off unless the user enables them
             # in Jellyfin's dashboard, so we don't pre-open them.
-            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8096 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8096 -j ACCEPT
         else
-            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 32400 -j ACCEPT
-            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 32469 -j ACCEPT
-            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32410 -j ACCEPT
-            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32412 -j ACCEPT
-            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32413 -j ACCEPT
-            iptables -I INPUT -s $LOCAL_SUBNET -p udp --dport 32414 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 32400 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 32469 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p udp --dport 32410 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p udp --dport 32412 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p udp --dport 32413 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p udp --dport 32414 -j ACCEPT
             # Tautulli — Plex-only analytics
-            iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8181 -j ACCEPT
+            iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8181 -j ACCEPT
         fi
         # Seerr / Jellyseerr request manager — runs under either server
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5056 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT
     fi
 
     if is_enabled ENABLE_SONARR; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49152 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49152 -j ACCEPT
     fi
     if is_enabled ENABLE_RADARR; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49151 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49151 -j ACCEPT
     fi
     if is_enabled ENABLE_LIDARR; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49154 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49154 -j ACCEPT
     fi
     if is_enabled ENABLE_BAZARR; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49153 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49153 -j ACCEPT
     fi
     if is_enabled ENABLE_SABNZBD; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49155 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49155 -j ACCEPT
     fi
     if is_enabled ENABLE_QBITTORRENT; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49156 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49156 -j ACCEPT
         # 6881 BT peer port — open from anywhere (peers come from the
         # internet through gluetun's tunnel, or via the host's bridge
         # network when VPN_ENABLED=false).
@@ -152,73 +160,76 @@ add_rules() {
     # default-on services above). slskd is gluetun-namespaced; this opens the
     # LAN→WebUI path the same way 49156 does for qBittorrent.
     case "$(grep -m1 '^ENABLE_SOULSEEK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
-        true|1|yes|on) iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 5030 -j ACCEPT ;;
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5030 -j ACCEPT ;;
     esac
     if is_enabled ENABLE_HOMEPAGE; then
-        iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 3000 -j ACCEPT
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
 
     # Prowlarr + Flaresolverr are always-on (not profile-gated)
-    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 49150 -j ACCEPT
-    iptables -I INPUT -s $LOCAL_SUBNET -p tcp --dport 8191 -j ACCEPT
+    iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49150 -j ACCEPT
+    iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8191 -j ACCEPT
 }
 
 remove_rules() {
-    # DSM
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 5000 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 5002 -j ACCEPT 2>/dev/null
+    # DSM — mirror add_rules: 5001 (DSM HTTPS), not the dead 5002, so the
+    # -D removes the exact rule -I created. (A mismatched spec would leave a
+    # stale rule behind on every re-run, defeating the remove-then-add
+    # idempotency this script relies on.)
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5000 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5001 -j ACCEPT 2>/dev/null
 
     # SSH
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 22 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 22 -j ACCEPT 2>/dev/null
 
     # Plex (main + DLNA + GDM)
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 32400 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 32469 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32410 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32412 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32413 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s $LOCAL_SUBNET -p udp --dport 32414 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 32400 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 32469 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p udp --dport 32410 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p udp --dport 32412 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p udp --dport 32413 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p udp --dport 32414 -j ACCEPT 2>/dev/null
 
     # Jellyfin (main HTTP)
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 8096 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8096 -j ACCEPT 2>/dev/null
 
     # Sonarr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49152 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49152 -j ACCEPT 2>/dev/null
 
     # Radarr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49151 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49151 -j ACCEPT 2>/dev/null
 
     # Lidarr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49154 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49154 -j ACCEPT 2>/dev/null
 
     # Prowlarr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49150 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49150 -j ACCEPT 2>/dev/null
 
     # Bazarr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49153 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49153 -j ACCEPT 2>/dev/null
 
     # SABnzbd
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49155 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49155 -j ACCEPT 2>/dev/null
 
     # qBittorrent (via Gluetun)
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 49156 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49156 -j ACCEPT 2>/dev/null
     iptables -D INPUT -p tcp --dport 6881 -j ACCEPT 2>/dev/null
     iptables -D INPUT -p udp --dport 6881 -j ACCEPT 2>/dev/null
 
     # Soulseek slskd WebUI (via Gluetun)
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 5030 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5030 -j ACCEPT 2>/dev/null
 
     # Seerr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 5056 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT 2>/dev/null
 
     # Tautulli
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 8181 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8181 -j ACCEPT 2>/dev/null
 
     # Homepage dashboard
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 3000 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT 2>/dev/null
 
     # Flaresolverr
-    iptables -D INPUT -s $LOCAL_SUBNET -p tcp --dport 8191 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8191 -j ACCEPT 2>/dev/null
 }
 
 RC_SCRIPT=/usr/local/etc/rc.d/media-firewall.sh

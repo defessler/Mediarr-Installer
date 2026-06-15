@@ -430,28 +430,54 @@ else
     PROBE_DST="$PROBE_DST_DIR/.mediarr-hardlink-probe"
     # Clean up any old probe files first (best-effort)
     rm -f "$PROBE_SRC" "$PROBE_DST" 2>/dev/null
+    # Capture ln's stderr in a PRIVATE temp file, not a fixed /tmp path.
+    # A predictable name like /tmp/hardlink-err is a symlink/temp race: any
+    # local user can pre-create it (or symlink it elsewhere) and we'd write
+    # root-owned content to an attacker-chosen location. mktemp gives us an
+    # unguessable, exclusively-created file. Fall back to the old path only
+    # if mktemp is somehow unavailable, so the probe never hard-aborts.
+    HL_ERR=$(mktemp 2>/dev/null) || HL_ERR="/tmp/hardlink-err.$$"
     # Write a tiny source file, attempt hardlink. Linux `ln` returns
     # EXDEV (rc=1) when crossing filesystems / btrfs subvolumes.
-    if echo "probe" > "$PROBE_SRC" 2>/dev/null && ln "$PROBE_SRC" "$PROBE_DST" 2>/tmp/hardlink-err; then
+    if echo "probe" > "$PROBE_SRC" 2>/dev/null && ln "$PROBE_SRC" "$PROBE_DST" 2>"$HL_ERR"; then
         ok "Hardlinks work between Downloads and Media (same filesystem/subvolume)"
-        rm -f "$PROBE_SRC" "$PROBE_DST" 2>/dev/null
+        rm -f "$PROBE_SRC" "$PROBE_DST" "$HL_ERR" 2>/dev/null
     else
-        err_msg=$(cat /tmp/hardlink-err 2>/dev/null | head -1)
-        rm -f "$PROBE_SRC" "$PROBE_DST" /tmp/hardlink-err 2>/dev/null
+        err_msg=$(head -1 "$HL_ERR" 2>/dev/null)
+        rm -f "$PROBE_SRC" "$PROBE_DST" "$HL_ERR" 2>/dev/null
         fail "Hardlink probe FAILED: $err_msg"
-        echo "    Downloads ($PROBE_SRC_DIR)"
-        echo "    Media     ($PROBE_DST_DIR)"
-        echo "    appear to be on different filesystems / btrfs subvolumes."
-        echo ""
-        echo "    On Synology DSM: each shared folder is its own btrfs subvolume,"
-        echo "    and hardlinks across subvolumes return EXDEV. Without hardlinks,"
-        echo "    Sonarr/Radarr will COPY files into Media (doubling disk use) and"
-        echo "    qBittorrent's seeding files will be separate from your library."
-        echo ""
-        echo "    Fix: put BOTH Downloads/ and Media/ under a SINGLE Synology"
-        echo "    shared folder (e.g., /volume1/Data/{Downloads,Media}). Move"
-        echo "    existing data with: mv /volume1/Media/* /volume1/Data/Media/"
-        echo "    then re-run setup.sh."
+        # Only the cross-device (EXDEV) case is the "two shared folders /
+        # separate btrfs subvolumes" problem. Other failures — a read-only
+        # mount, no space, a permission/ACL block — would otherwise get the
+        # wrong "merge your shared folders" remediation, sending the user off
+        # to move terabytes of data that wouldn't fix anything. Detect EXDEV
+        # from ln's own message (glibc + busybox both say "cross-device"),
+        # and double-check via the devices the two dirs actually live on.
+        SRC_DEV=$(stat -c '%d' "$PROBE_SRC_DIR" 2>/dev/null)
+        DST_DEV=$(stat -c '%d' "$PROBE_DST_DIR" 2>/dev/null)
+        if echo "$err_msg" | grep -qiE 'cross-device|EXDEV' \
+            || { [ -n "$SRC_DEV" ] && [ -n "$DST_DEV" ] && [ "$SRC_DEV" != "$DST_DEV" ]; }; then
+            echo "    Downloads ($PROBE_SRC_DIR)"
+            echo "    Media     ($PROBE_DST_DIR)"
+            echo "    are on different filesystems / btrfs subvolumes."
+            echo ""
+            echo "    On Synology DSM: each shared folder is its own btrfs subvolume,"
+            echo "    and hardlinks across subvolumes return EXDEV. Without hardlinks,"
+            echo "    Sonarr/Radarr will COPY files into Media (doubling disk use) and"
+            echo "    qBittorrent's seeding files will be separate from your library."
+            echo ""
+            echo "    Fix: put BOTH Downloads/ and Media/ under a SINGLE Synology"
+            echo "    shared folder (e.g., /volume1/Data/{Downloads,Media}). Move"
+            echo "    existing data with: mv /volume1/Media/* /volume1/Data/Media/"
+            echo "    then re-run setup.sh."
+        else
+            # Same filesystem, but the link still failed — surface the actual
+            # cause instead of the (wrong-here) cross-device advice.
+            echo "    Downloads and Media appear to be on the SAME filesystem, so"
+            echo "    this is not a cross-subvolume issue. The link failed for"
+            echo "    another reason (see the message above) — common causes are a"
+            echo "    read-only mount, a full disk, or restrictive folder permissions."
+        fi
     fi
 fi
 

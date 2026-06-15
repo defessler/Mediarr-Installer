@@ -448,7 +448,14 @@ services:
       # tunnel and Docker NAT loses them. Top-cited gluetun question
       # (issue #1174, discussion #1744). Auto-defaulted to common LAN
       # ranges + Docker's default bridge; user can override in .env.
-      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNETS:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}
+      # NOTE: the override var is LAN_SUBNET (singular) — the exact name
+      # .env.example emits and every other layer (setup-firewall.sh,
+      # setup-folders.sh, setup-arr-config.py) reads. It was ${LAN_SUBNETS}
+      # (plural) here, which never matched the emitted var, so a user's
+      # custom LAN_SUBNET was silently ignored and this always fell back
+      # to the RFC1918 default — fine for /24 home LANs but wrong for a
+      # non-RFC1918 or oddly-masked LAN that needs the override honored.
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}
       # HEALTH_VPN_DURATION_INITIAL: how long the healthcheck waits
       # for the tunnel to come up before declaring "unhealthy".
       # Default (6s in gluetun) is well below realistic WireGuard

@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Settings2, ArrowLeft, ArrowRight,
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
-  Clock, CheckCircle2, XCircle, AlertTriangle, Info,
+  Clock, CheckCircle2, XCircle, AlertTriangle, Info, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
@@ -690,6 +690,85 @@ function VpnSection({
   )
 }
 
+// ── Collapsible group ───────────────────────────────────────────────────────
+//
+// The Configure form used to be one long single-column scroll of ~11
+// sections, which made things (notably the Soulseek/Music setup) easy to
+// miss. We now fold those sections into five collapsible groups with a
+// sticky jump bar. This wrapper is purely structural — every section's
+// own markup/logic is unchanged, just nested under a toggle.
+const CONFIG_GROUPS = [
+  { id: 'services',  label: 'Services',        icon: Boxes },
+  { id: 'downloads', label: 'Downloads & VPN', icon: Download },
+  { id: 'music',     label: 'Music',           icon: Music2 },
+  { id: 'locations', label: 'Locations',       icon: HardDrive },
+  { id: 'advanced',  label: 'Advanced',        icon: Wrench },
+] as const
+
+function CollapsibleGroup({
+  id, title, icon, subtitle, badge, open, onToggle, children,
+}: {
+  id: string
+  title: string
+  icon: ReactNode
+  subtitle?: string
+  badge?: ReactNode
+  open: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  return (
+    <section
+      id={id}
+      className="scroll-mt-24 rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden"
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-slate-800/40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+      >
+        <span className="shrink-0">{icon}</span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="text-lg font-semibold text-slate-100">{title}</span>
+            {badge != null && (
+              <span className="text-xs font-normal text-slate-500">{badge}</span>
+            )}
+          </span>
+          {subtitle && (
+            <span className="block text-xs text-slate-500 mt-0.5">{subtitle}</span>
+          )}
+        </span>
+        <ChevronDown
+          size={20}
+          className={
+            'shrink-0 text-slate-500 transition-transform duration-200 ' +
+            (open ? 'rotate-180' : '')
+          }
+          aria-hidden="true"
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-6 pt-3 space-y-8 border-t border-slate-800/60">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  )
+}
+
 // One tall scrollable form with auto-detection (PUID/LAN_IP from NAS),
 // country pickers (when the VPN provider's API gives us the list), and
 // inline validation. Earlier roadmap split this into per-step screens
@@ -808,487 +887,575 @@ export function ConfigureScreen() {
     setStep('run')
   }
 
+  // Collapsible-group open/closed state. Services is open on entry; the
+  // rest collapse so the screen reads as a short, scannable list. jumpTo
+  // opens the target group, then scrolls to its anchor on the next frame.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ services: true })
+  const toggleGroup = (id: string) =>
+    setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }))
+  const jumpTo = (id: string) => {
+    setOpenGroups((prev) => ({ ...prev, [id]: true }))
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+  // Enabled-service count for the Services group badge. Mirrors
+  // ServicesSection's isOn (Soulseek is opt-in → isOptInEnabled).
+  const enabledServiceCount = SERVICE_TOGGLES.filter((t) =>
+    t.key === 'ENABLE_SOULSEEK'
+      ? isOptInEnabled(config[t.key] as string | undefined)
+      : isEnabled(config[t.key] as string | undefined),
+  ).length
+
   return (
     <ConfigCtx.Provider value={{ config, update }}>
     <div className="h-full flex flex-col">
     <div className="flex-1 min-h-0 overflow-y-auto">
-    <div className="max-w-3xl mx-auto px-8 py-10 space-y-12">
+      {/* Sticky jump bar — wayfinding across the five collapsible groups so
+          nothing (notably the Music setup) hides at the bottom of a long
+          scroll. A chip opens its group and scrolls to it. */}
+      <div className="sticky top-0 z-10 bg-slate-950/90 backdrop-blur border-b border-slate-800">
+        <div className="max-w-3xl mx-auto px-8 py-2 flex items-center gap-2 overflow-x-auto">
+          {CONFIG_GROUPS.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => jumpTo(g.id)}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-800/70 text-slate-300 hover:bg-slate-700 hover:text-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+            >
+              <g.icon size={13} aria-hidden="true" />
+              {g.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    <div className="max-w-3xl mx-auto px-8 py-8 space-y-6">
       <ConfigureHeader />
 
+      {/* ── Group 1: Services ──────────────────────────────────── */}
+      <CollapsibleGroup
+        id="services"
+        title="Services"
+        icon={<Boxes size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />}
+        badge={`${enabledServiceCount} of ${SERVICE_TOGGLES.length} enabled`}
+        open={!!openGroups.services}
+        onToggle={() => toggleGroup('services')}
+      >
+        <ServicesSection config={config} update={update} />
 
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
-          <HardDrive size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
-          Install location
-        </h2>
-        <p className="text-xs text-slate-400">
-          Two paths matter: where the wizard's compose stack + config dirs
-          land (<code className="font-mono">INSTALL_DIR</code>), and where your
-          media + downloads live (<code className="font-mono">DATA_ROOT</code>).
-          The Detect screen auto-fills both based on the NAS family it found
-          — override for non-standard layouts.
-        </p>
-        <div>
-          <label className="block text-sm font-medium mb-1" htmlFor="cfg-install-dir">
-            Install directory <span className="text-slate-500 text-xs ml-1">(compose stack + per-container configs)</span>
-          </label>
-          <input
-            id="cfg-install-dir"
-            type="text"
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-            placeholder="/volume1/docker/media"
-            value={config.INSTALL_DIR ?? targetDir}
-            onChange={(e) => {
-              // Keep INSTALL_DIR (used by docker-compose.yml) and the
-              // wizard's targetDir (used by SFTP upload + setup.sh
-              // invocation) in lockstep — they're conceptually the
-              // same value, just exposed twice for historical reasons.
-              const v = e.target.value
-              setConfig({ INSTALL_DIR: v || undefined })
-              setTargetDir(v)
-            }}
-          />
-        </div>
-        <Field
-          label="Data root (media + downloads, bind-mounted as /data inside containers)"
-          k="DATA_ROOT"
-          placeholder="/volume1/Data"
-        />
-      </section>
-
-      <ServicesSection config={config} update={update} />
-
-      <TrashProfilesSection config={config} update={update} />
-
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
-          <UserCircle size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
-          Identity
-        </h2>
-
-        {/* Container user / group — pulled from the NAS's /etc/passwd
-            and /etc/group on screen entry. Picking a user auto-fills
-            PUID + the user's primary GID; the group select can override
-            the GID independently (handy when you want files owned by a
-            shared "users" group rather than the user's private group). */}
-        <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-3">
-          <label className="block text-sm font-medium inline-flex items-center gap-2 w-full">
-            <Users size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
-            Container user / group
-            <span className="text-slate-500 text-xs">
-              (these own the media files — pick something other than the install user)
-            </span>
-          </label>
-
-          {usersError && (
-            <div
-              className="text-xs text-rose-300 inline-flex items-start gap-1.5"
-              role="alert"
-            >
-              <XCircle size={13} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
-              <span>Couldn&apos;t read users from the NAS: {usersError}</span>
+        {/* Media-server picker — Plex or Jellyfin (mutually exclusive).
+            Only shown when the media-server group is enabled. Drives
+            MEDIA_SERVER in .env; setup.sh activates the matching compose
+            profile and the configurator wires the right server. */}
+        {isEnabled(config.ENABLE_PLEX as string | undefined) && (
+          <section className="rounded-md border border-slate-800 p-3 space-y-2">
+            <div className="text-sm font-medium flex items-center gap-2">
+              <PlaySquare size={16} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
+              Media server
             </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1" htmlFor="cfg-container-user">User</label>
-              <select
-                id="cfg-container-user"
-                aria-label="Container user (owns media files)"
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-                value={config.PUID ?? ''}
-                onChange={(e) => selectContainerUser(e.target.value)}
-              >
-                <option value="">— Pick a user —</option>
-                {users.map((u) => (
-                  <option key={u.uid} value={u.uid}>
-                    {u.name} (uid {u.uid}{u.comment ? ` — ${u.comment.slice(0, 40)}` : ''})
-                    {u.uid === 0 ? ' [root, not recommended]' : ''}
-                  </option>
-                ))}
-                {users.length === 0 && !usersError && sessionId && (
-                  <option disabled>Loading users from NAS...</option>
-                )}
-                {!sessionId && users.length === 0 && (
-                  <option disabled>(connect to populate from NAS)</option>
-                )}
-              </select>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Media server">
+              {([
+                { id: 'plex',     name: 'Plex',     blurb: 'Claim token + Tautulli analytics' },
+                { id: 'jellyfin', name: 'Jellyfin', blurb: 'Free & open-source, no account' },
+              ] as const).map((ms) => {
+                const active = (config.MEDIA_SERVER || 'plex') === ms.id
+                return (
+                  <button
+                    key={ms.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => update('MEDIA_SERVER', ms.id)}
+                    className={
+                      'text-left rounded-md border p-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ' +
+                      (active
+                        ? 'border-amber-500/50 bg-amber-900/20'
+                        : 'border-slate-700 bg-slate-900/40 hover:border-slate-600')
+                    }
+                  >
+                    <div className="text-sm font-medium">{ms.name}</div>
+                    <div className="text-xs text-slate-400">{ms.blurb}</div>
+                  </button>
+                )
+              })}
             </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1" htmlFor="cfg-container-group">Group</label>
-              <select
-                id="cfg-container-group"
-                aria-label="Container group (owns media files)"
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-                value={config.PGID ?? ''}
-                onChange={(e) => selectContainerGroup(e.target.value)}
-              >
-                <option value="">— Pick a group —</option>
-                {groups.map((g) => (
-                  <option key={g.gid} value={g.gid}>
-                    {g.name} (gid {g.gid}){g.gid === 0 ? ' [root]' : ''}
-                  </option>
-                ))}
-                {groups.length === 0 && !usersError && sessionId && (
-                  <option disabled>Loading groups from NAS...</option>
-                )}
-                {!sessionId && groups.length === 0 && (
-                  <option disabled>(connect to populate from NAS)</option>
-                )}
-              </select>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-500">
-            Don&apos;t see your media user? Create one in DSM &rarr; Control
-            Panel &rarr; User &amp; Group with read/write on your media share,
-            then come back to this screen.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="PUID (user ID)" k="PUID" />
-          <Field label="PGID (group ID)" k="PGID" />
-        </div>
-        <TimezoneSelect
-          value={config.TZ ?? ''}
-          onChange={(tz) => update('TZ', tz || undefined)}
-        />
-        <Field label="LAN IP of your NAS" k="LAN_IP" placeholder="192.168.1.10" />
-      </section>
-
-      {/* VPN section only renders when qBittorrent is in the stack —
-          gluetun is the VPN sidecar for qBittorrent, so without
-          qBittorrent there's nothing to route through it. Avoids
-          surprising the user with a half-filled VPN form whose key
-          would be silently unused at install time. */}
-      {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
-        <VpnSection
-          config={config}
-          update={update}
-          vpnToken={vpnToken}
-          setVpnToken={setVpnToken}
-          vpnBusy={vpnBusy}
-          vpnError={vpnError}
-          fetchVpnKey={fetchVpnKey}
-          countries={countries}
-        />
-      )}
-
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
-          <KeyRound size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
-          Arr Web UI auth
-        </h2>
-        <p className="text-sm text-slate-400">
-          Optional. Applied to Sonarr, Radarr, Lidarr, Prowlarr by setup-arr-config.py.
-          LAN connections bypass the prompt automatically. Leave blank to skip.
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Username" k="ARR_USERNAME" />
-          <Field label="Password" k="ARR_PASSWORD" type="password" />
-        </div>
-      </section>
-
-      {/* qBittorrent WebUI credentials only matter when qBittorrent is
-          in the stack — same reasoning as the VPN section above. */}
-      {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
-            <Lock size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
-            qBittorrent WebUI
-          </h2>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={qbitSameAsArr}
-              onChange={(e) => setQbitSameAsArr(e.target.checked)}
-            />
-            Use same credentials as ARR Web UI
-          </label>
-          <AnimatePresence initial={false}>
-            {!qbitSameAsArr && (
-              <motion.div
-                key="qbit-fields"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden"
-              >
-                <div className="grid grid-cols-2 gap-4 pt-1">
-                  <Field label="Username" k="QBITTORRENT_USER" />
-                  <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
-                </div>
-              </motion.div>
+            {(config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
+              <p className="text-xs text-slate-400">
+                The request manager runs as{' '}
+                <span className="font-mono text-slate-300">Jellyseerr</span> (supports
+                Jellyfin). Tautulli is Plex-only, so it&apos;s skipped — Jellyfin has
+                built-in playback stats.
+              </p>
             )}
-          </AnimatePresence>
-          {qbitSameAsArr && (
-            <p className="text-xs text-slate-500">
-              qBittorrent will use{' '}
-              <span className="font-mono text-slate-300">
-                {config.ARR_USERNAME || '<empty>'}
-              </span>{' '}
-              from the ARR auth section above. Note: qBittorrent requires the
-              password to be at least 8 characters.
-            </p>
-          )}
-        </section>
-      )}
+          </section>
+        )}
 
-      {/* Soulseek credentials — only when Soulseek is opted in (it's the
-          one default-OFF service, so use isOptInEnabled, not isEnabled).
-          Mirrors the qBittorrent WebUI block above: a gated sub-section
-          collecting the Soulseek network account + the slskd API key
-          soularr uses. */}
-      {isOptInEnabled(config.ENABLE_SOULSEEK as string | undefined) && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
-            <Music2 size={20} className="text-pink-400" strokeWidth={1.75} aria-hidden="true" />
-            Soulseek (slskd + soularr)
-          </h2>
-          <p className="text-sm text-slate-400">
-            slskd routes through the VPN like qBittorrent; soularr watches
-            Lidarr&apos;s wanted list and grabs matches off Soulseek.{' '}
-            <span className="text-amber-300/90">Requires Lidarr.</span> Create a
-            free Soulseek account at{' '}
-            <a
-              href="https://www.slsknet.org"
-              target="_blank"
-              rel="noreferrer"
-              className="text-emerald-400 hover:underline"
-            >
-              slsknet.org
-            </a>{' '}
-            (or in the slskd WebUI on first run).
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Soulseek username" k="SLSKD_USER" />
-            <Field label="Soulseek password" k="SLSKD_PASS" type="password" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field
-              label="slskd API key (16–255 chars)"
-              k="SLSKD_API_KEY"
-              type="password"
-              placeholder="soularr uses this to drive slskd"
-            />
-            <Field
-              label="Scan interval (seconds)"
-              k="SOULARR_INTERVAL"
-              placeholder="300"
-            />
-          </div>
-          <p className="text-xs text-slate-500">
-            The API key lets soularr talk to slskd over its REST API. Pick any
-            random 16–255-character string; soularr&apos;s generated{' '}
-            <code className="font-mono">config.ini</code> uses whatever you set
-            here. Leave the scan interval at 300s unless you have a reason to
-            change it.
-          </p>
-        </section>
-      )}
-
-      {/* Media-server picker — Plex or Jellyfin (mutually exclusive).
-          Only shown when the media-server group is enabled. Drives
-          MEDIA_SERVER in .env; setup.sh activates the matching compose
-          profile and the configurator wires the right server. */}
-      {isEnabled(config.ENABLE_PLEX as string | undefined) && (
-        <section className="rounded-md border border-slate-800 p-3 space-y-2">
-          <div className="text-sm font-medium flex items-center gap-2">
-            <PlaySquare size={16} className="text-amber-400" strokeWidth={2} aria-hidden="true" />
-            Media server
-          </div>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Media server">
-            {([
-              { id: 'plex',     name: 'Plex',     blurb: 'Claim token + Tautulli analytics' },
-              { id: 'jellyfin', name: 'Jellyfin', blurb: 'Free & open-source, no account' },
-            ] as const).map((ms) => {
-              const active = (config.MEDIA_SERVER || 'plex') === ms.id
-              return (
-                <button
-                  key={ms.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => update('MEDIA_SERVER', ms.id)}
-                  className={
-                    'text-left rounded-md border p-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ' +
-                    (active
-                      ? 'border-amber-500/50 bg-amber-900/20'
-                      : 'border-slate-700 bg-slate-900/40 hover:border-slate-600')
-                  }
+        {/* Plex claim is collected on the Run screen instead — it expires
+            4 minutes after generation, so capturing it earlier risks the
+            token going stale while the user fills out other fields. The
+            RunScreen has a PlexClaimRefresh widget right above the Start
+            button with a live countdown and a "Get fresh token" link.
+            Hide the banner when Plex is opted out of the stack, or when the
+            user picked Jellyfin (no claim token — see the Jellyfin note). */}
+        {isEnabled(config.ENABLE_PLEX as string | undefined)
+          && (config.MEDIA_SERVER || 'plex') !== 'jellyfin' && (
+          <section className="rounded-md border border-amber-700/30 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
+            <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
+              <Clock size={16} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
+            </div>
+            <div className="space-y-1">
+              <div className="font-medium text-amber-100">
+                Plex claim comes up on the next screen
+              </div>
+              <div className="text-xs text-slate-400">
+                Claim tokens expire 4 minutes after you generate them, so we keep
+                it for last — the next screen has a fresh-token countdown +
+                one-click link to{' '}
+                <a
+                  href="https://plex.tv/claim"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-amber-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 rounded"
+                  aria-label="Open plex.tv/claim in a new tab"
                 >
-                  <div className="text-sm font-medium">{ms.name}</div>
-                  <div className="text-xs text-slate-400">{ms.blurb}</div>
-                </button>
-              )
-            })}
-          </div>
-          {(config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
-            <p className="text-xs text-slate-400">
-              The request manager runs as{' '}
-              <span className="font-mono text-slate-300">Jellyseerr</span> (supports
-              Jellyfin). Tautulli is Plex-only, so it&apos;s skipped — Jellyfin has
-              built-in playback stats.
-            </p>
-          )}
-        </section>
-      )}
-
-      {/* Plex claim is collected on the Run screen instead — it expires
-          4 minutes after generation, so capturing it earlier risks the
-          token going stale while the user fills out other fields. The
-          RunScreen has a PlexClaimRefresh widget right above the Start
-          button with a live countdown and a "Get fresh token" link.
-          Hide the banner when Plex is opted out of the stack, or when the
-          user picked Jellyfin (no claim token — see the Jellyfin note). */}
-      {isEnabled(config.ENABLE_PLEX as string | undefined)
-        && (config.MEDIA_SERVER || 'plex') !== 'jellyfin' && (
-        <section className="rounded-md border border-amber-700/30 bg-amber-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
-          <div className="shrink-0 w-8 h-8 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mt-0.5">
-            <Clock size={16} className="text-amber-300" strokeWidth={2} aria-hidden="true" />
-          </div>
-          <div className="space-y-1">
-            <div className="font-medium text-amber-100">
-              Plex claim comes up on the next screen
-            </div>
-            <div className="text-xs text-slate-400">
-              Claim tokens expire 4 minutes after you generate them, so we keep
-              it for last — the next screen has a fresh-token countdown +
-              one-click link to{' '}
-              <a
-                href="https://plex.tv/claim"
-                target="_blank"
-                rel="noreferrer"
-                className="text-amber-300 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 rounded"
-                aria-label="Open plex.tv/claim in a new tab"
-              >
-                plex.tv/claim
-              </a>
-              .
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Jellyfin has no claim token — it's set up in the browser after
-          install. Tell the user the post-install step so the arr → library
-          wiring can be completed (optional; the stack works without it). */}
-      {isEnabled(config.ENABLE_PLEX as string | undefined)
-        && (config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
-        <section className="rounded-md border border-sky-700/30 bg-sky-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
-          <div className="shrink-0 w-8 h-8 rounded-md bg-sky-500/15 border border-sky-500/30 flex items-center justify-center mt-0.5">
-            <Info size={16} className="text-sky-300" strokeWidth={2} aria-hidden="true" />
-          </div>
-          <div className="space-y-1">
-            <div className="font-medium text-sky-100">
-              Jellyfin finishes setting up in your browser
-            </div>
-            <div className="text-xs text-slate-400">
-              No claim token needed. After install, open{' '}
-              <span className="font-mono text-slate-300">http://&lt;NAS&gt;:8096</span>,
-              complete the first-run wizard, then (optionally) generate an API key
-              under Dashboard → API Keys and paste it into the Run screen so the
-              arrs auto-refresh Jellyfin on import.
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Advanced expander: provider-specific account credentials (Usenet
-          provider, indexer API keys, private-tracker logins, Bazarr
-          subtitle accounts). All of these can be skipped at install time
-          and configured later via the service's web UI — the wizard's
-          default install gives the user a fully working stack with free
-          / public indexers / providers. Collapsed by default to reduce
-          the cognitive load on the Configure screen; the user clicks to
-          expand if they want to pre-fill credentials. Note we deliberately
-          keep VPN, ARR Web UI auth, and qBittorrent WebUI ABOVE this —
-          those affect the install flow itself, not just post-install
-          niceties. */}
-      <details className="space-y-2">
-        <summary className="cursor-pointer text-xl font-semibold border-b-2 border-slate-800 pb-2 hover:text-emerald-300 select-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-          <Wrench size={20} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
-          Advanced
-          <span className="text-xs font-normal text-slate-500 ml-2">
-            (click to expand — account-based usenet provider, indexer API
-            keys, private-tracker logins, subtitle providers)
-          </span>
-        </summary>
-        <div className="space-y-8 pt-4">
-          <section className="space-y-4">
-            <h3 className="text-base font-medium flex items-center gap-2">
-              <Newspaper size={18} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
-              SABnzbd usenet provider
-            </h3>
-            <p className="text-sm text-slate-400">
-              Optional. Adds a news server to SABnzbd at first install. Leave the
-              host blank to skip — you can always add servers later in
-              <a className="text-emerald-400 underline mx-1" href="#" onClick={(e) => e.preventDefault()}>
-                SABnzbd → Config → Servers
-              </a>.
-              Common providers: <code className="text-slate-300">news.eweka.nl</code>,
-              {' '}<code className="text-slate-300">news.usenetserver.com</code>,
-              {' '}<code className="text-slate-300">news.giganews.com</code>.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Host" k="USENET_HOST" placeholder="news.eweka.nl" />
-              <Field label="Port" k="USENET_PORT" placeholder="563" />
-              <Field label="Username" k="USENET_USER" />
-              <Field label="Password" k="USENET_PASS" type="password" />
-              <Field label="Connections" k="USENET_CONNECTIONS" placeholder="8" />
-              <div>
-                <label className="block text-sm font-medium mb-1" htmlFor="cfg-usenet-ssl">SSL</label>
-                <select
-                  id="cfg-usenet-ssl"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
-                  value={config.USENET_SSL ?? '1'}
-                  onChange={(e) => update('USENET_SSL', e.target.value)}
-                >
-                  <option value="1">On (recommended)</option>
-                  <option value="0">Off</option>
-                </select>
+                  plex.tv/claim
+                </a>
+                .
               </div>
             </div>
           </section>
+        )}
 
-          {/* Unified indexer browser — replaces the previous trio of
-              section blocks (Usenet / Private torrent / Bazarr). The
-              first two share a problem domain ("things Prowlarr can
-              search") so they're merged into one filterable catalog;
-              the third (Bazarr subtitle providers) is a different
-              concern and stays on its own. */}
-          <IndexerBrowser
-            catalog={[...USENET_INDEXERS, ...PUBLIC_TRACKERS, ...PRIVATE_TRACKERS]}
-            values={config}
-            onChange={setConfig}
-          />
-
-          {/* JSON-backed custom indexer editor for entries the curated
-              catalog doesn't ship with. Persisted as CUSTOM_INDEXERS_JSON
-              in .env; setup-indexers.py reads + registers each at
-              install time. */}
-          <CustomIndexerEditor values={config} onChange={setConfig} />
-
-          <section className="space-y-3">
-            <h3 className="text-base font-medium flex items-center gap-2">
-              <Captions size={18} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
-              Bazarr subtitle providers
-            </h3>
-            <p className="text-sm text-slate-400">
-              Free providers (YIFY, Podnapisi) are added automatically. Add account-based
-              providers below for better coverage.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {BAZARR_PROVIDERS.map((d) => (
-                <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
-              ))}
+        {/* Jellyfin has no claim token — it's set up in the browser after
+            install. Tell the user the post-install step so the arr → library
+            wiring can be completed (optional; the stack works without it). */}
+        {isEnabled(config.ENABLE_PLEX as string | undefined)
+          && (config.MEDIA_SERVER || 'plex') === 'jellyfin' && (
+          <section className="rounded-md border border-sky-700/30 bg-sky-900/10 p-3 text-sm text-slate-300 flex items-start gap-3">
+            <div className="shrink-0 w-8 h-8 rounded-md bg-sky-500/15 border border-sky-500/30 flex items-center justify-center mt-0.5">
+              <Info size={16} className="text-sky-300" strokeWidth={2} aria-hidden="true" />
+            </div>
+            <div className="space-y-1">
+              <div className="font-medium text-sky-100">
+                Jellyfin finishes setting up in your browser
+              </div>
+              <div className="text-xs text-slate-400">
+                No claim token needed. After install, open{' '}
+                <span className="font-mono text-slate-300">http://&lt;NAS&gt;:8096</span>,
+                complete the first-run wizard, then (optionally) generate an API key
+                under Dashboard → API Keys and paste it into the Run screen so the
+                arrs auto-refresh Jellyfin on import.
+              </div>
             </div>
           </section>
-        </div>
-      </details>
+        )}
+      </CollapsibleGroup>
+
+      {/* ── Group 2: Downloads & VPN ───────────────────────────── */}
+      <CollapsibleGroup
+        id="downloads"
+        title="Downloads & VPN"
+        icon={<Download size={20} className="text-blue-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="qBittorrent, the VPN tunnel, and your Usenet provider"
+        open={!!openGroups.downloads}
+        onToggle={() => toggleGroup('downloads')}
+      >
+        {/* VPN section only renders when qBittorrent is in the stack —
+            gluetun is the VPN sidecar for qBittorrent, so without
+            qBittorrent there's nothing to route through it. Avoids
+            surprising the user with a half-filled VPN form whose key
+            would be silently unused at install time. */}
+        {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
+          <VpnSection
+            config={config}
+            update={update}
+            vpnToken={vpnToken}
+            setVpnToken={setVpnToken}
+            vpnBusy={vpnBusy}
+            vpnError={vpnError}
+            fetchVpnKey={fetchVpnKey}
+            countries={countries}
+          />
+        )}
+
+        {/* qBittorrent WebUI credentials only matter when qBittorrent is
+            in the stack — same reasoning as the VPN section above. */}
+        {isEnabled(config.ENABLE_QBITTORRENT as string | undefined) && (
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+              <Lock size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+              qBittorrent WebUI
+            </h2>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={qbitSameAsArr}
+                onChange={(e) => setQbitSameAsArr(e.target.checked)}
+              />
+              Use same credentials as ARR Web UI
+            </label>
+            <AnimatePresence initial={false}>
+              {!qbitSameAsArr && (
+                <motion.div
+                  key="qbit-fields"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="overflow-hidden"
+                >
+                  <div className="grid grid-cols-2 gap-4 pt-1">
+                    <Field label="Username" k="QBITTORRENT_USER" />
+                    <Field label="Password (8+ chars)" k="QBITTORRENT_PASS" type="password" />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {qbitSameAsArr && (
+              <p className="text-xs text-slate-500">
+                qBittorrent will use{' '}
+                <span className="font-mono text-slate-300">
+                  {config.ARR_USERNAME || '<empty>'}
+                </span>{' '}
+                from the ARR auth section in Advanced. Note: qBittorrent requires
+                the password to be at least 8 characters.
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* SABnzbd usenet provider — optional account-based news server.
+            Lives here with the other downloaders (moved out of Advanced). */}
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+            <Newspaper size={20} className="text-orange-400" strokeWidth={1.75} aria-hidden="true" />
+            SABnzbd usenet provider
+          </h2>
+          <p className="text-sm text-slate-400">
+            Optional. Adds a news server to SABnzbd at first install. Leave the
+            host blank to skip — you can always add servers later in
+            <a className="text-emerald-400 underline mx-1" href="#" onClick={(e) => e.preventDefault()}>
+              SABnzbd → Config → Servers
+            </a>.
+            Common providers: <code className="text-slate-300">news.eweka.nl</code>,
+            {' '}<code className="text-slate-300">news.usenetserver.com</code>,
+            {' '}<code className="text-slate-300">news.giganews.com</code>.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Host" k="USENET_HOST" placeholder="news.eweka.nl" />
+            <Field label="Port" k="USENET_PORT" placeholder="563" />
+            <Field label="Username" k="USENET_USER" />
+            <Field label="Password" k="USENET_PASS" type="password" />
+            <Field label="Connections" k="USENET_CONNECTIONS" placeholder="8" />
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="cfg-usenet-ssl">SSL</label>
+              <select
+                id="cfg-usenet-ssl"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                value={config.USENET_SSL ?? '1'}
+                onChange={(e) => update('USENET_SSL', e.target.value)}
+              >
+                <option value="1">On (recommended)</option>
+                <option value="0">Off</option>
+              </select>
+            </div>
+          </div>
+        </section>
+      </CollapsibleGroup>
+
+      {/* ── Group 3: Music ─────────────────────────────────────── */}
+      <CollapsibleGroup
+        id="music"
+        title="Music"
+        icon={<Music2 size={20} className="text-pink-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="Soulseek music source for Lidarr (via VPN)"
+        open={!!openGroups.music}
+        onToggle={() => toggleGroup('music')}
+      >
+        {isOptInEnabled(config.ENABLE_SOULSEEK as string | undefined) ? (
+          <section className="space-y-4">
+            <p className="text-sm text-slate-400">
+              slskd routes through the VPN like qBittorrent; soularr watches
+              Lidarr&apos;s wanted list and grabs matches off Soulseek.{' '}
+              <span className="text-amber-300/90">Requires Lidarr.</span> Create a
+              free Soulseek account at{' '}
+              <a
+                href="https://www.slsknet.org"
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-400 hover:underline"
+              >
+                slsknet.org
+              </a>{' '}
+              (or in the slskd WebUI on first run).
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Soulseek username" k="SLSKD_USER" />
+              <Field label="Soulseek password" k="SLSKD_PASS" type="password" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field
+                label="slskd API key (16–255 chars)"
+                k="SLSKD_API_KEY"
+                type="password"
+                placeholder="soularr uses this to drive slskd"
+              />
+              <Field
+                label="Scan interval (seconds)"
+                k="SOULARR_INTERVAL"
+                placeholder="300"
+              />
+            </div>
+            <p className="text-xs text-slate-500">
+              The API key lets soularr talk to slskd over its REST API. Pick any
+              random 16–255-character string; soularr&apos;s generated{' '}
+              <code className="font-mono">config.ini</code> uses whatever you set
+              here. Leave the scan interval at 300s unless you have a reason to
+              change it.
+            </p>
+            <p className="text-xs text-slate-500">
+              To turn this off, untick <span className="font-medium">Soulseek</span> in
+              the Services group above.
+            </p>
+          </section>
+        ) : (
+          <div className="rounded-md border border-pink-700/30 bg-pink-900/10 p-4 flex items-start gap-3">
+            <div className="shrink-0 w-9 h-9 rounded-md bg-pink-500/15 border border-pink-500/30 flex items-center justify-center">
+              <Music2 size={20} className="text-pink-300" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+            <div className="space-y-3 min-w-0">
+              <div>
+                <div className="font-medium text-pink-100">Add a music source</div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Soulseek (slskd + soularr) lets Lidarr grab music it can&apos;t
+                  find on your other indexers — routed through your VPN like
+                  torrents. It needs Lidarr enabled; we&apos;ll turn that on too if
+                  it isn&apos;t already.
+                </p>
+              </div>
+              <BigButton
+                size="md"
+                variant="primary"
+                icon={<Music2 size={16} />}
+                onClick={() => {
+                  update('ENABLE_SOULSEEK', 'true')
+                  if (!isEnabled(config.ENABLE_LIDARR as string | undefined)) {
+                    update('ENABLE_LIDARR', 'true')
+                  }
+                }}
+              >
+                Enable Soulseek
+              </BigButton>
+            </div>
+          </div>
+        )}
+      </CollapsibleGroup>
+
+      {/* ── Group 4: Locations & Identity ──────────────────────── */}
+      <CollapsibleGroup
+        id="locations"
+        title="Locations & Identity"
+        icon={<HardDrive size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="where it installs + which user owns the files"
+        open={!!openGroups.locations}
+        onToggle={() => toggleGroup('locations')}
+      >
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+            <HardDrive size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+            Install location
+          </h2>
+          <p className="text-xs text-slate-400">
+            Two paths matter: where the wizard's compose stack + config dirs
+            land (<code className="font-mono">INSTALL_DIR</code>), and where your
+            media + downloads live (<code className="font-mono">DATA_ROOT</code>).
+            The Detect screen auto-fills both based on the NAS family it found
+            — override for non-standard layouts.
+          </p>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="cfg-install-dir">
+              Install directory <span className="text-slate-500 text-xs ml-1">(compose stack + per-container configs)</span>
+            </label>
+            <input
+              id="cfg-install-dir"
+              type="text"
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md font-mono text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+              placeholder="/volume1/docker/media"
+              value={config.INSTALL_DIR ?? targetDir}
+              onChange={(e) => {
+                // Keep INSTALL_DIR (used by docker-compose.yml) and the
+                // wizard's targetDir (used by SFTP upload + setup.sh
+                // invocation) in lockstep — they're conceptually the
+                // same value, just exposed twice for historical reasons.
+                const v = e.target.value
+                setConfig({ INSTALL_DIR: v || undefined })
+                setTargetDir(v)
+              }}
+            />
+          </div>
+          <Field
+            label="Data root (media + downloads, bind-mounted as /data inside containers)"
+            k="DATA_ROOT"
+            placeholder="/volume1/Data"
+          />
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+            <UserCircle size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+            Identity
+          </h2>
+
+          {/* Container user / group — pulled from the NAS's /etc/passwd
+              and /etc/group on screen entry. Picking a user auto-fills
+              PUID + the user's primary GID; the group select can override
+              the GID independently (handy when you want files owned by a
+              shared "users" group rather than the user's private group). */}
+          <div className="rounded-md border border-slate-700/50 bg-slate-900/40 p-3 space-y-3">
+            <label className="block text-sm font-medium inline-flex items-center gap-2 w-full">
+              <Users size={16} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+              Container user / group
+              <span className="text-slate-500 text-xs">
+                (these own the media files — pick something other than the install user)
+              </span>
+            </label>
+
+            {usersError && (
+              <div
+                className="text-xs text-rose-300 inline-flex items-start gap-1.5"
+                role="alert"
+              >
+                <XCircle size={13} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+                <span>Couldn&apos;t read users from the NAS: {usersError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1" htmlFor="cfg-container-user">User</label>
+                <select
+                  id="cfg-container-user"
+                  aria-label="Container user (owns media files)"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                  value={config.PUID ?? ''}
+                  onChange={(e) => selectContainerUser(e.target.value)}
+                >
+                  <option value="">— Pick a user —</option>
+                  {users.map((u) => (
+                    <option key={u.uid} value={u.uid}>
+                      {u.name} (uid {u.uid}{u.comment ? ` — ${u.comment.slice(0, 40)}` : ''})
+                      {u.uid === 0 ? ' [root, not recommended]' : ''}
+                    </option>
+                  ))}
+                  {users.length === 0 && !usersError && sessionId && (
+                    <option disabled>Loading users from NAS...</option>
+                  )}
+                  {!sessionId && users.length === 0 && (
+                    <option disabled>(connect to populate from NAS)</option>
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1" htmlFor="cfg-container-group">Group</label>
+                <select
+                  id="cfg-container-group"
+                  aria-label="Container group (owns media files)"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                  value={config.PGID ?? ''}
+                  onChange={(e) => selectContainerGroup(e.target.value)}
+                >
+                  <option value="">— Pick a group —</option>
+                  {groups.map((g) => (
+                    <option key={g.gid} value={g.gid}>
+                      {g.name} (gid {g.gid}){g.gid === 0 ? ' [root]' : ''}
+                    </option>
+                  ))}
+                  {groups.length === 0 && !usersError && sessionId && (
+                    <option disabled>Loading groups from NAS...</option>
+                  )}
+                  {!sessionId && groups.length === 0 && (
+                    <option disabled>(connect to populate from NAS)</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Don&apos;t see your media user? Create one in DSM &rarr; Control
+              Panel &rarr; User &amp; Group with read/write on your media share,
+              then come back to this screen.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="PUID (user ID)" k="PUID" />
+            <Field label="PGID (group ID)" k="PGID" />
+          </div>
+          <TimezoneSelect
+            value={config.TZ ?? ''}
+            onChange={(tz) => update('TZ', tz || undefined)}
+          />
+          <Field label="LAN IP of your NAS" k="LAN_IP" placeholder="192.168.1.10" />
+        </section>
+      </CollapsibleGroup>
+
+      {/* ── Group 5: Advanced ──────────────────────────────────── */}
+      <CollapsibleGroup
+        id="advanced"
+        title="Advanced"
+        icon={<Wrench size={20} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="indexers, quality profiles, app logins — all optional"
+        open={!!openGroups.advanced}
+        onToggle={() => toggleGroup('advanced')}
+      >
+        <TrashProfilesSection config={config} update={update} />
+
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+            <KeyRound size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
+            Arr Web UI auth
+          </h2>
+          <p className="text-sm text-slate-400">
+            Optional. Applied to Sonarr, Radarr, Lidarr, Prowlarr by setup-arr-config.py.
+            LAN connections bypass the prompt automatically. Leave blank to skip.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Username" k="ARR_USERNAME" />
+            <Field label="Password" k="ARR_PASSWORD" type="password" />
+          </div>
+        </section>
+
+        {/* Unified indexer browser — Usenet + public/private trackers in
+            one filterable catalog. Bazarr subtitle providers stay separate
+            below (different concern). */}
+        <IndexerBrowser
+          catalog={[...USENET_INDEXERS, ...PUBLIC_TRACKERS, ...PRIVATE_TRACKERS]}
+          values={config}
+          onChange={setConfig}
+        />
+
+        {/* JSON-backed custom indexer editor for entries the curated
+            catalog doesn't ship with. Persisted as CUSTOM_INDEXERS_JSON
+            in .env; setup-indexers.py reads + registers each at
+            install time. */}
+        <CustomIndexerEditor values={config} onChange={setConfig} />
+
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
+            <Captions size={20} className="text-violet-400" strokeWidth={1.75} aria-hidden="true" />
+            Bazarr subtitle providers
+          </h2>
+          <p className="text-sm text-slate-400">
+            Free providers (YIFY, Podnapisi) are added automatically. Add account-based
+            providers below for better coverage.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {BAZARR_PROVIDERS.map((d) => (
+              <IndexerCard key={d.id} def={d} values={config} onChange={setConfig} />
+            ))}
+          </div>
+        </section>
+      </CollapsibleGroup>
 
       {/* Full error list stays in the scrollable body so the user can
           read all of them. The footer below shows a compact "N issues"
