@@ -51,6 +51,21 @@ is_enabled() {
     esac
 }
 
+# Opt-IN semantics — the OPPOSITE default of is_enabled(): missing or empty
+# → DISABLED; only an explicit true/1/yes/on (any case) counts as enabled.
+# Used for opt-in services (AzuraCast) so a pre-feature .env with no key
+# isn't probed as if the service were deployed (which would HTTP-000 and
+# false-fail the post-deploy). Mirrors is_optin_enabled in setup.sh and
+# isOptInEnabled() in env-render.ts.
+is_optin_enabled() {
+    local val
+    val="$(env_val "$1" | tr '[:upper:]' '[:lower:]' | xargs)"
+    case "$val" in
+        true|1|yes|on) return 0 ;;
+        *)             return 1 ;;
+    esac
+}
+
 # ── Container runtime (Docker or Podman) ──────────────────────────────────────
 # Mirror setup.sh / collect-diagnostics.sh so validation works on a Podman-only
 # host too — otherwise every $RT inspect/exec/logs below fails and a perfectly
@@ -128,6 +143,9 @@ is_enabled ENABLE_SABNZBD     && CONTAINERS+=(sabnzbd)
 is_enabled ENABLE_HOMEPAGE    && CONTAINERS+=(homepage)
 is_enabled ENABLE_RECYCLARR   && CONTAINERS+=(recyclarr recyclarr-trigger)
 is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
+# AzuraCast (broadcast radio) is OPT-IN — explicit-true gate so a pre-
+# AzuraCast .env isn't expected to have the container.
+is_optin_enabled ENABLE_AZURACAST && CONTAINERS+=(azuracast)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -391,6 +409,14 @@ is_enabled ENABLE_FLARESOLVERR && check_url "Flaresolverr" "http://$LAN_IP:8191"
 # the instant the container exists; check_url has a 30s retry budget
 # which covers the slow boot just fine.
 is_enabled ENABLE_RECYCLARR   && check_url "Recyclarr trigger" "http://$LAN_IP:8889"
+# AzuraCast (opt-in radio) is HEAVY: its bundled MariaDB initialises on first
+# boot, so the web UI can still be returning HTTP 000 at end-of-install even
+# though the container reports "running". Lenient check → a not-yet-serving
+# AzuraCast WARNS (wait + re-run) instead of red-failing the whole install,
+# exactly like Seerr. The "AzuraCast (http" line this prints is also what the
+# wizard's Done screen scrapes to light up its AzuraCast health tile.
+is_optin_enabled ENABLE_AZURACAST && check_url_lenient "AzuraCast" "http://$LAN_IP:49157" \
+    "AzuraCast is heavy — first boot can take a few minutes while it sets up its database. Wait, then re-run."
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
@@ -626,6 +652,11 @@ if is_enabled ENABLE_HOMEPAGE; then
             "ENABLE_QBITTORRENT:qBittorrent"
             "ENABLE_RECYCLARR:Recyclarr"
         )
+        # AzuraCast tile is opt-in — append it only when explicitly enabled.
+        # The loop below re-checks the flag with is_enabled (default-on), which
+        # is fine here: we only append when is_optin_enabled already proved the
+        # key is an explicit true, so both helpers agree.
+        is_optin_enabled ENABLE_AZURACAST && EXPECTED_TILES+=("ENABLE_AZURACAST:AzuraCast")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

@@ -5,7 +5,7 @@ import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
-  Newspaper, Download, MessageSquare, BarChart3, Shield,
+  Newspaper, Download, MessageSquare, BarChart3, Shield, Radio,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -15,13 +15,16 @@ import { AnimatedCheck } from '../components/AnimatedCheck.js'
 import { BigButton } from '../components/BigButton.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
-import { isEnabled } from '../../shared/env-render.js'
+import { isEnabled, isOptInEnabled } from '../../shared/env-render.js'
 
 // Per-service glyph + accent. Same vocabulary the Configure screen uses
 // for the Services checklist, so a user who learned "Sonarr is the sky-
 // blue TV icon" on Configure recognises it again here. Two new entries
 // for things that don't appear on Configure (Prowlarr always-on, Seerr
 // derived from Plex stack, Tautulli derived, Flaresolverr always-on).
+// AzuraCast is opt-in: it's listed here for its glyph + health wiring but
+// filtered out of the rendered grid (displayedServices) unless the user
+// explicitly enabled it — so non-radio users never see a stray grey tile.
 const SERVICES: {
   name: string
   port: string
@@ -41,6 +44,7 @@ const SERVICES: {
   { name: 'Seerr',        port: '5056',                          icon: MessageSquare,   iconColor: 'text-purple-400' },
   { name: 'Tautulli',     port: '8181',                          icon: BarChart3,       iconColor: 'text-cyan-400' },
   { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
+  { name: 'AzuraCast',    port: '49157',                         icon: Radio,           iconColor: 'text-rose-400' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'fail'
@@ -207,6 +211,10 @@ export function DoneScreen() {
       return mediaServer === 'jellyfin' ? [{ ...s, name: 'Jellyfin', port: '8096' }] : [s]
     }
     if (s.name === 'Tautulli' && mediaServer === 'jellyfin') return []
+    // AzuraCast is opt-in (heavy radio service) — only surface its tile when
+    // the user explicitly enabled it; otherwise it'd sit grey forever for
+    // everyone who didn't. isOptInEnabled = explicit-true only (missing → off).
+    if (s.name === 'AzuraCast' && !isOptInEnabled(config.ENABLE_AZURACAST)) return []
     return [s]
   })
 

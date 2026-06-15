@@ -153,6 +153,14 @@ Once the station is broadcasting, listen from anywhere on your network:
   **`http://<NAS-IP>:8000/radio.mp3`** for the first station. AzuraCast shows
   each station's exact stream URL on its dashboard (the port lives in the
   **8000–8029** range; the first station is usually **8000**).
+- **At a glance on your Homepage dashboard.** The installer adds an **AzuraCast
+  tile** to your Homepage dashboard (in a new **Listen** row) with a live
+  **now-playing widget**. Once your first station is broadcasting, the tile
+  shows the current **song**, **artist**, and **listener count**, refreshing on
+  its own. Before you create a station it simply sits blank — that's expected,
+  not an error. (The tile reads AzuraCast's public now-playing feed, so a
+  station shows up only while its **Enable Public Pages** setting is on — the
+  default; if you turn that off for privacy, the tile just goes blank.)
 
 Drop the stream URL into VLC's *Open Network Stream*, or add it to a smart
 speaker as an internet-radio favourite, and your station is on.

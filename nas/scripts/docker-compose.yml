@@ -893,6 +893,22 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    # AzuraCast self-initializes its bundled MariaDB/Redis on first boot,
+    # which is slow on a NAS — hence the long start_period before a failing
+    # probe counts against health (a probe that succeeds during start_period
+    # still flips it healthy immediately). /api/status is AzuraCast's OWN
+    # unauthenticated liveness endpoint (returns {"online":true}) — the same
+    # one AzuraCast's internal uptime-wait command polls. curl ships in the
+    # php-fpm base image. The probe tracks AZURACAST_HTTP_PORT so it stays
+    # correct if the published port is overridden in .env. Note: setup.sh's
+    # wait_for_services keys off .State.Status (running), NOT this health
+    # status, so a slow first-boot here never stalls the install.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:${AZURACAST_HTTP_PORT:-49157}/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
     logging: *logging
     restart: unless-stopped
 
