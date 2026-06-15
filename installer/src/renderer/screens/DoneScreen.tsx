@@ -453,6 +453,21 @@ export function DoneScreen() {
               </span>
             </li>
           )}
+          {mediaServer !== 'jellyfin' && isEnabled(config.ENABLE_PLEX as string | undefined) && (
+            <li>
+              <Music size={14} className="inline-block -mt-0.5 mr-1 text-fuchsia-400" aria-hidden="true" />
+              Play your music as stations + playlists — open{' '}
+              <a
+                href="https://plexamp.plex.tv"
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-400 hover:underline"
+              >
+                Plexamp
+              </a>{' '}
+              <span className="text-slate-500">(plexamp.plex.tv)</span>.
+            </li>
+          )}
           {config.USENET_HOST && (
             <li>
               SABnzbd usenet provider <span className="font-mono">{config.USENET_HOST}</span>

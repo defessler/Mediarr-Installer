@@ -9,6 +9,9 @@ downloaded automatically.
 > matching music off the Soulseek network — through your VPN — for Lidarr to
 > import.
 
+> Want to **play** your music as stations/playlists? See
+> [Play your music like stations + playlists (Plexamp)](./MUSIC-PLAYBACK.md).
+
 ---
 
 ## What you get

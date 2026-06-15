@@ -1847,6 +1847,263 @@ def configure_plex_remote_access(lan_ip, plex_token, public_port=32400):
         info("(Plex QoL prefs skipped — none applied; check the warnings above)")
 
 
+def ensure_plex_music_library(lan_ip, plex_token):
+    """Make sure Plex has a *Music* (artist) library so Plexamp's
+    stations + smart playlists have something to read. Returns the
+    section ID (a string like "8") of the music library — the one we
+    found OR the one we just created — or None if we couldn't make/find
+    one. The caller hands that ID to enable_plex_sonic_analysis().
+
+    WHY this exists: Plexamp builds mood/genre/sonic *stations* and
+    smart playlists entirely from the user's own Plex music library
+    (the standing NAS-only rule — no external sources). Lidarr drops
+    files under …/Media/Music, but Plex won't surface them to Plexamp
+    until a Music library actually points at that tree. The arrs only
+    wire a *scan notification* (configure_plex_notification); nobody
+    creates the library itself. So we do it here, once, best-effort.
+
+    BEST-EFFORT / NEVER-BREAK contract: every HTTP call is wrapped so
+    any failure (Plex still warming up, API drift, wrong version, no
+    Plex Pass, timeout, non-2xx) logs an info()/warn() and returns —
+    it must NEVER raise, call fail()/fail_unreachable(), or change the
+    install's exit code. This is an enhancement, not a gate.
+
+    IDEMPOTENT: we first GET /library/sections and bail the moment we
+    see any Directory with type=="artist" (Plex's section-listing type
+    string for a music library). We never touch or duplicate a music
+    library the user already has — re-runs/updates are a clean no-op.
+
+    Plex-token style mirrors configure_plex_remote_access: token in the
+    X-Plex-Token header, Accept: application/json to get JSON instead of
+    Plex's default XML.
+    """
+    section("Plex Music Library (for Plexamp)")
+    if not plex_token:
+        # Same posture as configure_plex_remote_access: with no token we
+        # can't talk to the API. Not an error — Plex may simply not be
+        # claimed yet; the user re-runs after claim. Skip cleanly.
+        info("Plex token not available yet — skipping Music-library setup "
+             "(re-run after Plex has claimed itself).")
+        return None
+    if not lan_ip:
+        info("LAN_IP not set — can't reach the Plex API; skipping Music-library setup.")
+        return None
+
+    plex_base = f"http://{lan_ip}:32400"
+    headers = {
+        'X-Plex-Token': plex_token,
+        'Accept':       'application/json',
+        'User-Agent':   'setup-arr-config/1.0',
+    }
+
+    # ── 1. List existing sections; detect a music/artist library ──────
+    #
+    # GET /library/sections returns a MediaContainer of Directory
+    # entries, one per library. A music library is the one whose `type`
+    # attribute is the STRING "artist" (NOT the integer 8 — that's the
+    # item-level search-type code used in /all?type=8, a different
+    # thing). If one exists, capture its `key` (the section ID) and
+    # return it untouched.
+    try:
+        req = Request(f"{plex_base}/library/sections", headers=headers)
+        with urlopen(req, timeout=15) as resp:
+            sections = json.loads(resp.read().decode('utf-8', 'replace'))
+    except HTTPError as e:
+        # 401 = token rejected (server not fully claimed); anything else
+        # = API hiccup. Either way this is a best-effort step: note + move on.
+        info(f"Couldn't list Plex libraries (HTTP {e.code}) — skipping Music-library setup. "
+             "Add a Music library by hand in Plex if Plexamp shows no music.")
+        return None
+    except Exception as e:
+        info(f"Couldn't reach the Plex API at {plex_base} ({e}) — skipping Music-library setup.")
+        return None
+
+    # MediaContainer.Directory is a list (or absent if zero sections).
+    try:
+        directories = (sections.get('MediaContainer', {}) or {}).get('Directory', []) or []
+    except AttributeError:
+        directories = []
+    for d in directories:
+        if (d.get('type') or '') == 'artist':
+            sid = str(d.get('key') or '')
+            title = d.get('title') or 'Music'
+            skip(f"Plex Music library already exists (\"{title}\", section {sid}) — leaving it untouched")
+            return sid or None
+
+    # ── 2. No music library → create one pointed at /media/Music ──────
+    #
+    # The compose bind-mounts ${DATA_ROOT}/Media into the Plex container
+    # as /media, and Lidarr's root is …/Media/Music, so Plex sees the
+    # music tree at the CONTAINER-relative path /media/Music. That's the
+    # `location` (NOT `path`); repeatable for multiple roots, but we have
+    # one. agent/scanner strings are case- and space-EXACT — a wrong
+    # value yields a broken/unmatched library:
+    #   type     = music             (what the Plex Web app POSTs; reads
+    #                                  back as "artist". If a build ever
+    #                                  rejects "music" we retry "artist".)
+    #   agent    = tv.plex.agents.music   (modern Plex Music agent)
+    #   scanner  = Plex Music              (note the space → %20)
+    # urlencode() handles the space in "Plex Music" and the slash in
+    # /media/Music for us. Body is empty — everything rides the query.
+    created_id = None
+    for type_value in ('music', 'artist'):   # primary then fallback
+        params = urlencode({
+            'name':               'Music',
+            'type':               type_value,
+            'agent':              'tv.plex.agents.music',
+            'scanner':            'Plex Music',
+            'language':           'en',
+            'importFromiTunes':   '0',
+            'enableAutoPhotoTags': '0',
+            'location':           '/media/Music',
+        })
+        try:
+            req = Request(f"{plex_base}/library/sections?{params}",
+                          method='POST', headers=headers)
+            with urlopen(req, timeout=20) as resp:
+                body = resp.read().decode('utf-8', 'replace')
+            # Success. Plex returns the new <Directory> (its key = the
+            # new section ID). Parse it back out; if the body is empty or
+            # unparsable we still succeeded — re-list to recover the ID.
+            try:
+                payload = json.loads(body)
+                newdirs = (payload.get('MediaContainer', {}) or {}).get('Directory', []) or []
+                for nd in newdirs:
+                    if (nd.get('type') or '') in ('artist', 'music'):
+                        created_id = str(nd.get('key') or '') or created_id
+            except (ValueError, AttributeError):
+                pass
+            ok(f"Created Plex Music library → /media/Music (type={type_value})")
+            break
+        except HTTPError as e:
+            # type=music can be rejected on some builds — retry with
+            # type=artist before giving up. Any other code on the last
+            # attempt: note + bail (no music library, but install is fine).
+            if type_value == 'music':
+                info(f"Plex rejected type=music (HTTP {e.code}) — retrying with type=artist…")
+                continue
+            info(f"Couldn't create the Plex Music library (HTTP {e.code}) — "
+                 "add it by hand in Plex (Libraries → Add → Music → folder Music) if Plexamp shows none.")
+            return None
+        except Exception as e:
+            info(f"Couldn't create the Plex Music library ({e}) — "
+                 "add it by hand in Plex if Plexamp shows none.")
+            return None
+
+    # If we created it but couldn't read the ID back from the POST
+    # response, re-list once to recover the section ID (so sonic analysis
+    # can target it). Still best-effort — a miss here just means we skip
+    # the trigger, not that anything breaks.
+    if created_id is None:
+        try:
+            req = Request(f"{plex_base}/library/sections", headers=headers)
+            with urlopen(req, timeout=15) as resp:
+                relisted = json.loads(resp.read().decode('utf-8', 'replace'))
+            for d in ((relisted.get('MediaContainer', {}) or {}).get('Directory', []) or []):
+                if (d.get('type') or '') == 'artist':
+                    created_id = str(d.get('key') or '') or created_id
+                    break
+        except Exception:
+            pass  # ID-recovery is optional; never fail the run for it
+
+    # ── 3. Kick off the initial scan so the new library populates ─────
+    #
+    # The create POST does not reliably auto-scan, and sonic analysis
+    # needs tracks QUEUED first (see enable_plex_sonic_analysis). Fire a
+    # one-shot section refresh; it returns immediately and scans async.
+    if created_id:
+        try:
+            req = Request(f"{plex_base}/library/sections/{created_id}/refresh",
+                          headers=headers)
+            with urlopen(req, timeout=15) as resp:
+                resp.read()
+            info(f"Triggered initial scan of the Music library (section {created_id}).")
+        except Exception as e:
+            # Non-fatal: Plex's own scan timer / the arr Connect
+            # notification will pick the files up regardless.
+            info(f"Initial Music-library scan request didn't take ({e}) — "
+                 "Plex will scan on its own schedule.")
+
+    return created_id
+
+
+def enable_plex_sonic_analysis(lan_ip, plex_token, section_id):
+    """Best-effort nudge to get Plex's Sonic Analysis running on the
+    Music library — the analysis that powers Plexamp's sonic/mood
+    stations ("Sonically Similar", "Track Radio", "Mixes For You").
+
+    HONEST CAVEAT (this is load-bearing — do NOT replace with a
+    fabricated endpoint): there is NO reliable public HTTP API to flip
+    the "Analyze audio tracks for sonic features" ON/OFF toggle. It's a
+    per-music-library Advanced setting (with a server-wide default under
+    Settings → Server → Library) and is UI-only — it is NOT a confirmed
+    /:/prefs key and NOT a settable prefs[] on the section. A Plex
+    dev-forum admin reports it's simply absent from /:/prefs. So we do
+    NOT pretend to enable it over the API; we point the user at the
+    one-line manual step (documented in the wiki / below) instead.
+
+    What we CAN do (medium confidence): once the toggle is on AND tracks
+    are scanned/queued, POST /butler/MusicAnalysis tells Plex's Butler
+    to run the sonic-analysis task now (rather than waiting for the
+    nightly maintenance window). Endpoint shape is well-sourced
+    (POST /butler/{TaskName}; 200=started, 202=already running). The
+    important caveat: it only DRAINS an existing queue — if the per-
+    library setting is OFF, the queue is empty and the call is a
+    harmless no-op (success, zero tracks analyzed). That's fine: it
+    can't hurt, and the instant the user enables the toggle + rescans,
+    the same task starts doing real work. We fire it opportunistically
+    and always print the manual enable steps.
+
+    BEST-EFFORT / NEVER-BREAK contract (same as ensure_plex_music_library):
+    wrapped so any failure logs info()/warn() and returns; never raises,
+    never fail()s, never changes the exit code.
+    """
+    if not plex_token or not lan_ip:
+        # No creds/host → can't even attempt the butler call. Still emit
+        # the manual guidance so the user knows the one switch to flip.
+        info("Sonic Analysis (Plexamp stations): enable it in Plex → Music library → "
+             "Edit → Advanced → \"Analyze audio tracks for sonic features\" → save (Plex Pass, x86-64 only).")
+        return
+
+    plex_base = f"http://{lan_ip}:32400"
+    headers = {
+        'X-Plex-Token': plex_token,
+        'Accept':       'application/json',
+        'User-Agent':   'setup-arr-config/1.0',
+    }
+
+    # Opportunistically start the Butler sonic-analysis task. No-op when
+    # the per-library toggle is off (empty queue) — but harmless, and it
+    # saves a maintenance-window wait once the toggle is on. POST with an
+    # empty body; auth via the X-Plex-Token header.
+    try:
+        req = Request(f"{plex_base}/butler/MusicAnalysis",
+                      method='POST', headers=headers)
+        with urlopen(req, timeout=15) as resp:
+            code = resp.getcode()
+        if code == 202:
+            info("Plex Sonic Analysis is already running (Butler task in progress).")
+        else:
+            info("Asked Plex to run Sonic Analysis now (Butler task). It only processes "
+                 "already-queued tracks — see the enable step below.")
+    except HTTPError as e:
+        # A non-2xx here is expected on some builds / when the task name
+        # isn't exposed. It's purely a "run sooner" optimization, so just note it.
+        info(f"Couldn't start the Sonic Analysis Butler task (HTTP {e.code}) — "
+             "it'll run during Plex's scheduled maintenance once enabled.")
+    except Exception as e:
+        info(f"Couldn't reach Plex to start Sonic Analysis ({e}) — "
+             "it'll run during Plex's scheduled maintenance once enabled.")
+
+    # ALWAYS print the manual enable steps — this is the real on/off
+    # switch (no reliable API for it) and the user must flip it once for
+    # sonic stations to populate. Reference the section ID when we have it.
+    where = f"the Music library (section {section_id})" if section_id else "your Music library"
+    info(f"To turn ON sonic stations in Plexamp: in Plex, edit {where} → Advanced → set "
+         "\"Analyze audio tracks for sonic features\" to \"As a scheduled task and when media is added\" → "
+         "Save Changes. Requires Plex Pass on an x86-64 server (the option is hidden on ARM).")
+
+
 def configure_tautulli(stack_dir, plex_prefs_path, tautulli_ini_path):
     """Wire Tautulli to the Plex container by writing its config.ini and
     restarting the container to apply.
@@ -3518,6 +3775,21 @@ def render_homepage_services(env, ip):
             media.append(block("Plex",     f"http://{ip}:32400/web", "Media server",   "plex.png",      f"http://{ip}:32400"))
             media.append(block("Tautulli", f"http://{ip}:8181",      "Plex analytics", "tautulli.png"))
             media.append(block("Seerr",    f"http://{ip}:5056",      "Request movies & TV", "overseerr.png"))
+            # Plexamp — the web player for music stations + smart
+            # playlists from the user's own Plex library (Plex installs
+            # only). WHY no siteMonitor: this is an EXTERNAL app at
+            # plexamp.plex.tv (it connects to the user's server; we don't
+            # host it), so pinging it as a health check would be
+            # meaningless — it's plex.tv's uptime, not the NAS's. Emit a
+            # raw tile (not block(), which always appends a siteMonitor)
+            # so Homepage simply shows no status dot — same no-monitor
+            # pattern as the Recyclarr/maintenance tile.
+            media.append(
+                f"    - Plexamp:\n"
+                f"        href: https://plexamp.plex.tv\n"
+                f"        description: Music stations + playlists\n"
+                f"        icon: plexamp.png"
+            )
     if media:
         out.append("- Media:")
         out.extend(media)
@@ -3991,6 +4263,24 @@ def main():
         # write so that if Plex is still warming up, we get a clean
         # error here rather than a corrupted Tautulli config.
         configure_plex_remote_access(LAN_IP, plex_token)
+
+        # ── Plex Music library + Sonic Analysis (for Plexamp) ─────────
+        #
+        # WHY here: we're already on the Plex (non-jellyfin) path with
+        # plex_token in hand, right after remote-access is configured.
+        # Gate additionally on ENABLE_LIDARR — no music automation means
+        # no …/Media/Music tree worth a Music library, so skip entirely.
+        # (media_kind == 'plex' is guaranteed in this elif since the
+        # jellyfin case was handled in the preceding branch; we assert it
+        # anyway so a future refactor of the outer if can't leak this onto
+        # the Jellyfin path.) Both calls are best-effort: they swallow
+        # every API failure internally (note + continue) and can NOT flip
+        # the install red or block the marker. Idempotent: skips when a
+        # Music library already exists.
+        if media_kind == 'plex' and is_enabled(env, 'ENABLE_LIDARR'):
+            music_section_id = ensure_plex_music_library(LAN_IP, plex_token)
+            enable_plex_sonic_analysis(LAN_IP, plex_token, music_section_id)
+
         configure_tautulli(B, PLEX_PREFS, TAUTULLI_INI)
     else:
         section("Tautulli")
