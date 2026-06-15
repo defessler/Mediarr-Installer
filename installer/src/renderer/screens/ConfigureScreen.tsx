@@ -712,6 +712,33 @@ const CONFIG_GROUPS = [
   { id: 'advanced',  label: 'Advanced',        icon: Wrench },
 ] as const
 
+// Human-readable labels for the env keys that can fail validation (the
+// env-schema superRefines). Shown in the Configure error list instead of raw
+// keys like "QBITTORRENT_PASS", so a first-timer sees "qBittorrent password".
+// Unmapped keys fall back to a generic SNAKE_CASE → "Snake case" humanization.
+const FIELD_LABELS: Record<string, string> = {
+  DATA_ROOT: 'Media folder',
+  INSTALL_DIR: 'Install folder',
+  QBITTORRENT_USER: 'qBittorrent username',
+  QBITTORRENT_PASS: 'qBittorrent password',
+  SLSKD_USER: 'Soulseek username',
+  SLSKD_PASS: 'Soulseek password',
+  SLSKD_API_KEY: 'slskd API key',
+  ENABLE_SOULSEEK: 'Soulseek',
+  USENET_USER: 'Usenet username',
+  USENET_PASS: 'Usenet password',
+  VPN_PROVIDER: 'VPN provider',
+  VPN_COUNTRIES: 'VPN country',
+  WIREGUARD_PRIVATE_KEY: 'WireGuard private key',
+  OPENVPN_USER: 'OpenVPN username',
+  OPENVPN_PASS: 'OpenVPN password',
+  NORDVPN_PRIVATE_KEY: 'NordVPN key',
+  PLEX_CLAIM: 'Plex claim token',
+}
+function humanizeKey(key: string): string {
+  return FIELD_LABELS[key] ?? (key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' '))
+}
+
 function CollapsibleGroup({
   id, title, icon, subtitle, badge, open, onToggle, children,
 }: {
@@ -895,7 +922,7 @@ export function ConfigureScreen() {
   function go() {
     const parsed = envSchema.safeParse(config)
     if (!parsed.success) {
-      setErrors(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`))
+      setErrors(parsed.error.issues.map((i) => `${humanizeKey(i.path.join('.'))}: ${i.message}`))
       // Un-hide every flagged field. The error list references env keys whose
       // inputs may live inside collapsed groups (all but Services start
       // collapsed), so a first-timer can be blocked by a field they literally
