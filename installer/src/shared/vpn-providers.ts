@@ -288,7 +288,7 @@ const CUSTOM: VpnProvider = {
       envKey: 'CUSTOM_VPN_ENV',
       label: 'Custom gluetun env block',
       type: 'textarea',
-      helpHint: 'Paste any VPN_SERVICE_PROVIDER / WIREGUARD_* / OPENVPN_* env vars you need. One KEY=value per line.',
+      helpHint: 'Paste any VPN_SERVICE_PROVIDER / WIREGUARD_* / OPENVPN_* env vars you need. One KEY=value per line. (FIREWALL=off is ignored — the VPN killswitch stays on to prevent leaks.)',
       placeholder: 'VPN_SERVICE_PROVIDER=pia\nVPN_TYPE=openvpn\nOPENVPN_USER=…\nOPENVPN_PASSWORD=…',
     },
   ],
@@ -303,7 +303,17 @@ const CUSTOM: VpnProvider = {
       if (eq <= 0) continue
       const k = trimmed.slice(0, eq).trim()
       const val = trimmed.slice(eq + 1).trim()
-      if (k) out[k] = val
+      if (!k) continue
+      // SAFETY: never let a pasted snippet silently disable gluetun's
+      // killswitch. qBittorrent is welded to gluetun's network namespace so its
+      // traffic can't leak; a stray FIREWALL=off (or an internet-wide
+      // FIREWALL_OUTBOUND_SUBNETS) copied from a forum would defeat that with no
+      // warning. Drop those — gluetun then keeps its secure default (FIREWALL
+      // on). Advanced users who truly want the killswitch off can edit compose.
+      const kUpper = k.toUpperCase()
+      if (kUpper === 'FIREWALL' && /^(off|false|0|no)$/i.test(val)) continue
+      if (kUpper === 'FIREWALL_OUTBOUND_SUBNETS' && /(^|,)\s*0\.0\.0\.0\/0\s*(,|$)/.test(val)) continue
+      out[k] = val
     }
     return out
   },
