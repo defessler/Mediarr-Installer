@@ -4,7 +4,7 @@ import {
   Settings2, ArrowLeft, ArrowRight,
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
-  PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
+  PlaySquare, Tv, Film, Music, Music2, Radio, Download, Package, LayoutDashboard,
   Clock, CheckCircle2, XCircle, AlertTriangle, Info, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
@@ -163,6 +163,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation',                              icon: Film,            iconColor: 'text-yellow-400' },
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
   { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
+  { key: 'ENABLE_AZURACAST',   label: 'AzuraCast',    hint: '24/7 radio stations from your library — heavier service', icon: Radio, iconColor: 'text-rose-300' },
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
@@ -172,6 +173,12 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
 
+// The OPT-IN services: unlike the default-on bundle, a missing/empty
+// ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
+// older .env without these keys must leave them UNCHECKED. Kept as one
+// shared set so the toggle grid and the group badge can't drift apart.
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_AZURACAST'])
+
 function ServicesSection({
   config, update,
 }: {
@@ -180,12 +187,12 @@ function ServicesSection({
 }) {
   // Imported from env-render so the renderer, setup.sh, and setup-arr-
   // config.py all agree on what counts as disabled (0/no/off/false).
-  // ENABLE_SOULSEEK is the lone OPT-IN service: a missing/empty value
-  // means OFF, so it uses isOptInEnabled instead of the default-on
-  // isEnabled. Without this, an older profile loaded without the key
-  // would show Soulseek's toggle ON.
+  // ENABLE_SOULSEEK and ENABLE_AZURACAST are the OPT-IN services: a
+  // missing/empty value means OFF, so they use isOptInEnabled instead of
+  // the default-on isEnabled. Without this, an older profile loaded
+  // without the key would show their toggle ON.
   const isOn = (k: keyof EnvFormValues) =>
-    k === 'ENABLE_SOULSEEK'
+    OPT_IN_SERVICES.has(k)
       ? isOptInEnabled(config[k] as string | undefined)
       : isEnabled(config[k] as string | undefined)
   const enabledCount = SERVICE_TOGGLES.filter((t) => isOn(t.key)).length
@@ -908,9 +915,9 @@ export function ConfigureScreen() {
     })
   }
   // Enabled-service count for the Services group badge. Mirrors
-  // ServicesSection's isOn (Soulseek is opt-in → isOptInEnabled).
+  // ServicesSection's isOn (opt-in services → isOptInEnabled).
   const enabledServiceCount = SERVICE_TOGGLES.filter((t) =>
-    t.key === 'ENABLE_SOULSEEK'
+    OPT_IN_SERVICES.has(t.key)
       ? isOptInEnabled(config[t.key] as string | undefined)
       : isEnabled(config[t.key] as string | undefined),
   ).length
@@ -1176,7 +1183,7 @@ export function ConfigureScreen() {
         id="music"
         title="Music"
         icon={<Music2 size={20} className="text-pink-400" strokeWidth={1.75} aria-hidden="true" />}
-        subtitle="Soulseek music source for Lidarr (via VPN)"
+        subtitle="Soulseek music source for Lidarr (via VPN) + AzuraCast radio"
         open={!!openGroups.music}
         onToggle={() => toggleGroup('music')}
       >
@@ -1268,6 +1275,23 @@ export function ConfigureScreen() {
             </div>
           </div>
         )}
+
+        {/* AzuraCast heads-up — the broadcast-radio option toggles in the
+            Services group (opt-in, like Soulseek). One muted line here so
+            the weight + "you build the stations yourself" reality is set
+            before the user enables it. The container stands up; stations,
+            playlists, and the /mnt/music Storage Location are all created
+            in AzuraCast's own web UI on :49157. */}
+        <p className="text-xs text-slate-500 inline-flex items-start gap-1.5">
+          <Radio size={13} className="text-rose-300 shrink-0 mt-0.5" strokeWidth={1.75} aria-hidden="true" />
+          <span>
+            <span className="font-medium text-slate-400">AzuraCast</span>{' '}
+            {isOptInEnabled(config.ENABLE_AZURACAST as string | undefined) ? 'is on' : '(in Services above)'}{' '}
+            runs 24/7 radio stations from your library — it&apos;s a heavier
+            service (~1.4&nbsp;GB image, wants 2–4&nbsp;GB RAM), and you build
+            the stations yourself in its own web UI after install.
+          </span>
+        </p>
       </CollapsibleGroup>
 
       {/* ── Group 4: Locations & Identity ──────────────────────── */}

@@ -33,6 +33,13 @@ export interface EnvFormValues {
    *  isOptInEnabled, NOT isEnabled, so existing pre-Soulseek installs
    *  don't silently turn it on. Requires ENABLE_LIDARR. */
   ENABLE_SOULSEEK?: string
+  /** AzuraCast: a single-container broadcast-radio stack (auto-DJ,
+   *  crossfade, Icecast streams, web player + its own MariaDB/Redis/
+   *  Nginx/Liquidsoap). OPT-IN like Soulseek — a missing key means OFF;
+   *  emitted via isOptInEnabled, NOT isEnabled, so a pre-AzuraCast .env
+   *  never gains the (heavy) service on upgrade. Adds the `radio` compose
+   *  profile; LAN-reachable (NOT VPN-coupled). */
+  ENABLE_AZURACAST?: string
 
   // ── TRaSH Guide profile selection
   /** Which Sonarr quality profile Recyclarr should sync from TRaSH
@@ -124,6 +131,14 @@ export interface EnvFormValues {
    *  typed in the wizard still round-trips and wins. 16–255 chars. */
   SLSKD_API_KEY?: string
   SOULARR_INTERVAL?: string     // soularr loop seconds (default 300)
+
+  // ── AzuraCast (broadcast radio) — only used when ENABLE_AZURACAST=true
+  /** Web UI port for AzuraCast, published bound to ${LAN_IP}. Default
+   *  49157 (kept off 80/443; AZURACAST_HTTPS_PORT=49158 is set in the
+   *  compose/.env, not collected here). No AzuraCast credentials are
+   *  gathered at install — the user creates the admin account in
+   *  AzuraCast's own web UI on first run. */
+  AZURACAST_HTTP_PORT?: string
 
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
@@ -461,6 +476,14 @@ export function renderEnv(v: EnvFormValues): string {
     line('SLSKD_PASS', v.SLSKD_PASS),
     line('SLSKD_API_KEY', v.SLSKD_API_KEY),
     line('SOULARR_INTERVAL', v.SOULARR_INTERVAL || '300'),
+    '',
+    '# AzuraCast (broadcast radio — auto-DJ stations from your library).',
+    '# OPT-IN; off by default. A missing ENABLE_AZURACAST key counts as OFF',
+    '# (like ENABLE_SOULSEEK) — emitted via isOptInEnabled so a pre-AzuraCast',
+    '# install never silently gains this heavy service on upgrade. Adds the',
+    '# radio compose profile; the web UI binds ${LAN_IP}:${AZURACAST_HTTP_PORT}.',
+    line('ENABLE_AZURACAST', isOptInEnabled(v.ENABLE_AZURACAST) ? 'true' : 'false'),
+    line('AZURACAST_HTTP_PORT', v.AZURACAST_HTTP_PORT || '49157'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

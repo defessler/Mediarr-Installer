@@ -39,6 +39,11 @@ export const envSchema = z.object({
   // gates its creds + Lidarr dependency on an explicit-true check, not
   // flagOn, so a missing key never triggers required-cred validation.
   ENABLE_SOULSEEK: optStr,
+  // OPT-IN (default off), mirroring ENABLE_SOULSEEK. No superRefine gate —
+  // AzuraCast collects no credentials at install (the user makes the admin
+  // account in its own web UI on first run), so there's nothing to make
+  // conditionally-required. A missing key stays OFF everywhere.
+  ENABLE_AZURACAST: optStr,
 
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
@@ -131,6 +136,11 @@ export const envSchema = z.object({
     (v) => !v || /^\d+$/.test(v),
     'must be a positive integer (seconds)',
   ),
+
+  // AzuraCast (broadcast radio) — web UI port, optional. renderEnv emits
+  // it (default 49157), so it needs a schema entry to keep the .env round-
+  // trip invariant (every emitted key validates). No creds collected.
+  AZURACAST_HTTP_PORT: optStr,
 
   // SABnzbd usenet provider (all optional — host gates the rest)
   USENET_HOST: optStr,

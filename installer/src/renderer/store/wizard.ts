@@ -145,6 +145,11 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_SOULSEEK: 'false',
   // soularr scan-loop interval (seconds). Only used when Soulseek is on.
   SOULARR_INTERVAL: '300',
+  // AzuraCast (broadcast radio) is OPT-IN too — default OFF, like Soulseek.
+  // A fresh wizard run renders ENABLE_AZURACAST=false; the user opts in on
+  // the Configure screen (it's a heavier service). Default web UI port 49157.
+  ENABLE_AZURACAST: 'false',
+  AZURACAST_HTTP_PORT: '49157',
 
   PUID: '1026',
   PGID: '100',

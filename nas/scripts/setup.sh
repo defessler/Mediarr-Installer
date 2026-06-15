@@ -415,6 +415,11 @@ if is_optin_enabled ENABLE_SOULSEEK; then
         esac
     fi
 fi
+# AzuraCast (broadcast radio) is OPT-IN (default off) — use is_optin_enabled,
+# NOT is_enabled, so a pre-AzuraCast .env (no key) stays off. Unlike Soulseek,
+# AzuraCast is NOT VPN-coupled: it must be LAN-reachable for listeners, so it
+# stays on the regular bridge and never pulls in the "vpn" sidecar.
+is_optin_enabled ENABLE_AZURACAST && PROFILES+=("radio")
 
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
@@ -587,16 +592,18 @@ stop_disabled_services() {
         "unpackerr:ENABLE_UNPACKERR"
         "flaresolverr:ENABLE_FLARESOLVERR"
         "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
+        "azuracast:ENABLE_AZURACAST"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
         container="${pair%:*}"
         flag="${pair#*:}"
         # Service is enabled → leave the container alone, up -d will
-        # (re-)create or update it as needed. ENABLE_SOULSEEK is OPT-IN, so
-        # use the explicit-true helper; the default-on is_enabled would
-        # treat a missing key as "enabled" and never reap slskd/soularr.
-        if [ "$flag" = "ENABLE_SOULSEEK" ]; then
+        # (re-)create or update it as needed. ENABLE_SOULSEEK / ENABLE_AZURACAST
+        # are OPT-IN, so use the explicit-true helper; the default-on is_enabled
+        # would treat a missing key as "enabled" and never reap slskd/soularr or
+        # azuracast.
+        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_AZURACAST" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -749,6 +756,18 @@ check_port_conflicts() {
             *)                pairs+=("slskd:5030") ;;
         esac
     fi
+    # AzuraCast (opt-in): pre-check its web UI port (AZURACAST_HTTP_PORT, default
+    # 49157, published bound to ${LAN_IP}) and the bottom of its Icecast stream
+    # range (8000 — the first port AzuraCast publishes for a station). Both are
+    # plain LAN binds (NOT VPN-namespaced), so a foreign holder would fail the
+    # compose-up bind late; surface it here. Only the lowest stream port is
+    # pre-checked — the rest of 8000-8029 is best-effort like 6881/50300.
+    if is_optin_enabled ENABLE_AZURACAST; then
+        local az_http
+        az_http="$(env_val AZURACAST_HTTP_PORT)"
+        case "$az_http" in (''|*[!0-9]*) az_http=49157 ;; esac
+        pairs+=("azuracast:$az_http" "azuracast:8000")
+    fi
 
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
@@ -861,6 +880,9 @@ wait_for_services() {
     # qBittorrent — `.State.Status` is the only readiness signal. soularr
     # is a plain bridge service. Opt-in, so use the explicit-true helper.
     is_optin_enabled ENABLE_SOULSEEK && services="$services slskd soularr"
+    # AzuraCast is a plain bridge service (not VPN-namespaced); .State.Status
+    # is the readiness signal. Opt-in, so use the explicit-true helper.
+    is_optin_enabled ENABLE_AZURACAST && services="$services azuracast"
 
     echo ""
     echo "  Waiting for containers to become healthy..."

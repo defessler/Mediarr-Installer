@@ -3828,6 +3828,19 @@ def render_homepage_services(env, ip):
         out.extend(downloads)
         out.append("")
 
+    # Listen section — broadcast-radio services. AzuraCast is OPT-IN (like
+    # slskd) so it uses is_optin_enabled (explicit-true), NOT the default-on
+    # is_enabled — an upgraded pre-AzuraCast .env (no key) stays OFF. It's LAN-
+    # reachable (NOT in gluetun's namespace), so its WebUI is published on
+    # ${LAN_IP}:49157 and the default siteMonitor (the href) is correct.
+    listen = []
+    if is_optin_enabled(env, 'ENABLE_AZURACAST'):
+        listen.append(block("AzuraCast",  f"http://{ip}:49157", "Internet radio — your 24/7 stations", "azuracast.png"))
+    if listen:
+        out.append("- Listen:")
+        out.extend(listen)
+        out.append("")
+
     # Maintenance section — services with no web UI (Recyclarr is a
     # CLI tool, so its tile points at the docs + the in-config last-
     # sync stamp, not at any port on the NAS). This is the section the
@@ -3917,6 +3930,14 @@ def render_homepage_settings(env):
         out.append("  Downloads:")
         out.append("    style: row")
         out.append("    columns: 2")
+    # Listen — only the AzuraCast tile lives here, and only when AzuraCast is
+    # on. OPT-IN gate (is_optin_enabled, like slskd's section), matching the
+    # services.yaml section in render_homepage_services so there's no layout
+    # key without a section (Homepage would warn).
+    if is_optin_enabled(env, 'ENABLE_AZURACAST'):
+        out.append("  Listen:")
+        out.append("    style: row")
+        out.append("    columns: 1")
     # Maintenance — only the Recyclarr tile lives here now (Update Images
     # was removed; see render_homepage_services for the reason). Skip the
     # section + its layout entry entirely when Recyclarr is off, otherwise

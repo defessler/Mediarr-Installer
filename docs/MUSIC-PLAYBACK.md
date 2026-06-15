@@ -15,6 +15,10 @@ device.
 > Looking to **add** music instead of play it? See
 > [Music downloads with Soulseek](./MUSIC-SETUP.md).
 
+> Want **always-on broadcast stations** instead — your own 24/7 radio anyone on
+> your network can tune into? See [Build your own 24/7 radio stations
+> (AzuraCast)](./MUSIC-RADIO.md).
+
 ---
 
 ## What the installer set up for you

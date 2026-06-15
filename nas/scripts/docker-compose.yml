@@ -828,6 +828,74 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # ── Broadcast Radio ───────────────────────────────────────
+
+  azuracast:
+    # ghcr.io mirror of the official AzuraCast image (same image, off the
+    # Docker Hub rate limit). Pinned to `stable` (NOT `latest`/rolling) so
+    # a `docker compose pull` can't drag in a breaking nightly.
+    image: ghcr.io/azuracast/azuracast:stable
+    container_name: azuracast
+    # Opt-in 24/7 broadcast-radio platform (default OFF, same recipe as the
+    # Soulseek services). setup.sh adds the "radio" profile to
+    # COMPOSE_PROFILES only when ENABLE_AZURACAST is explicitly true
+    # (is_optin_enabled, NOT the default-on is_enabled).
+    #
+    # HEAVY, all-in-one: this single container bundles its OWN MariaDB,
+    # Redis, Nginx, PHP, and Liquidsoap (~1.4 GB image, 2 GB RAM floor /
+    # 4 GB recommended). That's why it's opt-in behind a "heavier service"
+    # notice rather than always-on like the arrs.
+    #
+    # NOT VPN-namespaced (no network_mode: container:gluetun): listeners on
+    # the LAN must be able to reach the web UI + the Icecast streams
+    # directly, so it lives on the shared `media` bridge and publishes its
+    # ports on ${LAN_IP}. The updater sidecar from the upstream sample is
+    # deliberately omitted (we pin `stable` + update via the wizard).
+    #
+    # Runs as UID/GID 1000 — its OWN fixed user; it does NOT honor
+    # PUID/PGID like the lsio images do. setup-folders.sh chowns the
+    # azuracast/ bind mounts to 1000:1000 to match (documented there).
+    profiles: ["radio"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - TZ=${TZ}
+      # Internal HTTP/HTTPS bind ports. Kept OFF 80/443 (which the host
+      # NAS + other services use) and matched to the published mappings
+      # below — AZURACAST_HTTP_PORT is the one knob users can override in
+      # .env; HTTPS is parked on 49158 (self-signed/unused on a LAN).
+      - AZURACAST_HTTP_PORT=${AZURACAST_HTTP_PORT:-49157}
+      - AZURACAST_HTTPS_PORT=49158
+    ports:
+      # Web UI (admin + public player). Bound to the LAN IP only.
+      - ${LAN_IP}:${AZURACAST_HTTP_PORT:-49157}:${AZURACAST_HTTP_PORT:-49157}
+      # Icecast + Liquidsoap stream ports — a trimmed range (~3 stations'
+      # worth of triplets), deliberately clear of Jellyfin's 8096 and
+      # FlareSolverr's 8191. Each station the user creates in the web UI
+      # claims a port pair out of this range.
+      - ${LAN_IP}:8000-8029:8000-8029
+    volumes:
+      # Bind mounts (NOT anon/named volumes) so the wizard's Update flow
+      # can't wipe the DB or the user's stations on a recreate. Targets are
+      # AzuraCast's official container paths (upstream docker-compose.sample.yml).
+      - ${INSTALL_DIR}/azuracast/station_data:/var/azuracast/stations
+      - ${INSTALL_DIR}/azuracast/db_data:/var/lib/mysql
+      - ${INSTALL_DIR}/azuracast/www_uploads:/var/azuracast/storage/uploads
+      - ${INSTALL_DIR}/azuracast/backups:/var/azuracast/backups
+      # Read-only view of the music library at a neutral, station-agnostic
+      # path. In the web UI the user adds a Storage Location pointing at
+      # /mnt/music and assigns a station to it. Read-only: AzuraCast never
+      # writes back into the source library.
+      - ${DATA_ROOT}/Media/Music:/mnt/music:ro
+    # AzuraCast's services (Nginx/PHP-FPM/MariaDB/Liquidsoap) open a lot of
+    # sockets+files; the upstream sample raises the open-file limit to match.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging: *logging
+    restart: unless-stopped
+
 networks:
   media:
     driver: bridge
