@@ -137,6 +137,14 @@ export function RunScreen() {
   /** Last time we received a chunk on the setup.sh stream — drives the
    *  heartbeat in go() so the user knows we're not frozen. */
   const lastChunkAtRef = useRef<number>(Date.now())
+  /** The exact .env text rendered for the last run (the pure render, before the
+   *  API-key carry-forward). On a normal-failure Retry we re-render the current
+   *  config and compare: byte-identical means the user changed nothing, so we
+   *  can resume setup.sh from the failed step (the on-NAS .env + its .setup-state
+   *  hash are still valid) instead of rewriting .env and replaying from step 1.
+   *  Any real config edit shows up in the render (the .env round-trip invariant),
+   *  forcing a full go(). Null until the first run writes it → Retry → go(). */
+  const lastRenderedEnvRef = useRef<string | null>(null)
 
   // Publish a global "busy" flag while an install (or a single-step
   // re-run) is in flight, so App.tsx can disable the in-place app-updater
@@ -882,7 +890,12 @@ export function RunScreen() {
       }).then((r) => wlog(r.stdout.trim() || '(done)'))
 
       wlog(`Writing ${envScripts} (${Object.keys(config).filter((k) => (config as Record<string, unknown>)[k]).length} populated keys)...`)
-      let envText = renderEnv(config as EnvFormValues)
+      // Snapshot this pure render (pre carry-forward) so a later Retry can tell
+      // whether the user changed anything — if not, it resumes from the failed
+      // step instead of replaying from step 1 (see retryOrResume).
+      const renderedEnv = renderEnv(config as EnvFormValues)
+      lastRenderedEnvRef.current = renderedEnv
+      let envText = renderedEnv
       // M1: a full re-install re-renders .env with the auto-discovered API-key
       // lines blank (renderEnv can't know them — setup-arr-config.py re-reads
       // them from each arr's config.xml every run). That self-heals, but it
@@ -943,6 +956,45 @@ export function RunScreen() {
       setPhase('failed')
       reportError('Install', e)
     }
+  }
+
+  /** Resume the CURRENT (still-connected) run from setup.sh's checkpoint after a
+   *  normal step failure — the in-place analogue of reconnectAndResume(), minus
+   *  the reconnect. Runs setup.sh --resume against the UNTOUCHED on-NAS .env, so
+   *  its .setup-state hash still matches and already-finished steps are skipped;
+   *  the failed step re-runs and the stream markers carry the stepper red →
+   *  amber → green. Used by retryOrResume() only when the config is unchanged. */
+  async function resumeRun() {
+    if (!sessionId) { go(); return }
+    setErrorMsg(null)
+    setIssues([])
+    appendChunk(`\x1b[36m[wizard]\x1b[0m Resuming setup.sh from the last completed step…\n`)
+    setRunStartedAt(Date.now())
+    setElapsedMs(0)
+    try {
+      await streamSetup(sessionId, true)
+    } catch (e) {
+      setPhase('failed')
+      reportError('Resume', e)
+    }
+  }
+
+  /** What the footer "Retry" does on a normal (non-dropped) failure. If the
+   *  freshly-rendered .env is byte-identical to what the last run wrote, the
+   *  user changed nothing → resume from the failed step (fast; preserves the
+   *  checkpoint). Otherwise — a changed setting, a new Plex claim, or ANY doubt
+   *  (no snapshot yet, a render error) — fall back to a full go() that rewrites
+   *  .env and applies the change. Degrading to go() on uncertainty keeps this
+   *  strictly an optimisation over today's always-replay behaviour. */
+  function retryOrResume() {
+    let unchanged = false
+    try {
+      unchanged =
+        lastRenderedEnvRef.current !== null &&
+        lastRenderedEnvRef.current === renderEnv(config as EnvFormValues)
+    } catch { unchanged = false }
+    if (unchanged) resumeRun()
+    else go()
   }
 
   // Tick the elapsed counter every second while the run is in flight.
@@ -1426,13 +1478,13 @@ export function RunScreen() {
         <BigButton
           variant={phase === 'failed' ? 'primary' : 'secondary'}
           size="md"
-          onClick={droppedConnection ? reconnectAndResume : go}
+          onClick={droppedConnection ? reconnectAndResume : retryOrResume}
           disabled={phase !== 'failed' || reconnecting}
           title={
             phase === 'failed'
               ? (droppedConnection
                   ? 'Reconnect to the NAS and resume setup.sh from the last completed step'
-                  : 'Run the install again from the top — your config is already saved')
+                  : 'Re-run the install — resumes from the failed step if nothing changed, or replays from the top to apply a setting you edited')
               : phase === 'done'
                 ? 'Install already finished successfully'
                 : 'Available once the install has paused'
