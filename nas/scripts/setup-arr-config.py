@@ -5097,6 +5097,11 @@ def main():
         # switched to overwrite_config_file. Trade-off: any user hand-
         # edits get clobbered on the next setup run. Edit
         # render_homepage_widgets() instead, or accept the regeneration.
+        # Back up hand-edits before clobbering — services.yaml is where power
+        # users add custom tiles/widgets and settings.yaml holds theme/layout
+        # tweaks, so they deserve the same backup widgets.yaml gets below.
+        backup_before_overwrite(f"{homepage_cfg}/services.yaml")
+        backup_before_overwrite(f"{homepage_cfg}/settings.yaml")
         overwrite_config_file("Homepage services",
             f"{homepage_cfg}/services.yaml",
             render_homepage_services(env, LAN_IP))
@@ -5224,7 +5229,16 @@ def homepage_only_main():
         sys.exit(0)
 
     section("Homepage refresh")
-    homepage_cfg = f"{script_dir}/homepage/config"
+    # Resolve from INSTALL_DIR like main()/recyclarr_only_main(): in the
+    # v0.3.23+ layout this script lives in INSTALL_DIR/scripts/, so a bare
+    # script_dir points one level too deep — services.yaml/settings.yaml would
+    # land in INSTALL_DIR/scripts/homepage/config, a stray dir the Homepage
+    # container does NOT mount (it mounts INSTALL_DIR/homepage/config). The net
+    # effect was the Update screen's "Refresh dashboard" reporting success while
+    # the real on-NAS dashboard config stayed stale — the exact bug already
+    # fixed for recyclarr_only_main() below.
+    B = env.get('INSTALL_DIR') or script_dir or '/volume1/docker/media'
+    homepage_cfg = f"{B}/homepage/config"
     services_yml = f"{homepage_cfg}/services.yaml"
     settings_yml = f"{homepage_cfg}/settings.yaml"
 
@@ -5237,6 +5251,10 @@ def homepage_only_main():
     print(f"    services.yaml: {len(services_body)} bytes, "
           f"{services_body.count(chr(10)) + 1} lines")
     print(f"    settings.yaml: {len(settings_body)} bytes")
+    # Back up any hand-edits before clobbering — services.yaml is where power
+    # users add custom tiles; settings.yaml holds theme/layout tweaks.
+    backup_before_overwrite(services_yml)
+    backup_before_overwrite(settings_yml)
     overwrite_config_file("Homepage services", services_yml, services_body)
     overwrite_config_file("Homepage settings", settings_yml, settings_body)
 
