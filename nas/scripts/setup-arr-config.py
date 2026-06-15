@@ -4396,7 +4396,12 @@ def main():
                 except Exception as e:
                     info(f"Couldn't auto-restart soularr ({e}) — manually: docker compose restart soularr")
             elif not slskd_key:
-                info("SLSKD_API_KEY is blank in .env — set it so soularr can drive slskd.")
+                # Dead path in the normal flow: setup.sh auto-generates +
+                # persists SLSKD_API_KEY (when Soulseek is on and it's blank)
+                # BEFORE this runs, so the key is populated by now. This only
+                # trips if the configurator was hand-run out of order without
+                # setup.sh's key-gen — a quiet note, not an action item.
+                info("SLSKD_API_KEY is blank — re-run setup.sh (it generates one automatically).")
     else:
         print(f"  {DIM}⏭  ENABLE_SOULSEEK=false — Soulseek not deployed.{RESET}")
 

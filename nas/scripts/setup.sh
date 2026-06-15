@@ -423,6 +423,33 @@ else
     echo "  WARN: every service is disabled in .env. Only Prowlarr will start."
 fi
 
+# Soulseek: auto-generate the slskd↔soularr REST key when it's blank, so the
+# user never has to invent one. It is an INTERNAL shared secret between the two
+# containers (NOT a Soulseek login). We mint + persist it to .env HERE —
+# before `docker compose up` (slskd reads ${SLSKD_API_KEY}) and before
+# setup-arr-config.py writes soularr's config.ini from the same .env — so both
+# ends agree on one key. Idempotent: only fires when Soulseek is opted in AND
+# the key is empty, so re-runs/updates keep the existing key. Hex output is
+# [0-9a-f] only, so it is safe unquoted in .env and in compose ${VAR} expansion.
+if is_optin_enabled ENABLE_SOULSEEK && [ -z "$(env_val SLSKD_API_KEY)" ]; then
+    _slskd_key="$(openssl rand -hex 24 2>/dev/null \
+        || head -c 24 /dev/urandom 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+    if [ -n "$_slskd_key" ]; then
+        if grep -q '^SLSKD_API_KEY=' "$ENV_FILE"; then
+            # Replace the empty SLSKD_API_KEY= line in place (| delimiter — hex
+            # has no |; -i works on both GNU and BusyBox/DSM sed).
+            sed -i "s|^SLSKD_API_KEY=.*|SLSKD_API_KEY=${_slskd_key}|" "$ENV_FILE"
+        else
+            echo "SLSKD_API_KEY=${_slskd_key}" >> "$ENV_FILE"
+        fi
+        echo "  Generated the slskd API key for you (saved to .env) — nothing to set."
+    else
+        echo "  ⚠ Couldn't generate an slskd API key (no openssl or /dev/urandom)."
+        echo "    Set SLSKD_API_KEY to any 16–255 random characters in .env and re-run."
+    fi
+    unset _slskd_key
+fi
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Retry a command with exponential backoff. Usage:
@@ -1140,28 +1167,29 @@ check_docker_dataroot_space() {
     fi
 }
 
-# Registry egress dry-run — pull one tiny image (hello-world, ~20 KB) to confirm
-# the DAEMON can actually reach a registry and pull layers. The detector's
-# host-level curl check is unreliable (stale CAs, separate proxy), and the
-# daemon has its own network stack/DNS/proxy config — so a host that "has
-# internet" can still have a daemon that can't pull (corporate proxy, DNS, a
-# firewalled bridge). Failing here with a specific message beats 15 min into a
-# silent compose-up hang. Non-blocking (Docker Hub rate-limits / transient
-# blips shouldn't halt the install) but loud. Cleans up hello-world if we were
-# the ones who pulled it.
+# Registry egress dry-run — pull one tiny image to confirm the DAEMON can
+# actually reach a registry and pull layers. We test via mirror.gcr.io (a
+# transparent Docker Hub pull-through cache) rather than Docker Hub directly:
+# the stack itself now pulls from lscr.io / ghcr.io / mirror.gcr.io (NOT Docker
+# Hub — see docker-compose.yml), so a Docker-Hub-rate-limited test would
+# false-warn even when the real pulls succeed. The daemon has its own network
+# stack/DNS/proxy config, so a host that "has internet" can still have a daemon
+# that can't pull. Failing here with a specific message beats 15 min into a
+# silent compose-up hang. Non-blocking (transient blips shouldn't halt the
+# install) but loud. Cleans up the test image if we were the ones who pulled it.
 check_registry_egress() {
     command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1 || return 0
+    local test_img="mirror.gcr.io/library/hello-world"
     local had_hw
-    had_hw=$($CONTAINER_RUNTIME image inspect hello-world >/dev/null 2>&1 && echo 1 || echo 0)
+    had_hw=$($CONTAINER_RUNTIME image inspect "$test_img" >/dev/null 2>&1 && echo 1 || echo 0)
     # WHY: retry the test pull a few times (sleeping 3s then 6s) before
-    # concluding failure. A single attempt false-alarms on Docker Hub's
-    # anonymous rate-limit (~100 pulls/6h per IP) and on transient network
-    # blips — cases where the real image pull in the next step still succeeds.
-    # Only warn if EVERY attempt fails. Still non-blocking + quick (worst case
-    # ~9s of sleeps on a genuinely unreachable daemon).
+    # concluding failure — a transient network blip shouldn't false-alarm when
+    # the real image pull in the next step still succeeds. Only warn if EVERY
+    # attempt fails. Still non-blocking + quick (worst case ~9s of sleeps on a
+    # genuinely unreachable daemon).
     local ok=0 attempt delay
     for attempt in 1 2 3; do
-        if $CONTAINER_RUNTIME pull -q hello-world >/dev/null 2>&1; then
+        if $CONTAINER_RUNTIME pull -q "$test_img" >/dev/null 2>&1; then
             ok=1
             break
         fi
@@ -1170,14 +1198,14 @@ check_registry_egress() {
     if [ "$ok" -eq 1 ]; then
         echo "  ✔ Docker daemon can reach the registry (pulled a test image)."
     else
-        echo "  ⚠ Docker daemon could NOT pull a test image (hello-world)."
-        echo "    The big image pull in the next step will likely fail too. Common"
-        echo "    causes: the daemon's DNS/proxy isn't set (check /etc/docker/daemon.json"
-        echo "    + the docker service's HTTP_PROXY), an outbound firewall blocks the"
-        echo "    daemon, or Docker Hub is rate-limiting this IP. Verify with:"
-        echo "        $CONTAINER_RUNTIME pull hello-world"
+        echo "  ⚠ Docker daemon could NOT pull a test image ($test_img)."
+        echo "    The image pull in the next step may fail too. Common causes: the"
+        echo "    daemon's DNS/proxy isn't set (check /etc/docker/daemon.json + the"
+        echo "    docker service's HTTP_PROXY), or an outbound firewall blocks the"
+        echo "    daemon. The stack pulls from lscr.io + ghcr.io; verify with:"
+        echo "        $CONTAINER_RUNTIME pull $test_img"
     fi
-    [ "$had_hw" = 0 ] && $CONTAINER_RUNTIME rmi hello-world >/dev/null 2>&1 || true
+    [ "$had_hw" = 0 ] && $CONTAINER_RUNTIME rmi "$test_img" >/dev/null 2>&1 || true
 }
 
 echo ""

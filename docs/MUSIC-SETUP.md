@@ -49,25 +49,28 @@ On the **Configure** screen:
 
 1. Open the **Services** group and check **Lidarr** (if it isn't already) and
    **Soulseek**. Soulseek shows a small "needs Lidarr" hint if Lidarr is off.
-2. Open the **Music** group. Fill in:
+2. Open the **Music** group and enter the **one** thing it needs — your free
+   Soulseek account:
 
    | Field | What to put |
    |---|---|
    | **Soulseek username** | Your Soulseek account name |
    | **Soulseek password** | Your Soulseek account password |
-   | **slskd API key** | Any random 16–255 character string (see below) |
-   | **Scan interval (seconds)** | Leave at `300` unless you have a reason to change it |
+
+   That's it. Everything else (the scan interval and the internal API key) is
+   under **"Optional settings — you can skip these"** with sensible defaults.
 
 3. Finish the wizard and install as normal. The install is idempotent — if you
    already installed without Soulseek, just re-run **Install** with Soulseek
    checked; your existing data and settings are preserved.
 
-### About the slskd API key
+### The "slskd API key" — you can ignore it
 
-The API key is how `soularr` talks to `slskd` over its REST API. It is **not** a
-Soulseek credential — it's a shared secret between the two containers. Pick any
-random 16–255 character string (a password manager's "generate" works great).
-You'll never type it again; both containers read whatever you set here.
+You may notice an *slskd API key* field under Optional settings. **Leave it
+blank.** It is **not** a Soulseek login — it's just an internal secret the two
+Soulseek containers use to talk to each other, and **the installer generates one
+for you** automatically on first run. The only reason to ever set it yourself is
+if you want to pin a specific value.
 
 ---
 

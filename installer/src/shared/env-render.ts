@@ -117,8 +117,11 @@ export interface EnvFormValues {
   // ── Soulseek (slskd + soularr) — only used when ENABLE_SOULSEEK=true
   SLSKD_USER?: string           // Soulseek network username
   SLSKD_PASS?: string           // Soulseek network password
-  /** slskd REST API key soularr uses (X-API-Key). 16–255 chars; the
-   *  wizard generates one. */
+  /** Internal shared secret between the slskd and soularr containers
+   *  (X-API-Key) — NOT a Soulseek credential. Left blank by default;
+   *  setup.sh auto-generates and persists one to .env when ENABLE_SOULSEEK
+   *  is on and this is empty, so the user never has to invent it. A value
+   *  typed in the wizard still round-trips and wins. 16–255 chars. */
   SLSKD_API_KEY?: string
   SOULARR_INTERVAL?: string     // soularr loop seconds (default 300)
 

@@ -121,7 +121,9 @@ export const envSchema = z.object({
   // Soulseek (slskd + soularr) — optional at the schema level; the
   // superRefine block escalates SLSKD_USER/SLSKD_PASS to required and
   // checks the slskd API-key length only when ENABLE_SOULSEEK is
-  // explicitly true.
+  // explicitly true. SLSKD_API_KEY stays OPTIONAL even then — it's an
+  // internal secret setup.sh auto-generates when blank, so blank is the
+  // expected, valid default (length is only validated if the user pins one).
   SLSKD_USER: optStr,
   SLSKD_PASS: optStr,
   SLSKD_API_KEY: optStr,

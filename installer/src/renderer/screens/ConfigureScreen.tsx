@@ -1183,10 +1183,10 @@ export function ConfigureScreen() {
         {isOptInEnabled(config.ENABLE_SOULSEEK as string | undefined) ? (
           <section className="space-y-4">
             <p className="text-sm text-slate-400">
-              slskd routes through the VPN like qBittorrent; soularr watches
-              Lidarr&apos;s wanted list and grabs matches off Soulseek.{' '}
-              <span className="text-amber-300/90">Requires Lidarr.</span> Create a
-              free Soulseek account at{' '}
+              Soulseek finds music for Lidarr off the Soulseek network — through
+              your VPN, like torrents. All you need is a{' '}
+              <span className="font-medium text-slate-300">free Soulseek account</span>:
+              create one at{' '}
               <a
                 href="https://www.slsknet.org"
                 target="_blank"
@@ -1195,32 +1195,43 @@ export function ConfigureScreen() {
               >
                 slsknet.org
               </a>{' '}
-              (or in the slskd WebUI on first run).
+              (or in the player&apos;s web UI on first run), then paste it below.{' '}
+              <span className="text-amber-300/90">Needs Lidarr.</span>
             </p>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Soulseek username" k="SLSKD_USER" />
               <Field label="Soulseek password" k="SLSKD_PASS" type="password" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field
-                label="slskd API key (16–255 chars)"
-                k="SLSKD_API_KEY"
-                type="password"
-                placeholder="soularr uses this to drive slskd"
-              />
-              <Field
-                label="Scan interval (seconds)"
-                k="SOULARR_INTERVAL"
-                placeholder="300"
-              />
-            </div>
-            <p className="text-xs text-slate-500">
-              The API key lets soularr talk to slskd over its REST API. Pick any
-              random 16–255-character string; soularr&apos;s generated{' '}
-              <code className="font-mono">config.ini</code> uses whatever you set
-              here. Leave the scan interval at 300s unless you have a reason to
-              change it.
-            </p>
+            {/* Everything else is optional with sensible defaults. The slskd API
+                key is an INTERNAL secret shared between the two Soulseek
+                containers (NOT a login) — setup.sh auto-generates one when it's
+                blank, so we don't make the user invent a random string. */}
+            <details className="text-sm group">
+              <summary className="cursor-pointer text-slate-400 hover:text-slate-200 select-none inline-flex items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+                <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+                Optional settings — you can skip these
+              </summary>
+              <div className="mt-3 space-y-3">
+                <Field
+                  label="Scan interval (seconds)"
+                  k="SOULARR_INTERVAL"
+                  placeholder="300 (default)"
+                />
+                <Field
+                  label="slskd API key — leave blank, generated for you"
+                  k="SLSKD_API_KEY"
+                  type="password"
+                  placeholder="auto-generated on install"
+                />
+                <p className="text-xs text-slate-500">
+                  The API key is an internal secret shared between the two
+                  Soulseek containers — <span className="text-slate-400">not</span> a
+                  Soulseek login. Leave it blank and the installer generates one
+                  for you; only set it to pin a specific value. Scan interval
+                  defaults to 300s.
+                </p>
+              </div>
+            </details>
             <p className="text-xs text-slate-500">
               To turn this off, untick <span className="font-medium">Soulseek</span> in
               the Services group above.

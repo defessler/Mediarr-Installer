@@ -34,12 +34,26 @@ x-security: &security
 # already applies to /data. Each lsio service below sets it explicitly
 # in its environment block.
 
+# Image registries: the stack deliberately pulls from registries that do NOT
+# share Docker Hub's anonymous pull rate limit (~100 pulls / 6h per IP), which
+# users on shared/CGNAT IPs or doing repeated re-installs were hitting:
+#   • lscr.io/linuxserver/*   — LinuxServer.io's official registry (same images)
+#   • ghcr.io/*               — gluetun, slskd, soularr, unpackerr, seerr,
+#                               homepage, flaresolverr, recyclarr
+#   • mirror.gcr.io/library/* — transparent Docker Hub pull-through cache for
+#                               the one base image (python)
+# Net effect: a normal install pulls ZERO images from Docker Hub. If you'd
+# rather use Docker Hub (or hit a registry outage), each image line is a plain
+# swap back to its docker.io name. And if you ever DO hit a Docker Hub limit on
+# a straggler, `docker login` (a free Docker Hub account) raises the per-IP
+# anonymous cap from ~100 to ~200 pulls / 6h.
+
 services:
 
   # ── Media Server ──────────────────────────────────────────
 
   plex:
-    image: linuxserver/plex:latest
+    image: lscr.io/linuxserver/plex:latest
     container_name: plex
     profiles: ["plex"]
     networks: [media]
@@ -79,7 +93,7 @@ services:
     restart: unless-stopped
 
   tautulli:
-    image: linuxserver/tautulli:latest
+    image: lscr.io/linuxserver/tautulli:latest
     container_name: tautulli
     profiles: ["plex"]
     networks: [media]
@@ -98,7 +112,7 @@ services:
     restart: unless-stopped
 
   jellyfin:
-    image: linuxserver/jellyfin:latest
+    image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     # Jellyfin is the open-source alternative to Plex. Selected via
     # MEDIA_SERVER=jellyfin in .env — setup.sh then activates the
@@ -236,7 +250,7 @@ services:
   # ── Indexer / Management ──────────────────────────────────
 
   prowlarr:
-    image: linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
     networks: [media]
     security_opt: *security
@@ -293,7 +307,7 @@ services:
     restart: unless-stopped
 
   sonarr:
-    image: linuxserver/sonarr:latest
+    image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
     profiles: ["sonarr"]
     networks: [media]
@@ -319,7 +333,7 @@ services:
     restart: unless-stopped
 
   radarr:
-    image: linuxserver/radarr:latest
+    image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
     profiles: ["radarr"]
     networks: [media]
@@ -345,7 +359,7 @@ services:
     restart: unless-stopped
 
   bazarr:
-    image: linuxserver/bazarr:latest
+    image: lscr.io/linuxserver/bazarr:latest
     container_name: bazarr
     profiles: ["bazarr"]
     networks: [media]
@@ -379,7 +393,7 @@ services:
     restart: unless-stopped
 
   lidarr:
-    image: linuxserver/lidarr:latest
+    image: lscr.io/linuxserver/lidarr:latest
     container_name: lidarr
     profiles: ["lidarr"]
     networks: [media]
@@ -407,7 +421,9 @@ services:
   # ── Download Clients ──────────────────────────────────────
 
   gluetun:
-    image: qmcgaw/gluetun:latest
+    # ghcr.io mirror of qmcgaw/gluetun (same image, different registry) so
+    # the stack doesn't depend on Docker Hub's anonymous pull rate limit.
+    image: ghcr.io/qdm12/gluetun:latest
     container_name: gluetun
     # Distinct "vpn" profile (not "torrenting") so the no-vpn override
     # can keep gluetun out of the start set even when qBittorrent's
@@ -521,7 +537,7 @@ services:
     restart: unless-stopped
 
   qbittorrent:
-    image: linuxserver/qbittorrent:latest
+    image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
     profiles: ["torrenting"]
     # network_mode: "container:gluetun"  attaches qBit to gluetun's
@@ -561,7 +577,7 @@ services:
     restart: unless-stopped
 
   slskd:
-    image: slskd/slskd:latest
+    image: ghcr.io/slskd/slskd:latest
     container_name: slskd
     # Opt-in Soulseek daemon (default OFF). setup.sh adds the "soulseek"
     # profile to COMPOSE_PROFILES only when ENABLE_SOULSEEK is explicitly
@@ -611,7 +627,7 @@ services:
     restart: unless-stopped
 
   sabnzbd:
-    image: linuxserver/sabnzbd:latest
+    image: lscr.io/linuxserver/sabnzbd:latest
     container_name: sabnzbd
     profiles: ["usenet"]
     networks: [media]
@@ -671,7 +687,11 @@ services:
     # Pin Python minor so a future 3.x release doesn't break http.server
     # or http.cookiejar (both used in recyclarr-trigger.py). Bump after
     # smoke-testing the trigger against the new minor.
-    image: python:3.12-alpine
+    # Pulled via Google's transparent Docker Hub pull-through cache
+    # (mirror.gcr.io/library/python == docker.io/library/python, same digest)
+    # so even this one base image doesn't count against Docker Hub's
+    # anonymous pull rate limit.
+    image: mirror.gcr.io/library/python:3.12-alpine
     container_name: recyclarr-trigger
     networks: [media]
     # No depends_on recyclarr: this trigger is always-on (no profile) but
@@ -743,7 +763,9 @@ services:
     restart: on-failure:5
 
   unpackerr:
-    image: golift/unpackerr:latest
+    # ghcr.io path is unpackerr/unpackerr (golift/unpackerr on Docker Hub) —
+    # same image, off Docker Hub's rate limit.
+    image: ghcr.io/unpackerr/unpackerr:latest
     container_name: unpackerr
     profiles: ["unpackerr"]
     networks: [media]
@@ -773,7 +795,9 @@ services:
     restart: unless-stopped
 
   soularr:
-    image: mrusse08/soularr:latest
+    # ghcr.io org is mrusse (mrusse08 on Docker Hub) — same image, off the
+    # Docker Hub rate limit.
+    image: ghcr.io/mrusse/soularr:latest
     container_name: soularr
     # Opt-in Lidarr ↔ slskd bridge (default OFF, same "soulseek" profile
     # as slskd). Runs on the media bridge so it resolves `lidarr` by DNS;
