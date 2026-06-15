@@ -209,6 +209,36 @@ function toPublic(p: OnDiskProfile): SavedProfile {
 
 // ── public API ────────────────────────────────────────────────────────────────
 
+// WHY: When safeStorage is unavailable (e.g. Linux without libsecret/kwallet)
+// the saved SSH/sudo password + key passphrase are written as trivially-
+// reversible base64 — only 0600 file perms protect them. SavedProfile exposes
+// hasSecret but says nothing about storage QUALITY, so the UI can't warn the
+// user. These accessors surface the signal without touching the on-disk format
+// or the SavedProfile shape (kept stable to avoid breaking parallel edits): a
+// later IPC handler can expose them so a UI change can show an at-rest warning.
+
+/** Whether OS-level encryption is available right now. When false, newly
+ *  saved profiles will degrade to plaintext base64 (see encodeBody). */
+export function isProfileStorageEncrypted(): boolean {
+  return isEncryptionAvailable()
+}
+
+/** Ground truth for a SINGLE stored profile: whether its on-disk blob is
+ *  actually safeStorage-encrypted. This can differ from the global flag — a
+ *  profile written while encryption was unavailable stays base64 even if
+ *  libsecret/kwallet later appears. Unknown ids report false (no secret to
+ *  protect). */
+export async function isProfileEncryptedAtRest(id: string): Promise<boolean> {
+  const data = await readFile()
+  const p = data.profiles.find((x) => x.id === id)
+  if (!p) return false
+  // ENC_TAG = safeStorage; B64_TAG = plaintext base64. Untagged legacy blobs
+  // were written using the live availability at write time, so fall back to it.
+  if (p.encrypted.startsWith(ENC_TAG)) return true
+  if (p.encrypted.startsWith(B64_TAG)) return false
+  return p.encrypted ? isEncryptionAvailable() : false
+}
+
 export async function listProfiles(): Promise<SavedProfile[]> {
   const data = await readFile()
   return data.profiles
@@ -368,6 +398,30 @@ export async function importProfile(args: {
   }
   if (!parsed?.connection || !parsed?.label) {
     throw new Error('Export file is missing required fields (connection / label).')
+  }
+
+  // WHY: a corrupt-but-decryptable export (empty connection object, a string
+  // port, an unknown authMethod) would otherwise be saved verbatim and only
+  // fail — confusingly — at connect time. Validate the connection field TYPES
+  // here so the user gets a clear "malformed export" error up front instead of
+  // an opaque SSH failure later. (We intentionally don't validate optional
+  // secret fields — those are legitimately absent for key-only profiles.)
+  // We read through an `unknown`-valued view because JSON.parse can produce any
+  // runtime shape despite the static ProfileConnection annotation — without
+  // this, the literal authMethod check would be flagged as a no-overlap
+  // comparison and the typeof guards reduced to dead branches.
+  const conn = parsed.connection as unknown as Record<string, unknown>
+  if (typeof conn.host !== 'string' || conn.host.trim().length === 0) {
+    throw new Error('Export file is malformed: connection host is missing or empty.')
+  }
+  if (typeof conn.port !== 'number' || !Number.isInteger(conn.port) || conn.port < 1 || conn.port > 65535) {
+    throw new Error('Export file is malformed: connection port is not a valid port number.')
+  }
+  if (typeof conn.user !== 'string' || conn.user.length === 0) {
+    throw new Error('Export file is malformed: connection user is missing.')
+  }
+  if (conn.authMethod !== 'password' && conn.authMethod !== 'privateKey') {
+    throw new Error('Export file is malformed: connection authMethod is unknown.')
   }
 
   // De-conflict the label: if a profile with the same name already

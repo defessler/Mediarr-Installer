@@ -196,9 +196,19 @@ export function MigrateScreen() {
     let cancelled = false
     ;(async () => {
       try {
+        // WHY: on v0.3.23+ the canonical .env lives at
+        // <installDir>/scripts/.env (RunScreen/UpdateRunScreen treat
+        // that as authoritative). Grepping only the legacy root .env
+        // found nothing post-install, leaving every dest key null and
+        // (falsely) telling the user to "finish the install first".
+        // Mirror the other screens: prefer scripts/.env, fall back to
+        // the legacy root .env. Pick the file in-shell so grep's exit
+        // code still reflects match/no-match.
+        const envScripts = shellQuote(`${targetDir}/scripts/.env`)
+        const envLegacy = shellQuote(`${targetDir}/.env`)
         const r = await window.installer.ssh.exec({
           sessionId,
-          cmd: `grep -E '^(SONARR_API_KEY|RADARR_API_KEY|QBITTORRENT_USER|QBITTORRENT_PASS)=' ${shellQuote(`${targetDir}/.env`)} 2>/dev/null`,
+          cmd: `ENVF=${envScripts}; [ -f "$ENVF" ] || ENVF=${envLegacy}; grep -E '^(SONARR_API_KEY|RADARR_API_KEY|QBITTORRENT_USER|QBITTORRENT_PASS)=' "$ENVF" 2>/dev/null`,
           sudo: false,
         })
         if (cancelled) return
@@ -941,13 +951,18 @@ export function MigrateScreen() {
         )}
       </section>
 
+      {/* WHY: also gate navigation on the qBit in-flight flags. The
+          qBit migrate loop is detached (keeps running if the screen
+          unmounts); without these, the user could click Back/Continue
+          mid-migration and leave it running against an unmounted
+          screen. Mirror the arr fetch/import guards. */}
       <div className="mt-auto flex justify-between gap-3">
         <BigButton
           size="md"
           variant="secondary"
           icon={<ArrowLeft size={18} />}
           onClick={() => setStep('welcome')}
-          disabled={fetching || importing}
+          disabled={fetching || importing || qbitFetching || qbitImporting}
         >
           Back to start
         </BigButton>
@@ -956,7 +971,7 @@ export function MigrateScreen() {
           variant={results.length > 0 ? 'primary' : 'secondary'}
           trailingIcon={<ArrowRight size={18} />}
           onClick={() => setStep('done')}
-          disabled={fetching || importing}
+          disabled={fetching || importing || qbitFetching || qbitImporting}
         >
           {results.length > 0 ? 'Done — go to dashboard' : 'Skip — go to dashboard'}
         </BigButton>

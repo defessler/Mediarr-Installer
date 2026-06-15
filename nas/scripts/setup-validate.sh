@@ -165,7 +165,14 @@ if [ "$MEDIA_SERVER" = "jellyfin" ]; then
 else
     PLEX_CLAIM=$(env_val "PLEX_CLAIM")
     if [ -z "$PLEX_CLAIM" ]; then
-        warn "PLEX_CLAIM is empty — only needed on first run. Get one from https://plex.tv/claim"
+        # A blank PLEX_CLAIM at pre-deploy is the EXPECTED state, not a
+        # to-do: the token is collected LATER on the wizard Run screen
+        # (it expires ~4 min after generation, so grabbing it now would
+        # waste it), and a claim is optional anyway — you can sign Plex in
+        # via its own web UI after install. Emit an informational ✔ (ok)
+        # rather than a ⚠ (warn) so the wizard doesn't fold it into the
+        # "Needs Action" list, mirroring the SONARR/RADARR_API_KEY checks.
+        ok "PLEX_CLAIM blank — optional; paste a token on the Run screen or claim Plex in its web UI after install"
     else
         ok "PLEX_CLAIM is set"
     fi

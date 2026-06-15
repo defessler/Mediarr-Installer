@@ -73,6 +73,20 @@ export const envSchema = z.object({
   DATA_ROOT: optStr.refine((v) => !v || v.startsWith('/'),
     'must be an absolute path starting with /'),
 
+  // Container-runtime socket override (Podman). renderEnv emits this key
+  // verbatim and setup.sh exports it as DOCKER_HOST, so a relative path or
+  // typo here breaks every docker/compose call on the NAS. WHY validate:
+  // without a schema entry the non-strict object silently drops the key
+  // from validation while renderEnv still writes whatever the user typed —
+  // so add it back to restore the round-trip invariant (every emitted key
+  // has a schema entry) and reject implausible values. Accept exactly what
+  // setup.sh accepts: a plain absolute path (it prepends unix://) OR a
+  // unix:// / tcp:// / ssh:// URI (used as-is).
+  DOCKER_SOCK: optStr.refine(
+    (v) => !v || v.startsWith('/') || /^(unix|tcp|ssh):\/\//.test(v),
+    'must be an absolute socket path (/run/podman/podman.sock) or a unix:// / tcp:// / ssh:// URI',
+  ),
+
   // Media server — 'plex' (default) or 'jellyfin'. Free-form-tolerant
   // (empty = plex) so older .envs without the key validate fine.
   MEDIA_SERVER: optStr.refine(

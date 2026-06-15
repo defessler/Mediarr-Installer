@@ -17,15 +17,31 @@ export function ConnectScreen() {
   // Passwords live in the wizard store and (via auto-save) in the
   // active profile. Reading/writing them through setConnection means
   // any change automatically syncs to disk. See useProfileAutosave.
+  // NOTE: these go through editConnection (defined below) so changing a
+  // password/passphrase/sudo password also invalidates a prior Test —
+  // same as every other connection field.
   const password = connection.password ?? ''
-  const setPassword = (v: string) => setConnection({ password: v })
+  const setPassword = (v: string) => editConnection({ password: v })
   const passphrase = connection.passphrase ?? ''
-  const setPassphrase = (v: string) => setConnection({ passphrase: v })
+  const setPassphrase = (v: string) => editConnection({ passphrase: v })
   const sudoPassword = connection.sudoPassword ?? ''
-  const setSudoPassword = (v: string) => setConnection({ sudoPassword: v })
+  const setSudoPassword = (v: string) => editConnection({ sudoPassword: v })
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ConnectResult | null>(null)
   const [testOk, setTestOk] = useState(false)
+
+  // WHY: a green "verified" + enabled Continue must only ever describe the
+  // exact credentials that were tested. Editing ANY connection field
+  // (host/port/user/auth method/password/key/passphrase/sudo) invalidates a
+  // prior Test, so route every field edit through here to clear testOk and
+  // the result banner — forcing a re-test of the changed credentials before
+  // Continue re-enables. Pure field edits all funnel through this wrapper.
+  type ConnectionPatch = Parameters<typeof setConnection>[0]
+  const editConnection = (patch: ConnectionPatch) => {
+    setTestOk(false)
+    setResult(null)
+    setConnection(patch)
+  }
 
   const isNonRoot = (connection.user ?? 'root') !== 'root'
 
@@ -88,7 +104,8 @@ export function ConnectScreen() {
     const { host, port } = parseHost(raw)
     const patch: { host: string; port?: number } = { host }
     if (port !== undefined) patch.port = port
-    setConnection(patch)
+    // editConnection: editing the host invalidates a prior Test.
+    editConnection(patch)
   }
 
   const reduced = useReducedMotion()
@@ -191,7 +208,7 @@ export function ConnectScreen() {
             type="number"
             className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
             value={connection.port ?? 22}
-            onChange={(e) => setConnection({ port: Number(e.target.value) || 22 })}
+            onChange={(e) => editConnection({ port: Number(e.target.value) || 22 })}
           />
           {connection.port && [80, 443, 5000, 5001].includes(connection.port) && (
             <motion.p
@@ -215,7 +232,7 @@ export function ConnectScreen() {
           aria-required="true"
           className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
           value={connection.user ?? 'root'}
-          onChange={(e) => setConnection({ user: e.target.value })}
+          onChange={(e) => editConnection({ user: e.target.value })}
         />
       </div>
 
@@ -242,7 +259,7 @@ export function ConnectScreen() {
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                onClick={() => setConnection({ authMethod: value })}
+                onClick={() => editConnection({ authMethod: value })}
                 className={
                   'relative z-10 inline-flex items-center gap-2 px-4 h-9 rounded-md text-sm font-medium ' +
                   'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ' +
@@ -275,7 +292,7 @@ export function ConnectScreen() {
               type="text" placeholder="C:\Users\you\.ssh\id_ed25519"
               className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-md focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
               value={connection.privateKeyPath ?? ''}
-              onChange={(e) => setConnection({ privateKeyPath: e.target.value })}
+              onChange={(e) => editConnection({ privateKeyPath: e.target.value })}
             />
             <PasswordInput
               placeholder="Passphrase (if encrypted)"

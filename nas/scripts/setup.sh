@@ -1153,7 +1153,21 @@ check_registry_egress() {
     command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1 || return 0
     local had_hw
     had_hw=$($CONTAINER_RUNTIME image inspect hello-world >/dev/null 2>&1 && echo 1 || echo 0)
-    if $CONTAINER_RUNTIME pull -q hello-world >/dev/null 2>&1; then
+    # WHY: retry the test pull a few times (sleeping 3s then 6s) before
+    # concluding failure. A single attempt false-alarms on Docker Hub's
+    # anonymous rate-limit (~100 pulls/6h per IP) and on transient network
+    # blips — cases where the real image pull in the next step still succeeds.
+    # Only warn if EVERY attempt fails. Still non-blocking + quick (worst case
+    # ~9s of sleeps on a genuinely unreachable daemon).
+    local ok=0 attempt delay
+    for attempt in 1 2 3; do
+        if $CONTAINER_RUNTIME pull -q hello-world >/dev/null 2>&1; then
+            ok=1
+            break
+        fi
+        [ "$attempt" -lt 3 ] && { delay=$((attempt * 3)); sleep "$delay"; }
+    done
+    if [ "$ok" -eq 1 ]; then
         echo "  ✔ Docker daemon can reach the registry (pulled a test image)."
     else
         echo "  ⚠ Docker daemon could NOT pull a test image (hello-world)."

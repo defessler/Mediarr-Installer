@@ -848,6 +848,14 @@ export function ConfigureScreen() {
     if (!qbitSameAsArr) return
     const u = config.ARR_USERNAME ?? ''
     const p = config.ARR_PASSWORD ?? ''
+    // WHY: ARR auth is optional and usually blank, but this box defaults
+    // checked — so without this guard the mount-time mirror copies empty
+    // ARR creds over the shipped QBITTORRENT_USER=admin default, then the
+    // schema (which requires qBit creds when qBittorrent is on) forces the
+    // user to invent credentials they meant to leave at the default. Only
+    // mirror once the user has actually typed an ARR username or password;
+    // until then leave the qBit defaults untouched.
+    if (u === '' && p === '') return
     if (config.QBITTORRENT_USER !== u || config.QBITTORRENT_PASS !== p) {
       setConfig({ QBITTORRENT_USER: u, QBITTORRENT_PASS: p })
     }

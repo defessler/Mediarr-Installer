@@ -134,7 +134,7 @@ export interface EnvFormValues {
   // ── VPN
   /** When 'false', setup.sh applies docker-compose.no-vpn.yml and gluetun
    *  is skipped. qBittorrent then runs on the regular bridge network. */
-  VPN_ENABLED?: string          // 'true' | 'false' — default 'true'
+  VPN_ENABLED?: string          // 'true' | 'false' — default 'false' (every renderVpnBlock path defaults it off; comment was stale)
   VPN_PROVIDER: string          // 'nordvpn' | 'protonvpn' | 'mullvad' | 'airvpn' | 'surfshark' | 'custom'
   VPN_TYPE: string              // 'wireguard' | 'openvpn'
   VPN_COUNTRIES: string         // 'United States,Canada'
@@ -249,8 +249,20 @@ const ESCAPE = (v: string) => {
   // '#' as data. (The readers were also fixed to only strip a whitespace-
   // anchored ' #comment'; quoting is the belt to that suspenders.)
   if (v === '') return ''
-  if (/[\s"$`\\#]/.test(v)) {
-    return `"${v.replace(/([\\"$`])/g, '\\$1')}"`
+  // \n and \r are listed explicitly (already covered by \s, but spelled out
+  // so a future edit to the trigger set can't silently drop them) so a value
+  // carrying one is always quoted.
+  if (/[\s"$`\\#\n\r]/.test(v)) {
+    // WHY: quoting alone isn't enough for newlines — a raw \n/\r inside the
+    // quotes still splits the physical line, and the NAS-side parsers read
+    // .env line-by-line (read_env in setup-arr-config.py), so the tail would
+    // become an unparseable orphan line. Fold them into literal \n / \r
+    // escape sequences so the entry can never break across lines. Currently
+    // unreachable (all fields are single-line / JSON-stringified) but guarded.
+    return `"${v
+      .replace(/([\\"$`])/g, '\\$1')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')}"`
   }
   return v
 }
@@ -523,6 +535,7 @@ export type IndexerCat =
   | 'usenet-paid'           // paid account / invite-only
   | 'tracker-public'        // anyone can grab feeds; no account
   | 'tracker-private'       // paid / invite-only private tracker
+  | 'subtitles'             // Bazarr subtitle provider — neither usenet nor torrent
 
 /** Tag taxonomy for the search/filter UI. An indexer can carry
  *  multiple tags — e.g. AnimeBytes is both 'anime' and 'tracker-private'.
@@ -540,6 +553,7 @@ export type IndexerTag =
   | 'asian'     // Korean / Chinese / Japanese live action (broader)
   | 'music'     // FLAC / lossless audio focus
   | 'books'     // ebooks / audiobooks
+  | 'subtitles' // Bazarr subtitle provider (not a media indexer)
   // Kind
   | 'usenet'
   | 'torrent'
@@ -592,6 +606,14 @@ export function indexerTags(def: IndexerDef): IndexerTag[] {
   } else if (def.category === 'tracker-private') {
     tags.add('torrent')
     if (!tags.has('free')) tags.add('paid')
+  } else if (def.category === 'subtitles') {
+    // WHY: Bazarr subtitle providers used to reuse 'usenet-free', which made
+    // indexerTags() derive a 'usenet' tag — the card then showed a misleading
+    // "usenet" pill on a subtitle source. Their own category derives only the
+    // accurate 'subtitles' kind + 'free' (every shipped provider is a free
+    // account); no usenet/torrent, so the bogus pill is gone.
+    tags.add('subtitles')
+    if (!tags.has('paid')) tags.add('free')
   }
   return Array.from(tags)
 }
@@ -630,33 +652,38 @@ export const USENET_INDEXERS: IndexerDef[] = [
     tags: ['general', 'free-signup'],
   },
   // ── Paid usenet — well-established indexers ───────────────────
+  // WHY: these all note "Paid account" — tag them 'paid' (cost axis), not
+  // 'free-signup', so the cost filter classifies them correctly. (Before,
+  // the explicit 'free-signup' both contradicted the note and surfaced them
+  // under the "Free signup" signup chip.) There's no "paid signup" tag in the
+  // taxonomy, so the signup axis is left unset for them — accurate.
   {
     id: 'NZBGEEK_API_KEY', name: 'NZBGeek',
     href: 'https://nzbgeek.info', note: 'Paid account. Excellent retention + categorisation.',
     fields: [{ key: 'NZBGEEK_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
   {
     id: 'NZBFINDER_API_KEY', name: 'NZBFinder',
     href: 'https://nzbfinder.ws', note: 'Paid account. Strong general coverage.',
     fields: [{ key: 'NZBFINDER_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
   {
     id: 'NZBPLANET_API_KEY', name: 'NZBPlanet',
     href: 'https://nzbplanet.net', note: 'Paid account.',
     fields: [{ key: 'NZBPLANET_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
   {
     id: 'NZBCAT_API_KEY', name: 'NZB.cat',
     href: 'https://nzb.cat', note: 'Paid account.',
     fields: [{ key: 'NZBCAT_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
   {
     id: 'DRUNKENSLUG_API_KEY', name: 'DrunkenSlug',
@@ -678,7 +705,7 @@ export const USENET_INDEXERS: IndexerDef[] = [
     note: 'Paid account.',
     fields: [{ key: 'NINJACZENTRAL_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
   {
     id: 'TABULARASA_API_KEY', name: 'Tabula Rasa',
@@ -686,7 +713,7 @@ export const USENET_INDEXERS: IndexerDef[] = [
     note: 'Paid account.',
     fields: [{ key: 'TABULARASA_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
   {
     id: 'NZBSU_API_KEY', name: 'NZB.su',
@@ -694,7 +721,7 @@ export const USENET_INDEXERS: IndexerDef[] = [
     note: 'Paid account. General-purpose, long-running indexer.',
     fields: [{ key: 'NZBSU_API_KEY', label: 'API key' }],
     category: 'usenet-paid',
-    tags: ['general', 'free-signup'],
+    tags: ['general', 'paid'],
   },
 ]
 
@@ -915,6 +942,10 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
   },
 ]
 
+// Bazarr subtitle providers. WHY category 'subtitles' (not 'usenet-free'):
+// they're subtitle sources, not usenet indexers — the old 'usenet-free'
+// category made indexerTags() derive a 'usenet' tag, so every card showed a
+// misleading "usenet" pill. 'subtitles' derives the accurate kind + 'free'.
 export const BAZARR_PROVIDERS: IndexerDef[] = [
   {
     id: 'OPENSUBTITLES_USER', name: 'OpenSubtitles.org',
@@ -923,7 +954,7 @@ export const BAZARR_PROVIDERS: IndexerDef[] = [
       { key: 'OPENSUBTITLES_USER', label: 'Username' },
       { key: 'OPENSUBTITLES_PASS', label: 'Password', password: true },
     ],
-    category: 'usenet-free',
+    category: 'subtitles',
   },
   {
     id: 'OPENSUBTITLESCOM_USER', name: 'OpenSubtitles.com',
@@ -932,7 +963,7 @@ export const BAZARR_PROVIDERS: IndexerDef[] = [
       { key: 'OPENSUBTITLESCOM_USER', label: 'Username' },
       { key: 'OPENSUBTITLESCOM_PASS', label: 'Password', password: true },
     ],
-    category: 'usenet-free',
+    category: 'subtitles',
   },
   {
     id: 'ADDIC7ED_USER', name: 'Addic7ed',
@@ -941,6 +972,6 @@ export const BAZARR_PROVIDERS: IndexerDef[] = [
       { key: 'ADDIC7ED_USER', label: 'Username' },
       { key: 'ADDIC7ED_PASS', label: 'Password', password: true },
     ],
-    category: 'usenet-free',
+    category: 'subtitles',
   },
 ]

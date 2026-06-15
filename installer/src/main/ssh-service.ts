@@ -274,8 +274,13 @@ export async function connect(cfg: ConnectionConfig): Promise<{ sessionId: strin
 export function disconnect(sessionId: string): void {
   const s = sessions.get(sessionId)
   if (!s) return
-  if (s.sftp) s.sftp.end()
-  s.client.end()
+  // Guard each teardown step independently. WHY: a throwing sftp.end() used to
+  // skip client.end() AND the map delete — leaking the SSH Client (a real
+  // channel/socket on the NAS) and orphaning the session entry. Each step must
+  // run even if an earlier one throws, so the client always gets torn down and
+  // the session is always forgotten.
+  if (s.sftp) try { s.sftp.end() } catch { /* ignore */ }
+  try { s.client.end() } catch { /* ignore */ }
   sessions.delete(sessionId)
 }
 
@@ -390,10 +395,23 @@ function execOnce(
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     let settled = false
+    // Held so the timeout handler can tear down the channel. WHY: a bare
+    // reject here used to ORPHAN the ClientChannel — a wedged remote command
+    // (stuck `sudo -S`, hung chown) kept its channel open on the server. On
+    // DSM (MaxSessions=10) a few orphans exhaust the channel budget and break
+    // later exec/SFTP. Mirror execStream's watchdog: TERM → close before we
+    // reject so the remote process dies and the channel is freed.
+    let activeStream: ClientChannel | null = null
     const timeoutMs = opts?.timeoutMs ?? 60_000
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
+      // Signal the remote process to die; fall back to closing the channel
+      // if the server rejects signals (some SSH servers don't support them).
+      if (activeStream) {
+        try { activeStream.signal('TERM') } catch { /* server may not support signals */ }
+        try { activeStream.close() } catch { /* already closing */ }
+      }
       reject(new Error(
         `Remote command timed out after ${timeoutMs / 1000}s.\n` +
         `Command: ${cmd.length > 200 ? cmd.slice(0, 200) + '…' : cmd}\n` +
@@ -418,6 +436,15 @@ function execOnce(
     // sudo consumes it from fd 0, and stdout stays clean.)
     client.exec(cmd, (err, stream) => {
       if (err) return finish(err)
+      // Expose the channel to the timeout handler so a wedged command can be
+      // TERM'd/closed instead of leaking. If the timer already fired during
+      // the (async) exec callback, tear this freshly-opened channel down too.
+      if (settled) {
+        try { stream.signal('TERM') } catch { /* server may not support signals */ }
+        try { stream.close() } catch { /* already closing */ }
+        return
+      }
+      activeStream = stream
       let stdout = ''
       let stderr = ''
       stream.on('data', (d: Buffer) => { stdout += d.toString('utf8') })
@@ -533,6 +560,10 @@ export async function exec(args: {
   })
 }
 
+/** Fixed-width replacement token for any redacted secret. Constant width so
+ *  the log never reveals how long the password was. */
+const REDACTED_MASK = '••••••'
+
 /** Redact sensitive content (the user's sudo password) from a stream
  *  chunk before it's forwarded to the renderer's log panel or the
  *  on-disk install log. We allocate a PTY for streaming commands so
@@ -546,7 +577,10 @@ function redactStreamChunk(chunk: string, secrets: string[]): string {
     if (!s) continue
     // Replace verbatim. Sudo passwords don't contain regex metachars
     // typically, but we use split/join so we don't care if they do.
-    out = out.split(s).join('•'.repeat(Math.max(3, Math.min(s.length, 8))))
+    // WHY a FIXED-WIDTH mask: a variable-width mask leaked the secret's
+    // (clamped) LENGTH into the log. A constant token reveals nothing about
+    // how long the password is.
+    out = out.split(s).join(REDACTED_MASK)
   }
   // Drop benign noise lines that have no actionable content and just
   // bloat the log. So far only one offender: sudo's stderr complaint
@@ -710,5 +744,11 @@ export function shutdown() {
   // Then drop each Client. ssh2's .end() sends SSH_MSG_DISCONNECT and
   // closes the underlying socket; the server tears down whatever was
   // still attached to the connection.
-  for (const id of [...sessions.keys()]) disconnect(id)
+  // WHY the per-session guard: this runs at app quit. If one disconnect ever
+  // throws, an unguarded loop would abort and leave every remaining session
+  // (and its socket) un-torn-down. Isolate each so one failure can't strand
+  // the rest.
+  for (const id of [...sessions.keys()]) {
+    try { disconnect(id) } catch { /* ignore — keep tearing down the rest */ }
+  }
 }
