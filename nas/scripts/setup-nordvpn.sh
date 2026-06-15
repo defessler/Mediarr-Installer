@@ -120,7 +120,7 @@ run_python() {
         echo "    container fallback. Install python3 (or Docker), then re-run." >&2
         return 127
     fi
-    "$_rt" run --rm -i docker.io/python:3-alpine python3 "$@"
+    "$_rt" run --rm -i mirror.gcr.io/library/python:3-alpine python3 "$@"
 }
 
 # If a key is already populated (the wizard fetches it on the host

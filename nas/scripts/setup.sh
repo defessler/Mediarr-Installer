@@ -302,7 +302,7 @@ run_python() {
         -w "$SCRIPT_DIR" \
         -e INSTALL_DIR="$INSTALL_DIR" \
         --entrypoint sh \
-        docker.io/python:3-alpine \
+        mirror.gcr.io/library/python:3-alpine \
         -c 'command -v docker >/dev/null 2>&1 || apk add --no-cache docker-cli >/dev/null 2>&1 || true; exec python3 "$@"' _ "$@"
 }
 # Best-effort variant for the optional steps — never fails the install.
@@ -444,7 +444,7 @@ if is_optin_enabled ENABLE_SOULSEEK && [ -z "$(env_val SLSKD_API_KEY)" ]; then
         fi
         echo "  Generated the slskd API key for you (saved to .env) — nothing to set."
     else
-        echo "  ⚠ Couldn't generate an slskd API key (no openssl or /dev/urandom)."
+        echo "  ⚠ Couldn't generate an slskd API key (no openssl, and /dev/urandom+od unavailable)."
         echo "    Set SLSKD_API_KEY to any 16–255 random characters in .env and re-run."
     fi
     unset _slskd_key
@@ -1115,7 +1115,9 @@ check_image_arch() {
         armv7l|armv6l) want=arm   ;;
         *) echo "  ⏭ Unknown CPU arch '$hostm' — skipping image-arch pre-flight."; return 0 ;;
     esac
-    $CONTAINER_RUNTIME manifest inspect hello-world >/dev/null 2>&1 \
+    # Probe via the mirror (not bare hello-world = Docker Hub) so this capability
+    # check doesn't itself burn a Docker Hub anonymous pull / hit its rate limit.
+    $CONTAINER_RUNTIME manifest inspect mirror.gcr.io/library/hello-world >/dev/null 2>&1 \
         || { echo "  ⏭ 'manifest inspect' unavailable — skipping image-arch pre-flight."; return 0; }
     local images img missing=""
     images=$(cd "$SCRIPT_DIR" && $COMPOSE $COMPOSE_FILES config --images 2>/dev/null | sort -u)

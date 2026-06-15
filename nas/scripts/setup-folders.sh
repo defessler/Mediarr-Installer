@@ -450,7 +450,7 @@ print("@ByteArray("+base64.b64encode(salt).decode()+":"+base64.b64encode(key).de
     if command -v python3 >/dev/null 2>&1; then
         HASH=$(printf '%s\n' "$QB_PASS" | python3 -c "$QB_HASH_PY")
     else
-        HASH=$(printf '%s\n' "$QB_PASS" | $RT run --rm -i docker.io/python:3-alpine python3 -c "$QB_HASH_PY")
+        HASH=$(printf '%s\n' "$QB_PASS" | $RT run --rm -i mirror.gcr.io/library/python:3-alpine python3 -c "$QB_HASH_PY")
     fi
     if [ -z "$HASH" ]; then
         echo "  ✘ qBittorrent password-hash generation failed (no host python3,"
