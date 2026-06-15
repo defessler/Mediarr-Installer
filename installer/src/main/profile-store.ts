@@ -411,8 +411,15 @@ export async function importProfile(args: {
   // this, the literal authMethod check would be flagged as a no-overlap
   // comparison and the typeof guards reduced to dead branches.
   const conn = parsed.connection as unknown as Record<string, unknown>
-  if (typeof conn.host !== 'string' || conn.host.trim().length === 0) {
-    throw new Error('Export file is malformed: connection host is missing or empty.')
+  // Type-only check on host: an EMPTY host is VALID, not malformed. A profile
+  // created but not yet filled in is persisted with host:'' (WelcomeScreen
+  // seeds it, autosave writes it), and Export is reachable on such a profile —
+  // so an un-configured export round-tripped fine before this validation
+  // existed, and the app tolerates an empty host at runtime (the user types it
+  // on the Connect screen). Rejecting empty here regressed that path; only a
+  // non-string host is genuinely corrupt.
+  if (typeof conn.host !== 'string') {
+    throw new Error('Export file is malformed: connection host is not a string.')
   }
   if (typeof conn.port !== 'number' || !Number.isInteger(conn.port) || conn.port < 1 || conn.port > 65535) {
     throw new Error('Export file is malformed: connection port is not a valid port number.')

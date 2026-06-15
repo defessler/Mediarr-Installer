@@ -32,6 +32,7 @@ Usage:
     ANIMETORRENTS_USER=    ANIMETORRENTS_PASS=  # Anime (private)
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -633,6 +634,56 @@ def _set_field_case_insensitive(schema, field_name, value):
     return None
 
 
+# ── Credential-rotation cache ──────────────────────────────────────────────────
+# Prowlarr blanks secret fields (apiKey/cookie/password/passkey/rssKey/...) to
+# "" when you GET an indexer back, so on a re-sync we cannot tell an UNCHANGED
+# secret from a freshly-rotated one by comparison. Both naive options are wrong:
+# compare-and-always-PATCH re-validates the credential against the tracker every
+# run (the Althub "HTTP 429 every run" report), while never-re-PATCH-a-blanked-
+# secret silently ignores a real rotation of a secret-only tracker (cookie- or
+# apiKey-only private trackers, usenet apiKey refreshes). We avoid both by
+# remembering a hash of the secret we LAST pushed, in a small state file, and
+# comparing the .env value against THAT: a genuine edit changes the hash (so we
+# re-push), an unchanged secret matches (so we stay quiet). On the FIRST run
+# after this lands there is no stored hash, so each secret-bearing indexer gets
+# ONE sync PATCH to seed it; every run after that is quiet.
+_CRED_HASH_PATH = None
+_CRED_HASHES = {}
+
+def _init_cred_hashes(install_dir):
+    global _CRED_HASH_PATH, _CRED_HASHES
+    _CRED_HASH_PATH = os.path.join(install_dir, '.indexer-cred-hashes.json')
+    try:
+        with open(_CRED_HASH_PATH, encoding='utf-8') as f:
+            loaded = json.load(f)
+        _CRED_HASHES = loaded if isinstance(loaded, dict) else {}
+    except (FileNotFoundError, ValueError, OSError):
+        _CRED_HASHES = {}
+
+def _secret_hash(secret_values):
+    """Stable SHA-256 of a {field: value} map of secret values."""
+    blob = json.dumps(dict(sorted(secret_values.items())), ensure_ascii=False)
+    return hashlib.sha256(blob.encode('utf-8')).hexdigest()
+
+def _secret_rotated(name, secret_values):
+    """True if these secret value(s) differ from what we last pushed for this
+    indexer (or we've never pushed one). Empty secret_values → False."""
+    if not secret_values:
+        return False
+    return _CRED_HASHES.get(name.lower()) != _secret_hash(secret_values)
+
+def _record_secret_hash(name, secret_values):
+    """Persist the just-pushed secret hash so the next run sees it unchanged.
+    Best-effort: a failed write just means one redundant PATCH next run."""
+    if not secret_values or _CRED_HASH_PATH is None:
+        return
+    _CRED_HASHES[name.lower()] = _secret_hash(secret_values)
+    try:
+        with open(_CRED_HASH_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_CRED_HASHES, f)
+    except OSError:
+        pass
+
 def add_private_indexer(base, key, name, implementation, field_map, schemas, existing_names,
                         flaresolverr_tag_id=None, existing_indexers=None):
     """Add OR re-sync a private torrent tracker.
@@ -669,28 +720,30 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         current_fields_ci = {f.get('name', '').lower(): f.get('value')
                              for f in current.get('fields', [])}
         changed = []
+        secret_values = {}   # fields Prowlarr blanks on GET (can't direct-compare)
         for fname, requested_value in field_map.items():
             if requested_value == '':
                 continue    # empty .env value = "don't touch"
             stored = current_fields_ci.get(fname.lower())
-            # Prowlarr returns password-type fields (apiKey/password/
-            # cookie/passkey/...) as "" when GETing the indexer back — a
-            # security feature, it never echoes secrets. That means for a
-            # blanked secret `stored == ""` ALWAYS differs from the real
-            # `requested_value`, so a naive `stored != requested` marks it
-            # changed on EVERY run and re-PATCHes the indexer needlessly.
-            # Prowlarr re-validates creds against the tracker on PATCH, so
-            # that fired a credential test against rate-limited indexers
-            # every single re-run — the Althub "HTTP 429 every run" report.
-            # Fix: a blanked ("") stored value is unknowable, not proof of
-            # change — never count it as changed on its own. Only treat a
-            # field as changed when its stored value is PRESENT (non-empty)
-            # AND differs. A genuine change to some OTHER (non-secret) field
-            # still trips `changed`, and the apply-loop below re-writes ALL
-            # non-empty field values — so a legit edit still re-pushes the
-            # secrets alongside it.
-            if stored not in (None, '') and stored != requested_value:
+            # Prowlarr returns password-type fields (apiKey/password/cookie/
+            # passkey/...) as "" when GETing the indexer back — it never echoes
+            # secrets. A blanked stored secret therefore can't be compared to the
+            # real .env value ("" always differs), which would re-PATCH (and
+            # re-test the credential against the tracker) every run — the Althub
+            # "HTTP 429 every run" report. Route blanked secrets through the
+            # last-pushed-hash check below instead, so a genuine ROTATION is
+            # still detected (simply never-re-pushing a blanked secret silently
+            # broke rotation for secret-only trackers).
+            if stored in (None, ''):
+                secret_values[fname.lower()] = requested_value
+            elif stored != requested_value:
                 changed.append(fname)
+        # A secret-only tracker (cookie/apiKey/rssKey) has no comparable field,
+        # so detect a real rotation by hashing the .env secret(s) against what we
+        # last pushed: trips on a genuine edit (or the first-ever run) and stays
+        # quiet otherwise.
+        if _secret_rotated(name, secret_values):
+            changed.extend(secret_values.keys())
         if not changed:
             skip(f"{name} (already added, creds match)")
             return
@@ -718,6 +771,9 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         if result is not None:
             suffix = f" (after {retries} retry/retries on DB lock)" if retries else ""
             ok(f"{name}: credentials updated ({', '.join(changed)}){suffix}")
+            # Remember the secret we just pushed so the next run sees it
+            # unchanged (and doesn't re-PATCH a rate-limited indexer).
+            _record_secret_hash(name, secret_values)
         else:
             warn(f"{name}: credential update failed (HTTP {status}) — {_prowlarr_error(err or '')}")
         return
@@ -819,6 +875,7 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
         current_fields = {f.get('name'): f.get('value') for f in current.get('fields', [])}
         desired = {'baseUrl': api_url, 'apiKey': api_key or ''}
         changed = []
+        secret_values = {}   # apiKey is blanked by Prowlarr on GET — can't direct-compare
         for fname, requested in desired.items():
             if requested == '' and fname == 'apiKey':
                 # Empty .env api_key = "don't touch". The user likely
@@ -827,18 +884,21 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
                 # rollback if they re-fill the .env later.
                 continue
             stored = current_fields.get(fname)
-            # Same blanked-secret trap as add_private_indexer: Prowlarr
-            # returns apiKey as "" on GET (never echoes secrets), so
-            # `"" != requested` would mark apiKey changed on EVERY run and
-            # re-PATCH the indexer — re-validating the key against the
-            # provider each time and tripping rate limits (the Althub
-            # "HTTP 429 every run" report). A "" stored value is unknowable,
-            # not proof of change: only count a field changed when its
-            # stored value is PRESENT and differs. If baseUrl (non-secret)
-            # genuinely changes, `changed` still trips and the apply-loop
-            # below re-writes apiKey too — so a legit edit re-pushes creds.
-            if stored not in (None, '') and stored != requested:
+            # Same blanked-secret trap as add_private_indexer: Prowlarr returns
+            # apiKey as "" on GET (never echoes secrets), so a direct compare
+            # would re-PATCH every run and re-validate the key against the
+            # provider (the Althub "HTTP 429 every run" report). Route the
+            # blanked apiKey through the last-pushed-hash check below so a
+            # genuine key ROTATION is still detected; baseUrl (non-secret)
+            # compares directly.
+            if stored in (None, ''):
+                secret_values[fname] = requested
+            elif stored != requested:
                 changed.append(fname)
+        # Detect a real apiKey rotation against the cached hash of what we last
+        # pushed (Prowlarr's blank echo can't tell us; trips on the first run).
+        if _secret_rotated(name, secret_values):
+            changed.extend(secret_values.keys())
         if not changed:
             skip(f"{name} (already added, creds match)")
             return
@@ -862,6 +922,9 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
         if result is not None:
             suffix = f" (after {retries} retry/retries on DB lock)" if retries else ""
             ok(f"{name}: credentials updated ({', '.join(changed)}){suffix}")
+            # Remember the secret we just pushed so the next run sees it
+            # unchanged (and doesn't re-PATCH a rate-limited indexer).
+            _record_secret_hash(name, secret_values)
         else:
             warn(f"{name}: credential update failed (HTTP {status}) — {_prowlarr_error(err or '')}")
         return
@@ -942,6 +1005,10 @@ def main():
         install_dir = os.path.dirname(os.path.dirname(script_dir))
     else:
         install_dir = os.path.dirname(script_dir) or '/volume1/docker/media'
+    # Load the per-indexer secret-hash cache so a credential ROTATION is
+    # detected without re-PATCHing (and re-validating) unchanged secrets every
+    # run — see the _CRED_HASH block near add_private_indexer.
+    _init_cred_hashes(install_dir)
     PROWLARR_KEY = env.get('PROWLARR_API_KEY') or read_arr_key(f'{install_dir}/prowlarr/config/config.xml')
 
     if not LAN_IP:
