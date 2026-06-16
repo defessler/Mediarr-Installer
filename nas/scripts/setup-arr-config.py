@@ -1298,12 +1298,21 @@ def enable_hardlinks(base, key, api):
     still resolve. Real work happens in configure_media_management."""
     configure_media_management(base, key, api, recycle_label=api.replace('/', '_'))
 
-def get_quality_profile(base, key, api, preferred='1080p'):
-    """Return (id, name) of best matching quality profile."""
+def get_quality_profile(base, key, api, preferred='1080p', fallback='1080p'):
+    """Return (id, name) of the best matching quality profile. Prefer an EXACT
+    (case-insensitive) name match on `preferred` (the user's chosen TRaSH profile,
+    e.g. 'WEB-1080p') so it's never shadowed by a stock profile recyclarr leaves
+    alongside it; then a substring match on `preferred`; then a substring match on
+    `fallback` — a sane stock tier to land on when recyclarr never created the TRaSH
+    profile (disabled/failed), so we don't drop to profiles[0] ('Any'); then the
+    first profile."""
     profiles = GET(base, key, f"/{api}/qualityprofile") or []
     if not profiles:
         return None, None
-    match = next((p for p in profiles if preferred.lower() in p['name'].lower()), None)
+    pref, fb = preferred.lower(), fallback.lower()
+    match = (next((p for p in profiles if p['name'].lower() == pref), None)
+             or next((p for p in profiles if pref in p['name'].lower()), None)
+             or next((p for p in profiles if fb in p['name'].lower()), None))
     chosen = match or profiles[0]
     return chosen['id'], chosen['name']
 
@@ -3325,7 +3334,7 @@ def complete_seerr_first_run(base, plex_token):
 
 
 def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
-                    plex_token=None):
+                    plex_token=None, env=None, media_kind='plex'):
     section("Seerr")
     if not key:
         install_dir = os.environ.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
@@ -3367,11 +3376,20 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
                     warn("  Visit http://<NAS>:5056 once to verify the wizard finished, then re-run setup.sh.")
                     return
             else:
-                warn("Seerr first-run wizard not finished — API key isn't usable yet.")
-                warn("  1. Visit http://<NAS>:5056 in your browser")
-                warn("  2. Click 'Sign in with Plex' and complete the wizard (it'll")
-                warn("     auto-detect the Sonarr/Radarr we set up here).")
-                warn("  3. Or back here: sudo bash setup.sh   (this step is idempotent)")
+                if media_kind == 'jellyfin':
+                    # Jellyseerr (the Jellyfin fork) — plex_token is always None here,
+                    # so don't tell a Jellyfin user to "Sign in with Plex".
+                    warn("Jellyseerr first-run wizard not finished — API key isn't usable yet.")
+                    warn("  1. Visit http://<NAS>:5056 in your browser")
+                    warn("  2. Click 'Use your Jellyfin account' and complete the wizard")
+                    warn("     (it'll auto-detect the Sonarr/Radarr we set up here).")
+                    warn("  3. Or back here: sudo bash setup.sh   (this step is idempotent)")
+                else:
+                    warn("Seerr first-run wizard not finished — API key isn't usable yet.")
+                    warn("  1. Visit http://<NAS>:5056 in your browser")
+                    warn("  2. Click 'Sign in with Plex' and complete the wizard (it'll")
+                    warn("     auto-detect the Sonarr/Radarr we set up here).")
+                    warn("  3. Or back here: sudo bash setup.sh   (this step is idempotent)")
                 return
         else:
             warn(f"Seerr API error HTTP {e.code} — skipping Sonarr/Radarr wiring")
@@ -3396,18 +3414,28 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
     else:
         skip("Local login (already enabled)")
 
+    # Resolve the user's actual TRaSH profile names so Seerr registers the chosen
+    # profile, not the stock 'HD-1080p' the old hardcoded '1080p' substring matched.
+    # env falls back to os.environ for a standalone run; the keys map to the same
+    # names recyclarr created (SONARR/RADARR_PROFILE_NAMES).
+    env_d = env if env is not None else os.environ
+    seerr_sonarr_pname = SONARR_PROFILE_NAMES.get(
+        (env_d.get('TRASH_SONARR_PROFILE', '') or '').strip() or 'web-1080p', 'WEB-1080p')
+    seerr_radarr_pname = RADARR_PROFILE_NAMES.get(
+        (env_d.get('TRASH_RADARR_PROFILE', '') or '').strip() or 'hd-bluray-web', 'HD Bluray + WEB')
+
     if sonarr_key:
         existing = GET(base, key, "/api/v1/settings/sonarr") or []
         if any(s.get('hostname') == 'sonarr' for s in existing):
             skip("Seerr → Sonarr (already set)")
         else:
-            profile_id, profile_name = get_quality_profile(sonarr_base, sonarr_key, "api/v3", "1080p")
+            profile_id, profile_name = get_quality_profile(sonarr_base, sonarr_key, "api/v3", seerr_sonarr_pname)
             lang_id = get_language_profile(sonarr_base, sonarr_key)
             result = POST(base, key, "/api/v1/settings/sonarr", {
                 "name": "Sonarr", "hostname": "sonarr", "port": 8989,
                 "apiKey": sonarr_key, "useSsl": False, "baseUrl": "",
                 "activeProfileId": profile_id or 1,
-                "activeProfileName": profile_name or "HD-1080p",
+                "activeProfileName": profile_name or seerr_sonarr_pname,
                 "activeDirectory": "/data/Media/TV Shows",
                 "is4k": False, "isDefault": True, "syncEnabled": False,
                 "preventSearch": False, "seasons": True,
@@ -3422,12 +3450,12 @@ def configure_seerr(base, key, sonarr_base, sonarr_key, radarr_base, radarr_key,
         if any(r.get('hostname') == 'radarr' for r in existing):
             skip("Seerr → Radarr (already set)")
         else:
-            profile_id, profile_name = get_quality_profile(radarr_base, radarr_key, "api/v3", "1080p")
+            profile_id, profile_name = get_quality_profile(radarr_base, radarr_key, "api/v3", seerr_radarr_pname)
             result = POST(base, key, "/api/v1/settings/radarr", {
                 "name": "Radarr", "hostname": "radarr", "port": 7878,
                 "apiKey": radarr_key, "useSsl": False, "baseUrl": "",
                 "activeProfileId": profile_id or 1,
-                "activeProfileName": profile_name or "HD-1080p",
+                "activeProfileName": profile_name or seerr_radarr_pname,
                 "activeDirectory": "/data/Media/Movies",
                 "is4k": False, "isDefault": True, "syncEnabled": False,
                 "preventSearch": False, "minimumAvailability": "released",
@@ -3593,15 +3621,21 @@ SONARR_PROFILE_RECIPES = {
         'sonarr-v4-quality-profile-web-2160p',
         'sonarr-v4-custom-formats-web-2160p',
     ],
+    # Sonarr has NO English Bluray TRaSH recipe on master (only WEB + localized
+    # fr/de Bluray-WEB variants), so these IDs don't exist and recyclarr ABORTS the
+    # whole sync (YamlIncludeException) — leaving a Bluray-picker with zero TRaSH
+    # config. Remap to the WEB templates: TRaSH folds Bluray into the WEB profiles
+    # (they already score Bluray sources highest). Keys kept for .env backward-compat
+    # so an existing TRASH_SONARR_PROFILE=bluray-1080p still resolves.
     'bluray-1080p': [
         'sonarr-quality-definition-series',
-        'sonarr-v4-quality-profile-bluray-1080p',
-        'sonarr-v4-custom-formats-bluray-1080p',
+        'sonarr-v4-quality-profile-web-1080p',
+        'sonarr-v4-custom-formats-web-1080p',
     ],
     'bluray-2160p': [
         'sonarr-quality-definition-series',
-        'sonarr-v4-quality-profile-bluray-2160p',
-        'sonarr-v4-custom-formats-bluray-2160p',
+        'sonarr-v4-quality-profile-web-2160p',
+        'sonarr-v4-custom-formats-web-2160p',
     ],
     'anime': [
         'sonarr-quality-definition-anime',
@@ -3612,9 +3646,14 @@ SONARR_PROFILE_RECIPES = {
 SONARR_PROFILE_NAMES = {
     'web-1080p':    'WEB-1080p',
     'web-2160p':    'WEB-2160p',
-    'bluray-1080p': 'Bluray-1080p',
-    'bluray-2160p': 'Bluray-2160p',
-    'anime':        'Anime',
+    # bluray-* remap to the WEB profiles (see SONARR_PROFILE_RECIPES). The recyclarr
+    # quality_profiles entry joins the included template BY NAME, so this MUST be the
+    # name the web template actually creates, or it writes a stray non-merging profile.
+    'bluray-1080p': 'WEB-1080p',
+    'bluray-2160p': 'WEB-2160p',
+    # The master sonarr-v4-quality-profile-anime template names its profile
+    # 'Remux-1080p - Anime'; 'Anime' matched nothing and left a stray empty profile.
+    'anime':        'Remux-1080p - Anime',
 }
 
 RADARR_PROFILE_RECIPES = {
@@ -3643,7 +3682,10 @@ RADARR_PROFILE_NAMES = {
     'hd-bluray-web':    'HD Bluray + WEB',
     'uhd-bluray-web':   'UHD Bluray + WEB',
     'remux-web-2160p':  'Remux + WEB 2160p',
-    'anime':            'Remux + WEB 1080p - Anime',
+    # The master radarr-quality-profile-anime template names its profile
+    # 'Remux-1080p - Anime' (same as Sonarr's), not 'Remux + WEB 1080p - Anime' —
+    # the old value left a stray non-merging quality_profiles entry.
+    'anime':            'Remux-1080p - Anime',
 }
 
 
@@ -4739,7 +4781,7 @@ def main():
         # the token Seerr's API returns 403 on every settings endpoint
         # and the user has to click through the wizard manually.
         configure_seerr(SEERR, SEERR_KEY, SONARR, SONARR_KEY, RADARR, RADARR_KEY,
-                        plex_token=plex_token)
+                        plex_token=plex_token, env=env, media_kind=media_kind)
     else:
         section("Seerr")
         print(f"  {DIM}⏭  ENABLE_PLEX=false — Seerr not deployed.{RESET}")
