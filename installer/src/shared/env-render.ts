@@ -202,7 +202,6 @@ export interface EnvFormValues {
   X1337_NO_KEY?: string
   TGX_NO_KEY?: string
   THEPIRATEBAY_NO_KEY?: string
-  LIMETORRENTS_NO_KEY?: string
   EZTV_NO_KEY?: string
   THERARBG_NO_KEY?: string
   BITSEARCH_NO_KEY?: string
@@ -816,14 +815,6 @@ export const PUBLIC_TRACKERS: IndexerDef[] = [
     id: 'THEPIRATEBAY_NO_KEY', name: 'The Pirate Bay',
     href: 'https://thepiratebay.org',
     note: 'The original public tracker. Catch-all coverage, no account.',
-    fields: [],
-    category: 'tracker-public',
-    tags: ['general', 'no-signup'],
-  },
-  {
-    id: 'LIMETORRENTS_NO_KEY', name: 'LimeTorrents',
-    href: 'https://www.limetorrents.lol',
-    note: 'General-purpose public tracker. No account.',
     fields: [],
     category: 'tracker-public',
     tags: ['general', 'no-signup'],

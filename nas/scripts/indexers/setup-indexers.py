@@ -124,7 +124,6 @@ PUBLIC_TORRENT_INDEXERS = [
     "YTS",
     "EZTV",
     "TorrentGalaxy",
-    "LimeTorrents",
     "The Pirate Bay",
     "Knaben",            # Large Norwegian index, excellent general coverage
     # TheRARBG — community-run successor to RARBG (which shut down in

@@ -65,7 +65,6 @@ The wizard adds all three to Prowlarr at install time. Together they cover ~80% 
 | **The Pirate Bay** | https://thepiratebay.org | General | Veteran public tracker. |
 | **TorrentGalaxy** | https://torrentgalaxy.to | General | Newer general index with active uploaders. |
 | **EZTV** | https://eztv.re | TV (English) | TV-only catalogue, RSS-friendly. |
-| **LimeTorrents** | https://www.limetorrents.lol | General | Backup; coverage overlaps with TPB. |
 | **Knaben** | https://knaben.org | General (Scandinavian-flavoured) | Norwegian-run general index with surprisingly good worldwide coverage; well-categorised. |
 | **ShowRSS** | https://showrss.info | TV (English) | Curated RSS feeds for TV shows — handy as a Sonarr "always-on" feed for popular shows. |
 
