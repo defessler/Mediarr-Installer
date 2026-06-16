@@ -285,6 +285,38 @@ export async function loadProfile(id: string): Promise<LoadedProfile | null> {
 export async function saveProfile(input: SaveProfileInput): Promise<SavedProfile> {
   const data = await readFile()
   const id = input.id ?? randomUUID()
+  const idx = data.profiles.findIndex((p) => p.id === id)
+
+  // Data-loss guard. If we're UPDATING an existing profile whose stored blob is
+  // encrypted-but-currently-undecryptable (the OS keyring wasn't unlocked yet
+  // at launch, or profiles.json was copied from another machine) AND the
+  // incoming values carry no secret/config of their own — i.e. a pure rename,
+  // or an edit made against the secret-less stub loadProfile returns in that
+  // state — do NOT overwrite the still-recoverable blob. Keep it and update
+  // only the label/lastUsedAt; the real secrets come back intact once the
+  // keyring is available. Re-entering a secret here (incomingHasSecret) is
+  // treated as a deliberate fresh save and bypasses this guard.
+  if (idx >= 0) {
+    const existing = data.profiles[idx]
+    const incomingHasSecret = Boolean(
+      input.connection?.password ||
+      input.connection?.passphrase ||
+      input.connection?.sudoPassword,
+    )
+    const incomingHasConfig = Object.keys(input.config || {}).length > 0
+    if (
+      existing.encrypted.startsWith(ENC_TAG) &&
+      decodeBody(existing.encrypted) === null &&
+      !incomingHasSecret &&
+      !incomingHasConfig
+    ) {
+      const preserved: OnDiskProfile = { ...existing, label: input.label, lastUsedAt: Date.now() }
+      data.profiles[idx] = preserved
+      await writeFile(data)
+      return toPublic(preserved)
+    }
+  }
+
   const body: ProfileBody = {
     connection: input.connection,
     targetDir: input.targetDir,
@@ -298,7 +330,6 @@ export async function saveProfile(input: SaveProfileInput): Promise<SavedProfile
     encrypted: encodeBody(body),
     summary: summary(body),
   }
-  const idx = data.profiles.findIndex((p) => p.id === id)
   if (idx >= 0) data.profiles[idx] = next
   else data.profiles.push(next)
   await writeFile(data)
@@ -345,6 +376,19 @@ export async function touchProfile(id: string): Promise<void> {
 export async function exportProfile(id: string, passphrase: string): Promise<ProfileExportEnvelope> {
   if (typeof passphrase !== 'string' || passphrase.length === 0) {
     throw new Error('Passphrase is required.')
+  }
+  // Refuse to export a profile whose secrets can't be decrypted on THIS
+  // machine. Otherwise loadProfile returns a secret-less stub (no password /
+  // passphrase / sudo, empty config) and we'd emit a structurally-valid but
+  // EMPTY backup that silently "succeeds" — the user would believe they have a
+  // real backup. Reachable when profiles.json was copied from another machine,
+  // the OS keychain was reset, or the Linux keyring isn't unlocked yet.
+  const onDisk = (await readFile()).profiles.find((x) => x.id === id)
+  if (onDisk && onDisk.encrypted.startsWith(ENC_TAG) && decodeBody(onDisk.encrypted) === null) {
+    throw new Error(
+      "This profile's secrets are encrypted on its original machine and can't be read " +
+      'here, so there is nothing to export. Re-enter the profile on this machine first.',
+    )
   }
   const p = await loadProfile(id)
   if (!p) throw new Error(`profile ${id} not found`)
