@@ -559,7 +559,17 @@ export function MigrateScreen() {
           {(() => {
             const sonarrReady = fetched.sonarr && destSonarrUrl && destSonarrKey
             const radarrReady = fetched.radarr && destRadarrUrl && destRadarrKey
-            const canImport = sonarrReady || radarrReady
+            // Every arr that was FETCHED must have its destination creds before we
+            // enable import. With a bare OR, fetching both but keying only one
+            // enabled the button (the ready arr satisfied it), yet importAll()
+            // silently skips the keyless arr while the label still promises to
+            // import its titles AND the "Missing: …" hint below is suppressed
+            // (it's gated on !canImport). Require all-fetched-ready, plus at least
+            // one ready so an empty fetch keeps the button disabled.
+            const canImport =
+              (!fetched.sonarr || sonarrReady) &&
+              (!fetched.radarr || radarrReady) &&
+              (sonarrReady || radarrReady)
             const missing: string[] = []
             if (fetched.sonarr && !destSonarrUrl) missing.push('Sonarr URL')
             if (fetched.sonarr && !destSonarrKey) missing.push('Sonarr API key')

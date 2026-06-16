@@ -181,10 +181,15 @@ export function EnvDetectScreen() {
   // after the user fixes a flagged item (e.g. a DSM ACL grant) — the
   // remediation copy tells them to do exactly this.
   const [rescanNonce, setRescanNonce] = useState(0)
+  // True when the last detect failed because the SSH session dropped (a stale,
+  // now-dead sessionId). Re-detect can't recover that — only Back → reconnect
+  // can — so the footer disables Re-detect and steers to Back when this is set.
+  const [sessionLost, setSessionLost] = useState(false)
   const reDetect = () => {
     setStatus('detecting')
     setError(null)
     setResult(null)
+    setSessionLost(false)
     setRescanNonce((n) => n + 1)
   }
 
@@ -287,7 +292,17 @@ export function EnvDetectScreen() {
         setStatus('ok')
       } catch (e) {
         if (cancelled) return
-        setError((e as Error).message)
+        // A dropped SSH session surfaces here as "unknown sessionId <uuid>" (main
+        // deleted the session when the socket closed, but the renderer still holds
+        // the stale id). Re-detect would just re-run with that dead id and throw
+        // the same cryptic error — a dead end — so replace it with the one action
+        // that works and let the footer disable Re-detect + steer to Back.
+        const msg = (e as Error).message
+        const lost = /unknown session/i.test(msg)
+        setSessionLost(lost)
+        setError(lost
+          ? 'Your SSH session was lost — click Back and reconnect. This screen re-scans automatically after you reconnect.'
+          : msg)
         setStatus('failed')
         reportError('Environment detect', e)
       }
@@ -1292,7 +1307,7 @@ git clone https://github.com/telnetdoogie/synology-docker.git
       <div className="max-w-2xl mx-auto flex items-center gap-3">
         <BigButton
           size="md"
-          variant="secondary"
+          variant={sessionLost ? 'primary' : 'secondary'}
           icon={<ArrowLeft size={18} />}
           onClick={() => setStep('connect')}
         >
@@ -1303,8 +1318,10 @@ git clone https://github.com/telnetdoogie/synology-docker.git
           variant="secondary"
           icon={<Radar size={16} />}
           onClick={reDetect}
-          disabled={status === 'detecting'}
-          title="Re-run the environment checks (after fixing a flagged item)"
+          disabled={status === 'detecting' || sessionLost}
+          title={sessionLost
+            ? 'Your SSH session was lost — click Back and reconnect first'
+            : 'Re-run the environment checks (after fixing a flagged item)'}
         >
           Re-detect
         </BigButton>

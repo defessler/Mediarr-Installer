@@ -170,6 +170,24 @@ interface GithubRelease {
  *  not-available | error. Silent mode swallows errors (initial check
  *  / periodic poll); non-silent surfaces them via the error state. */
 async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Promise<PendingUpdate | null> {
+  // Never let a re-check clobber an in-flight or already-staged update. The
+  // running process stays on the OLD version until the post-exit swap, so a
+  // just-downloaded release is still compareVersions-newer and would be
+  // re-selected below — reassigning pendingUpdate with stagingDir:null and
+  // broadcasting 'available', which collapses the renderer's "Restart to
+  // update" overlay and orphans the ~200 MB extracted build on disk. The
+  // periodic 6h poll + the startup check reach this silently (the manual
+  // check is UI-suppressed once downloaded), so the guard has to live here.
+  if (downloadInProgress || installInProgress || pendingUpdate?.stagingDir) {
+    log.info('updater: skipping re-check — an update is already downloading or staged')
+    // A manual (non-silent) check sets the renderer's spinner to 'checking' and
+    // waits for a updater:state event to clear it. This early return emits no new
+    // state, so re-broadcast the current resting state to release that spinner.
+    // (Today the manual button is hidden while an update is staged, so this path
+    // isn't user-reachable — but it keeps the guard self-contained if that changes.)
+    if (!silent) broadcast(lastState)
+    return pendingUpdate
+  }
   broadcast({ kind: 'checking' })
   try {
     const ac = new AbortController()

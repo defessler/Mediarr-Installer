@@ -12,7 +12,7 @@ import { toConnectConfig } from '../../shared/connect-config.js'
 
 export function ConnectScreen() {
   const {
-    connection, setConnection, setStep, setSessionId, mode, activeProfileId, activeProfileLabel,
+    connection, setConnection, setStep, sessionId, setSessionId, mode, activeProfileId, activeProfileLabel,
   } = useWizard()
   // Passwords live in the wizard store and (via auto-save) in the
   // active profile. Reading/writing them through setConnection means
@@ -69,6 +69,13 @@ export function ConnectScreen() {
   async function connectAndContinue() {
     setBusy(true)
     try {
+      // Tear down any prior live session before minting a new one — otherwise the
+      // old main-side ssh2 Client is abandoned and counts against DSM's
+      // MaxSessions=10 cap (the very "session cap" failure this screen warns
+      // about). Mirrors RunScreen's reconnect teardown; fire-and-forget so a hung
+      // disconnect can't block the new connect.
+      const oldId = sessionId
+      if (oldId) window.installer.ssh.disconnect(oldId).catch(() => { /* best-effort */ })
       const r = await window.installer.ssh.connect(commonConfig())
       setSessionId(r.sessionId)
       if (activeProfileId) {
@@ -84,6 +91,13 @@ export function ConnectScreen() {
         : 'detect'
       setStep(next)
     } catch (e) {
+      // The live connect threw (timeout, NAS offline, DSM session cap). Invalidate
+      // the prior green "Connection works" verdict AND any stale sessionId so the
+      // footer can't show a verified state beside the red error banner and Continue
+      // re-disables — forcing a re-Test of the now-changed reachability (mirrors
+      // editConnection's invalidate-on-change contract).
+      setTestOk(false)
+      setSessionId(null)
       setResult({ ok: false, error: { kind: 'unknown', message: (e as Error).message } })
     } finally {
       setBusy(false)
