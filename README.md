@@ -90,6 +90,7 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 | **Tautulli** | Plex analytics — watch history, stream stats, notifications (Plex only; skipped for Jellyfin, which has built-in stats) |
 | **Recyclarr** | Syncs TRaSH Guide quality profiles into Sonarr/Radarr |
 | **Unpackerr** | Watches completed downloads and unpacks archives for import |
+| **Playlist Sync** | Opt-in — mirrors SiriusXM channels + public Spotify playlists into Plex playlists (Soulseek-first, yt-dlp fallback) |
 
 ### Key concepts
 

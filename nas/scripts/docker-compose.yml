@@ -874,6 +874,9 @@ services:
       # (robust); when blank, sockseek uses the fragile unauthenticated path.
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      # OAuth refresh token (from the wizard's "Connect Spotify") — lets sockseek
+      # read the user's PRIVATE playlists non-interactively.
+      - SPOTIFY_REFRESH_TOKEN=${SPOTIFY_REFRESH_TOKEN:-}
       # Schedule (cron) + behaviour knobs. Defaults: daily 4am, FLAC-preferred,
       # one pass on container start so enabling it shows results immediately.
       - PLAYLIST_SYNC_CRON=${PLAYLIST_SYNC_CRON:-0 4 * * *}

@@ -534,6 +534,22 @@ export interface SshStreamClose {
   signal: string | null
 }
 
+// ── Spotify Connect (OAuth) — main process lists the user's playlists ────────
+export interface SpotifyPlaylist {
+  name: string
+  /** open.spotify.com playlist URL — written into SPOTIFY_PLAYLISTS as Name|URL. */
+  url: string
+  isPublic: boolean
+  owner: string
+  trackCount: number
+}
+export interface SpotifyConnectResult {
+  playlists: SpotifyPlaylist[]
+  /** Long-lived refresh token so the downloader (sockseek --spotify-refresh)
+   *  can read PRIVATE playlists non-interactively at sync time. */
+  refreshToken: string
+}
+
 // ── Channel name constants (use these — no string literals at call sites) ────
 
 export const IPC = {
@@ -552,6 +568,7 @@ export const IPC = {
   // Helpers
   envDetect:       'env:detect',
   vpnFetchKey:     'vpn:fetch-key',
+  spotifyConnect:  'spotify:connect',
   fsCheckTarget:   'fs:check-target',
   // Profiles
   profileList:     'profile:list',

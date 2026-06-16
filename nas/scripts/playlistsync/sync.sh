@@ -80,6 +80,11 @@ write_conf() {
         if [ -n "${SPOTIFY_CLIENT_ID:-}" ] && [ -n "${SPOTIFY_CLIENT_SECRET:-}" ]; then
             printf 'spotify-id = %s\n' "${SPOTIFY_CLIENT_ID}"
             printf 'spotify-secret = %s\n' "${SPOTIFY_CLIENT_SECRET}"
+            # OAuth refresh token (from the wizard's "Connect Spotify") lets
+            # sockseek read the user's PRIVATE playlists, not just public ones.
+            if [ -n "${SPOTIFY_REFRESH_TOKEN:-}" ]; then
+                printf 'spotify-refresh = %s\n' "${SPOTIFY_REFRESH_TOKEN}"
+            fi
         fi
     } > "$CONF"
     log "wrote $CONF (pref-format=${PLAYLIST_PREF_FORMAT:-flac}, spotify-api=$( [ -n "${SPOTIFY_CLIENT_ID:-}" ] && echo yes || echo no ))"

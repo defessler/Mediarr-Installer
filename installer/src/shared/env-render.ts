@@ -157,6 +157,9 @@ export interface EnvFormValues {
    *  official playlist reads. Blank → the fragile unauthenticated path. */
   SPOTIFY_CLIENT_ID?: string
   SPOTIFY_CLIENT_SECRET?: string
+  /** Spotify OAuth refresh token captured by the wizard's "Connect Spotify"
+   *  flow, so the downloader can read PRIVATE playlists non-interactively. */
+  SPOTIFY_REFRESH_TOKEN?: string
   /** Cron schedule (default 0 4 * * *). */
   PLAYLIST_SYNC_CRON?: string
   /** Preferred audio format (default flac). */
@@ -528,6 +531,7 @@ export function renderEnv(v: EnvFormValues): string {
     line('SPOTIFY_PLAYLISTS', v.SPOTIFY_PLAYLISTS),
     line('SPOTIFY_CLIENT_ID', v.SPOTIFY_CLIENT_ID),
     line('SPOTIFY_CLIENT_SECRET', v.SPOTIFY_CLIENT_SECRET),
+    line('SPOTIFY_REFRESH_TOKEN', v.SPOTIFY_REFRESH_TOKEN),
     line('PLAYLIST_SYNC_CRON', v.PLAYLIST_SYNC_CRON || '0 4 * * *'),
     line('PLAYLIST_PREF_FORMAT', v.PLAYLIST_PREF_FORMAT || 'flac'),
     line('PLAYLIST_RUN_ON_START', v.PLAYLIST_RUN_ON_START || 'true'),

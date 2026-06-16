@@ -25,6 +25,7 @@ import {
   type SshStreamClose,
   type SshStreamData,
   type VpnFetchResult,
+  type SpotifyConnectResult,
 } from '../shared/ipc.js'
 
 const installer = {
@@ -100,6 +101,10 @@ const installer = {
   vpn: {
     fetchKey: (token: string): Promise<VpnFetchResult> =>
       ipcRenderer.invoke(IPC.vpnFetchKey, { token }),
+  },
+  spotify: {
+    connect: (args: { clientId: string; clientSecret: string }): Promise<SpotifyConnectResult> =>
+      ipcRenderer.invoke(IPC.spotifyConnect, args),
   },
   profiles: {
     list:      (): Promise<SavedProfile[]> => ipcRenderer.invoke(IPC.profileList),

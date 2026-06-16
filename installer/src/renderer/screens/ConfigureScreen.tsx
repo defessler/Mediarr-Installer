@@ -32,6 +32,8 @@ import { IndexerCard } from '../components/IndexerCard.js'
 import { IndexerBrowser } from '../components/IndexerBrowser.js'
 import { CustomIndexerEditor } from '../components/CustomIndexerEditor.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
+import { SiriusxmSelect } from '../components/SiriusxmSelect.js'
+import { SpotifyConnect } from '../components/SpotifyConnect.js'
 import { reportError } from '../store/errors.js'
 
 /** Centered hero header for the Configure screen. Defined at module
@@ -1380,46 +1382,43 @@ export function ConfigureScreen() {
                 <Field label="Soulseek password (2nd account)" k="PLAYLIST_SLSK_PASS" type="password" />
               </div>
               <div className="space-y-1.5">
-                <Field
-                  label="SiriusXM channels — comma-separated slugs"
-                  k="SIRIUSXM_CHANNELS"
-                  placeholder="octane, altnation, siriusxmhits1"
+                <label className="text-sm font-medium text-slate-300">SiriusXM channels</label>
+                <SiriusxmSelect
+                  value={(config.SIRIUSXM_CHANNELS as string | undefined) ?? ''}
+                  onChange={(v) => update('SIRIUSXM_CHANNELS', v || undefined)}
                 />
                 <p className="text-xs text-slate-500">
-                  Channel slugs from{' '}
+                  Pick channels by name — the list comes from{' '}
                   <a href="https://xmplaylist.com" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">xmplaylist.com</a>{' '}
-                  (free, no account). A friendly guess like “hits1” resolves to the real slug.
+                  (free, no account). Anything not in the list can be added as a custom slug.
                 </p>
               </div>
-              <div className="space-y-1.5">
-                <Field
-                  label="Spotify playlists — comma-separated public URLs"
-                  k="SPOTIFY_PLAYLISTS"
-                  placeholder="https://open.spotify.com/playlist/…, Chill|https://open.spotify.com/playlist/…"
-                />
-                <p className="text-xs text-slate-500">
-                  Prefix any URL with <span className="text-slate-400">Label|</span> to name its Plex playlist.
-                  SiriusXM is fully free; Spotify needs the free developer app below.
-                </p>
-              </div>
-              {/* Spotify creds — REQUIRED when any Spotify playlist is listed:
-                  sockseek needs your own Spotify app for ALL Spotify inputs, even
-                  public ones. Surfaced inline (not hidden) so the requirement is
-                  obvious, and only when the user actually entered Spotify URLs. */}
-              {!!(config.SPOTIFY_PLAYLISTS as string | undefined)?.trim() && (
-                <div className="space-y-1.5 rounded-md border border-green-700/20 bg-green-900/5 p-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Spotify Client ID" k="SPOTIFY_CLIENT_ID" />
-                    <Field label="Spotify Client Secret" k="SPOTIFY_CLIENT_SECRET" type="password" />
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Required for Spotify. Create a free app at{' '}
+              <div className="space-y-2.5 rounded-md border border-green-700/20 bg-green-900/5 p-3">
+                <div>
+                  <label className="text-sm font-medium text-slate-300">
+                    Spotify playlists <span className="text-slate-500 font-normal text-xs">(optional)</span>
+                  </label>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Spotify needs a free Spotify Developer app — create one at{' '}
                     <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">developer.spotify.com</a>{' '}
-                    (redirect URI <span className="text-slate-400">http://127.0.0.1:48721/callback</span>), then paste its ID + Secret.{' '}
-                    <span className="text-amber-300/90">Note: Spotify&apos;s API may require the app owner to have Premium — SiriusXM has no such catch.</span>
+                    (set the Redirect URI to <span className="text-slate-400">http://127.0.0.1:48721/callback</span>), paste its
+                    ID + Secret, then <span className="text-slate-300">Connect</span> to pick your playlists.{' '}
+                    <span className="text-amber-300/90">Spotify&apos;s API may require Premium on the app owner — SiriusXM has no such catch.</span>
                   </p>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Spotify Client ID" k="SPOTIFY_CLIENT_ID" />
+                  <Field label="Spotify Client Secret" k="SPOTIFY_CLIENT_SECRET" type="password" />
+                </div>
+                <SpotifyConnect
+                  clientId={(config.SPOTIFY_CLIENT_ID as string | undefined) ?? ''}
+                  clientSecret={(config.SPOTIFY_CLIENT_SECRET as string | undefined) ?? ''}
+                  value={(config.SPOTIFY_PLAYLISTS as string | undefined) ?? ''}
+                  onChange={(v) => update('SPOTIFY_PLAYLISTS', v || undefined)}
+                  onConnected={(t) => update('SPOTIFY_REFRESH_TOKEN', t || undefined)}
+                  connected={!!(config.SPOTIFY_REFRESH_TOKEN as string | undefined)?.trim()}
+                />
+              </div>
               <p className="text-xs text-slate-500">
                 Add at least one SiriusXM channel or Spotify playlist.
               </p>

@@ -163,6 +163,9 @@ export const envSchema = z.object({
   SPOTIFY_PLAYLISTS: optStr,
   SPOTIFY_CLIENT_ID: optStr,
   SPOTIFY_CLIENT_SECRET: optStr,
+  // Captured by the wizard's "Connect Spotify" OAuth flow so the downloader can
+  // read PRIVATE playlists (sockseek --spotify-refresh). Optional.
+  SPOTIFY_REFRESH_TOKEN: optStr,
   PLAYLIST_SYNC_CRON: optStr.refine(
     (v) => !v || /^\S+(\s+\S+){4}$/.test(v.trim()),
     'must be a 5-field cron expression like "0 4 * * *"',

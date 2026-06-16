@@ -86,5 +86,15 @@ SHARED edits:
 - Requires Plex (validation rejects Jellyfin-only). Per-playlist folders duplicate a track shared across
   playlists (correctness trade; a future dedup pass could de-duplicate).
 
+## v0.14.0 — channel/playlist pickers (installer UI)
+The wizard no longer needs raw slugs/URLs. **SiriusXM** is a searchable multi-select from a bundled
+directory (`installer/src/shared/siriusxm-stations.ts` + `renderer/components/SiriusxmSelect.tsx`), with a
+custom-slug escape hatch. **Spotify** is a "Connect" OAuth flow (`main/spotify-oauth.ts` — a loopback server
+on 127.0.0.1:48721 + IPC `spotify:connect` + `renderer/components/SpotifyConnect.tsx`) that lists the user's
+playlists to check off, with a paste-URL fallback. The OAuth captures `SPOTIFY_REFRESH_TOKEN` (threaded
+through env-schema/render/.env.example/docker-compose/sync.sh) so sockseek reads the user's PRIVATE
+playlists via `--spotify-refresh` (conf key `spotify-refresh`).
+
 ## Ship
-`installer-v0.13.0` (new minor). CI builds + publishes the image; make the GHCR package public once.
+`installer-v0.13.0` shipped the feature; `installer-v0.14.0` ships the pickers. CI builds + publishes the
+image; the GHCR package is already public.
