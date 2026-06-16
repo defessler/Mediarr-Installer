@@ -138,19 +138,20 @@ if [ -f "$ENV_FILE" ]; then
         exit 1
     fi
 
-    # Auto-discover Synology /volume[0-9]+ disks so the Homepage resources
-    # widget shows real disk-usage stats. Each detected volume gets
-    # MONITORED_DISK_N=/volumeN appended to .env (idempotent — re-runs
+    # Auto-discover storage volumes so the Homepage resources widget shows real
+    # disk-usage stats. Covers Synology /volume[0-9]+ AND TerraMaster TOS, whose
+    # pool lives at /Volume[0-9]+ (capital V — see env-detector.ts). Each detected
+    # volume gets MONITORED_DISK_N=/volumeN appended to .env (idempotent — re-runs
     # skip slots already set). docker-compose.yml's homepage service has
     # 4 conditional /diskN bind mounts that pick these up via
     # ${MONITORED_DISK_N:-/tmp} substitution; setup-arr-config.py's
     # render_homepage_widgets() emits a disk widget per populated slot.
-    # On non-Synology hosts the for-loop's glob expands to literal
-    # "/volume[0-9]*" which fails the [ -d ] test and nothing happens —
-    # users can hand-add MONITORED_DISK_N to .env for their layout.
+    # On hosts with neither path the globs expand to their literal patterns,
+    # which fail the [ -d ] test so nothing happens — users can hand-add
+    # MONITORED_DISK_N to .env for their layout.
     if [ -f "$ENV_FILE" ]; then
         _disk_n=1
-        for _vol in /volume[0-9]*; do
+        for _vol in /volume[0-9]* /Volume[0-9]*; do
             [ -d "$_vol" ] || continue
             [ "$_disk_n" -le 4 ] || break
             if ! grep -q "^MONITORED_DISK_${_disk_n}=" "$ENV_FILE"; then
@@ -529,10 +530,20 @@ fi
 retry() {
     local max="$1" label="$2"
     shift 2
-    local attempt=1 delay=2
+    local attempt=1 delay=2 rc=0
     while true; do
         if "$@"; then
             return 0
+        else
+            rc=$?
+        fi
+        # Exit code 2 = a PERMANENT failure the command has already diagnosed
+        # (e.g. missing token, no python runtime, malformed key). Retrying would
+        # deterministically fail the same way, so abort now — no backoff sleeps,
+        # no triplicated error output. Transient failures use exit 1 and retry.
+        if [ "$rc" -eq 2 ]; then
+            echo "  ⚠ $label failed permanently — not retrying."
+            return "$rc"
         fi
         if [ "$attempt" -ge "$max" ]; then
             echo "  ⚠ $label failed after ${attempt} attempt(s)."

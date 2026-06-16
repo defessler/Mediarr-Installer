@@ -46,6 +46,7 @@ import json
 import os
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -397,10 +398,28 @@ def update_env_profiles(sonarr, radarr):
                 if new_lines and not new_lines[-1].endswith('\n'):
                     new_lines.append('\n')
                 new_lines.append(f'{key}={val}\n')
-        tmp = ENV_FILE + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
-        os.replace(tmp, ENV_FILE)
+        # Atomic + secure write. .env holds every secret (VPN keys, qbit/slskd
+        # passwords, all *arr/usenet API keys) and is deliberately 0600. A bare
+        # open()+replace runs under this trigger container's root umask (022),
+        # creating the temp 0644 and — because os.replace (rename(2)) repoints the
+        # .env name to that new inode — silently downgrading the live secrets file
+        # to world-readable. mkstemp creates the temp 0600, matching .env's intended
+        # mode (and healing a prior 0644 downgrade); fsync + os.replace keep the
+        # swap atomic. Mirrors setup-arr-config.py's set_env_value().
+        d = os.path.dirname(ENV_FILE) or '.'
+        fd, tmp = tempfile.mkstemp(dir=d, prefix='.env-', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, ENV_FILE)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         return (True, '')
     except PermissionError as e:
         return (False, f'permission denied writing .env ({e}) — the trigger '

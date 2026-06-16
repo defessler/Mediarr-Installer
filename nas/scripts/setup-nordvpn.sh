@@ -30,7 +30,7 @@ fi
 if [ ! -f "$ENV_FILE" ]; then
     echo "  ✘ .env not found at $ENV_FILE"
     echo "  Copy the template first:  cp .env.example .env"
-    exit 1
+    exit 2  # permanent: a missing .env won't appear on retry
 fi
 
 # Helper for reading values out of .env (strips inline comments + whitespace).
@@ -185,7 +185,7 @@ if [ -z "$ACCESS_TOKEN" ]; then
     echo "      - Paste your WireGuard private key directly as NORDVPN_PRIVATE_KEY, OR"
     echo "      - Set VPN_ENABLED=false to skip VPN entirely."
     echo "    Token URL: https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/"
-    exit 1
+    exit 2  # permanent: .env isn't mutated between attempts, so retrying just re-fails
 fi
 
 echo ""
@@ -234,12 +234,12 @@ PY_STATUS=$?
 if [ "$PY_STATUS" -ne 0 ]; then
     echo "  ✘ Could not run the JSON parser to read the NordVPN response:"
     echo "      ${PYTHON_OUT:-(no output)}"
-    exit 1
+    exit 2  # permanent: no python3 + no Docker/Podman is a host condition retrying won't fix
 fi
 if [[ "$PYTHON_OUT" == ERROR:* ]]; then
     echo "  ✘ Failed to parse NordVPN API response:"
     echo "      $PYTHON_OUT"
-    exit 1
+    exit 2  # permanent: a bad/expired token returns the same ERROR: every attempt
 fi
 PRIVATE_KEY="$PYTHON_OUT"
 
@@ -260,7 +260,7 @@ fi
 KEY_LEN=${#PRIVATE_KEY}
 if [ "$KEY_LEN" -ne 44 ]; then
     echo "  ✘ Key length is $KEY_LEN — expected 44. The API may have returned an unexpected format."
-    exit 1
+    exit 2  # permanent: a deterministic malformed-key response won't change on retry
 fi
 
 # Update BOTH env-var names so the rest of the stack finds the key
