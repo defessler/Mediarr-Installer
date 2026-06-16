@@ -298,8 +298,8 @@ function ServicesSection({
 const SONARR_TRASH_PROFILES: Array<{ value: string; label: string; hint: string }> = [
   { value: 'web-1080p',    label: 'WEB-1080p',    hint: 'Most users — 1080p web releases (default)' },
   { value: 'web-2160p',    label: 'WEB-2160p',    hint: '4K web releases (HDR / DV scored)' },
-  { value: 'bluray-1080p', label: 'Bluray-1080p', hint: '1080p Bluray rips (better than WEB)' },
-  { value: 'bluray-2160p', label: 'Bluray-2160p', hint: '4K Bluray + REMUX (largest files)' },
+  { value: 'bluray-1080p', label: 'Bluray → WEB-1080p', hint: 'Sonarr has no separate Bluray recipe — uses WEB-1080p, which already scores Bluray sources highest' },
+  { value: 'bluray-2160p', label: 'Bluray → WEB-2160p', hint: 'Sonarr folds Bluray into WEB — uses the WEB-2160p profile' },
   { value: 'anime',        label: 'Anime',        hint: 'Anime-specific scoring (sub groups, encoders)' },
 ]
 const RADARR_TRASH_PROFILES: Array<{ value: string; label: string; hint: string }> = [

@@ -108,8 +108,8 @@ SETUP_SCRIPT = _setup_script()
 SONARR_PROFILES = [
     ('web-1080p',    'WEB-1080p (most users)'),
     ('web-2160p',    'WEB-2160p (4K web)'),
-    ('bluray-1080p', 'Bluray-1080p (better than WEB)'),
-    ('bluray-2160p', 'Bluray-2160p (4K Bluray + REMUX)'),
+    ('bluray-1080p', 'Bluray → WEB-1080p (Sonarr folds Bluray into WEB)'),
+    ('bluray-2160p', 'Bluray → WEB-2160p (4K)'),
     ('anime',        'Anime (anime-specific scoring)'),
 ]
 RADARR_PROFILES = [
