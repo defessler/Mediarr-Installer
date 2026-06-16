@@ -25,7 +25,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { RefreshCw, ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Play } from 'lucide-react'
+import { RefreshCw, ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Play, ChevronDown, Wrench } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel } from '../components/LogPanel.js'
@@ -760,14 +760,33 @@ docker compose $FILES --progress plain --ansi never up -d`
         </div>
       </section>
 
-      <p className="text-xs text-slate-500 shrink-0 -mb-1">Or run a targeted action:</p>
-
-      {/* Action picker — four cards in a 2x2 grid. Disabled while one
-          is running so the user can't kick off a second action mid-
-          flight (they'd race against the same stream channel). 2x2
-          gives each card enough width for descriptive text without
-          truncation; 1280px window splits cleanly into ~600px columns. */}
-      <section className="grid grid-cols-2 gap-3 shrink-0">
+      {/* Targeted actions sit behind a disclosure (collapsed by default)
+          so the primary "Update to latest" path above stays the obvious
+          choice. This is the "do just one thing" escape hatch most users
+          never need to open. */}
+      <details className="group shrink-0 rounded-lg border border-slate-800">
+        <summary className="cursor-pointer p-3 text-sm font-medium flex items-center gap-2 [&::-webkit-details-marker]:hidden hover:bg-slate-800/40 transition-colors rounded-lg">
+          <ChevronDown
+            size={16}
+            className="text-slate-500 transition-transform group-open:rotate-180 shrink-0"
+            aria-hidden="true"
+          />
+          <Wrench size={15} className="text-slate-400 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <span>Advanced — targeted actions</span>
+          <span className="text-xs text-slate-500 font-normal hidden sm:inline">
+            · do just one thing instead of a full update
+          </span>
+        </summary>
+        <div className="p-3 pt-1 space-y-3">
+          <p className="text-xs text-slate-500">
+            Most of the time <span className="text-slate-300">Update to latest</span> above is
+            what you want — it already pulls images, syncs scripts, and re-runs setup. Reach for
+            these when you deliberately want <em>just one</em> of those, faster:
+          </p>
+          {/* Four cards in a 2x2 grid. Disabled while one is running so the
+              user can't kick off a second action mid-flight (same stream
+              channel). 2x2 gives each card enough width for its text. */}
+          <section className="grid grid-cols-2 gap-3">
         <ActionCard
           title="Update images only"
           subtitle="Just docker compose pull + up -d — the image half of 'Update to latest', skipping the script sync and setup.sh re-run. (Update to latest already pulls images too, then does the rest.)"
@@ -835,6 +854,8 @@ docker compose $FILES --progress plain --ansi never up -d`
           </div>
         </div>
       </section>
+        </div>
+      </details>
       </>)}
 
       <div className="flex-1 min-h-0">
