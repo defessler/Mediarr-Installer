@@ -313,9 +313,18 @@ export function WelcomeScreen() {
                           </span>
                         )}
                         {p.hasSecret && (
-                          <span className="inline-flex items-center gap-1 text-emerald-400/90">
-                            <Lock size={13} aria-hidden="true" /> secrets saved
-                          </span>
+                          p.encryptedAtRest ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-400/90">
+                              <Lock size={13} aria-hidden="true" /> secrets saved
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 text-amber-400/90"
+                              title="This machine has no OS keyring (e.g. Linux without libsecret/kwallet), so the saved password is stored as reversible base64 protected only by file permissions. Re-save it on a machine with a keyring for real at-rest encryption."
+                            >
+                              <AlertTriangle size={13} aria-hidden="true" /> secrets unencrypted
+                            </span>
+                          )
                         )}
                         {lastRuns[p.id]?.phase === 'done' && (
                           <span className="inline-flex items-center gap-1 text-emerald-300">

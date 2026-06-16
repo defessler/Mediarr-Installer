@@ -191,6 +191,15 @@ function toPublic(p: OnDiskProfile): SavedProfile {
   // populate full state once the user selects.
   const body = decodeBody(p.encrypted)
   const s = summary(body, p.summary)
+  // Ground truth for at-rest encryption: the codec tag the blob was WRITTEN
+  // with (ENC = safeStorage/DPAPI, B64 = plaintext base64). Untagged legacy
+  // blobs fall back to the live availability they were written under. Mirrors
+  // isProfileEncryptedAtRest, but computed inline here so it rides the existing
+  // profile:list IPC with no extra round-trip.
+  const encryptedAtRest =
+    p.encrypted.startsWith(ENC_TAG) ? true
+    : p.encrypted.startsWith(B64_TAG) ? false
+    : p.encrypted ? isEncryptionAvailable() : false
   return {
     id: p.id,
     label: p.label,
@@ -203,6 +212,7 @@ function toPublic(p: OnDiskProfile): SavedProfile {
     },
     hasSecret: s.hasSecret,
     hasConfig: s.hasConfig,
+    encryptedAtRest,
     lastUsedAt: p.lastUsedAt,
   }
 }

@@ -355,6 +355,11 @@ export interface SavedProfile {
   hasSecret: boolean
   /** Whether config values have been saved against this profile. */
   hasConfig: boolean
+  /** Whether the stored secret blob is OS-encrypted (safeStorage) at rest.
+   *  When this is false AND hasSecret is true, the secret was written as
+   *  reversible base64 (the machine had no keyring at save time) — the UI
+   *  surfaces an at-rest warning instead of the green "secrets saved" lock. */
+  encryptedAtRest: boolean
   lastUsedAt: number
 }
 
