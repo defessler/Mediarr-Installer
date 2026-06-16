@@ -37,8 +37,42 @@ done
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-# Read .env values (can be overridden by env vars; strips \r for Windows-edited files)
-env_val() { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | sed 's/#.*//' | xargs; }
+# Read .env values (can be overridden by env vars; strips \r for Windows-edited files).
+# Quote-aware reader matching setup-folders.sh (v0.11.4): the wizard's writer
+# quotes + backslash-escapes any value with special chars, so a double-quoted
+# value is un-escaped in a single pass and an unquoted value keeps the legacy
+# whitespace-anchored inline-comment strip. The old `sed 's/#.*//' | xargs`
+# truncated a QBITTORRENT_PASS containing '#' and choked on quotes.
+env_val() {
+    local raw
+    raw="$(grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')"
+    case "$raw" in
+        '"'*)
+            printf '%s' "$raw" | awk '
+                {
+                    n = length($0); out = ""; i = 2
+                    while (i <= n) {
+                        c = substr($0, i, 1)
+                        if (c == "\\" && i < n) {
+                            d = substr($0, i + 1, 1)
+                            if (d == "n") out = out "\n"
+                            else if (d == "r") out = out "\r"
+                            else out = out d
+                            i += 2
+                            continue
+                        }
+                        if (c == "\"") break
+                        out = out c
+                        i++
+                    }
+                    printf "%s", out
+                }'
+            ;;
+        *)
+            printf '%s' "$raw" | sed 's/[[:space:]]#.*//' | xargs
+            ;;
+    esac
+}
 
 QB_HOST="${QB_HOST:-$(env_val LAN_IP)}"
 QB_PORT="${QB_PORT:-49156}"

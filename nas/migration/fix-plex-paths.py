@@ -36,7 +36,9 @@ NEW_PREFIX = "/media"
 
 def remap(path):
     """Return the new path if it needs remapping, otherwise None."""
-    if path.startswith(OLD_PREFIX):
+    # Match on a path-SEGMENT boundary so a sibling like /volume1/Data/MediaArchive
+    # isn't rewritten as if it lived under /volume1/Data/Media.
+    if path == OLD_PREFIX or path.startswith(OLD_PREFIX + '/'):
         return NEW_PREFIX + path[len(OLD_PREFIX):]
     return None
 

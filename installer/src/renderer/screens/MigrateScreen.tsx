@@ -299,10 +299,17 @@ export function MigrateScreen() {
       // path (/data/Downloads/Torrents) as the To so the user just
       // tweaks rather than typing from scratch.
       if (r.torrents.length > 0 && !qbitRemapFrom && !qbitRemapTo) {
-        const commonPrefix = longestCommonPrefix(r.torrents.map((t) => t.save_path))
-        if (commonPrefix && commonPrefix.length > 1) {
+        // longestCommonPrefix is char-by-char, so saves under /downloads/movies
+        // + /downloads/music yield '/downloads/m' — snap back to the last path-
+        // segment boundary (or keep a lone save dir as-is) so the suggested
+        // From is a real directory, not a mid-segment string that would mangle
+        // paths on remap.
+        const lcp = longestCommonPrefix(r.torrents.map((t) => t.save_path))
+        const snapped = lcp.replace(/\/[^/]*$/, '')
+        const from = (snapped.length > 1 ? snapped : lcp).replace(/\/$/, '')
+        if (from.length > 1) {
           setMigrate({
-            qbitRemapFrom: commonPrefix.replace(/\/$/, ''),
+            qbitRemapFrom: from,
             qbitRemapTo:   '/data/Downloads/Torrents',
           })
         }
@@ -334,9 +341,7 @@ export function MigrateScreen() {
       setQbitResults([...newResults])
     }
     for (const t of qbitTorrents) {
-      const destSavePath = qbitRemapFrom && t.save_path.startsWith(qbitRemapFrom)
-        ? qbitRemapTo + t.save_path.slice(qbitRemapFrom.length)
-        : t.save_path
+      const destSavePath = remapPrefix(t.save_path, qbitRemapFrom, qbitRemapTo)
       try {
         const r = await window.installer.qbit.migrateOne({
           sourceUrl:      sourceQbitUrl,
@@ -791,9 +796,12 @@ export function MigrateScreen() {
                   Preview: <code className="font-mono">{qbitTorrents[0].save_path}</code>
                   {' → '}
                   <code className="font-mono">
-                    {qbitTorrents[0].save_path.startsWith(qbitRemapFrom)
-                      ? qbitRemapTo + qbitTorrents[0].save_path.slice(qbitRemapFrom.length)
-                      : qbitTorrents[0].save_path + ' (unchanged — prefix not in path)'}
+                    {(() => {
+                      const remapped = remapPrefix(qbitTorrents[0].save_path, qbitRemapFrom, qbitRemapTo)
+                      return remapped !== qbitTorrents[0].save_path
+                        ? remapped
+                        : qbitTorrents[0].save_path + ' (unchanged — prefix not in path)'
+                    })()}
                   </code>
                 </p>
               )}
@@ -1314,4 +1322,15 @@ function longestCommonPrefix(strs: string[]): string {
     }
   }
   return prefix
+}
+
+/** Remap a path by prefix, but only on a path-SEGMENT boundary, so a `from` of
+ *  '/downloads' rewrites '/downloads/x' yet leaves siblings like '/downloads2'
+ *  or '/downloads-old' untouched. Returns the original path when `from` is
+ *  empty or isn't a whole-segment prefix of it. */
+function remapPrefix(path: string, from: string, to: string): string {
+  if (!from) return path
+  const f = from.endsWith('/') ? from.slice(0, -1) : from
+  if (path === f || path.startsWith(f + '/')) return to + path.slice(f.length)
+  return path
 }

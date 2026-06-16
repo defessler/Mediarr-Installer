@@ -5294,8 +5294,10 @@ def homepage_only_main():
     Synology bind mounts. The restart is best-effort; if docker isn't
     available we just emit a hint and exit cleanly.
 
-    widgets.yaml stays whatever the user set it to — that file is for
-    the datetime + search widgets and isn't generated from .env.
+    widgets.yaml is regenerated too — its System + per-MONITORED_DISK_N
+    resource tiles come from .env (see render_homepage_widgets), so the
+    refresh must rewrite it or a changed disk list never reaches the
+    dashboard. A hand-edited widgets.yaml is backed up first.
     """
     # Look for .env where THIS file lives (scripts/ in v0.3.23+);
     # read_env_merged falls back to the parent dir for legacy layouts.
@@ -5338,6 +5340,13 @@ def homepage_only_main():
     backup_before_overwrite(settings_yml)
     overwrite_config_file("Homepage services", services_yml, services_body)
     overwrite_config_file("Homepage settings", settings_yml, settings_body)
+    # widgets.yaml is .env-derived too (System + per-MONITORED_DISK_N tiles);
+    # regenerate it here exactly like the full install does, backing up any
+    # hand-edits first — otherwise a changed MONITORED_DISK_N never shows up via
+    # the Update screen's "Refresh dashboard".
+    widgets_yml = f"{homepage_cfg}/widgets.yaml"
+    backup_before_overwrite(widgets_yml)
+    overwrite_config_file("Homepage widgets", widgets_yml, render_homepage_widgets(env))
 
     # Restart Homepage so it definitely picks up the new layout —
     # its hot-reload watcher is unreliable on Synology bind mounts.
