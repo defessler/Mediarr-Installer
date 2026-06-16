@@ -139,9 +139,10 @@ export const envSchema = z.object({
 
   // AzuraCast (broadcast radio) — host-published web UI port, optional.
   // renderEnv emits it (default 49157), so it needs a schema entry to keep the
-  // .env round-trip invariant (every emitted key validates). The container's
-  // internal nginx port is a fixed literal in docker-compose.yml; this var only
-  // remaps the host side, so reject a non-numeric value. No creds collected.
+  // .env round-trip invariant (every emitted key validates). The container
+  // listens on AzuraCast's native internal port 80; this var only remaps the
+  // host-published side in docker-compose.yml, so reject a non-numeric value.
+  // No creds collected.
   AZURACAST_HTTP_PORT: optStr.refine(
     (v) => !v || /^\d+$/.test(v),
     'must be a port number',

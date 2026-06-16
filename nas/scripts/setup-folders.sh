@@ -180,11 +180,13 @@ case "$(grep -m1 '^ENABLE_AZURACAST=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- |
         #   station_data → /var/azuracast/stations   db_data → /var/lib/mysql
         #   www_uploads  → /var/azuracast/storage/uploads (album art etc)
         #   backups      → /var/azuracast/backups
+        #   acme         → /var/azuracast/storage/acme (self-signed TLS cert)
         AZ_DIRS=(
             "$INSTALL_DIR/azuracast/station_data"
             "$INSTALL_DIR/azuracast/db_data"
             "$INSTALL_DIR/azuracast/www_uploads"
             "$INSTALL_DIR/azuracast/backups"
+            "$INSTALL_DIR/azuracast/acme"
         )
         for dir in "${AZ_DIRS[@]}"; do
             if [ ! -d "$dir" ]; then

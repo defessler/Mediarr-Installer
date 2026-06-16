@@ -860,23 +860,25 @@ services:
     security_opt: *security
     environment:
       - TZ=${TZ}
-      # Internal HTTP/HTTPS bind ports — FIXED literals, deliberately. The
-      # AzuraCast web image re-renders its nginx vhost on EVERY boot from these
-      # env vars (`listen {{ default .Env.AZURACAST_HTTP_PORT "80" }}`), falling
-      # back to `listen 80` if the value ever arrives empty/stale. A literal can
-      # never resolve empty, so nginx always listens on 49157 — and the LAN
-      # mapping + healthcheck below can never disagree with where nginx actually
-      # bound. The user-overridable AZURACAST_HTTP_PORT in .env is the HOST-
-      # published port (left side of the mapping below), NOT this internal bind.
-      # Kept OFF 80/443 (host NAS + other services use those); HTTPS is parked
-      # on 49158 (self-signed/unused on a LAN).
-      - AZURACAST_HTTP_PORT=49157
-      - AZURACAST_HTTPS_PORT=49158
+      # NO AZURACAST_HTTP_PORT / AZURACAST_HTTPS_PORT here, deliberately — we let
+      # nginx render its TEMPLATE DEFAULTS (listen 80 / listen 443 ssl) and remap
+      # on the HOST side only (ports: below). The env var DOES control the
+      # internal listen port (the image renders `listen {{ default
+      # .Env.AZURACAST_HTTP_PORT "80" }}` every boot), but overriding it to a
+      # non-standard value was a red herring: the web UI being unreachable right
+      # after install is the FIRST-BOOT GATE, not a wrong port — nginx is
+      # autostart=false and only binds AFTER app_startup finishes the bundled
+      # MariaDB init + migrations (minutes on a NAS), so a `curl: (7)` on the
+      # port during that window is EXPECTED. Native ports keep us on AzuraCast's
+      # best-tested path; AZURACAST_HTTP_PORT in .env now purely remaps the HOST
+      # port (see ports: below).
     ports:
       # Web UI (admin + public player). Bound to the LAN IP only. Host side is
-      # the user-overridable knob (AZURACAST_HTTP_PORT in .env); container side
-      # is the FIXED 49157 that nginx listens on.
-      - ${LAN_IP}:${AZURACAST_HTTP_PORT:-49157}:49157
+      # the user-overridable knob (AZURACAST_HTTP_PORT in .env, default 49157);
+      # container side is AzuraCast's own default 80, where nginx always listens.
+      # (HTTPS stays internal-only on container:443 with the self-signed cert; we
+      # don't publish it. To expose LAN HTTPS, add ${LAN_IP}:49158:443.)
+      - ${LAN_IP}:${AZURACAST_HTTP_PORT:-49157}:80
       # Icecast + Liquidsoap stream ports — a trimmed range (~3 stations'
       # worth of triplets), deliberately clear of Jellyfin's 8096 and
       # FlareSolverr's 8191. Each station the user creates in the web UI
@@ -890,6 +892,11 @@ services:
       - ${INSTALL_DIR}/azuracast/db_data:/var/lib/mysql
       - ${INSTALL_DIR}/azuracast/www_uploads:/var/azuracast/storage/uploads
       - ${INSTALL_DIR}/azuracast/backups:/var/azuracast/backups
+      # Persist the self-signed TLS cert + ACME state so a recreate keeps it and
+      # a corrupted leftover can be cleared from the host (delete this dir's
+      # contents) without entering the container — closes the "bad cert aborts
+      # the whole nginx daemon" failure mode.
+      - ${INSTALL_DIR}/azuracast/acme:/var/azuracast/storage/acme
       # Read-only view of the music library at a neutral, station-agnostic
       # path. In the web UI the user adds a Storage Location pointing at
       # /mnt/music and assigns a station to it. Read-only: AzuraCast never
@@ -907,15 +914,16 @@ services:
     # still flips it healthy immediately). /api/status is AzuraCast's OWN
     # unauthenticated liveness endpoint (returns {"online":true}) — the same
     # one AzuraCast's internal uptime-wait command polls. curl ships in the
-    # php-fpm base image. The probe targets the FIXED internal port 49157 (where
-    # nginx always listens — see the environment block above), so it can't
-    # disagree with the bind even when the host-published port is overridden in
-    # .env. Note: setup.sh's wait_for_services keys off .State.Status (running),
-    # NOT this health status, so a slow first-boot here never stalls the install
-    # — a stuck-unhealthy AzuraCast surfaces as a ⚠ on the Done screen's post-
-    # deploy validation instead.
+    # php-fpm base image. The probe targets AzuraCast's native internal port 80
+    # (where nginx renders `listen 80` by default), so it tracks the actual bind
+    # regardless of the host-published port. Note: setup.sh's wait_for_services
+    # keys off .State.Status (running), NOT this health status, so the long
+    # first-boot here (nginx is autostart=false until the bundled MariaDB init +
+    # migrations finish — minutes on a NAS) never stalls the install; a still-
+    # unhealthy AzuraCast surfaces as a ⚠ on the Done screen's post-deploy
+    # validation instead.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:49157/api/status || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

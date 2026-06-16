@@ -134,10 +134,10 @@ export interface EnvFormValues {
 
   // ── AzuraCast (broadcast radio) — only used when ENABLE_AZURACAST=true
   /** Web UI port for AzuraCast, published bound to ${LAN_IP}. Default
-   *  49157 (kept off 80/443; AZURACAST_HTTPS_PORT=49158 is set in the
-   *  compose/.env, not collected here). No AzuraCast credentials are
-   *  gathered at install — the user creates the admin account in
-   *  AzuraCast's own web UI on first run. */
+   *  49157. It remaps the HOST-published port only — the container listens
+   *  on AzuraCast's native internal port 80 (HTTPS stays internal-only on
+   *  443). No AzuraCast credentials are gathered at install — the user
+   *  creates the admin account in AzuraCast's own web UI on first run. */
   AZURACAST_HTTP_PORT?: string
 
   // ── SABnzbd usenet provider (optional — added on first install)
