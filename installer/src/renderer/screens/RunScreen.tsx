@@ -594,6 +594,13 @@ export function RunScreen() {
     // resumed run ends; the catch below re-sets it on a failed reconnect.
     appendChunk(`\x1b[36m[wizard]\x1b[0m Connection dropped — reconnecting to the NAS to resume…\n`)
     try {
+      // Tear down the wedged/old session first. A stall→reconnect loop would
+      // otherwise leak a fully-connected ssh2 Client each cycle (the stall
+      // watchdog never ends the client, and connect() mints a fresh session),
+      // exhausting DSM's MaxSessions=10 cap. Best-effort + fire-and-forget so a
+      // hung disconnect can't block the reconnect.
+      const oldId = sessionId
+      if (oldId) window.installer.ssh.disconnect(oldId).catch(() => { /* best-effort */ })
       const r = await window.installer.ssh.connect(toConnectConfig(connection))
       setSessionId(r.sessionId)
       if (activeProfileId) window.installer.profiles.touch(activeProfileId).catch(() => { /* non-fatal */ })

@@ -529,9 +529,18 @@ async function installUpdate(): Promise<void> {
     log.warn('updater: install requested but already in progress')
     return
   }
-  if (!pendingUpdate?.stagingDir) {
-    log.warn('updater: install requested without a downloaded update')
-    broadcast({ kind: 'error', message: 'Download an update first.' })
+  if (!pendingUpdate?.stagingDir || !existsSync(pendingUpdate.stagingDir)) {
+    // Either nothing was downloaded, or a deferred install raced a %TEMP%
+    // cleanup that removed the staged build between download and install.
+    // Don't spawn the helper into a no-op robocopy that quits the app without
+    // applying anything — surface a clear, recoverable error instead.
+    log.warn('updater: install requested without a present staged update')
+    broadcast({
+      kind: 'error',
+      message: pendingUpdate?.stagingDir
+        ? 'The staged update was cleaned up — please download it again.'
+        : 'Download an update first.',
+    })
     return
   }
   installInProgress = true
@@ -556,12 +565,34 @@ async function installUpdate(): Promise<void> {
       stdio: 'ignore',
       windowsHide: true,
     })
-    child.unref()
-    // Give the OS a beat to actually spawn the helper before we exit
-    // and release the file lock on our binary — the helper's
-    // tasklist-based wait loop tolerates a slow exit, but the spawn
-    // itself needs to land first.
-    setTimeout(() => app.exit(0), 500)
+    // Only commit to quitting once the helper has actually launched. A spawn
+    // failure (wscript.exe missing, or blocked by AppLocker/SRP/GPO/AV)
+    // surfaces ASYNCHRONOUSLY via the 'error' event — the try/catch below only
+    // catches synchronous throws — so without this the app would quit with the
+    // update unapplied AND no relaunch (the relaunch lives inside the .cmd,
+    // which never runs if wscript didn't spawn).
+    let committed = false
+    const commitExit = () => {
+      if (committed) return
+      committed = true
+      // Give the OS a beat to spawn the helper before we exit and release the
+      // file lock on our binary — the helper's tasklist wait loop tolerates a
+      // slow exit, but the spawn itself needs to land first.
+      setTimeout(() => app.exit(0), 500)
+    }
+    child.on('error', (err) => {
+      installInProgress = false
+      const emsg = (err as Error).message ?? String(err)
+      log.error('updater: swap helper spawn failed:', emsg)
+      broadcast({
+        kind: 'error',
+        message: `Couldn’t launch the updater (wscript.exe may be blocked by your security policy): ${emsg}`,
+      })
+    })
+    child.on('spawn', () => {
+      child.unref()
+      commitExit()
+    })
   } catch (e) {
     installInProgress = false
     const msg = (e as Error).message ?? String(e)
@@ -643,12 +674,26 @@ function writeSwapScript(opts: {
   const vbsPath  = join(tmpdir(), `mediarr-swap-${pid}.vbs`)
   const logPath  = join(tmpdir(), 'mediarr-update.log')
 
+  // cmd.exe expands %VAR% at parse time even inside double quotes, and '%' is a
+  // legal Windows path char (the portable build extracts to any folder the user
+  // picks). Double every literal '%' in the interpolated PATHS so cmd treats it
+  // as data, not a variable — otherwise the whole swap silently targets a
+  // garbled directory. The intentional cmd vars in the templates below
+  // (%date%, %TARGET_PID%, %TARGET_EXE%, %RC%, %ERRORLEVEL%, %~f0) are written
+  // literally and must NOT be doubled.
+  const pe = (s: string) => s.replace(/%/g, '%%')
+  const stagingC = pe(stagingDir)
+  const installC = pe(installDir)
+  const exeC     = pe(exeName)
+  const logC     = pe(logPath)
+  const vbsC     = pe(vbsPath)
+
   const cmdLines = [
     '@echo off',
     'setlocal',
-    `>>"${logPath}" echo [%date% %time%] swap start pid=${pid} exe=${exeName}`,
+    `>>"${logC}" echo [%date% %time%] swap start pid=${pid} exe=${exeC}`,
     `set TARGET_PID=${pid}`,
-    `set TARGET_EXE=${exeName}`,
+    `set TARGET_EXE=${exeC}`,
     ':wait',
     // Filter on PID *and* image name — Windows recycles PIDs quickly
     // and a recycled PID hitting, say, chrome.exe would spin this
@@ -658,36 +703,40 @@ function writeSwapScript(opts: {
     '    timeout /t 1 /nobreak >NUL',
     '    goto wait',
     ')',
-    `>>"${logPath}" echo [%date% %time%] target gone, copying`,
+    `>>"${logC}" echo [%date% %time%] target gone, copying`,
     // robocopy exit codes: 0..7 = success (various flavors of "copied
     // some / nothing / mismatch but ok"), 8+ = actual failure. So we
-    // test `LSS 8`.
-    `robocopy "${stagingDir}" "${installDir}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logPath}"`,
+    // test `LSS 8`. /E copies in place (no purge), so on failure the old
+    // build is still present and launchable.
+    `robocopy "${stagingC}" "${installC}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logC}"`,
     'set RC=%ERRORLEVEL%',
-    `>>"${logPath}" echo [%date% %time%] robocopy rc=%RC%`,
+    `>>"${logC}" echo [%date% %time%] robocopy rc=%RC%`,
     'if %RC% LSS 8 (',
-    `    >>"${logPath}" echo [%date% %time%] launching new build`,
-    `    start "" "${installDir}\\${exeName}"`,
-    `    rmdir /S /Q "${stagingDir}" 2>NUL`,
+    `    >>"${logC}" echo [%date% %time%] launching new build`,
+    `    start "" "${installC}\\${exeC}"`,
+    `    rmdir /S /Q "${stagingC}" 2>NUL`,
     ') else (',
-    `    >>"${logPath}" echo [%date% %time%] robocopy failed - leaving staging in place at ${stagingDir}`,
+    // Robocopy genuinely failed — relaunch the existing (in-place) build so the
+    // user is never left with no app, and keep staging for diagnosis.
+    `    >>"${logC}" echo [%date% %time%] robocopy failed (rc=%RC%) - relaunching existing build, staging kept at ${stagingC}`,
+    `    start "" "${installC}\\${exeC}"`,
     ')',
     // Tidy up: delete the .vbs (wscript has already exited; it's just
     // a leftover file at this point) and self-delete the .cmd via the
     // classic `(goto) 2>nul & del "%~f0"` trick.
-    `del "${vbsPath}" 2>NUL`,
+    `del "${vbsC}" 2>NUL`,
     '(goto) 2>nul & del "%~f0"',
   ]
   writeFileSync(swapPath, cmdLines.join('\r\n') + '\r\n', 'utf8')
 
   // intWindowStyle=0 = hidden, bWaitOnReturn=False = fire-and-forget.
   // wscript itself has no console, so nothing flashes onscreen.
-  // Escaping: cmd.exe needs the .cmd path quoted (it contains a space
-  // when %TEMP% lives under a path with one); VBScript escapes a "
-  // inside a "-string by doubling it ("").
+  // Escaping: VBScript escapes a " inside a "-string by doubling it ("");
+  // and because the embedded path is handed to `cmd.exe /c`, which re-expands
+  // %VAR%, double its '%' too (same reason as the cmd lines above).
   const vbsLines = [
     'Set WshShell = CreateObject("WScript.Shell")',
-    `WshShell.Run "cmd.exe /c """ & "${swapPath.replace(/"/g, '""')}" & """", 0, False`,
+    `WshShell.Run "cmd.exe /c """ & "${swapPath.replace(/%/g, '%%').replace(/"/g, '""')}" & """", 0, False`,
   ]
   writeFileSync(vbsPath, vbsLines.join('\r\n') + '\r\n', 'utf8')
 

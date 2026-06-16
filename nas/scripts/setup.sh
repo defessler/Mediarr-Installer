@@ -777,7 +777,11 @@ check_port_conflicts() {
     # string and relied on word-splitting in `for pair in $pairs`, which
     # works but trips shellcheck (SC2178/SC2128) and silently breaks the
     # moment a service name ever contains whitespace.
-    local pairs=("prowlarr:49150")
+    # recyclarr-trigger has no compose profile (always-on) and publishes host
+    # port 8889 even when ENABLE_RECYCLARR is off — pre-check it unconditionally
+    # so a foreign holder of 8889 fails fast HERE with a clear message instead
+    # of late in `docker compose up` with the cryptic bind-address error.
+    local pairs=("prowlarr:49150" "recyclarr-trigger:8889")
     is_enabled ENABLE_FLARESOLVERR && pairs+=("flaresolverr:8191")
     if is_enabled ENABLE_PLEX; then
         pairs+=("seerr:5056")
