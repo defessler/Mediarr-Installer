@@ -334,7 +334,16 @@ async function downloadUpdateImpl(): Promise<void> {
   }
   mkdirSync(tmpRoot, { recursive: true })
   const zipPath = join(tmpRoot, `update-${update.version}.zip`)
-  const stagingDir = join(tmpRoot, 'staging')
+  // UNIQUE staging dir per attempt. ExtractToDirectory throws on the first
+  // pre-existing target file, and the tmpRoot wipe above is best-effort: it
+  // silently fails when AV / Windows Search holds a transient handle on the old
+  // 200 MB app.asar, OR when a prior extract was interrupted mid-write. With a
+  // deterministic 'staging' path that left the user PERMANENTLY stuck on
+  // "...app.asar already exists" — every retry re-collided with the same locked
+  // leftover. A fresh dir name can never collide, so the extract always starts
+  // clean regardless of locks. Orphaned dirs (if the wipe failed) are harmless
+  // and get reaped from %TEMP%; the next successful wipe clears them.
+  const stagingDir = join(tmpRoot, `staging-${update.version}-${Date.now()}`)
 
   // ── Download ─────────────────────────────────────────────────────
   currentDownloadAbort = new AbortController()
