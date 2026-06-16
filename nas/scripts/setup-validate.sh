@@ -340,7 +340,7 @@ if [ "${NOT_DSM:-0}" -ne 1 ]; then
         ok "Firewall script installed in rc.d (survives reboots)"
     else
         warn "Firewall script not installed in rc.d — rules won't survive a reboot"
-        warn "Run: sudo cp $SCRIPT_DIR/setup-firewall.sh /usr/local/etc/rc.d/media-firewall.sh && sudo chmod 755 /usr/local/etc/rc.d/media-firewall.sh"
+        warn "Run: sudo bash $SCRIPT_DIR/setup-firewall.sh   (applies rules + installs the boot wrapper; do NOT cp it into rc.d — a copy can't read .env and would guess the wrong subnet)"
     fi
 fi
 

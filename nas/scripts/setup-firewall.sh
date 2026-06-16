@@ -1,17 +1,20 @@
 #!/bin/bash
 # ── Synology Firewall Boot Script for Media Stack ──
 #
-# Synology-specific — this script writes iptables rules and installs
-# itself into /usr/local/etc/rc.d/ which DSM auto-runs on boot. Other
-# NAS families don't use rc.d/ for boot scripts; setup.sh skips this
-# step entirely on Unraid / QNAP / TrueNAS / generic Linux. There, you
-# open the stack's ports in your NAS firewall UI instead.
+# Synology-specific — this script writes iptables rules and installs a thin
+# rc.d boot wrapper (/usr/local/etc/rc.d/media-firewall.sh) that DSM auto-runs
+# on boot; the wrapper execs THIS script in place. Other NAS families don't use
+# rc.d/ for boot scripts; setup.sh skips this step entirely on Unraid / QNAP /
+# TrueNAS / generic Linux. There, you open the stack's ports in your NAS
+# firewall UI instead.
 #
-# Install (run once):
-#   sudo cp <INSTALL_DIR>/setup-firewall.sh /usr/local/etc/rc.d/media-firewall.sh
-#   sudo chmod 755 /usr/local/etc/rc.d/media-firewall.sh
+# Install (run once) — just run it from its install location; it applies the
+# rules AND installs the boot wrapper. Do NOT cp it into rc.d: a copy there
+# can't find .env and would guess the wrong LAN subnet — which on a non-
+# 192.168.1.x network can lock you out of DSM/SSH after a reboot:
+#   sudo bash <INSTALL_DIR>/setup-firewall.sh
 #
-# Synology auto-runs scripts in /usr/local/etc/rc.d/ on every boot.
+# Synology auto-runs the installed wrapper in /usr/local/etc/rc.d/ on boot.
 #
 # Manual usage:
 #   sudo /usr/local/etc/rc.d/media-firewall.sh start
@@ -251,14 +254,29 @@ remove_rules() {
 RC_SCRIPT=/usr/local/etc/rc.d/media-firewall.sh
 
 install_to_rcd() {
-    local source
+    local source tmp
     source="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-    if [ ! -f "$RC_SCRIPT" ] || ! diff -q "$source" "$RC_SCRIPT" &>/dev/null; then
-        cp "$source" "$RC_SCRIPT"
-        chmod 755 "$RC_SCRIPT"
-        echo "  ✔ Installed to $RC_SCRIPT (rules will apply on every reboot)"
+    # Install a THIN WRAPPER that execs THIS script in place — do NOT cp the
+    # script into rc.d. From /usr/local/etc/rc.d a copy's SCRIPT_DIR resolves to
+    # rc.d (which has no .env), so its LAN_SUBNET lookup misses a non-default
+    # install dir and falls back to 192.168.1.0/24 — which on a different LAN
+    # would deny your own subnet and lock you out of DSM/SSH after a reboot.
+    # Running the in-place script keeps its .env/subnet resolution correct, and
+    # if the script is ever moved/removed the wrapper's -x guard simply no-ops
+    # (no boot firewall) rather than locking anyone out. Same pattern as
+    # install-boot-resilience.sh's media-boot.sh wrapper.
+    tmp="$RC_SCRIPT.tmp.$$"
+    {
+        printf '#!/bin/sh\n'
+        printf '# mediarr-firewall — auto-installed by setup-firewall.sh; safe to delete.\n'
+        printf '[ -x "%s" ] && exec /bin/bash "%s" "$@"\n' "$source" "$source"
+    } > "$tmp"
+    if [ -f "$RC_SCRIPT" ] && cmp -s "$tmp" "$RC_SCRIPT"; then
+        rm -f "$tmp"
+        echo "  ✔ rc.d boot hook already up to date"
     else
-        echo "  ✔ rc.d script already up to date"
+        mv "$tmp" "$RC_SCRIPT" && chmod 755 "$RC_SCRIPT" \
+            && echo "  ✔ Installed boot hook $RC_SCRIPT (rules re-apply on every reboot)"
     fi
 }
 
