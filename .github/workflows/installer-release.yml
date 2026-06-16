@@ -19,11 +19,7 @@ on:
   push:
     tags:
       - 'installer-v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to attach the release to (e.g. installer-v0.4.0)'
-        required: false
+  workflow_dispatch:    # manual build-only run; a release is cut by a tag push, not here
 
 permissions:
   contents: write    # required to create the GitHub release
