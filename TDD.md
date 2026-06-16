@@ -760,9 +760,7 @@ NAS/
 │  └─ installer-release.yml
 │
 ├─ README.md                     ← architecture + manual install
-├─ INSTALL.md                    ← beginner's GUI tutorial
-├─ TDD.md                        ← this file
-└─ TUTORIAL.md                   ← teach-yourself walkthrough
+└─ TDD.md                        ← this file (beginner + teach-yourself guides → GitHub Wiki)
 ```
 
 ---

@@ -1343,7 +1343,7 @@ def configure_backup_schedule(base, key, api):
     the container's writable area). Best we can do is keep the
     default location + push the user toward a separate scheduled
     rsync of /config/<arr>/Backups/ to a different drive. That
-    recommendation lives in INSTALL.md's "Where things live" section.
+    recommendation lives in the Installation wiki page's "Where things live" section.
 
     What this function DOES change:
     - backupInterval = 7 (days). Already default but pinned so a
@@ -3918,7 +3918,7 @@ def render_homepage_services(env, ip):
             # (plexamp.plex.tv) the user runs on their own devices, not a NAS
             # service — a dashboard tile that just deep-links to plex.tv adds
             # clutter without a health signal. How to set up Plexamp is covered
-            # on the Done screen + docs/MUSIC-PLAYBACK.md instead.
+            # on the Done screen + the Music Playback wiki page instead.
     if media:
         out.append("- Media:")
         out.extend(media)

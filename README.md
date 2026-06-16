@@ -7,8 +7,8 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 > (Windows / macOS / Linux), point it at your NAS, and the eight-screen
 > wizard handles SSH, payload upload, `.env`, claim tokens, VPN keys,
 > Recyclarr profile picks, post-install validation — everything below.
-> The beginner walkthrough is at **[INSTALL.md](./INSTALL.md)** with a
-> screen-by-screen tour.
+> The beginner walkthrough is on the **[Installation wiki page](https://github.com/defessler/Mediarr-Installer/wiki/Installation)**
+> with a screen-by-screen tour.
 >
 > The rest of this page exists for two reasons:
 > 1. To explain what the wizard is doing on your NAS under the hood
