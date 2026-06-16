@@ -62,15 +62,16 @@ env_val()    { grep -m1 "^$1=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/[[:spa
 is_enabled() { local v; v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"; case "$v" in false|0|no|off) return 1 ;; *) return 0 ;; esac; }
 is_true()    { case "$1" in true|1|yes|on) return 0 ;; *) return 1 ;; esac; }
 
-# ── Gate: VPN on + (qBittorrent OR Soulseek) enabled. Both share gluetun's
-#    namespace and the same wedge. qBit is default-on (is_enabled); Soulseek is
-#    OPT-IN (is_true → explicit true/1/yes/on only — a missing key must NOT
-#    arm the guardian for it). ──
+# ── Gate: VPN on + (qBittorrent OR Soulseek OR Playlist Sync) enabled. All
+#    three share gluetun's namespace and the same wedge. qBit is default-on
+#    (is_enabled); Soulseek and Playlist Sync are OPT-IN (is_true → explicit
+#    true/1/yes/on only — a missing key must NOT arm the guardian for them). ──
 is_true "$(env_val VPN_ENABLED | tr '[:upper:]' '[:lower:]')" || exit 0
-QBIT_ON=0; SOULSEEK_ON=0
+QBIT_ON=0; SOULSEEK_ON=0; PLAYLIST_ON=0
 is_enabled ENABLE_QBITTORRENT && QBIT_ON=1
 is_true "$(env_val ENABLE_SOULSEEK | tr '[:upper:]' '[:lower:]')" && SOULSEEK_ON=1
-[ "$QBIT_ON" -eq 1 ] || [ "$SOULSEEK_ON" -eq 1 ] || exit 0
+is_true "$(env_val ENABLE_PLAYLIST_SYNC | tr '[:upper:]' '[:lower:]')" && PLAYLIST_ON=1
+[ "$QBIT_ON" -eq 1 ] || [ "$SOULSEEK_ON" -eq 1 ] || [ "$PLAYLIST_ON" -eq 1 ] || exit 0
 
 # ── Honour a custom/Podman socket the same way setup.sh does, so the
 #    recovery targets the right daemon (cron inherits a bare env) ──
@@ -128,6 +129,10 @@ qbit_ns_id() {
 }
 slskd_ns_id() {
     local nm; nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' slskd 2>/dev/null || echo "")
+    case "$nm" in container:*) echo "${nm#container:}" ;; *) echo "" ;; esac
+}
+playlistsync_ns_id() {
+    local nm; nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' playlistsync 2>/dev/null || echo "")
     case "$nm" in container:*) echo "${nm#container:}" ;; *) echo "" ;; esac
 }
 qbit_uptime() {
@@ -202,6 +207,20 @@ else
             fi
         fi
     fi
+    # playlistsync (if Playlist Sync enabled): same not-running / stale-namespace
+    # wedge as slskd. No WebUI backstop — it's a headless worker (runs crond in
+    # the foreground, so healthy == running).
+    if [ "$WEDGED" -eq 0 ] && [ "$PLAYLIST_ON" -eq 1 ]; then
+        PS=$(cstate playlistsync)
+        if [ "$PS" != "running" ]; then
+            WEDGED=1; REASON="playlistsync is $PS"
+        else
+            PNSID=$(playlistsync_ns_id)
+            if [ -n "$PNSID" ] && [ -n "$GID" ] && [ "$PNSID" != "$GID" ]; then
+                WEDGED=1; REASON="playlistsync namespace stale (welded to $(short "$PNSID")…, gluetun now $(short "$GID")…)"
+            fi
+        fi
+    fi
 fi
 
 [ "$WEDGED" -eq 0 ] && exit 0                       # healthy: write nothing, quiet exit
@@ -209,10 +228,11 @@ fi
 rotate_log
 log "WEDGED: $REASON — recovering"
 if [ "$QBIT_ON" -eq 1 ] && [ -x "$SCRIPT_DIR/restart-qbit.sh" ]; then
-    # restart-qbit.sh does the ordered gluetun→qBit recreate AND heals slskd in
-    # the same pass when Soulseek is on (SOULSEEK_ON detected there too). For the
-    # WebUI-backstop wedge, pass the reason as the force arg so it recreates the
-    # running-but-dead container instead of sparing it (see FORCE_RECREATE above).
+    # restart-qbit.sh does the ordered gluetun→qBit recreate AND heals slskd +
+    # playlistsync in the same pass when they're on (it detects SOULSEEK_ON /
+    # PLAYLIST_ON itself). For the WebUI-backstop wedge, pass the reason as the
+    # force arg so it recreates the running-but-dead container instead of sparing
+    # it (see FORCE_RECREATE above).
     if [ "$FORCE_RECREATE" -eq 1 ]; then
         bash "$SCRIPT_DIR/restart-qbit.sh" "$REASON" >> "$LOG" 2>&1; rc=$?
     else
@@ -226,6 +246,7 @@ else
     _rm="gluetun"; _up="gluetun"; _pr="vpn"
     [ "$QBIT_ON" -eq 1 ]     && { _rm="$_rm qbittorrent"; _up="$_up qbittorrent"; _pr="$_pr,torrenting"; }
     [ "$SOULSEEK_ON" -eq 1 ] && { _rm="$_rm slskd";       _up="$_up slskd";       _pr="$_pr,soulseek"; }
+    [ "$PLAYLIST_ON" -eq 1 ] && { _rm="$_rm playlistsync"; _up="$_up playlistsync"; _pr="$_pr,playlists"; }
     $RT rm -f $_rm >/dev/null 2>&1 || true
     COMPOSE_PROFILES=$_pr $COMPOSE -f docker-compose.yml up -d $_up >> "$LOG" 2>&1; rc=$?
 fi

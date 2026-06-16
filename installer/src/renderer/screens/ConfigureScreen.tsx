@@ -164,6 +164,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
   { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
   { key: 'ENABLE_AZURACAST',   label: 'AzuraCast',    hint: '24/7 radio stations from your library — heavier service', icon: Radio, iconColor: 'text-rose-300' },
+  { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM + Spotify playlists → Plex (auto-download)', icon: Music2, iconColor: 'text-green-400', needs: ['ENABLE_PLEX'] },
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
@@ -177,7 +178,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_AZURACAST'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_AZURACAST', 'ENABLE_PLAYLIST_SYNC'])
 
 function ServicesSection({
   config, update,
@@ -725,6 +726,12 @@ const FIELD_LABELS: Record<string, string> = {
   SLSKD_PASS: 'Soulseek password',
   SLSKD_API_KEY: 'slskd API key',
   ENABLE_SOULSEEK: 'Soulseek',
+  ENABLE_PLAYLIST_SYNC: 'Playlist Sync',
+  PLAYLIST_SLSK_USER: 'Soulseek username (Playlist Sync)',
+  PLAYLIST_SLSK_PASS: 'Soulseek password (Playlist Sync)',
+  SIRIUSXM_CHANNELS: 'SiriusXM channels',
+  SPOTIFY_CLIENT_SECRET: 'Spotify Client Secret',
+  PLAYLIST_SYNC_CRON: 'Playlist Sync schedule',
   USENET_USER: 'Usenet username',
   USENET_PASS: 'Usenet password',
   VPN_PROVIDER: 'VPN provider',
@@ -1348,6 +1355,121 @@ export function ConfigureScreen() {
             the stations yourself in its own web UI after install.
           </span>
         </p>
+
+        {/* ── Playlist Sync ───────────────────────────────────────
+            Opt-in, toggled in the Services group (like Soulseek). Mirrors
+            SiriusXM channels + public Spotify playlists into Plex playlists,
+            downloading each track Soulseek-first (its OWN 2nd account) with a
+            yt-dlp fallback. Requires Plex. */}
+        <div className="border-t border-slate-800 pt-4">
+          {isOptInEnabled(config.ENABLE_PLAYLIST_SYNC as string | undefined) ? (
+            <section className="space-y-4">
+              <p className="text-sm text-slate-400">
+                Playlist Sync mirrors specific{' '}
+                <span className="font-medium text-slate-300">SiriusXM channels</span> and{' '}
+                <span className="font-medium text-slate-300">public Spotify playlists</span>{' '}
+                into Plex — it downloads each track Soulseek-first (with a yt-dlp
+                fallback) on a schedule, so those playlists stay fresh in Plexamp.
+                It needs its{' '}
+                <span className="font-medium text-slate-300">own free Soulseek account</span>{' '}
+                (separate from the one above — Soulseek allows one session per
+                login). <span className="text-amber-300/90">Needs Plex.</span>
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Soulseek username (2nd account)" k="PLAYLIST_SLSK_USER" />
+                <Field label="Soulseek password (2nd account)" k="PLAYLIST_SLSK_PASS" type="password" />
+              </div>
+              <div className="space-y-1.5">
+                <Field
+                  label="SiriusXM channels — comma-separated slugs"
+                  k="SIRIUSXM_CHANNELS"
+                  placeholder="octane, altnation, siriusxmhits1"
+                />
+                <p className="text-xs text-slate-500">
+                  Channel slugs from{' '}
+                  <a href="https://xmplaylist.com" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">xmplaylist.com</a>{' '}
+                  (free, no account). A friendly guess like “hits1” resolves to the real slug.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Field
+                  label="Spotify playlists — comma-separated public URLs"
+                  k="SPOTIFY_PLAYLISTS"
+                  placeholder="https://open.spotify.com/playlist/…, Chill|https://open.spotify.com/playlist/…"
+                />
+                <p className="text-xs text-slate-500">
+                  Prefix any URL with <span className="text-slate-400">Label|</span> to name its Plex playlist.
+                  SiriusXM is fully free; Spotify needs the free developer app below.
+                </p>
+              </div>
+              {/* Spotify creds — REQUIRED when any Spotify playlist is listed:
+                  sockseek needs your own Spotify app for ALL Spotify inputs, even
+                  public ones. Surfaced inline (not hidden) so the requirement is
+                  obvious, and only when the user actually entered Spotify URLs. */}
+              {!!(config.SPOTIFY_PLAYLISTS as string | undefined)?.trim() && (
+                <div className="space-y-1.5 rounded-md border border-green-700/20 bg-green-900/5 p-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Spotify Client ID" k="SPOTIFY_CLIENT_ID" />
+                    <Field label="Spotify Client Secret" k="SPOTIFY_CLIENT_SECRET" type="password" />
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Required for Spotify. Create a free app at{' '}
+                    <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">developer.spotify.com</a>{' '}
+                    (redirect URI <span className="text-slate-400">http://127.0.0.1:48721/callback</span>), then paste its ID + Secret.{' '}
+                    <span className="text-amber-300/90">Note: Spotify&apos;s API may require the app owner to have Premium — SiriusXM has no such catch.</span>
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-slate-500">
+                Add at least one SiriusXM channel or Spotify playlist.
+              </p>
+              <details className="text-sm group">
+                <summary className="cursor-pointer text-slate-400 hover:text-slate-200 select-none inline-flex items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+                  <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+                  Optional — schedule &amp; audio format
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <Field label="Schedule (cron)" k="PLAYLIST_SYNC_CRON" placeholder="0 4 * * * (daily 4am)" />
+                  <Field label="Preferred format" k="PLAYLIST_PREF_FORMAT" placeholder="flac (default)" />
+                </div>
+              </details>
+              <p className="text-xs text-slate-500">
+                To turn this off, untick <span className="font-medium">Playlist Sync</span> in
+                the Services group above.
+              </p>
+            </section>
+          ) : (
+            <div className="rounded-md border border-green-700/30 bg-green-900/10 p-4 flex items-start gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-md bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+                <Music2 size={20} className="text-green-300" strokeWidth={1.75} aria-hidden="true" />
+              </div>
+              <div className="space-y-3 min-w-0">
+                <div>
+                  <div className="font-medium text-green-100">Auto-sync SiriusXM &amp; Spotify playlists</div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Mirror specific SiriusXM channels and public Spotify playlists into
+                    Plex — each track is downloaded Soulseek-first (yt-dlp fallback) on a
+                    schedule and surfaced as a Plex playlist you can play in Plexamp.
+                    Needs Plex; we&apos;ll make sure it&apos;s on.
+                  </p>
+                </div>
+                <BigButton
+                  size="md"
+                  variant="primary"
+                  icon={<Music2 size={16} />}
+                  onClick={() => {
+                    update('ENABLE_PLAYLIST_SYNC', 'true')
+                    if (!isEnabled(config.ENABLE_PLEX as string | undefined)) {
+                      update('ENABLE_PLEX', 'true')
+                    }
+                  }}
+                >
+                  Enable Playlist Sync
+                </BigButton>
+              </div>
+            </div>
+          )}
+        </div>
       </CollapsibleGroup>
 
       {/* ── Group 4: Locations & Identity ──────────────────────── */}

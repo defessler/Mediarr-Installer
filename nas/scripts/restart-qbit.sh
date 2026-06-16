@@ -182,8 +182,22 @@ slskd_wedged_running() {
     gid=$($RT inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
     [ "$nm" != "$gid" ]
 }
+# Playlist Sync's playlistsync shares gluetun's namespace exactly like slskd —
+# the identical stale-namespace wedge. Opt-in (explicit-true only); heal it in
+# the same passes so one restart re-welds every gluetun-namespaced service.
+PLAYLIST_ON=0
+case "$(env_val ENABLE_PLAYLIST_SYNC | tr '[:upper:]' '[:lower:]')" in true|1|yes|on) PLAYLIST_ON=1 ;; esac
+playlistsync_wedged_running() {
+    [ "$($RT inspect -f '{{.State.Status}}' playlistsync 2>/dev/null || echo missing)" = "running" ] || return 1
+    local nm gid
+    nm=$($RT inspect -f '{{.HostConfig.NetworkMode}}' playlistsync 2>/dev/null || echo "")
+    case "$nm" in container:*) nm="${nm#container:}" ;; *) return 1 ;; esac
+    gid=$($RT inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+    [ "$nm" != "$gid" ]
+}
 UP_PROFILES="vpn,torrenting"; UP_SVCS="gluetun qbittorrent"
 if [ "$SOULSEEK_ON" -eq 1 ]; then UP_PROFILES="$UP_PROFILES,soulseek"; UP_SVCS="$UP_SVCS slskd"; fi
+if [ "$PLAYLIST_ON" -eq 1 ]; then UP_PROFILES="$UP_PROFILES,playlists"; UP_SVCS="$UP_SVCS playlistsync"; fi
 
 # If qBittorrent's container exists but is dead, OR is running but pinned to
 # a destroyed gluetun namespace, remove it so compose recreates it cleanly
@@ -214,6 +228,15 @@ if [ "$SOULSEEK_ON" -eq 1 ] && $RT ps -a --format '{{.Names}}' | grep -qx slskd;
     fi
 fi
 
+# Same for playlistsync (Playlist Sync), in gluetun's namespace too.
+if [ "$PLAYLIST_ON" -eq 1 ] && $RT ps -a --format '{{.Names}}' | grep -qx playlistsync; then
+    state=$($RT inspect --format='{{.State.Status}}' playlistsync 2>/dev/null || echo missing)
+    if [ "$FORCE" -eq 1 ] || [ "$state" != "running" ] || playlistsync_wedged_running; then
+        echo "  Removing stale/wedged/forced playlistsync container (state=$state) so compose recreates it cleanly..."
+        $RT rm -f playlistsync >/dev/null 2>&1 || true
+    fi
+fi
+
 # Same for gluetun if it's in a broken state. unless-stopped should
 # auto-restart but a wedged container (e.g. mid-pull, bad config
 # refresh) sometimes sticks at created/exited.
@@ -236,10 +259,11 @@ COMPOSE_PROFILES=$UP_PROFILES $COMPOSE -f docker-compose.yml up -d $UP_SVCS
 # frozen namespace id no longer matches the LIVE gluetun, rm it and bring it
 # up once more so a single run fully heals the wedge (matters most for the
 # documented standalone `sudo bash restart-qbit.sh` use).
-if qbit_wedged_running || { [ "$SOULSEEK_ON" -eq 1 ] && slskd_wedged_running; }; then
+if qbit_wedged_running || { [ "$SOULSEEK_ON" -eq 1 ] && slskd_wedged_running; } || { [ "$PLAYLIST_ON" -eq 1 ] && playlistsync_wedged_running; }; then
     echo "  A gluetun-namespaced container is still on a stale namespace — recreating once more..."
     if qbit_wedged_running; then $RT rm -f qbittorrent >/dev/null 2>&1 || true; fi
     if [ "$SOULSEEK_ON" -eq 1 ] && slskd_wedged_running; then $RT rm -f slskd >/dev/null 2>&1 || true; fi
+    if [ "$PLAYLIST_ON" -eq 1 ] && playlistsync_wedged_running; then $RT rm -f playlistsync >/dev/null 2>&1 || true; fi
     COMPOSE_PROFILES=$UP_PROFILES $COMPOSE -f docker-compose.yml up -d $UP_SVCS
 fi
 

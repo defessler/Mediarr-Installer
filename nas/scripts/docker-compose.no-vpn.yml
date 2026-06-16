@@ -72,3 +72,18 @@ services:
       - ${LAN_IP}:5030:5030
       - 50300:50300
     depends_on: !reset null
+
+  # playlistsync moves to the media bridge when VPN is off (same recipe as the
+  # slskd/qBittorrent overrides above), but it publishes NO ports — it's a
+  # headless worker with no WebUI/listener. It reaches Plex at ${LAN_IP}:32400
+  # directly from the bridge. Re-assert no-new-privileges (in VPN mode it
+  # inherits gluetun's namespace + hardening and omits security_opt; on the
+  # bridge it has its own namespace, so the base file's *security no longer
+  # reaches it). Drop the gluetun health-dependency.
+  playlistsync:
+    network_mode: bridge
+    networks:
+      - media
+    security_opt:
+      - no-new-privileges:true
+    depends_on: !reset null

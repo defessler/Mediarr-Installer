@@ -44,6 +44,10 @@ export const envSchema = z.object({
   // account in its own web UI on first run), so there's nothing to make
   // conditionally-required. A missing key stays OFF everywhere.
   ENABLE_AZURACAST: optStr,
+  // OPT-IN (default off), mirroring ENABLE_SOULSEEK. The superRefine block
+  // below gates its creds + a source requirement + the Plex requirement on an
+  // explicit-true check. A missing key stays OFF everywhere.
+  ENABLE_PLAYLIST_SYNC: optStr,
 
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
@@ -146,6 +150,32 @@ export const envSchema = z.object({
   AZURACAST_HTTP_PORT: optStr.refine(
     (v) => !v || /^\d+$/.test(v),
     'must be a port number',
+  ),
+
+  // Playlist Sync (SiriusXM + Spotify → Plex) — all optional at the schema
+  // level; the superRefine block escalates the creds + a source requirement +
+  // the Plex requirement to required only when ENABLE_PLAYLIST_SYNC is
+  // explicitly true. Standalone: it runs its OWN sockseek downloader (its own
+  // 2nd Soulseek account), so it does NOT depend on ENABLE_SOULSEEK.
+  PLAYLIST_SLSK_USER: optStr,
+  PLAYLIST_SLSK_PASS: optStr,
+  SIRIUSXM_CHANNELS: optStr,
+  SPOTIFY_PLAYLISTS: optStr,
+  SPOTIFY_CLIENT_ID: optStr,
+  SPOTIFY_CLIENT_SECRET: optStr,
+  PLAYLIST_SYNC_CRON: optStr.refine(
+    (v) => !v || /^\S+(\s+\S+){4}$/.test(v.trim()),
+    'must be a 5-field cron expression like "0 4 * * *"',
+  ),
+  PLAYLIST_PREF_FORMAT: optStr,
+  PLAYLIST_RUN_ON_START: optStr,
+  PLAYLIST_SXM_DAYS: optStr.refine(
+    (v) => !v || /^\d+$/.test(v),
+    'must be a positive integer (days)',
+  ),
+  PLAYLIST_SXM_MIN_PLAYS: optStr.refine(
+    (v) => !v || /^\d+$/.test(v),
+    'must be a non-negative integer',
   ),
 
   // SABnzbd usenet provider (all optional — host gates the rest)
@@ -295,6 +325,50 @@ export const envSchema = z.object({
     if (!flagOn(v.ENABLE_LIDARR)) {
       ctx.addIssue({ code: 'custom', path: ['ENABLE_SOULSEEK'],
         message: 'Soulseek feeds Lidarr — enable Lidarr too' })
+    }
+  }
+
+  // Playlist Sync — OPT-IN, gate on explicit true (mirrors is_optin_enabled,
+  // NOT flagOn). When on: a 2nd free Soulseek account is required, at least one
+  // source (SiriusXM channel or Spotify playlist) must be configured, the
+  // optional Spotify dev-app creds come as a pair, and Plex must be the media
+  // server (the playlist upload is Plex-specific).
+  const playlistOn = ['true', '1', 'yes', 'on']
+    .includes((v.ENABLE_PLAYLIST_SYNC ?? '').trim().toLowerCase())
+  if (playlistOn) {
+    if (!v.PLAYLIST_SLSK_USER || v.PLAYLIST_SLSK_USER.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['PLAYLIST_SLSK_USER'],
+        message: 'A second Soulseek account (username) is required when Playlist Sync is enabled' })
+    }
+    if (!v.PLAYLIST_SLSK_PASS || v.PLAYLIST_SLSK_PASS.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['PLAYLIST_SLSK_PASS'],
+        message: 'Soulseek password required when Playlist Sync is enabled' })
+    }
+    const hasSource = (!!v.SIRIUSXM_CHANNELS && v.SIRIUSXM_CHANNELS.trim().length > 0)
+      || (!!v.SPOTIFY_PLAYLISTS && v.SPOTIFY_PLAYLISTS.trim().length > 0)
+    if (!hasSource) {
+      ctx.addIssue({ code: 'custom', path: ['SIRIUSXM_CHANNELS'],
+        message: 'Add at least one SiriusXM channel or Spotify playlist to sync' })
+    }
+    // sockseek requires your OWN Spotify Developer app (client id + secret) for
+    // ALL Spotify inputs — including PUBLIC playlists. So when Spotify playlists
+    // are configured, BOTH creds are required (not optional). SiriusXM is the
+    // fully-free path; Spotify needs the (free-to-create) dev app. The .env /
+    // wizard document sockseek's stated Premium-account caveat.
+    if (!!v.SPOTIFY_PLAYLISTS && v.SPOTIFY_PLAYLISTS.trim().length > 0) {
+      if (!v.SPOTIFY_CLIENT_ID) {
+        ctx.addIssue({ code: 'custom', path: ['SPOTIFY_CLIENT_ID'],
+          message: 'Spotify needs a free Spotify Developer app — Client ID required to sync Spotify playlists (SiriusXM needs no account)' })
+      }
+      if (!v.SPOTIFY_CLIENT_SECRET) {
+        ctx.addIssue({ code: 'custom', path: ['SPOTIFY_CLIENT_SECRET'],
+          message: 'Spotify Client Secret required to sync Spotify playlists (from your Spotify Developer app dashboard)' })
+      }
+    }
+    // Plex-only: the playlist upload targets Plex's API.
+    if (v.MEDIA_SERVER === 'jellyfin' || !flagOn(v.ENABLE_PLEX)) {
+      ctx.addIssue({ code: 'custom', path: ['ENABLE_PLAYLIST_SYNC'],
+        message: 'Playlist Sync uploads playlists to Plex — use Plex as your media server' })
     }
   }
 

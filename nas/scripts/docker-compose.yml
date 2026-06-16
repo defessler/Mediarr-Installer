@@ -828,6 +828,76 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # ── Playlist Sync ─────────────────────────────────────────
+
+  playlistsync:
+    # CI-built image (no upstream image for the sockseek downloader exists, and
+    # the stack forbids building on the NAS). Built+pushed by
+    # .github/workflows/playlistsync-image.yml from nas/scripts/playlistsync/.
+    image: ghcr.io/defessler/mediarr-playlistsync:latest
+    container_name: playlistsync
+    # Opt-in, hands-off track-for-track mirror of SiriusXM channels + public
+    # Spotify playlists into the Music library, surfaced as Plex playlists.
+    # Default OFF. setup.sh adds the "playlists" profile to COMPOSE_PROFILES
+    # only when ENABLE_PLAYLIST_SYNC is explicitly true (is_optin_enabled).
+    profiles: ["playlists"]
+    # Mirror slskd/qBittorrent: live INSIDE gluetun's network namespace so the
+    # Soulseek + yt-dlp egress is VPN-protected, same as the stack's other
+    # acquisition paths. A container in network_mode: container:gluetun cannot
+    # also declare networks:/security_opt:/ports: — it inherits gluetun's (the
+    # VPN-off override in docker-compose.no-vpn.yml moves it to the bridge and
+    # re-asserts the hardening). It publishes NO ports — it's a headless worker
+    # (its only outbound LAN call is to Plex at ${LAN_IP}:32400, which gluetun's
+    # FIREWALL_OUTBOUND_SUBNETS already allows).
+    network_mode: "container:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      # Plex base URL is http://${LAN_IP}:32400; the token is read at sync time
+      # from the read-only plex/config mount below (PlexOnlineToken).
+      - LAN_IP=${LAN_IP}
+      # A SECOND free Soulseek account: slskd holds the stack's single Soulseek
+      # session and Soulseek permits one session per account, so playlistsync
+      # needs its own login. 2-minute signup in the Soulseek desktop client.
+      - PLAYLIST_SLSK_USER=${PLAYLIST_SLSK_USER}
+      - PLAYLIST_SLSK_PASS=${PLAYLIST_SLSK_PASS}
+      # Comma lists of sources (either may be empty, but not both):
+      #   SIRIUSXM_CHANNELS — xmplaylist slugs, e.g. octane,altnation,siriusxmhits1
+      #   SPOTIFY_PLAYLISTS — public playlist URLs, optionally "Label|URL"
+      - SIRIUSXM_CHANNELS=${SIRIUSXM_CHANNELS:-}
+      - SPOTIFY_PLAYLISTS=${SPOTIFY_PLAYLISTS:-}
+      # Optional FREE Spotify Developer app (client id/secret) — NOT a paid
+      # subscription. When set, Spotify playlists are read via the official API
+      # (robust); when blank, sockseek uses the fragile unauthenticated path.
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      # Schedule (cron) + behaviour knobs. Defaults: daily 4am, FLAC-preferred,
+      # one pass on container start so enabling it shows results immediately.
+      - PLAYLIST_SYNC_CRON=${PLAYLIST_SYNC_CRON:-0 4 * * *}
+      - PLAYLIST_PREF_FORMAT=${PLAYLIST_PREF_FORMAT:-flac}
+      - PLAYLIST_RUN_ON_START=${PLAYLIST_RUN_ON_START:-true}
+      # SiriusXM rotation window / play-count floor (passed to poll-xmplaylist).
+      - PLAYLIST_SXM_DAYS=${PLAYLIST_SXM_DAYS:-}
+      - PLAYLIST_SXM_MIN_PLAYS=${PLAYLIST_SXM_MIN_PLAYS:-}
+    volumes:
+      # Same Music tree Plex scans (Plex sees it at /media/Music). Downloads +
+      # per-playlist .m3u land under /data/Music/Playlists/<label>/.
+      - ${DATA_ROOT}/Media/Music:/data/Music
+      # Read-only Plex config: plex-upload.py reads PlexOnlineToken from
+      # Library/Application Support/Plex Media Server/Preferences.xml under here
+      # when X_PLEX_TOKEN isn't supplied. Playlist Sync REQUIRES Plex (the
+      # installer's validation rejects a Jellyfin-only media server); a
+      # hand-edited Jellyfin-only .env would still download tracks but the
+      # upload step logs a clear "could not read Preferences.xml" error.
+      - ${INSTALL_DIR}/plex/config:/plex-config:ro
+      # sockseek.conf (generated from env) + per-playlist skip indexes.
+      - ${INSTALL_DIR}/playlistsync/config:/config
+    logging: *logging
+    restart: unless-stopped
+
   # ── Broadcast Radio ───────────────────────────────────────
 
   azuracast:

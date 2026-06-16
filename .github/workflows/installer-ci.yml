@@ -102,7 +102,7 @@ jobs:
         # so the old `nas/*.py nas/indexers/*.py` globs matched nothing.
         run: |
           set -e
-          for f in nas/scripts/*.py nas/scripts/indexers/*.py nas/migration/*.py; do
+          for f in nas/scripts/*.py nas/scripts/indexers/*.py nas/scripts/playlistsync/*.py nas/migration/*.py; do
             python -m py_compile "$f"
           done
 

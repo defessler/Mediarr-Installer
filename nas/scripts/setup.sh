@@ -480,6 +480,20 @@ if is_optin_enabled ENABLE_SOULSEEK; then
         esac
     fi
 fi
+# Playlist Sync is OPT-IN (default off) — use is_optin_enabled, NOT is_enabled,
+# so a pre-Playlist-Sync .env (no key) stays off. Like Soulseek, playlistsync
+# lives in gluetun's namespace, so when VPN is on it must ALSO pull in the "vpn"
+# sidecar. The case-guard avoids a duplicate "vpn" entry when qBittorrent and/or
+# Soulseek already added it.
+if is_optin_enabled ENABLE_PLAYLIST_SYNC; then
+    PROFILES+=("playlists")
+    if [ $VPN_ON -eq 1 ]; then
+        case " ${PROFILES[*]} " in
+            *" vpn "*) : ;;
+            *)         PROFILES+=("vpn") ;;
+        esac
+    fi
+fi
 # AzuraCast (broadcast radio) is OPT-IN (default off) — use is_optin_enabled,
 # NOT is_enabled, so a pre-AzuraCast .env (no key) stays off. Unlike Soulseek,
 # AzuraCast is NOT VPN-coupled: it must be LAN-reachable for listeners, so it
@@ -668,6 +682,7 @@ stop_disabled_services() {
         "flaresolverr:ENABLE_FLARESOLVERR"
         "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
         "azuracast:ENABLE_AZURACAST"
+        "playlistsync:ENABLE_PLAYLIST_SYNC"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -675,10 +690,10 @@ stop_disabled_services() {
         flag="${pair#*:}"
         # Service is enabled → leave the container alone, up -d will
         # (re-)create or update it as needed. ENABLE_SOULSEEK / ENABLE_AZURACAST
-        # are OPT-IN, so use the explicit-true helper; the default-on is_enabled
-        # would treat a missing key as "enabled" and never reap slskd/soularr or
-        # azuracast.
-        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_AZURACAST" ]; then
+        # / ENABLE_PLAYLIST_SYNC are OPT-IN, so use the explicit-true helper; the
+        # default-on is_enabled would treat a missing key as "enabled" and never
+        # reap slskd/soularr, azuracast, or playlistsync.
+        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_AZURACAST" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -760,6 +775,28 @@ stop_disabled_services() {
             $CONTAINER_RUNTIME stop slskd >/dev/null 2>&1 || true
             $CONTAINER_RUNTIME rm   slskd >/dev/null 2>&1 || true
             echo "  ✔ Removed slskd so it recreates in the correct network mode (VPN toggled)"
+            stopped=$((stopped + 1))
+        fi
+    fi
+    # playlistsync inherits the same immutable-network-mode wedge as slskd /
+    # qBittorrent (VPN-on: container:gluetun namespace; VPN-off: bridge).
+    # Toggling VPN_ENABLED strands the running container on the wrong mode and
+    # `compose up -d` can't change it in place; worse, the VPN-off path rm's
+    # gluetun (above), welding playlistsync to a dead namespace with no egress.
+    # Reap it on mismatch so start_stack recreates it cleanly. Opt-in: only on.
+    if is_optin_enabled ENABLE_PLAYLIST_SYNC \
+       && $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx playlistsync; then
+        local plmode plmismatch=0
+        plmode=$($CONTAINER_RUNTIME inspect -f '{{.HostConfig.NetworkMode}}' playlistsync 2>/dev/null || echo "")
+        if [ "$VPN_ON" -eq 1 ]; then
+            case "$plmode" in container:*) : ;; *) plmismatch=1 ;; esac   # want gluetun namespace, have bridge
+        else
+            case "$plmode" in container:*) plmismatch=1 ;; esac           # want bridge, have gluetun namespace
+        fi
+        if [ "$plmismatch" -eq 1 ]; then
+            $CONTAINER_RUNTIME stop playlistsync >/dev/null 2>&1 || true
+            $CONTAINER_RUNTIME rm   playlistsync >/dev/null 2>&1 || true
+            echo "  ✔ Removed playlistsync so it recreates in the correct network mode (VPN toggled)"
             stopped=$((stopped + 1))
         fi
     fi
@@ -1444,6 +1481,23 @@ start_stack() {
             echo "  slskd is on a stale gluetun namespace — recreating it..."
             $CONTAINER_RUNTIME rm -f slskd >/dev/null 2>&1 || true
             $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d gluetun slskd
+            up_rc=$?
+        fi
+    fi
+    # Same stale-namespace reconcile for playlistsync — it shares gluetun's
+    # namespace under the playlists profile exactly like slskd, so a gluetun
+    # recreate welds it to a dead namespace too (losing Soulseek + Plex
+    # LAN_IP:32400 egress). No cron/boot self-heal covers it, so heal it inline.
+    # Opt-in only.
+    if [ "$VPN_ON" -eq 1 ] && is_optin_enabled ENABLE_PLAYLIST_SYNC; then
+        local psnm psgid
+        psnm=$($CONTAINER_RUNTIME inspect -f '{{.HostConfig.NetworkMode}}' playlistsync 2>/dev/null || echo "")
+        psgid=$($CONTAINER_RUNTIME inspect -f '{{.Id}}' gluetun 2>/dev/null || echo "")
+        case "$psnm" in container:*) psnm="${psnm#container:}" ;; *) psnm="" ;; esac
+        if [ -n "$psnm" ] && [ -n "$psgid" ] && [ "$psnm" != "$psgid" ]; then
+            echo "  playlistsync is on a stale gluetun namespace — recreating it..."
+            $CONTAINER_RUNTIME rm -f playlistsync >/dev/null 2>&1 || true
+            $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d gluetun playlistsync
             up_rc=$?
         fi
     fi

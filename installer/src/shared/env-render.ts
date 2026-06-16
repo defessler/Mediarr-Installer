@@ -140,6 +140,33 @@ export interface EnvFormValues {
    *  creates the admin account in AzuraCast's own web UI on first run. */
   AZURACAST_HTTP_PORT?: string
 
+  // ── Playlist Sync (SiriusXM + Spotify → Plex) — only used when
+  //    ENABLE_PLAYLIST_SYNC=true. OPT-IN like Soulseek (isOptInEnabled).
+  /** Whether to install the Playlist Sync worker. A missing key counts as
+   *  OFF; emitted via isOptInEnabled so a pre-feature .env never gains it. */
+  ENABLE_PLAYLIST_SYNC?: string
+  /** A SECOND free Soulseek account — slskd holds the stack's one session,
+   *  Soulseek allows one per account, so Playlist Sync needs its own. */
+  PLAYLIST_SLSK_USER?: string
+  PLAYLIST_SLSK_PASS?: string
+  /** Comma list of xmplaylist channel slugs (e.g. octane,siriusxmhits1). */
+  SIRIUSXM_CHANNELS?: string
+  /** Comma list of public Spotify playlist URLs, each optionally "Label|URL". */
+  SPOTIFY_PLAYLISTS?: string
+  /** Optional FREE Spotify Developer app (client id/secret) for robust,
+   *  official playlist reads. Blank → the fragile unauthenticated path. */
+  SPOTIFY_CLIENT_ID?: string
+  SPOTIFY_CLIENT_SECRET?: string
+  /** Cron schedule (default 0 4 * * *). */
+  PLAYLIST_SYNC_CRON?: string
+  /** Preferred audio format (default flac). */
+  PLAYLIST_PREF_FORMAT?: string
+  /** Run one pass on container start (default true). */
+  PLAYLIST_RUN_ON_START?: string
+  /** SiriusXM rotation window (days) + min play-count floor (optional). */
+  PLAYLIST_SXM_DAYS?: string
+  PLAYLIST_SXM_MIN_PLAYS?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -489,6 +516,23 @@ export function renderEnv(v: EnvFormValues): string {
     '# radio compose profile; the web UI binds ${LAN_IP}:${AZURACAST_HTTP_PORT}.',
     line('ENABLE_AZURACAST', isOptInEnabled(v.ENABLE_AZURACAST) ? 'true' : 'false'),
     line('AZURACAST_HTTP_PORT', v.AZURACAST_HTTP_PORT || '49157'),
+    '',
+    '# Playlist Sync (SiriusXM + Spotify → Plex). OPT-IN; off by default.',
+    '# A missing ENABLE_PLAYLIST_SYNC key counts as OFF (like ENABLE_SOULSEEK)',
+    '# — emitted via isOptInEnabled. Mirrors playlists into Plex; downloads',
+    '# Soulseek-first (its own 2nd account) with a yt-dlp fallback. Needs Plex.',
+    line('ENABLE_PLAYLIST_SYNC', isOptInEnabled(v.ENABLE_PLAYLIST_SYNC) ? 'true' : 'false'),
+    line('PLAYLIST_SLSK_USER', v.PLAYLIST_SLSK_USER),
+    line('PLAYLIST_SLSK_PASS', v.PLAYLIST_SLSK_PASS),
+    line('SIRIUSXM_CHANNELS', v.SIRIUSXM_CHANNELS),
+    line('SPOTIFY_PLAYLISTS', v.SPOTIFY_PLAYLISTS),
+    line('SPOTIFY_CLIENT_ID', v.SPOTIFY_CLIENT_ID),
+    line('SPOTIFY_CLIENT_SECRET', v.SPOTIFY_CLIENT_SECRET),
+    line('PLAYLIST_SYNC_CRON', v.PLAYLIST_SYNC_CRON || '0 4 * * *'),
+    line('PLAYLIST_PREF_FORMAT', v.PLAYLIST_PREF_FORMAT || 'flac'),
+    line('PLAYLIST_RUN_ON_START', v.PLAYLIST_RUN_ON_START || 'true'),
+    line('PLAYLIST_SXM_DAYS', v.PLAYLIST_SXM_DAYS),
+    line('PLAYLIST_SXM_MIN_PLAYS', v.PLAYLIST_SXM_MIN_PLAYS),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

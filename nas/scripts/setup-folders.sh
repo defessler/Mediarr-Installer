@@ -82,6 +82,9 @@ CONFIG_DIRS=(
     # PUID:PGID, so these MUST be owned up front or it can't write its config.
     "$INSTALL_DIR/slskd/config"
     "$INSTALL_DIR/soularr/config"
+    # Playlist Sync (opt-in). Holds the generated sockseek.conf + per-playlist
+    # skip indexes. Not a linuxserver image; created up front like slskd's.
+    "$INSTALL_DIR/playlistsync/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -94,6 +97,9 @@ DATA_DIRS=(
     "$DATA_ROOT/Media/Anime/Movies"
     "$DATA_ROOT/Media/Anime/TV Shows"
     "$DATA_ROOT/Media/Music"
+    # Playlist Sync downloads + per-playlist .m3u live here (one subfolder per
+    # mirrored playlist). Same Music tree Plex scans, so the .m3u paths resolve.
+    "$DATA_ROOT/Media/Music/Playlists"
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"

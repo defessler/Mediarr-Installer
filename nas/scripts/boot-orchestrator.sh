@@ -176,6 +176,20 @@ case "$(env_val ENABLE_SOULSEEK | tr '[:upper:]' '[:lower:]')" in
         esac
         ;;
 esac
+# Playlist Sync is OPT-IN (explicit true only — a missing key must NOT enable
+# it). playlistsync shares gluetun's namespace like slskd, so it also pulls in
+# the vpn sidecar when VPN is on (the dup-guard avoids a second "vpn" entry).
+# Without this the boot hook would not restart an opted-in playlistsync after a
+# reboot, in gluetun-dependency order — the exact thing this orchestrator exists
+# to do. Mirrors setup.sh's PROFILES block.
+case "$(env_val ENABLE_PLAYLIST_SYNC | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on)
+        PROFILES+=("playlists")
+        case "$VPN" in
+            true|1|yes|on) case " ${PROFILES[*]} " in *" vpn "*) : ;; *) PROFILES+=("vpn") ;; esac ;;
+        esac
+        ;;
+esac
 
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
