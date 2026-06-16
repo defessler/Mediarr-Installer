@@ -1308,9 +1308,15 @@ def get_quality_profile(base, key, api, preferred='1080p'):
     return chosen['id'], chosen['name']
 
 def get_language_profile(base, key):
-    """Return id of first language profile (Sonarr only)."""
-    profiles = GET(base, key, "/api/v3/languageprofile") or []
-    return profiles[0]['id'] if profiles else 1
+    """Return the language-profile id for a Seerr→Sonarr connection.
+
+    Sonarr v4 (the version this stack installs) REMOVED /api/v3/languageprofile —
+    it merged language into Custom Formats. The old live lookup therefore always
+    404'd and fell through to 1, but _safe_request still printed a spurious
+    'HTTP 404' line on every fresh Plex+Sonarr install. Return 1 directly: the value
+    was already always 1, and Seerr ignores the field on a v4 connection anyway.
+    (base/key kept for call-site compatibility.)"""
+    return 1
 
 def configure_backup_schedule(base, key, api):
     """Tune the arr's built-in backup schedule.

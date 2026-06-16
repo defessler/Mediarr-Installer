@@ -877,7 +877,20 @@ export function ConfigureScreen() {
 
   // When "use same auth" is on, qBittorrent inherits ARR_USERNAME /
   // ARR_PASSWORD on every render so the user only edits one place.
-  const [qbitSameAsArr, setQbitSameAsArr] = useState(true)
+  //
+  // Seed the box from the LOADED config (lazy initializer — useState only honors
+  // its first value, and loadFromProfile has already hydrated the store before
+  // this screen mounts). A fresh install (qBit at its 'admin'/empty default) or a
+  // profile that previously mirrored ARR opens CHECKED (keeps the convenience); a
+  // profile with DISTINCT saved qBit creds opens UNCHECKED, so the mount-time
+  // mirror below can't silently overwrite a user's separate qBit password.
+  const [qbitSameAsArr, setQbitSameAsArr] = useState(() => {
+    const q = config.QBITTORRENT_USER ?? ''
+    const qp = config.QBITTORRENT_PASS ?? ''
+    const a = config.ARR_USERNAME ?? ''
+    const ap = config.ARR_PASSWORD ?? ''
+    return ((q === '' || q === 'admin') && qp === '') ? true : (q === a && qp === ap)
+  })
   useEffect(() => {
     if (!qbitSameAsArr) return
     const u = config.ARR_USERNAME ?? ''
