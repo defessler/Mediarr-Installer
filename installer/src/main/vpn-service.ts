@@ -17,7 +17,12 @@ async function nordGet<T>(path: string, token?: string): Promise<T> {
     const creds = Buffer.from(`token:${token}`).toString('base64')
     headers.Authorization = `Basic ${creds}`
   }
-  const res = await fetch(`${NORD_API}${path}`, { headers })
+  // Bound every NordVPN call: Node's undici has no default response timeout, so a
+  // host that accepts the connection but never replies (captive portal, firewall
+  // DROP mid-stream) would hang this await forever. AbortSignal.timeout converts
+  // that into a clean rejection the renderer's catch surfaces. Same abort-on-timeout
+  // intent as updater-service.ts (which uses a manual AbortController for the same effect).
+  const res = await fetch(`${NORD_API}${path}`, { headers, signal: AbortSignal.timeout(15_000) })
   if (!res.ok) {
     throw new Error(`NordVPN API ${path} returned ${res.status} ${res.statusText}`)
   }

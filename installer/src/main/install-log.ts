@@ -47,6 +47,17 @@ export function startInstallLog(kind: 'install' | 'update' | 'validate' = 'insta
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
   const path = join(dir, `${kind}-${ts}.log`)
   currentStream = createWriteStream(path, { flags: 'a', encoding: 'utf8' })
+  // A WriteStream is an EventEmitter; an 'error' emitted with no listener is
+  // re-thrown as a main-process uncaughtException — which index.ts turns into a
+  // misleading "Startup error" dialog mid-install. On any IO error, drop the
+  // stream: this avoids the unhandled-error throw AND makes the (!currentStream)
+  // guards in append/close short-circuit, so the install proceeds untouched and
+  // the only consequence is a missing transcript (logged once).
+  currentStream.on('error', (e) => {
+    log.error('installLog: write stream error, disabling log for this run:', e)
+    try { currentStream?.destroy() } catch { /* already torn down */ }
+    currentStream = null
+  })
   currentPath = path
   bytesWritten = 0
   const header =

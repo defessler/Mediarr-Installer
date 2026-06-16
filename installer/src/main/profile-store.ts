@@ -21,6 +21,7 @@
 // currently-active profile.
 
 import { app } from 'electron'
+import log from 'electron-log/main.js'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -114,13 +115,81 @@ async function readFile(): Promise<OnDiskShape> {
         }))
       return { version: 2, profiles: migrated }
     }
-  } catch { /* file missing or unparseable — start fresh */ }
+  } catch (e) {
+    // A read/parse failure on an EXISTING, non-empty file is corruption (e.g. a
+    // half-written profiles.json from a crash mid-write), NOT "no profiles yet".
+    // Move the bytes aside so the next writeFile can't overwrite them with an
+    // empty store — a manual recovery stays possible.
+    await preserveCorruptProfiles(e)
+  }
   return { version: 2, profiles: [] }
+}
+
+/** If profiles.json exists and is non-empty but unreadable/unparseable, move it to
+ *  a .corrupt-<ts> sibling (never delete) so the caller's empty-store fallback can't
+ *  silently destroy a recoverable file. No-op when the file is genuinely missing. */
+async function preserveCorruptProfiles(cause: unknown): Promise<void> {
+  try {
+    const st = await fs.stat(FILE())
+    if (st.size > 0) {
+      const backup = `${FILE()}.corrupt-${Date.now()}`
+      await fs.rename(FILE(), backup)
+      log.error(`profile-store: profiles.json unreadable (${String(cause)}); moved corrupt copy to ${backup}`)
+    }
+  } catch { /* genuinely missing, or the move failed — nothing more we can do */ }
 }
 
 async function writeFile(data: OnDiskShape): Promise<void> {
   await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await fs.writeFile(FILE(), JSON.stringify(data, null, 2), { mode: 0o600 })
+  // Atomic write. profiles.json is the SOLE source of truth for every NAS's
+  // connection details, full config, and safeStorage-encrypted secrets. A bare
+  // fs.writeFile opens O_TRUNC — zeroing the good file BEFORE the new bytes flush —
+  // so a crash / power-loss / ENOSPC in that window leaves it half-written, and
+  // readFile would then read it as "no profiles" and the next write would cement
+  // the loss. Write a sibling temp, fsync, then rename(2) (atomic) so a crash always
+  // leaves either the whole old or the whole new file. All callers run under
+  // withLock(), so the per-pid temp name is never used concurrently.
+  const tmp = `${FILE()}.tmp.${process.pid}`
+  try {
+    const fh = await fs.open(tmp, 'w', 0o600)
+    try {
+      await fh.writeFile(JSON.stringify(data, null, 2), { encoding: 'utf8' })
+      await fh.sync()
+    } finally {
+      await fh.close()
+    }
+    await fs.rename(tmp, FILE())
+  } catch (e) {
+    try { await fs.unlink(tmp) } catch { /* nothing to clean up */ }
+    throw e
+  }
+}
+
+// ── Write serialization ──────────────────────────────────────────────────────
+// Every mutation does readFile -> mutate -> writeFile with awaits in between, so
+// without serialization a fire-and-forget touchProfile (ConnectScreen / RunScreen /
+// WelcomeScreen call it un-awaited) can interleave with an in-flight saveProfile and
+// write back a STALE snapshot — permanently dropping the just-saved config/secret.
+// Chaining each mutation through a single promise makes it observe the previous
+// one's committed result. The exported saveProfile/deleteProfile/touchProfile below
+// are thin wrappers over the *Locked implementations. importProfile is deliberately
+// NOT wrapped: it delegates its write to the (locked) saveProfile, so wrapping it too
+// would re-enter the chain and deadlock.
+let writeChain: Promise<unknown> = Promise.resolve()
+function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn)   // run after the prior op settles (success OR failure)
+  writeChain = run.catch(() => {})      // keep the chain alive; this caller still sees errors via `run`
+  return run
+}
+
+export function saveProfile(input: SaveProfileInput): Promise<SavedProfile> {
+  return withLock(() => saveProfileLocked(input))
+}
+export function deleteProfile(id: string): Promise<void> {
+  return withLock(() => deleteProfileLocked(id))
+}
+export function touchProfile(id: string): Promise<void> {
+  return withLock(() => touchProfileLocked(id))
 }
 
 // Each stored blob carries a CODEC TAG so decode always uses the codec the
@@ -292,7 +361,7 @@ export async function loadProfile(id: string): Promise<LoadedProfile | null> {
   }
 }
 
-export async function saveProfile(input: SaveProfileInput): Promise<SavedProfile> {
+async function saveProfileLocked(input: SaveProfileInput): Promise<SavedProfile> {
   const data = await readFile()
   const id = input.id ?? randomUUID()
   const idx = data.profiles.findIndex((p) => p.id === id)
@@ -346,7 +415,7 @@ export async function saveProfile(input: SaveProfileInput): Promise<SavedProfile
   return toPublic(next)
 }
 
-export async function deleteProfile(id: string): Promise<void> {
+async function deleteProfileLocked(id: string): Promise<void> {
   const data = await readFile()
   data.profiles = data.profiles.filter((p) => p.id !== id)
   await writeFile(data)
@@ -360,7 +429,7 @@ export async function getSecret(id: string): Promise<string | null> {
   return p?.connection.password ?? null
 }
 
-export async function touchProfile(id: string): Promise<void> {
+async function touchProfileLocked(id: string): Promise<void> {
   const data = await readFile()
   const p = data.profiles.find((x) => x.id === id)
   if (!p) return

@@ -29,6 +29,11 @@ const STACK_PORTS: { port: number; service: string }[] = [
   { port: 3000,  service: 'Homepage' },
   { port: 8191,  service: 'Flaresolverr' },
   { port: 6881,  service: 'qBittorrent (peer)' },
+  // recyclarr-trigger has no compose profile — it's always published, so a foreign
+  // holder of 8889 is always worth flagging. The opt-in slskd/AzuraCast ports are
+  // intentionally NOT listed: they'd false-positive when those services are disabled,
+  // and setup.sh's check_port_conflicts is the authoritative install-time gate for them.
+  { port: 8889,  service: 'Recyclarr trigger' },
 ]
 
 // Container names the stack creates. Used to recognize a re-install vs
@@ -36,7 +41,10 @@ const STACK_PORTS: { port: number; service: string }[] = [
 const STACK_CONTAINERS = new Set([
   'plex', 'jellyfin', 'tautulli', 'seerr', 'homepage', 'prowlarr', 'flaresolverr',
   'sonarr', 'radarr', 'bazarr', 'lidarr', 'gluetun', 'qbittorrent',
-  'sabnzbd', 'recyclarr', 'unpackerr',
+  'sabnzbd', 'recyclarr', 'recyclarr-trigger', 'unpackerr',
+  // always-on recyclarr-trigger + the opt-in music/AzuraCast services, so a
+  // re-install over any of them is recognized as ours (not a foreign Docker setup).
+  'slskd', 'soularr', 'azuracast',
 ])
 
 async function run(sessionId: string, cmd: string): Promise<{ ok: boolean; out: string }> {

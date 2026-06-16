@@ -68,6 +68,7 @@ async function qbitLogin(url: string, username: string, password: string): Promi
         'User-Agent':    'mediarr-installer/1.0',
       },
       body,
+      signal: AbortSignal.timeout(15_000),  // undici has no default timeout; a black-hole URL would hang forever
     })
   } catch (e) {
     return {
@@ -153,6 +154,7 @@ export async function qbitFetchList(req: QbitFetchListRequest): Promise<QbitFetc
         'Referer':    url,
         'User-Agent': 'mediarr-installer/1.0',
       },
+      signal: AbortSignal.timeout(15_000),  // undici has no default timeout; a black-hole URL would hang forever
     })
     if (!res.ok) {
       return { ok: false, error: `torrents/info HTTP ${res.status}` }
@@ -213,6 +215,7 @@ export async function qbitMigrateOne(req: QbitMigrateOneRequest): Promise<QbitMi
         'Referer':    sourceUrl,
         'User-Agent': 'mediarr-installer/1.0',
       },
+      signal: AbortSignal.timeout(15_000),  // undici has no default timeout; a black-hole URL would hang forever
     })
     if (!res.ok) {
       return { ok: false, stage: 'export', error: `export HTTP ${res.status}` }
@@ -261,6 +264,7 @@ export async function qbitMigrateOne(req: QbitMigrateOneRequest): Promise<QbitMi
         'User-Agent':   'mediarr-installer/1.0',
       },
       body: form.body,
+      signal: AbortSignal.timeout(15_000),  // undici has no default timeout; a black-hole URL would hang forever
     })
     if (!res.ok) {
       const body = await res.text()

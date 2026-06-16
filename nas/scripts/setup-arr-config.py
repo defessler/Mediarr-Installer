@@ -4795,8 +4795,15 @@ def main():
         # soularr drives Lidarr ↔ slskd. It's useless without a real Lidarr
         # API key (it reads Lidarr's wanted list), so gate on Lidarr being
         # enabled AND configured — same pattern as the unpackerr lidarr_block.
-        if not is_enabled(env, 'ENABLE_LIDARR') or not LIDARR_KEY:
+        if not is_enabled(env, 'ENABLE_LIDARR'):
             print(f"  {DIM}⏭  Soulseek needs Lidarr — enable Lidarr and re-run.{RESET}")
+        elif not LIDARR_KEY:
+            # Lidarr IS enabled but its API key isn't readable yet (still finishing
+            # first boot / config.xml not written). Don't tell the user to "enable
+            # Lidarr" — it's already on. soularr is left on its stock config.ini this
+            # pass; a re-run once Lidarr is up writes the real key.
+            print(f"  {DIM}⏭  Lidarr's API key isn't readable yet (Lidarr still starting) — "
+                  f"soularr left on its stock config; re-run setup once Lidarr is up.{RESET}")
         else:
             # Like unpackerr.conf, MUST overwrite: the soularr image seeds a
             # stock config.ini that would otherwise win forever.
