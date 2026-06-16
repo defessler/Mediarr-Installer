@@ -145,6 +145,19 @@ export function RunScreen() {
    *  Any real config edit shows up in the render (the .env round-trip invariant),
    *  forcing a full go(). Null until the first run writes it → Retry → go(). */
   const lastRenderedEnvRef = useRef<string | null>(null)
+  // Guards go() against re-entry from a double-click on "Start install".
+  // phase stays 'idle' through go()'s async prelude (the installLog.start
+  // await) until setPhase('uploading'), so a second queued click would
+  // otherwise launch a SECOND setup.sh on the same hardcoded SSH channel
+  // (the two streams then race on activeChannels + onStreamClose). A
+  // synchronous ref closes that window; the effect below clears it once the
+  // run reaches a terminal/idle phase so Retry can legitimately call go().
+  const goRunningRef = useRef(false)
+  useEffect(() => {
+    if (phase === 'idle' || phase === 'done' || phase === 'failed') {
+      goRunningRef.current = false
+    }
+  }, [phase])
 
   // Publish a global "busy" flag while an install (or a single-step
   // re-run) is in flight, so App.tsx can disable the in-place app-updater
@@ -603,7 +616,14 @@ export function RunScreen() {
   }
 
   async function go() {
+    // Re-entrancy guard: ignore a double-click that lands during the async
+    // prelude (phase is still 'idle' until setPhase('uploading') below).
+    // Cleared by the terminal-phase effect above, or here on the no-session
+    // early-out so a later Retry can still call go().
+    if (goRunningRef.current) return
+    goRunningRef.current = true
     if (!sessionId) {
+      goRunningRef.current = false
       setErrorMsg('No SSH session. Go back and reconnect.')
       setPhase('failed')
       return

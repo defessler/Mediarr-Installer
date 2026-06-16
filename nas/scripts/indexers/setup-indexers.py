@@ -962,6 +962,37 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
 
 # ── Read .env ─────────────────────────────────────────────────────────────────
 
+def _parse_env_value(raw):
+    """Parse a .env value the way the wizard's ESCAPE writer intends.
+    A double-quoted value is un-escaped in a single left-to-right pass (an
+    escaped backslash/quote/dollar/backtick becomes the literal char; an
+    escaped n or r becomes newline/CR), so a literal backslash can't be
+    mis-paired with the next char. A single-quoted value is taken literally.
+    A bare value has a whitespace-anchored ' #comment' stripped. Mirrors
+    ESCAPE() in installer/src/shared/env-render.ts so a password containing a
+    quote, dollar, backtick or backslash (or a '#') round-trips intact."""
+    s = raw.strip()
+    if s[:1] == '"':
+        out = []
+        i, n = 1, len(s)
+        while i < n:
+            c = s[i]
+            if c == '\\' and i + 1 < n:
+                d = s[i + 1]
+                out.append('\n' if d == 'n' else '\r' if d == 'r' else d)
+                i += 2
+                continue
+            if c == '"':
+                break
+            out.append(c)
+            i += 1
+        return ''.join(out)
+    if s[:1] == "'":
+        j = s.find("'", 1)
+        return s[1:j] if j != -1 else s[1:]
+    return re.split(r'\s#', s, 1)[0].strip()
+
+
 def read_env(path):
     env = {}
     try:
@@ -977,7 +1008,7 @@ def read_env(path):
                 # quotes the wizard's ESCAPE adds around special-char values.
                 # Mirrors read_env() in setup-arr-config.py; the old bare
                 # split('#') corrupted any credential containing '#'.
-                v = re.split(r'\s#', v, 1)[0].strip().strip('"').strip("'")
+                v = _parse_env_value(v)
                 if v:
                     env[k.strip()] = v
     except FileNotFoundError:

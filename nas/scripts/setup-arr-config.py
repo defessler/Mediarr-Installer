@@ -267,6 +267,37 @@ def section(title):
 
 # ── Read config files ─────────────────────────────────────────────────────────
 
+def _parse_env_value(raw):
+    """Parse a .env value the way the wizard's ESCAPE writer intends.
+    A double-quoted value is un-escaped in a single left-to-right pass (an
+    escaped backslash/quote/dollar/backtick becomes the literal char; an
+    escaped n or r becomes newline/CR), so a literal backslash can't be
+    mis-paired with the next char. A single-quoted value is taken literally.
+    A bare value has a whitespace-anchored ' #comment' stripped. Mirrors
+    ESCAPE() in installer/src/shared/env-render.ts so a password containing a
+    quote, dollar, backtick or backslash (or a '#') round-trips intact."""
+    s = raw.strip()
+    if s[:1] == '"':
+        out = []
+        i, n = 1, len(s)
+        while i < n:
+            c = s[i]
+            if c == '\\' and i + 1 < n:
+                d = s[i + 1]
+                out.append('\n' if d == 'n' else '\r' if d == 'r' else d)
+                i += 2
+                continue
+            if c == '"':
+                break
+            out.append(c)
+            i += 1
+        return ''.join(out)
+    if s[:1] == "'":
+        j = s.find("'", 1)
+        return s[1:j] if j != -1 else s[1:]
+    return re.split(r'\s#', s, 1)[0].strip()
+
+
 def read_env(path):
     """Read key=value pairs from a file, ignoring comments and blank lines.
     Inline comments after the value (e.g. KEY=value  # comment) are stripped."""
@@ -284,7 +315,7 @@ def read_env(path):
                 # ESCAPE adds around such values. Splitting on the first bare
                 # '#' (the old behavior) silently corrupted any cred/API key
                 # containing '#'.
-                v = re.split(r'\s#', v, 1)[0].strip().strip('"').strip("'")
+                v = _parse_env_value(v)
                 if v:
                     env[k.strip()] = v
     except FileNotFoundError:
@@ -5353,6 +5384,12 @@ def recyclarr_only_main():
         sonarr_profile, radarr_profile,
     )
     recyclarr_yml = f"{B}/recyclarr/config/recyclarr.yml"
+    # Back up a hand-edited recyclarr.yml before regenerating. The web-UI
+    # profile-change path (recyclarr-trigger.py -> --recyclarr-only) lands
+    # here, and without this it would silently clobber the user's edits to
+    # the include: block that render_recyclarr_config's header promises will
+    # survive. Matches the full-install and homepage backup-before-overwrite.
+    backup_before_overwrite(recyclarr_yml)
     overwrite_config_file("Recyclarr", recyclarr_yml, rendered)
     print()
     ok("recyclarr.yml regenerated — caller should `docker exec recyclarr recyclarr sync` to apply.")

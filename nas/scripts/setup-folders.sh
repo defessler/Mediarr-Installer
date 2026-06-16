@@ -383,7 +383,44 @@ fi
 # env_val helper — same idea as in setup-nordvpn.sh, scoped here so this
 # script doesn't depend on a sourced helper module.
 env_val() {
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
+    local raw
+    raw="$(grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')"
+    case "$raw" in
+        '"'*)
+            # Double-quoted by the wizard's ESCAPE (env-render.ts): strip the
+            # outer quotes and reverse the backslash-escaping in a single
+            # left-to-right pass (\\ \" \$ \` -> the literal char; \n \r ->
+            # newline/CR), so a secret containing " $ ` \ round-trips intact and
+            # a literal backslash can't be mis-paired. (The old `| xargs` left
+            # the escapes in place AND aborted outright on a literal \", which
+            # emptied the value and locked qBittorrent behind a random temp
+            # password.) Text past the closing quote is an inline comment.
+            printf '%s' "$raw" | awk '
+                {
+                    n = length($0); out = ""; i = 2
+                    while (i <= n) {
+                        c = substr($0, i, 1)
+                        if (c == "\\" && i < n) {
+                            d = substr($0, i + 1, 1)
+                            if (d == "n") out = out "\n"
+                            else if (d == "r") out = out "\r"
+                            else out = out d
+                            i += 2
+                            continue
+                        }
+                        if (c == "\"") break
+                        out = out c
+                        i++
+                    }
+                    printf "%s", out
+                }'
+            ;;
+        *)
+            # Unquoted (the common case: enable flags, ports, paths): strip a
+            # whitespace-anchored inline comment and trim — unchanged behavior.
+            printf '%s' "$raw" | sed 's/[[:space:]]#.*//' | xargs
+            ;;
+    esac
 }
 
 # Default-on opt-out check, matching the rest of the toolchain.
