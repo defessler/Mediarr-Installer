@@ -1216,7 +1216,7 @@ fi
 # query failure is treated as "unknown, let the pull decide", not an error.
 check_image_arch() {
     command -v "$CONTAINER_RUNTIME" >/dev/null 2>&1 || return 0
-    local hostm want
+    local hostm want images total img safe tmpd missing="" launched n out TO
     hostm=$(uname -m)
     case "$hostm" in
         x86_64|amd64)  want=amd64 ;;
@@ -1224,21 +1224,57 @@ check_image_arch() {
         armv7l|armv6l) want=arm   ;;
         *) echo "  ⏭ Unknown CPU arch '$hostm' — skipping image-arch pre-flight."; return 0 ;;
     esac
+    # Bound each registry query so a hung registry/proxy/DNS can't wedge the
+    # parallel `wait` forever (which would reintroduce the silent stall this
+    # rewrite kills). Opt-in: use GNU timeout if present, no-op on a busybox NAS.
+    TO=''; command -v timeout >/dev/null 2>&1 && TO='timeout 20'
     # Probe via the mirror (not bare hello-world = Docker Hub) so this capability
     # check doesn't itself burn a Docker Hub anonymous pull / hit its rate limit.
     $CONTAINER_RUNTIME manifest inspect mirror.gcr.io/library/hello-world >/dev/null 2>&1 \
         || { echo "  ⏭ 'manifest inspect' unavailable — skipping image-arch pre-flight."; return 0; }
-    local images img missing=""
     images=$(cd "$SCRIPT_DIR" && $COMPOSE $COMPOSE_FILES config --images 2>/dev/null | sort -u)
     [ -z "$images" ] && return 0
-    for img in $images; do
-        $CONTAINER_RUNTIME manifest inspect "$img" >/dev/null 2>&1 || continue
-        if ! $CONTAINER_RUNTIME manifest inspect "$img" 2>/dev/null | grep -qiE "\"architecture\":[[:space:]]*\"$want\""; then
-            missing="$missing $img"
-        fi
-    done
+    total=$(printf '%s\n' "$images" | grep -c .)
+    # Each `manifest inspect` is a registry round-trip. The old version ran them
+    # ONE IMAGE AT A TIME and called inspect TWICE per image (~2x the round-trips)
+    # while printing nothing — so a ~17-image stack sat silent for over a minute.
+    # Now: ONE timeout-bounded inspect per image, ALL fanned out at once (these
+    # are lightweight metadata GETs against lscr.io/ghcr.io/mirror.gcr.io — no
+    # Docker Hub rate limit), with a live counter; wall-clock ~= the single
+    # slowest image. Sequential-with-counter fallback when mktemp is unavailable.
+    tmpd=$(mktemp -d 2>/dev/null) || tmpd=""
+    if [ -n "$tmpd" ]; then
+        launched=0
+        for img in $images; do
+            safe=$(printf '%s' "$img" | tr -c 'A-Za-z0-9._-' '_')
+            # One background query per image. A subshell (not a function) so no
+            # `local`; it writes the image NAME into a flag file only when the
+            # wanted arch is absent. A failed/timed-out query exits 0 →
+            # "unknown, let the pull decide", same best-effort policy as before.
+            (
+                out=$($TO $CONTAINER_RUNTIME manifest inspect "$img" 2>/dev/null) || exit 0
+                printf '%s' "$out" | grep -qiE "\"architecture\":[[:space:]]*\"$want\"" \
+                    || printf '%s\n' "$img" > "$tmpd/$safe.missing" 2>/dev/null
+            ) &
+            launched=$((launched + 1))
+            printf '\r  checking %d/%d image manifests...' "$launched" "$total"
+        done
+        wait
+        printf '\r  checked %d/%d image manifests.            \n' "$total" "$total"
+        missing=$(cat "$tmpd"/*.missing 2>/dev/null | tr '\n' ' ')
+        rm -rf "$tmpd"
+    else
+        n=0
+        for img in $images; do
+            n=$((n + 1))
+            printf '\r  checking %d/%d: %-40.40s' "$n" "$total" "$img"
+            out=$($TO $CONTAINER_RUNTIME manifest inspect "$img" 2>/dev/null) || continue
+            printf '%s' "$out" | grep -qiE "\"architecture\":[[:space:]]*\"$want\"" \
+                || missing="$missing $img"
+        done
+        printf '\r%*s\r' 60 ''
+    fi
     if [ -n "$missing" ]; then
-        echo ""
         echo "  ⚠ These images may have no $want ($hostm) build:"
         for img in $missing; do echo "      • $img"; done
         echo "    The pull may fail or run an emulated/wrong-arch image; if a"
