@@ -307,7 +307,11 @@ async function downloadUpdateImpl(): Promise<void> {
   // accumulating ~200 MB extracted builds in %TEMP%.
   const tmpRoot = join(tmpdir(), 'mediarr-update')
   if (existsSync(tmpRoot)) {
-    try { rmSync(tmpRoot, { recursive: true, force: true }) }
+    // maxRetries/retryDelay rides out transient Windows locks (AV real-time
+    // scanning the ~200 MB build, or a lingering handle on the old zip) that
+    // would otherwise leave the previous staging/ behind and make the next
+    // extract die with "...app.asar already exists".
+    try { rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
     catch (e) { log.warn('updater: tmpRoot rm failed (non-fatal):', e) }
   }
   mkdirSync(tmpRoot, { recursive: true })
@@ -607,7 +611,17 @@ async function installUpdate(): Promise<void> {
  *  parses the zip in PowerShell space and is noticeably slower). */
 function extractZip(zipPath: string, destDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+    // Clean slate before every extract. ExtractToDirectory (the 2-arg overload —
+    // the overwrite variant doesn't exist in Windows PowerShell 5.1) THROWS the
+    // instant a target file already exists, so a leftover win-unpacked/ from an
+    // interrupted prior extract makes EVERY retry die with "...already exists"
+    // and the user is permanently stuck. Remove it first (with lock-retries) so
+    // each attempt starts from empty.
+    if (existsSync(destDir)) {
+      try { rmSync(destDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
+      catch (e) { log.warn('updater: pre-extract clean of staging failed (non-fatal):', e) }
+    }
+    mkdirSync(destDir, { recursive: true })
     // PowerShell single-quoted strings need '' for an embedded apostrophe.
     const psZip = zipPath.replace(/'/g, "''")
     const psDest = destDir.replace(/'/g, "''")
