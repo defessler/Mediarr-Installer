@@ -1534,8 +1534,39 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
             'implementationName': app_name, 'implementation': implementation,
             'configContract': config_contract,
         }
+    # First attempt.
     result = POST(prowlarr_base, prowlarr_key, "/api/v1/applications", data)
-    ok(f"Prowlarr app: {app_name}") if result else fail(f"Prowlarr app: {app_name}")
+    if result:
+        ok(f"Prowlarr app: {app_name}")
+        return
+
+    # Prowlarr's POST /applications runs a SYNCHRONOUS reachability test of the
+    # arr's baseUrl and returns 400 WITHOUT saving if it fails. Step 7 wires apps
+    # right after recycling the arr's API session, so the test can hit the arr
+    # mid-restart; with no retry the arr stays permanently unregistered in
+    # Prowlarr (zero indexers reach it) while the run shows green. Mirror
+    # add_download_client: a short re-GET-confirmed retry (recognises an app that
+    # DID land but whose response was lost, instead of duplicating it), then a
+    # forceSave fallback that registers the app despite a failed test — Prowlarr
+    # re-syncs once the arr finishes re-binding (same forceSave the indexer add
+    # uses in setup-indexers.py).
+    for attempt in range(1, 3):
+        time.sleep(5)
+        verify = GET(prowlarr_base, prowlarr_key, "/api/v1/applications")
+        if verify and any(a['name'] == app_name for a in verify):
+            ok(f"Prowlarr app: {app_name} (added on retry {attempt})")
+            return
+        result = POST(prowlarr_base, prowlarr_key, "/api/v1/applications", data)
+        if result:
+            ok(f"Prowlarr app: {app_name} (added on retry {attempt})")
+            return
+    # Last resort: skip the connectivity test so the app is at least registered;
+    # Prowlarr pushes its indexers to it on the next sync once it's reachable.
+    if POST(prowlarr_base, prowlarr_key, "/api/v1/applications?forceSave=true", data):
+        info(f"Prowlarr app: {app_name} (saved with forceSave — Prowlarr will sync "
+             f"indexers to it once {app_name} is reachable)")
+        return
+    fail(f"Prowlarr app: {app_name}")
 
 def _get_or_create_tag(prowlarr_base, prowlarr_key, label):
     """Get or create a Prowlarr tag by label. Returns the tag id or None.
