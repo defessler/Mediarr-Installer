@@ -1263,6 +1263,11 @@ check_image_arch() {
             # wanted arch is absent. A failed/timed-out query exits 0 →
             # "unknown, let the pull decide", same best-effort policy as before.
             (
+                # Already pulled locally → already this host's arch (Docker won't run a
+                # wrong-arch image and we request no emulation), so the registry
+                # round-trip is redundant. Skip it; the later `compose pull` is the
+                # authoritative arch gate for anything it actually (re)fetches.
+                $CONTAINER_RUNTIME image inspect "$img" >/dev/null 2>&1 && exit 0
                 out=$($TO $CONTAINER_RUNTIME manifest inspect "$img" 2>/dev/null) || exit 0
                 printf '%s' "$out" | grep -qiE "\"architecture\":[[:space:]]*\"$want\"" \
                     || printf '%s\n' "$img" > "$tmpd/$safe.missing" 2>/dev/null
@@ -1279,6 +1284,8 @@ check_image_arch() {
         for img in $images; do
             n=$((n + 1))
             printf '\r  checking %d/%d: %-40.40s' "$n" "$total" "$img"
+            # Locally present → already host-arch; skip the redundant registry query.
+            $CONTAINER_RUNTIME image inspect "$img" >/dev/null 2>&1 && continue
             out=$($TO $CONTAINER_RUNTIME manifest inspect "$img" 2>/dev/null) || continue
             printf '%s' "$out" | grep -qiE "\"architecture\":[[:space:]]*\"$want\"" \
                 || missing="$missing $img"
@@ -1374,6 +1381,24 @@ echo ""
 echo "  Pre-flight: checking Docker's image store has room + can reach the registry..."
 check_docker_dataroot_space
 check_registry_egress
+
+# AzuraCast RAM guardrail (opt-in service, ~2 GB hungry: MariaDB + PHP-FPM + nginx
+# + Redis + Liquidsoap). On a small NAS it gets OOM-killed and its now-playing API
+# then resets the dashboard widget (curl/ECONNRESET) — a phantom "bug" that's really
+# memory pressure. Warn (never block — it's their call) when the box looks too small.
+if is_optin_enabled ENABLE_AZURACAST && [ -r /proc/meminfo ]; then
+    _mem_tot_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)
+    if [ -n "$_mem_tot_kb" ] && [ "$_mem_tot_kb" -lt 4194304 ]; then
+        _mem_tot_gb=$(( (_mem_tot_kb + 524288) / 1048576 ))
+        echo ""
+        echo "  ⚠ AzuraCast is enabled, but this NAS has only ~${_mem_tot_gb} GB RAM."
+        echo "    AzuraCast needs ~2 GB on top of the rest of the stack; on a box this"
+        echo "    small the kernel can OOM-kill it — the dashboard's now-playing tile"
+        echo "    then shows connection-reset errors. If that happens, set"
+        echo "    ENABLE_AZURACAST=false and re-run; the rest of the stack is unaffected."
+    fi
+    unset _mem_tot_kb _mem_tot_gb
+fi
 
 # Bring the stack up. Split the pull out of `up -d` and wrap it in retry() so a
 # transient registry/network blip during the long first-run pull doesn't fail
