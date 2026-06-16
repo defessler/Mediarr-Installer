@@ -1559,6 +1559,17 @@ if is_enabled ENABLE_SABNZBD; then
     echo "     Add your usenet provider under Config → Servers"
     echo ""
 fi
+if is_optin_enabled ENABLE_SOULSEEK; then
+    n=$((n + 1))
+    echo "  $n. slskd dashboard: http://${IP}:5030"
+    echo "     Log in with username 'slskd' password 'slskd' — the DASHBOARD"
+    echo "     login, NOT your Soulseek account (that's already configured)."
+    echo "     Change it via web.authentication in"
+    echo "     ${INSTALL_DIR}/slskd/config/slskd.yml then: docker restart slskd"
+    echo "     (soularr runs headlessly alongside slskd — no UI; follow it"
+    echo "     with: docker logs -f soularr)"
+    echo ""
+fi
 if is_enabled ENABLE_RECYCLARR; then
     n=$((n + 1))
     echo "  $n. Recyclarr TRaSH Guide sync (already ran once at install):"

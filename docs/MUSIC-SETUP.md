@@ -117,9 +117,13 @@ if you want to pin a specific value.
 ## After install: check it's working
 
 1. **Open the slskd web UI** at `http://<NAS-IP>:5030` — it's also a tile in the
-   **Downloads** section of your Homepage dashboard. Log in with your Soulseek
-   username/password. The dashboard should show **"Connected"** to the Soulseek
-   network (give it a minute on first boot).
+   **Downloads** section of your Homepage dashboard. **Log in with the slskd
+   dashboard default — username `slskd`, password `slskd`.** This is the
+   *dashboard* login, **not** your Soulseek account. Once inside, the dashboard
+   should show **"Connected"** to the Soulseek network using the username/
+   password you entered in the installer (give it a minute on first boot). To
+   change the dashboard login, edit the `web.authentication` section of
+   `${INSTALL_DIR}/slskd/config/slskd.yml` and run `docker restart slskd`.
 2. **Give Lidarr something to find.** In Lidarr, add an artist or mark an album
    as *Monitored* + *Search* so it lands on the wanted list.
 3. **Watch soularr work.** Within one scan interval (≤5 min by default) soularr
@@ -155,6 +159,13 @@ Make sure you're on **v0.7.3 or newer** — earlier builds shipped slskd on the
 wrong port and the UI was unreachable. Update the installer, re-run **Update**
 (or **Install**), and try again. Also confirm the VPN container (`gluetun`) is
 healthy — slskd lives inside its network, so if the VPN is down, so is slskd.
+
+**I can't log in to the slskd dashboard at `:5030`.**
+The dashboard login is slskd's own default — username `slskd`, password `slskd`
+— **not** your Soulseek account. (Your Soulseek account goes in a field *inside*
+the dashboard, and the installer already filled it in for you.) To change the
+dashboard login, edit the `web.authentication` section of
+`${INSTALL_DIR}/slskd/config/slskd.yml`, then run `docker restart slskd`.
 
 **slskd says it can't log in to Soulseek.**
 Double-check `SLSKD_USER`/`SLSKD_PASS` match a real Soulseek account. You can

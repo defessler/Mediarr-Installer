@@ -2,7 +2,7 @@
 // for the cases where the user doesn't want a full Configure-then-Run
 // re-install but does want to update SOMETHING:
 //
-//   1. Pull + recreate containers — refresh docker images, recreate
+//   1. Update images (pull + recreate) — refresh docker images, recreate
 //      anything whose image hash changed. Doesn't touch the wizard's
 //      payload files on the NAS.
 //
@@ -120,7 +120,7 @@ export function UpdateRunScreen() {
 
   // Reset on each action start so a previous run's output doesn't
   // confuse the user. We DON'T clear lastAction — the label "last
-  // action: Pull + recreate" only flips when the new action starts
+  // action: Update images" only flips when the new action starts
   // running, so the user sees what's about to happen.
   function reset() {
     setErrorMsg(null)
@@ -496,7 +496,7 @@ exit $UP_RC`
     } catch (e) {
       setErrorMsg((e as Error).message)
       setPhase('failed')
-      reportError('Pull and recreate', e)
+      reportError('Update images', e)
     }
   }
 
@@ -668,7 +668,7 @@ docker compose $FILES --progress plain --ansi never up -d`
   const running = phase === 'running'
   const lastActionLabel =
     lastAction === 'full' ? 'Update stack to latest'
-    : lastAction === 'pull' ? 'Pull + recreate containers'
+    : lastAction === 'pull' ? 'Update images'
     : lastAction === 'sync' ? 'Sync wizard scripts'
     : lastAction === 'homepage' ? 'Refresh dashboard'
     : lastAction && lastAction.startsWith('step-')
@@ -769,10 +769,10 @@ docker compose $FILES --progress plain --ansi never up -d`
           truncation; 1280px window splits cleanly into ~600px columns. */}
       <section className="grid grid-cols-2 gap-3 shrink-0">
         <ActionCard
-          title="Pull + recreate containers"
-          subtitle="Fetch newer images and recreate any container whose image changed."
-          when="When you want the latest Sonarr/Radarr/Plex/etc. binaries."
-          buttonLabel={running && lastAction === 'pull' ? 'Pulling…' : 'Pull + recreate'}
+          title="Update images only"
+          subtitle="Just docker compose pull + up -d — the image half of 'Update to latest', skipping the script sync and setup.sh re-run. (Update to latest already pulls images too, then does the rest.)"
+          when="When you only want newer Sonarr/Radarr/Plex/etc. binaries fast and don't need any script or config changes applied."
+          buttonLabel={running && lastAction === 'pull' ? 'Pulling…' : 'Update images'}
           onClick={pullAndRecreate}
           disabled={running}
           accent="sky"

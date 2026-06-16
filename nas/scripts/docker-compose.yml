@@ -860,15 +860,23 @@ services:
     security_opt: *security
     environment:
       - TZ=${TZ}
-      # Internal HTTP/HTTPS bind ports. Kept OFF 80/443 (which the host
-      # NAS + other services use) and matched to the published mappings
-      # below — AZURACAST_HTTP_PORT is the one knob users can override in
-      # .env; HTTPS is parked on 49158 (self-signed/unused on a LAN).
-      - AZURACAST_HTTP_PORT=${AZURACAST_HTTP_PORT:-49157}
+      # Internal HTTP/HTTPS bind ports — FIXED literals, deliberately. The
+      # AzuraCast web image re-renders its nginx vhost on EVERY boot from these
+      # env vars (`listen {{ default .Env.AZURACAST_HTTP_PORT "80" }}`), falling
+      # back to `listen 80` if the value ever arrives empty/stale. A literal can
+      # never resolve empty, so nginx always listens on 49157 — and the LAN
+      # mapping + healthcheck below can never disagree with where nginx actually
+      # bound. The user-overridable AZURACAST_HTTP_PORT in .env is the HOST-
+      # published port (left side of the mapping below), NOT this internal bind.
+      # Kept OFF 80/443 (host NAS + other services use those); HTTPS is parked
+      # on 49158 (self-signed/unused on a LAN).
+      - AZURACAST_HTTP_PORT=49157
       - AZURACAST_HTTPS_PORT=49158
     ports:
-      # Web UI (admin + public player). Bound to the LAN IP only.
-      - ${LAN_IP}:${AZURACAST_HTTP_PORT:-49157}:${AZURACAST_HTTP_PORT:-49157}
+      # Web UI (admin + public player). Bound to the LAN IP only. Host side is
+      # the user-overridable knob (AZURACAST_HTTP_PORT in .env); container side
+      # is the FIXED 49157 that nginx listens on.
+      - ${LAN_IP}:${AZURACAST_HTTP_PORT:-49157}:49157
       # Icecast + Liquidsoap stream ports — a trimmed range (~3 stations'
       # worth of triplets), deliberately clear of Jellyfin's 8096 and
       # FlareSolverr's 8191. Each station the user creates in the web UI
@@ -899,12 +907,15 @@ services:
     # still flips it healthy immediately). /api/status is AzuraCast's OWN
     # unauthenticated liveness endpoint (returns {"online":true}) — the same
     # one AzuraCast's internal uptime-wait command polls. curl ships in the
-    # php-fpm base image. The probe tracks AZURACAST_HTTP_PORT so it stays
-    # correct if the published port is overridden in .env. Note: setup.sh's
-    # wait_for_services keys off .State.Status (running), NOT this health
-    # status, so a slow first-boot here never stalls the install.
+    # php-fpm base image. The probe targets the FIXED internal port 49157 (where
+    # nginx always listens — see the environment block above), so it can't
+    # disagree with the bind even when the host-published port is overridden in
+    # .env. Note: setup.sh's wait_for_services keys off .State.Status (running),
+    # NOT this health status, so a slow first-boot here never stalls the install
+    # — a stuck-unhealthy AzuraCast surfaces as a ⚠ on the Done screen's post-
+    # deploy validation instead.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:${AZURACAST_HTTP_PORT:-49157}/api/status || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:49157/api/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

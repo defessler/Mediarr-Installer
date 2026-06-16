@@ -460,6 +460,22 @@ export function DoneScreen() {
               </span>
             </li>
           )}
+          {isOptInEnabled(config.ENABLE_SOULSEEK) && (
+            <li>
+              Open slskd at <span className="font-mono text-emerald-400">http://{ip}:5030</span>{' '}
+              and log in with username <span className="font-mono">slskd</span> / password{' '}
+              <span className="font-mono">slskd</span> — that&apos;s the <em>dashboard</em>{' '}
+              login, <strong>not</strong> your Soulseek account. The Soulseek username/password
+              you entered are already wired in; the dashboard shows{' '}
+              <span className="font-mono">Connected</span> once it reaches the network.
+              {' '}
+              <span className="text-slate-500 italic">
+                (soularr runs alongside it with no web UI — it quietly feeds Lidarr&apos;s
+                wanted list to slskd every few minutes; watch it with{' '}
+                <span className="font-mono">docker logs -f soularr</span>.)
+              </span>
+            </li>
+          )}
         </ol>
       </section>
 

@@ -599,7 +599,7 @@ sudo bash <INSTALL_DIR>/diagnose-firewall.sh`,
     cause:
       'Homepage v1.0+ enforces strict Host-header validation. Older wizard builds defaulted HOMEPAGE_ALLOWED_HOSTS to a narrow list (LAN_IP + localhost + nas.local), so accessing the dashboard via the Synology\'s hostname, a custom DNS name, or any host not in that list got rejected.',
     fix:
-      'Easiest: open the installer → Update → Pull + recreate. The current wizard build defaults HOMEPAGE_ALLOWED_HOSTS to `*` (any Host accepted) since this is a home-LAN tool. Or manually patch your .env on the NAS:',
+      'Easiest: open the installer → Update → Update to latest (it re-runs setup.sh and regenerates the Homepage config). The current wizard build defaults HOMEPAGE_ALLOWED_HOSTS to `*` (any Host accepted) since this is a home-LAN tool. Or manually patch your .env on the NAS:',
     command:
       `# Either edit .env to set HOMEPAGE_ALLOWED_HOSTS=*  (simplest)
 # or list the exact hostnames you access from, comma-separated, no ports:
