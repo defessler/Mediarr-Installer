@@ -24,14 +24,33 @@ from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DB_PATH = ("/volume1/docker/media/plex/config"
+def _arg_value(flag, default):
+    """Value after `--flag <value>` in argv, else default. (main() also reads
+    --apply; argparse is overkill for a couple of optional flags.)"""
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+
+# This script ships at <INSTALL_DIR>/migration/, so derive INSTALL_DIR from its
+# own location (works on Synology / Unraid / QNAP / generic Linux) instead of
+# the old hardcoded /volume1/docker/media, which dead-ended every non-Synology
+# install at the "database not found" guard below. --install-dir overrides it.
+INSTALL_DIR = _arg_value(
+    '--install-dir',
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+)
+DB_PATH = (f"{INSTALL_DIR}/plex/config"
            "/Library/Application Support"
            "/Plex Media Server/Plug-in Support/Databases"
            "/com.plexapp.plugins.library.db")
 
-# Any path under this NAS prefix is rewritten to the container mount prefix.
-# Covers all libraries without needing a hardcoded list.
-OLD_PREFIX = "/volume1/Data/Media"
+# OLD_PREFIX is the path your OLD (pre-migration) Plex used for its media — that
+# native-package path can differ from the new stack's data root, so it's an
+# override (default = the Synology native-package location). Any path under it
+# is rewritten to NEW_PREFIX. Covers all libraries without a hardcoded list.
+OLD_PREFIX = _arg_value('--old-prefix', "/volume1/Data/Media")
 NEW_PREFIX = "/media"
 
 def remap(path):
@@ -71,7 +90,9 @@ def main():
     if not os.path.exists(DB_PATH):
         print(f"{RED}Error:{RESET} Plex database not found at:")
         print(f"  {DB_PATH}")
-        print("\nMake sure Plex has started at least once to initialise its database.")
+        print("\nMake sure Plex has started at least once to initialise its database,")
+        print("or pass --install-dir <dir> if your stack isn't at the auto-detected location")
+        print("(and --old-prefix <path> for your old Plex media path if it's not /volume1/Data/Media).")
         sys.exit(1)
 
     # ── Backup before touching anything ──────────────────────────────────────
