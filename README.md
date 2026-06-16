@@ -103,7 +103,7 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 
 ## Scripts
 
-All deployment files live in the `nas/` folder. Copy the entire `nas/` directory to `/volume1/docker/media/` on the NAS.
+All deployment files live in the `nas/scripts/` folder. Copy that directory to the NAS so it lands at `/volume1/docker/media/scripts/` (the compose root — where `docker-compose.yml` and `.env` live). The optional `nas/migration/` tooling is **not** bundled by the wizard; SCP it separately if you need it (see [Migrating from Existing Services](#migrating-from-existing-services)).
 
 | File | What it does |
 |------|-------------|
@@ -120,9 +120,9 @@ All deployment files live in the `nas/` folder. Copy the entire `nas/` directory
 | `setup-arr-config.py` | Auto-configures all services via API after first boot |
 | `indexers/setup-indexers.py` | Adds torrent/usenet indexers to Prowlarr |
 | `indexers/setup-bazarr-providers.py` | Enables subtitle providers in Bazarr |
-| `migration/fix-plex-paths.py` | Updates Plex library paths in the database (migration only) |
-| `migration/fix-qbit-paths.sh` | Updates qBittorrent torrent save paths via API (migration only) |
-| `migration/migrate-plex-app.txt` | Step-by-step notes for migrating from the native Plex package |
+| `migration/fix-plex-paths.py` | Updates Plex library paths in the database (migration only — repo only; SCP manually for native-Plex migration) |
+| `migration/fix-qbit-paths.sh` | Updates qBittorrent torrent save paths via API (migration only — repo only; SCP manually for native-Plex migration) |
+| `migration/migrate-plex-app.txt` | Step-by-step notes for migrating from the native Plex package (repo only — not bundled by the wizard) |
 
 ---
 
@@ -136,7 +136,7 @@ After install, the stack is mostly self-managing — Sonarr / Radarr / Prowlarr 
 | Change TRaSH Guide quality profile | Recyclarr tile on Homepage → pick the new profile in the dropdown → "Save profile & sync". (Or re-run the installer.) The trigger page rewrites `.env` + `recyclarr.yml` + syncs in one click. |
 | Re-pull container images | Installer → pick the profile → **Update mode** → "Pull + recreate". No SSH needed. |
 | Refresh the Homepage dashboard | Installer Update mode → "Refresh dashboard". Regenerates `services.yaml` from your current enabled-service flags. |
-| Re-run a specific setup step | Installer Update mode → "Re-run a step" — picks from the 10-step setup.sh in a dropdown. |
+| Re-run a specific setup step | Installer Update mode → "Re-run a step" — picks from the 12-step setup.sh in a dropdown. |
 | Migrate a library across NAS | Installer → pick destination profile → **Migrate mode** → paste source URL + API key, click Import. |
 
 Everything above is also achievable from SSH if you prefer — see [Manual install (no wizard)](#manual-install-no-wizard) for the underlying scripts. But the wizard is the supported path.
@@ -147,31 +147,34 @@ Everything above is also achievable from SSH if you prefer — see [Manual insta
 
 If you'd rather skip the installer (e.g. headless setup, scripted deployment, or you just don't want a desktop app):
 
-1. **Copy `nas/` to the NAS**
+1. **Copy `nas/scripts` to the NAS** (it lands at `.../scripts/` — the compose root):
    ```bash
-   scp -r nas/ user@192.168.1.242:/volume1/docker/media/
+   scp -r nas/scripts user@192.168.1.242:/volume1/docker/media/
    ```
 2. **Copy + fill in `.env`** — `.env.example` is the documented template:
    ```bash
-   cp /volume1/docker/media/.env.example /volume1/docker/media/.env
-   nano /volume1/docker/media/.env
+   cp /volume1/docker/media/scripts/.env.example /volume1/docker/media/scripts/.env
+   nano /volume1/docker/media/scripts/.env
    ```
    Required keys: `PUID`, `PGID`, `TZ`, `LAN_IP`, `QBITTORRENT_PASS`. Optional: `MEDIA_SERVER` (`plex` (default) or `jellyfin`), `PLEX_CLAIM` (Plex only — from https://plex.tv/claim, expires in 4 minutes, paste it right before running `setup.sh`), `JELLYFIN_API_KEY` (Jellyfin only — generate it after Jellyfin's first-run setup at `:8096` → Dashboard → API Keys, then re-run `setup-arr-config.py`), `NORDVPN_ACCESS_TOKEN` (auto-fetches WireGuard key), `ARR_USERNAME` / `ARR_PASSWORD`, `TRASH_SONARR_PROFILE` / `TRASH_RADARR_PROFILE` for the Recyclarr quality bundle.
 3. **Run setup.sh**
    ```bash
-   sudo bash /volume1/docker/media/setup.sh
+   cd /volume1/docker/media/scripts
+   sudo bash /volume1/docker/media/scripts/setup.sh
    ```
-   Handles permissions, folders, firewall, NordVPN key fetch, validation, `docker-compose up -d`, then API-configures every arr (root folders, download clients, remote path mappings, hardlinks, auth, indexers, subtitle providers). Safe to re-run — every step is idempotent.
+   Handles permissions, folders, firewall, NordVPN key fetch, validation, `docker compose up -d`, then API-configures every arr (root folders, download clients, remote path mappings, hardlinks, auth, indexers, subtitle providers). Safe to re-run — every step is idempotent.
 
-The installer does exactly the same work; it just uploads `nas/` via SFTP and runs `setup.sh` over SSH on your behalf, plus wraps profile management + claim-token freshness + per-step re-run.
+The installer does exactly the same work; it uploads the bundled deployment scripts (`nas/scripts/`) via SFTP and runs `setup.sh` over SSH on your behalf, plus wraps profile management + claim-token freshness + per-step re-run. (The optional `nas/migration/` tooling is **not** part of that payload — SCP it manually if you need it.)
 
 ---
 
 ## Troubleshooting
 
+> All `docker compose` commands below assume you're in the compose root: `cd /volume1/docker/media/scripts` first (where `docker-compose.yml` and `.env` live).
+
 **Container won't start**
 ```bash
-docker-compose logs <service>
+docker compose logs <service>
 ```
 
 **Permission denied errors**
@@ -215,7 +218,7 @@ Sonarr/Radarr send a Plex Connect notification on every import (auto-configured 
 **qBittorrent can't connect / all torrents stalled**
 Gluetun is likely not connected:
 ```bash
-docker-compose logs gluetun
+docker compose logs gluetun
 ```
 
 **qBittorrent loses its torrent list after restart**
@@ -224,7 +227,7 @@ The init script uses a sentinel file (`/config/.credentials-set`) to avoid reset
 **Stack restart fails — qBittorrent won't connect**
 Always restart the full stack with `down && up`, not `restart`:
 ```bash
-docker-compose down && docker-compose up -d
+docker compose down && docker compose up -d
 ```
 `restart` brings everything up simultaneously without respecting dependency order — qBittorrent tries to join Gluetun's network before Gluetun is ready.
 
@@ -280,38 +283,40 @@ Use these when connecting services to each other inside Docker.
 
 ### Docker Compose Cheatsheet
 
-All commands run from `/volume1/docker/media/`.
+All commands run from `/volume1/docker/media/scripts/` (the compose root — where `docker-compose.yml` and `.env` live). cd there first: `cd /volume1/docker/media/scripts`.
+
+> Use **Docker Compose v2.20+** (`docker compose`, with a space). Compose v1 (`docker-compose`) silently ignores the `!reset` tag in the VPN-off override and hangs the stack.
 
 **Everyday**
 ```bash
-docker-compose ps                                    # container status
-docker-compose up -d                                 # start all (or start stopped containers)
-docker-compose down && docker-compose up -d          # full restart (respects dependency order)
-docker-compose restart sonarr                        # restart one container
-docker-compose stop sonarr && docker-compose start sonarr
+docker compose ps                                    # container status
+docker compose up -d                                 # start all (or start stopped containers)
+docker compose down && docker compose up -d          # full restart (respects dependency order)
+docker compose restart sonarr                        # restart one container
+docker compose stop sonarr && docker compose start sonarr
 ```
 
 **Updates**
 ```bash
-docker-compose pull                  # pull latest images for all services
-docker-compose pull sonarr           # pull latest for one service
-docker-compose up -d                 # recreate containers that have a newer image
+docker compose pull                  # pull latest images for all services
+docker compose pull sonarr           # pull latest for one service
+docker compose up -d                 # recreate containers that have a newer image
 ```
 
 **Logs**
 ```bash
-docker-compose logs sonarr           # recent logs
-docker-compose logs -f sonarr        # live logs (Ctrl+C to stop)
-docker-compose logs --tail=50 sonarr
-docker-compose logs -f               # all services
+docker compose logs sonarr           # recent logs
+docker compose logs -f sonarr        # live logs (Ctrl+C to stop)
+docker compose logs --tail=50 sonarr
+docker compose logs -f               # all services
 ```
 
 **Debugging**
 ```bash
-docker-compose exec sonarr bash                        # shell inside container
+docker compose exec sonarr bash                        # shell inside container
 docker exec gluetun wget -qO- https://ipinfo.io        # check VPN IP
 docker stats                                           # live CPU/memory
-docker-compose config                                  # resolved config with .env applied
+docker compose config                                  # resolved config with .env applied
 docker inspect sonarr                                  # full container details
 ```
 
@@ -356,7 +361,13 @@ chown -R ${PUID}:${PGID} /volume1/docker/media/plex/config/
 
 **Step 5 — Fix library paths**
 
-The native package stored NAS host paths (e.g. `/volume1/...`) in the database; the Docker container uses `/media` instead. Run the path fixer:
+The native package stored NAS host paths (e.g. `/volume1/...`) in the database; the Docker container uses `/media` instead. Run the path fixer.
+
+> **Note:** the `migration/` scripts ship only in the git repo — the wizard payload does **not** include them. SCP the file to the NAS first:
+> ```bash
+> scp nas/migration/fix-plex-paths.py user@192.168.1.242:/volume1/docker/media/migration/
+> ```
+
 ```bash
 # Dry run first to preview changes
 python3 /volume1/docker/media/migration/fix-plex-paths.py
@@ -378,7 +389,7 @@ After starting the stack, Sonarr/Radarr will still have the old root folder path
 
 **Step 7 — Fix qBittorrent save paths (if needed)**
 
-If your torrents were saved to different paths under the old setup:
+If your torrents were saved to different paths under the old setup (this script is **repo only** — SCP it to the NAS first, e.g. `scp nas/migration/fix-qbit-paths.sh user@192.168.1.242:/volume1/docker/media/migration/`):
 ```bash
 bash /volume1/docker/media/migration/fix-qbit-paths.sh --dry-run
 bash /volume1/docker/media/migration/fix-qbit-paths.sh

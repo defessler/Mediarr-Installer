@@ -453,7 +453,7 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-This is the entire premise of `nas/setup.sh` in the real Mediarr stack — just bigger (10 steps instead of 3) and with more careful error handling. Look at `nas/setup.sh` in the repo to see how the real one is structured; it follows this exact pattern.
+This is the entire premise of `nas/setup.sh` in the real Mediarr stack — just bigger (12 steps instead of 3) and with more careful error handling. Look at `nas/setup.sh` in the repo to see how the real one is structured; it follows this exact pattern.
 
 ### Why bash for this?
 

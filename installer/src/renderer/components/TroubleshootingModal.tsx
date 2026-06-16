@@ -26,6 +26,11 @@ import type { NasFamily } from '../../shared/ipc.js'
  *  placeholder replacer. Sourced from the wizard's detect result + .env. */
 interface TCtx {
   installDir: string
+  /** Where the wizard actually installs the helper scripts / .env /
+   *  docker-compose.yml — `installDir`/scripts (since v0.3.23). Distinct
+   *  from `installDir`, which is the install ROOT (service config dirs,
+   *  the media/data tree). */
+  scriptsDir: string
   dataRoot: string
   nasFamily: NasFamily
   puid: string
@@ -42,10 +47,12 @@ interface TItem {
   /** Plain-English fix; can be empty if the command is self-explanatory. */
   fix?: string
   /** Optional shell command(s) the user can copy. Multi-line ok. Either a
-   *  static string (with `<INSTALL_DIR>` / `<DATA_ROOT>` / `<PUID>` /
-   *  `<PGID>` placeholders, substituted at render time) OR a function of
-   *  the detect context — used when the steps themselves differ by NAS
-   *  family (e.g. Synology Task Scheduler vs UGREEN/Linux cron). */
+   *  static string (with `<SCRIPTS_DIR>` / `<INSTALL_DIR>` / `<DATA_ROOT>` /
+   *  `<PUID>` / `<PGID>` placeholders, substituted at render time) OR a
+   *  function of the detect context — used when the steps themselves differ
+   *  by NAS family (e.g. Synology Task Scheduler vs UGREEN/Linux cron).
+   *  `<SCRIPTS_DIR>` is the helper-script / .env / compose home; reserve
+   *  `<INSTALL_DIR>` for genuine install-root paths (service config dirs). */
   command?: string | ((c: TCtx) => string)
   /** If set, this entry is only shown when the detected family is in the
    *  list. Omit for entries that apply to every NAS. When the family is
@@ -141,7 +148,7 @@ const ITEMS: TItem[] = [
       'Give the container user ownership + write on your data root, then re-run setup.sh. Substitute your actual PUID:PGID (shown on the Detect screen) and data path:',
     command:
       `sudo chown -R <PUID>:<PGID> <DATA_ROOT> && sudo chmod -R 775 <DATA_ROOT>
-sudo bash <INSTALL_DIR>/setup.sh`,
+sudo bash <SCRIPTS_DIR>/setup.sh`,
   },
   {
     category: 'Install failed or timed out',
@@ -163,16 +170,16 @@ sudo bash <INSTALL_DIR>/setup.sh`,
       'Wait 3-5 minutes from container start and retry. The bundled restart-qbit.sh helper does an orderly recreate that gives qBit time to initialize cleanly. If it\'s STILL not binding after 5 minutes, the state\'s corrupted — reset the config dir (commands below).',
     command:
       `# First try a clean restart (gluetun-aware, gives qBit time to init):
-bash <INSTALL_DIR>/restart-qbit.sh
+bash <SCRIPTS_DIR>/restart-qbit.sh
 sleep 60
 curl -sf -o /dev/null -w "qBit HTTP: %{http_code}\\n" http://localhost:49156
 
 # Still 000? Nuclear option — reset qBit's config (preserves downloads):
-cd <INSTALL_DIR>
+cd <SCRIPTS_DIR>
 docker compose stop qbittorrent
-mv qbittorrent/config qbittorrent/config.broken-$(date +%Y%m%d-%H%M%S)
-mkdir -p qbittorrent/config
-sudo chown <PUID>:<PGID> qbittorrent/config
+mv <INSTALL_DIR>/qbittorrent/config <INSTALL_DIR>/qbittorrent/config.broken-$(date +%Y%m%d-%H%M%S)
+mkdir -p <INSTALL_DIR>/qbittorrent/config
+sudo chown <PUID>:<PGID> <INSTALL_DIR>/qbittorrent/config
 bash setup.sh`,
   },
   {
@@ -184,12 +191,12 @@ bash setup.sh`,
       'Two-step recovery: (1) get qBit\'s WebUI back up with restart-qbit.sh — Sonarr/Radarr will resume polling within 60s. (2) For the backlog of already-completed-but-never-imported downloads, kick a manual scan at each arr\'s API. The commands below do both.',
     command:
       `# 1. Fix qBit's WebUI:
-bash <INSTALL_DIR>/restart-qbit.sh
+bash <SCRIPTS_DIR>/restart-qbit.sh
 
 # 2. Tell each arr to scan its completed-downloads folder:
-SONARR_KEY=$(grep '^SONARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
-RADARR_KEY=$(grep '^RADARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
-LIDARR_KEY=$(grep '^LIDARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
+SONARR_KEY=$(grep '^SONARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
+RADARR_KEY=$(grep '^RADARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
+LIDARR_KEY=$(grep '^LIDARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
 
 curl -X POST -H "X-Api-Key: $SONARR_KEY" -H "Content-Type: application/json" \\
   "http://localhost:49152/api/v3/command" \\
@@ -210,7 +217,7 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
       'When VPN_ENABLED=true, qBittorrent shares gluetun\'s network namespace (network_mode: container:gluetun, switched from service:gluetun in the latest build to dodge a startup race where qBit booted before gluetun had finished setting up its namespace). Docker enforces this hard either way: if gluetun is down or its namespace has been recreated, restarting qBit fails with this exact error.',
     fix:
       'Use the bundled helper script — it brings gluetun up first, waits for its healthcheck, then recreates qBit against the live namespace.',
-    command: `bash <INSTALL_DIR>/restart-qbit.sh`,
+    command: `bash <SCRIPTS_DIR>/restart-qbit.sh`,
   },
   {
     category: 'qBittorrent',
@@ -220,10 +227,10 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
     fix:
       'Wire boot-orchestrator.sh to run at every boot (the steps below are tailored to your detected NAS). It waits for the Docker daemon, then runs `docker compose up -d` with the right profile flags — compose respects depends_on, so gluetun starts first and qBit comes up cleanly. Set this once; future reboots are hands-off.',
     command: (c) =>
-      `${bootHint(c.nasFamily, `bash ${c.installDir}/boot-orchestrator.sh`)}\n\n`
+      `${bootHint(c.nasFamily, `bash ${c.scriptsDir}/boot-orchestrator.sh`)}\n\n`
       + `# Verify it works without rebooting:\n`
-      + `sudo bash ${c.installDir}/boot-orchestrator.sh\n`
-      + `tail -20 ${c.installDir}/boot-orchestrator.log`,
+      + `sudo bash ${c.scriptsDir}/boot-orchestrator.sh\n`
+      + `tail -20 ${c.scriptsDir}/boot-orchestrator.log`,
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
@@ -234,11 +241,11 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
       'Filter the noise — three actually-actionable patterns: (1) "API Request Limit reached for AvistaZ — Disabled for 01:00:00" = creds wrong or quota exhausted (verify AVISTAZ_USER/PASS/PID in .env). (2) "Indexer X disabled due to failures" persistent = run tune-arrs.sh which auto-disables broken indexers. (3) "rss sync didn\'t cover the period" = your RSS interval is shorter than indexer rate limits allow — bump Sonarr → Settings → General → RSS Sync Interval from 15 → 30 min.',
     command:
       `# Auto-disable broken indexers (handles cause #2):
-sudo bash <INSTALL_DIR>/tune-arrs.sh
+sudo bash <SCRIPTS_DIR>/tune-arrs.sh
 
 # Verify AvistaZ creds (cause #1) — if these are blank or invalid, drop
 # them from .env so the wizard stops trying to add the indexer:
-grep -E '^AVISTAZ_(USER|PASS|PID)=' <INSTALL_DIR>/.env`,
+grep -E '^AVISTAZ_(USER|PASS|PID)=' <SCRIPTS_DIR>/.env`,
   },
   {
     category: 'qBittorrent',
@@ -249,8 +256,9 @@ grep -E '^AVISTAZ_(USER|PASS|PID)=' <INSTALL_DIR>/.env`,
       'Either change the .env QBITTORRENT_PASS to match what\'s in qBit\'s UI, or wipe qBit\'s conf so the next setup.sh re-applies the .env value.',
     command:
       `rm <INSTALL_DIR>/qbittorrent/config/qBittorrent/qBittorrent.conf
+cd <SCRIPTS_DIR>
 docker compose restart qbittorrent
-sudo bash <INSTALL_DIR>/setup.sh`,
+sudo bash <SCRIPTS_DIR>/setup.sh`,
   },
   {
     category: 'qBittorrent',
@@ -270,9 +278,9 @@ sudo bash <INSTALL_DIR>/setup.sh`,
     fix:
       'The latest wizard build uses interpolation=None and won\'t corrupt it. To recover: backup and delete the broken file — Tautulli regenerates a fresh one on next start, then re-run setup.sh to wire it to Plex.',
     command:
-      `cd <INSTALL_DIR>
+      `cd <SCRIPTS_DIR>
 docker compose stop tautulli
-mv tautulli/config/config.ini tautulli/config/config.ini.broken-$(date +%Y%m%d-%H%M%S)
+mv <INSTALL_DIR>/tautulli/config/config.ini <INSTALL_DIR>/tautulli/config/config.ini.broken-$(date +%Y%m%d-%H%M%S)
 docker compose up -d tautulli
 sleep 60
 sudo bash setup.sh`,
@@ -303,7 +311,7 @@ sudo bash setup.sh`,
       'Whatever the underlying cause (qBit/SAB polling drift, paths not being walked, fresh install with pre-existing files in /data/Downloads, post-restart re-discovery lag), the fix is to tell each arr "scan your completed-downloads folder right now" via its API. This bypasses the download-client polling chain entirely.',
     fix:
       'Run the bundled fix-imports.sh helper. It (1) fires DownloadedEpisodesScan / DownloadedMoviesScan / DownloadedAlbumsScan against all six known completed-download paths (torrent + usenet roots for each arr), (2) waits 30s for the arrs to process, (3) dumps any items still stuck along with their exact statusMessages, (4) reports library + backlog file counts so you can see whether imports actually landed. This same script auto-runs as Step 11 of every install now, so the symptom shouldn\'t recur on fresh installs.',
-    command: `bash <INSTALL_DIR>/fix-imports.sh`,
+    command: `bash <SCRIPTS_DIR>/fix-imports.sh`,
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
@@ -314,8 +322,8 @@ sudo bash setup.sh`,
       'Run the bundled auto-manual-import.py helper. It walks each arr\'s queue for trackedDownloadState=importBlocked items, fetches the arr\'s own /manualimport candidates (which carry the matched media pre-populated from grab history), and submits the WebUI\'s ManualImport command for the conservative subset — only when matched media + quality are populated AND no codec/quality/language/custom-format rejection is in the way. Anything ambiguous (multiple candidate movies, hard quality rejection, missing episode IDs) is logged with the reason and left for manual review in the WebUI. importMode=Auto means torrents are copied (qBit keeps seeding the original) and usenet downloads are moved — same logic the WebUI dialog applies when you don\'t override the dropdown. Idempotent — safe to re-run on a schedule. Auto-runs as Step 12 of every wizard install; a weekly scheduled entry (cron, or your NAS\'s task scheduler) catches the steady-state drip.',
     command: (c) =>
       `# One-shot drain:\n`
-      + `python3 ${c.installDir}/auto-manual-import.py\n\n`
-      + scheduleHint(c.nasFamily, 'weekly', `python3 ${c.installDir}/auto-manual-import.py`),
+      + `python3 ${c.scriptsDir}/auto-manual-import.py\n\n`
+      + scheduleHint(c.nasFamily, 'weekly', `python3 ${c.scriptsDir}/auto-manual-import.py`),
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
@@ -329,7 +337,7 @@ sudo bash setup.sh`,
 docker exec gluetun wget -qO- "http://localhost:49156/api/v2/torrents/info" | head -c 4000
 
 # Sonarr queue — anything stuck?
-SONARR_KEY=$(grep '^SONARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
+SONARR_KEY=$(grep '^SONARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
 curl -s -H "X-Api-Key: $SONARR_KEY" "http://localhost:49152/api/v3/queue?pageSize=50"
 
 # Hardlink possible? (must say "same fs")
@@ -344,14 +352,14 @@ docker exec sonarr sh -c 'touch /data/Downloads/.t && ln /data/Downloads/.t "/da
       'The bundled tune-arrs.sh helper fixes both in one shot: stops each arr one at a time, vacuums + reindexes its SQLite DB (typical 2-10× query speedup), then tests every Prowlarr indexer and disables the failing ones (Prowlarr\'s app-sync propagates the disable to Sonarr/Radarr automatically within ~30s). Safe + reversible — backs up each DB before vacuuming. Plex / qBit / SAB are not touched.',
     command:
       `# Dry-run first to see what WOULD change:
-bash <INSTALL_DIR>/tune-arrs.sh --dry-run
+bash <SCRIPTS_DIR>/tune-arrs.sh --dry-run
 
 # Apply:
-sudo bash <INSTALL_DIR>/tune-arrs.sh
+sudo bash <SCRIPTS_DIR>/tune-arrs.sh
 
 # Only one piece if you don't want the full pass:
-sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-vacuum     # just disable broken indexers
-sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-indexers   # just vacuum DBs`,
+sudo bash <SCRIPTS_DIR>/tune-arrs.sh --skip-vacuum     # just disable broken indexers
+sudo bash <SCRIPTS_DIR>/tune-arrs.sh --skip-indexers   # just vacuum DBs`,
   },
   {
     category: 'Sonarr / Radarr / Lidarr / Prowlarr',
@@ -405,7 +413,7 @@ sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-indexers   # just vacuum DBs`,
     cause:
       'Every user-facing service in docker-compose.yml has a profiles: key for service selection. docker compose down only acts on services in the default (no-profile) set — just prowlarr + flaresolverr here. The rest get ignored.',
     fix: 'Use the bundled helper that sets COMPOSE_PROFILES to cover every service.',
-    command: `bash <INSTALL_DIR>/stop-all.sh`,
+    command: `bash <SCRIPTS_DIR>/stop-all.sh`,
   },
   {
     category: 'docker compose',
@@ -415,8 +423,8 @@ sudo bash <INSTALL_DIR>/tune-arrs.sh --skip-indexers   # just vacuum DBs`,
     fix:
       'Check if another install is actually in flight (`ps auxw | grep setup.sh`). If not — it\'s a stale lock. Remove it:',
     command:
-      `cat <INSTALL_DIR>/.setup.lock   # shows holding PID
-rm -f <INSTALL_DIR>/.setup.lock`,
+      `cat <SCRIPTS_DIR>/.setup.lock   # shows holding PID
+rm -f <SCRIPTS_DIR>/.setup.lock`,
   },
 
   // ── Filesystem / Hardlinks ──────────────────────────────────────────
@@ -429,7 +437,7 @@ rm -f <INSTALL_DIR>/.setup.lock`,
       'Move both trees under a SINGLE shared folder so they share a subvolume. The typical fix:',
     command:
       `# 1. Stop the stack
-bash <INSTALL_DIR>/stop-all.sh
+bash <SCRIPTS_DIR>/stop-all.sh
 
 # 2. Move existing media INTO the Downloads parent's shared folder.
 #    Example: if Downloads is at /volume1/Data/Downloads/ and you
@@ -437,11 +445,11 @@ bash <INSTALL_DIR>/stop-all.sh
 rsync -avP /volume1/Media/ /volume1/Data/Media/
 
 # 3. Update DATA_ROOT in .env to point at the parent (/volume1/Data)
-nano <INSTALL_DIR>/.env
+nano <SCRIPTS_DIR>/.env
 
 # 4. Re-run setup.sh — Sonarr/Radarr will detect existing files in
 #    /data/Media/* and pick them up without re-downloading.
-bash <INSTALL_DIR>/setup.sh`,
+bash <SCRIPTS_DIR>/setup.sh`,
   },
   {
     category: 'Hardlinks',
@@ -451,7 +459,7 @@ bash <INSTALL_DIR>/setup.sh`,
     fix:
       'The wizard sets (b) + (c) automatically — only (a) is the user-controlled piece. Run the hardlink probe to confirm:',
     command:
-      `bash <INSTALL_DIR>/setup-validate.sh
+      `bash <SCRIPTS_DIR>/setup-validate.sh
 # Look for: "✔ Hardlinks work between Downloads and Media"`,
   },
 
@@ -482,8 +490,9 @@ bash <INSTALL_DIR>/setup.sh`,
     fix:
       'Check gluetun\'s logs first to confirm the cause, then use the restart helper.',
     command:
-      `docker compose logs gluetun --tail 50
-bash <INSTALL_DIR>/restart-qbit.sh`,
+      `cd <SCRIPTS_DIR>
+docker compose logs gluetun --tail 50
+bash <SCRIPTS_DIR>/restart-qbit.sh`,
   },
   {
     category: 'VPN (gluetun)',
@@ -493,8 +502,8 @@ bash <INSTALL_DIR>/restart-qbit.sh`,
     fix:
       'Restart the full stack. If it persists, regenerate your VPN credentials in NordVPN\'s dashboard and re-run setup.sh.',
     command:
-      `bash <INSTALL_DIR>/restart-qbit.sh
-bash <INSTALL_DIR>/post-deploy-validate.sh`,
+      `bash <SCRIPTS_DIR>/restart-qbit.sh
+bash <SCRIPTS_DIR>/post-deploy-validate.sh`,
   },
   {
     category: 'VPN (gluetun)',
@@ -512,9 +521,9 @@ bash <INSTALL_DIR>/post-deploy-validate.sh`,
     fix:
       'Update to wizard v0.2.0+, then delete qBittorrent.conf and re-run setup.sh so the new whitelist (with 127.0.0.0/8) gets written.',
     command:
-      `cd <INSTALL_DIR>
+      `cd <SCRIPTS_DIR>
 docker compose stop qbittorrent
-rm qbittorrent/config/qBittorrent/qBittorrent.conf
+rm <INSTALL_DIR>/qbittorrent/config/qBittorrent/qBittorrent.conf
 bash setup.sh`,
   },
 
@@ -561,9 +570,9 @@ bash setup.sh`,
     fix:
       'Kick a manual scan at each arr to clear the backlog. Then verify polling is healthy: in each arr → Settings → Download Clients → SABnzbd → Test. Should return green. If red, paste the SAB URL/API key into the arr\'s config (URL = http://sabnzbd:8080, API key from <INSTALL_DIR>/sabnzbd/config/sabnzbd.ini).',
     command:
-      `SONARR_KEY=$(grep '^SONARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
-RADARR_KEY=$(grep '^RADARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
-LIDARR_KEY=$(grep '^LIDARR_API_KEY=' <INSTALL_DIR>/.env | cut -d= -f2)
+      `SONARR_KEY=$(grep '^SONARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
+RADARR_KEY=$(grep '^RADARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
+LIDARR_KEY=$(grep '^LIDARR_API_KEY=' <SCRIPTS_DIR>/.env | cut -d= -f2)
 
 curl -X POST -H "X-Api-Key: $SONARR_KEY" -H "Content-Type: application/json" \\
   "http://localhost:49152/api/v3/command" \\
@@ -588,7 +597,7 @@ curl -X POST -H "X-Api-Key: $LIDARR_KEY" -H "Content-Type: application/json" \\
       'Run the bundled, read-only triage script. It lists exactly which LAN ports your enabled services publish, checks the one host chain that can actually block them (DOCKER-USER), flags the ufw/firewalld caveats, and points you at the usual real cause (router/AP isolation) — printing precise commands without ever changing a firewall rule itself.',
     command:
       `# Read-only — inspects your firewall and PRINTS guidance, never modifies it:
-sudo bash <INSTALL_DIR>/diagnose-firewall.sh`,
+sudo bash <SCRIPTS_DIR>/diagnose-firewall.sh`,
     family: ['ugreen', 'unraid', 'qnap', 'omv', 'truenas', 'linux', 'asustor', 'terramaster', 'zimaos'],
   },
 
@@ -604,7 +613,7 @@ sudo bash <INSTALL_DIR>/diagnose-firewall.sh`,
       `# Either edit .env to set HOMEPAGE_ALLOWED_HOSTS=*  (simplest)
 # or list the exact hostnames you access from, comma-separated, no ports:
 #   HOMEPAGE_ALLOWED_HOSTS=dashboard.home,192.168.1.10,my-nas.local
-cd <INSTALL_DIR>
+cd <SCRIPTS_DIR>
 sudo nano .env
 sudo docker compose up -d homepage   # apply the .env change`,
   },
@@ -616,8 +625,8 @@ sudo docker compose up -d homepage   # apply the .env change`,
     fix:
       'Easiest: open the installer → "Update existing stack" → "Refresh dashboard." That syncs the latest setup-arr-config.py and regenerates services.yaml + settings.yaml in <1s, no container restart needed. Or run the equivalent manually on the NAS:',
     command:
-      `cd <INSTALL_DIR>
-sudo rm -f homepage/config/services.yaml homepage/config/settings.yaml
+      `cd <SCRIPTS_DIR>
+sudo rm -f <INSTALL_DIR>/homepage/config/services.yaml <INSTALL_DIR>/homepage/config/settings.yaml
 sudo python3 setup-arr-config.py --homepage-only`,
   },
 
@@ -631,7 +640,7 @@ sudo python3 setup-arr-config.py --homepage-only`,
       'The wizard now detects stale yml and refreshes it to use container DNS names (sonarr:8989, radarr:7878). To force a rewrite, delete it and re-run setup.sh.',
     command:
       `rm <INSTALL_DIR>/recyclarr/config/recyclarr.yml
-sudo bash <INSTALL_DIR>/setup.sh`,
+sudo bash <SCRIPTS_DIR>/setup.sh`,
   },
   {
     category: 'Recyclarr',
@@ -659,8 +668,8 @@ Radarr → Movies tab → ✎ Edit (or "X selected" toolbar)
       + `#   Open http://<NAS>:8889 (or click the Recyclarr tile on Homepage)\n`
       + `#   → "Sync Now" → done\n\n`
       + `# Option 2 — SSH one-liner with logging:\n`
-      + `bash ${c.installDir}/recyclarr-sync.sh\n\n`
-      + `# Option 3 — ${scheduleHint(c.nasFamily, 'weekly', `bash ${c.installDir}/recyclarr-sync.sh`).replace(/^# /, '')}`,
+      + `bash ${c.scriptsDir}/recyclarr-sync.sh\n\n`
+      + `# Option 3 — ${scheduleHint(c.nasFamily, 'weekly', `bash ${c.scriptsDir}/recyclarr-sync.sh`).replace(/^# /, '')}`,
   },
   {
     category: 'Recyclarr',
@@ -671,8 +680,8 @@ Radarr → Movies tab → ✎ Edit (or "X selected" toolbar)
       'Re-run the wizard, change the picks on Configure, finish. The recyclarr.yml will be regenerated and the next sync applies the new profile. (You can also hand-edit recyclarr.yml directly — the wizard preserves hand-edits unless your picks have changed.)',
     command:
       `# Or edit .env directly and re-run setup.sh (skips the wizard):
-sed -i 's/TRASH_SONARR_PROFILE=.*/TRASH_SONARR_PROFILE=bluray-1080p/' <INSTALL_DIR>/.env
-sudo bash <INSTALL_DIR>/setup.sh`,
+sed -i 's/TRASH_SONARR_PROFILE=.*/TRASH_SONARR_PROFILE=bluray-1080p/' <SCRIPTS_DIR>/.env
+sudo bash <SCRIPTS_DIR>/setup.sh`,
   },
   {
     category: 'Recyclarr',
@@ -683,8 +692,8 @@ sudo bash <INSTALL_DIR>/setup.sh`,
       'Either enable both arrs, OR disable Recyclarr — it has nothing to sync into without Sonarr and Radarr running. The Configure screen surfaces this with a "needs Sonarr or Radarr" hint.',
     command:
       `# Disable recyclarr in .env if you really don't want the arrs:
-sed -i 's/ENABLE_RECYCLARR=true/ENABLE_RECYCLARR=false/' <INSTALL_DIR>/.env
-sudo bash <INSTALL_DIR>/setup.sh`,
+sed -i 's/ENABLE_RECYCLARR=true/ENABLE_RECYCLARR=false/' <SCRIPTS_DIR>/.env
+sudo bash <SCRIPTS_DIR>/setup.sh`,
   },
   {
     category: 'Recyclarr',
@@ -765,8 +774,13 @@ export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pg
   // Substitution context for command builders + placeholder replacement.
   // Fall back to the historical Synology defaults when a field hasn't been
   // populated yet (Help opened before Configure), so snippets stay valid.
+  const resolvedInstallDir = installDir || '/volume1/docker/media'
   const ctx: TCtx = {
-    installDir: installDir || '/volume1/docker/media',
+    installDir: resolvedInstallDir,
+    // Helper scripts, .env and docker-compose.yml live under <root>/scripts
+    // (setup.sh even rm -f's any root-level copies). Strip trailing slashes
+    // off the root so we don't emit a double slash.
+    scriptsDir: resolvedInstallDir.replace(/\/+$/, '') + '/scripts',
     dataRoot: dataRoot || '/volume1/Data',
     nasFamily: nasFamily ?? 'synology',
     puid: puid || '1026',
@@ -977,12 +991,17 @@ function Entry({ item, ctx }: { item: TItem; ctx: TCtx }) {
   const [copied, setCopied] = useState(false)
   // Resolve the command: family-aware builders are functions of the
   // detect context; static strings get their placeholders substituted
-  // (<INSTALL_DIR> / <DATA_ROOT> / <PUID> / <PGID>). Function builders
+  // (<SCRIPTS_DIR> / <INSTALL_DIR> / <DATA_ROOT> / <PUID> / <PGID>).
+  // <SCRIPTS_DIR> is the helper-script / .env / compose home (<root>/scripts);
+  // <INSTALL_DIR> is the install ROOT (service config dirs, media tree). The
+  // two are distinct tokens, so replacing one never mangles the other — but
+  // we substitute <SCRIPTS_DIR> first for good measure. Function builders
   // already bake ctx values in, so the same substitution pass over their
   // output is a harmless no-op.
   const raw = typeof item.command === 'function' ? item.command(ctx) : item.command
   const cmd = raw
-    ?.replace(/<INSTALL_DIR>/g, ctx.installDir)
+    ?.replace(/<SCRIPTS_DIR>/g, ctx.scriptsDir)
+    .replace(/<INSTALL_DIR>/g, ctx.installDir)
     .replace(/<DATA_ROOT>/g, ctx.dataRoot)
     .replace(/<PUID>/g, ctx.puid)
     .replace(/<PGID>/g, ctx.pgid)

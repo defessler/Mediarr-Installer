@@ -421,7 +421,7 @@ Click **Save & Continue**.
 ┌─────────────────────────────────────────────────────────┐
 │  Installing the stack                                   │
 │  [🚀] Applying firewall rules…                          │
-│  ████████████████░░░░░░░░░░░░░░░░░░░░  40% · step 4/10  │
+│  ████████████████░░░░░░░░░░░░░░░░░░░░  40% · step 4/12  │
 │                                                         │
 │   ✓  Step 1  Set file permissions                       │
 │   ✓  Step 2  Create data and config directories         │
@@ -433,6 +433,8 @@ Click **Save & Continue**.
 │      Step 8  Add Prowlarr indexers                      │
 │      Step 9  Enable Bazarr subtitle providers           │
 │      Step 10 Verify stack health                        │
+│      Step 11 Import any download backlog                │
+│      Step 12 Auto-confirm manual imports                │
 │                                                         │
 │   ┌── 📋 Copy log · 💾 Save log… ───────────────────┐    │
 │   │ [VPN] Fetching WireGuard key from NordVPN API… │    │
@@ -622,11 +624,11 @@ obscure it can take hours (or never appear) depending on indexer coverage.
 |------|------------------|
 | Config files for every service | `/volume1/docker/media/<service>/config/` |
 | Your media library | `/volume1/Data/Media/` |
-| Downloads (in progress) | `/volume1/Data/Downloads/Torrents/Incomplete/` or `/volume1/Data/Downloads/Usenet/incomplete/` |
+| Downloads (in progress) | `/volume1/Data/Downloads/Torrents/InProgress/` or `/volume1/Data/Downloads/Usenet/incomplete/` |
 | Downloads (finished) | `/volume1/Data/Downloads/Torrents/Completed/` or `/volume1/Data/Downloads/Usenet/complete/` |
 | Plex data | `/volume1/docker/media/plex/config/` |
-| The wizard's compose file | `/volume1/docker/media/docker-compose.yml` |
-| The wizard's `.env` | `/volume1/docker/media/.env` (don't share this — it has your passwords) |
+| The wizard's compose file | `/volume1/docker/media/scripts/docker-compose.yml` |
+| The wizard's `.env` | `/volume1/docker/media/scripts/.env` (don't share this — it has your passwords) |
 | Helper scripts (re-run sync, etc.) | `/volume1/docker/media/scripts/recyclarr-sync.sh`, `scripts/restart-qbit.sh`, etc. (v0.3.22+ tucks all `.sh` / `.py` helpers under `scripts/` so the install dir stays tidy). |
 
 To inspect any of these from your PC: connect to your NAS in File Explorer
@@ -675,7 +677,7 @@ If you want to inspect what's running:
 
 ```bash
 # Open an SSH session to your NAS, then:
-cd /volume1/docker/media
+cd /volume1/docker/media/scripts
 
 # What containers are running?
 docker compose ps
@@ -687,7 +689,7 @@ docker compose logs --tail=80 sonarr
 docker compose logs -f plex
 
 # Re-run the post-deploy validator (the wizard's final check)
-sudo bash post-deploy-validate.sh
+sudo bash /volume1/docker/media/scripts/post-deploy-validate.sh
 ```
 
 ### Re-running the wizard
@@ -704,7 +706,7 @@ Open an issue on this repo with:
 
 1. The install log from the wizard (Run screen → "Copy log" button).
 2. Output of `docker compose ps`.
-3. Output of `sudo bash /volume1/docker/media/post-deploy-validate.sh`.
+3. Output of `sudo bash /volume1/docker/media/scripts/post-deploy-validate.sh`.
 
 ---
 
