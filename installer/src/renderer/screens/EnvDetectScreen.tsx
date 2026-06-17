@@ -553,28 +553,19 @@ export function EnvDetectScreen() {
                   value={config.DATA_ROOT ?? r.suggestedDataRoot}
                   onChange={(e) => setConfig({ DATA_ROOT: e.target.value || undefined })}
                 />
-                {r.dataCandidates.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-slate-600">Detected share roots:</span>
-                    {r.dataCandidates.map((d) => {
-                      const active = (config.DATA_ROOT ?? r.suggestedDataRoot) === d
-                      return (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => setConfig({ DATA_ROOT: d })}
-                          className={
-                            'font-mono px-2 py-0.5 rounded border transition-colors ' +
-                            (active
-                              ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-100'
-                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700')
-                          }
-                        >
-                          {d}
-                        </button>
-                      )
-                    })}
-                  </div>
+                {r.dataCandidates.length > 0 && (
+                  <p className="text-slate-600 mt-1.5 leading-relaxed">
+                    Storage roots found here:{' '}
+                    {r.dataCandidates.map((d, i) => (
+                      <span key={d}>
+                        {i > 0 && ' · '}
+                        <span className="font-mono text-slate-400">{d}</span>
+                      </span>
+                    ))}
+                    . Point Data root at a folder <span className="text-slate-500">inside</span> one
+                    of these (e.g. <span className="font-mono">{r.dataCandidates[0]}/Data</span>) — the
+                    installer won&apos;t write to a bare volume root.
+                  </p>
                 )}
               </div>
               {[config.INSTALL_DIR ?? r.suggestedInstallDir, config.DATA_ROOT ?? r.suggestedDataRoot]

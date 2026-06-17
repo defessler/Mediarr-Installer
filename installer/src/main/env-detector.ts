@@ -64,13 +64,27 @@ function shellQuote(s: string): string {
 // failure". Everything below is now batched into one bash invocation
 // in detectEnv() — see the `===KEY===` section markers.)
 
-/** Pull a labelled section out of the batched probe stdout. Each section
- *  is bracketed by `===KEY===` markers so we can split a single multi-
- *  command bash output cleanly. */
+/** Pull a labelled section out of the batched probe stdout. Each section is a
+ *  `===KEY===` marker on its own line, followed by that command's output up to
+ *  the next marker line (or EOF).
+ *
+ *  Scanned line-by-line rather than with one regex on purpose: the old regex
+ *  `===KEY===\n(.*?)(?=\n===|$)` over-captured an EMPTY section. Its marker
+ *  line's trailing \n was consumed by the match, so an immediately-following
+ *  marker wasn't preceded by the \n the lookahead needed — the capture ran on
+ *  and swallowed the next sections. That made an empty `mnt_children` leak the
+ *  `docker_v2` version probe + `RC=0` into the data-root candidate list. Line
+ *  scanning returns '' for an empty section, which is correct. */
 function section(out: string, key: string): string {
-  const re = new RegExp(`===${key}===\\n([\\s\\S]*?)(?=\\n===|$)`)
-  const m = out.match(re)
-  return m ? m[1].trim() : ''
+  const lines = out.split('\n')
+  const start = lines.indexOf(`===${key}===`)
+  if (start === -1) return ''
+  const body: string[] = []
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^===[A-Za-z0-9_]+===$/.test(lines[i])) break // next section marker
+    body.push(lines[i])
+  }
+  return body.join('\n').trim()
 }
 
 export async function detectEnv(
