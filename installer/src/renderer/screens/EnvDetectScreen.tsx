@@ -514,15 +514,75 @@ export function EnvDetectScreen() {
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            {/* Detected paths are EDITABLE here — correct where the stack
+                installs (INSTALL_DIR) and where media lives (DATA_ROOT) right
+                on the detect screen, not only on Configure. INSTALL_DIR stays
+                in lockstep with the wizard's targetDir (the SFTP destination +
+                setup.sh location), exactly like the Configure field. */}
+            <div className="space-y-3 text-xs">
               <div>
-                <span className="text-slate-500">Install dir:</span>{' '}
-                <span className="font-mono text-slate-300">{r.suggestedInstallDir}</span>
+                <label htmlFor="detect-install-dir" className="text-slate-500">
+                  Install dir{' '}
+                  <span className="text-slate-600">· compose stack + per-container configs (fast local storage, not a network share)</span>
+                </label>
+                <input
+                  id="detect-install-dir"
+                  type="text"
+                  spellCheck={false}
+                  aria-label="Install directory"
+                  className="mt-1 w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-slate-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                  value={config.INSTALL_DIR ?? r.suggestedInstallDir}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setConfig({ INSTALL_DIR: v || undefined })
+                    useWizard.getState().setTargetDir(v || r.suggestedInstallDir)
+                  }}
+                />
               </div>
               <div>
-                <span className="text-slate-500">Data root:</span>{' '}
-                <span className="font-mono text-slate-300">{r.suggestedDataRoot}</span>
+                <label htmlFor="detect-data-root" className="text-slate-500">
+                  Data root{' '}
+                  <span className="text-slate-600">· your media + downloads (a large storage pool)</span>
+                </label>
+                <input
+                  id="detect-data-root"
+                  type="text"
+                  spellCheck={false}
+                  aria-label="Data root"
+                  className="mt-1 w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-md font-mono text-slate-200 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                  value={config.DATA_ROOT ?? r.suggestedDataRoot}
+                  onChange={(e) => setConfig({ DATA_ROOT: e.target.value || undefined })}
+                />
+                {r.dataCandidates.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-slate-600">Detected share roots:</span>
+                    {r.dataCandidates.map((d) => {
+                      const active = (config.DATA_ROOT ?? r.suggestedDataRoot) === d
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setConfig({ DATA_ROOT: d })}
+                          className={
+                            'font-mono px-2 py-0.5 rounded border transition-colors ' +
+                            (active
+                              ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-100'
+                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700')
+                          }
+                        >
+                          {d}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
+              {[config.INSTALL_DIR ?? r.suggestedInstallDir, config.DATA_ROOT ?? r.suggestedDataRoot]
+                .some((p) => p && !p.startsWith('/')) && (
+                <p className="text-amber-300/80">
+                  Paths must be absolute (start with <span className="font-mono">/</span>).
+                </p>
+              )}
             </div>
             {(r.cpuArch || r.ramMB) && (
               <div className="text-xs text-slate-500">
@@ -535,28 +595,20 @@ export function EnvDetectScreen() {
             )}
             {r.nasFamily !== 'synology' && r.familyConfidence === 'high' && (
               <p className="text-xs text-emerald-300/80">
-                Non-Synology host detected. The wizard auto-fills these paths
-                on the Configure screen; you can override them there.
+                Non-Synology host detected — we auto-filled these paths for it.
+                Edit them above if they&apos;re wrong (also changeable later on Configure).
               </p>
             )}
             {r.familyConfidence !== 'high' && (
               <p className="text-xs text-amber-300/80">
                 {r.familyConfidence === 'unknown'
-                  ? 'We couldn’t positively identify this NAS, so these are generic Linux defaults — double-check the Install dir + Data root on the next screen so they land on your real storage pool, not the system disk.'
-                  : 'Identified by heuristic (Debian + /volume1). If this isn’t a UGREEN box, adjust the paths on the next screen.'}
+                  ? 'We couldn’t positively identify this NAS, so these are generic Linux defaults — double-check the Install dir + Data root above so they land on your real storage pool, not the system disk.'
+                  : 'Identified by heuristic (Debian + /volume1). If this isn’t a UGREEN box, fix the paths above.'}
                 {r.systemVendor && (
                   <> (Reported hardware vendor:{' '}
                   <span className="font-mono">{r.systemVendor}</span>.)</>
                 )}
               </p>
-            )}
-            {r.dataCandidates.length > 0 && (
-              <div className="text-xs text-slate-500">
-                Other share roots present:{' '}
-                <span className="font-mono text-slate-400">
-                  {r.dataCandidates.filter((d) => d !== r.suggestedDataRoot).join(', ') || '—'}
-                </span>
-              </div>
             )}
           </section>
 
