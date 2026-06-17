@@ -440,6 +440,8 @@ export async function detectEnv(sessionId: string, _targetDir?: string): Promise
     dataCandidates: ['/volume1', '/volume2'],
     suggestedInstallDir: '/volume1/docker/media',
     suggestedDataRoot: '/volume1/Data',
+    existingInstallDir: null,
+    existingDataRoot: null,
     // Synology mock — PUID/PGID match DSM's reserved-from-1026 convention.
     // Real machines might land on /etc/passwd's first interactive user;
     // env-detector picks the family-appropriate fallback per nasFamily.

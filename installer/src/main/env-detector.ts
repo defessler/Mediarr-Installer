@@ -253,6 +253,12 @@ export async function detectEnv(
     'echo "===whoami==="; whoami',
     'echo "===has_compose==="; [ -f ' + tq + '/docker-compose.yml ] && echo y || true',
     'echo "===has_env==="; [ -f ' + tq + '/.env ] && echo y || true',
+    // The paths an EXISTING install is configured with — read straight from its
+    // .env. Lets the Detect/Configure screens warn before the user relocates an
+    // existing stack to a different INSTALL_DIR/DATA_ROOT (setup.sh's
+    // relocate-stack.sh is the server-side backstop that actually moves data).
+    'echo "===existing_install_dir==="; [ -f ' + tq + '/.env ] && grep -m1 "^INSTALL_DIR=" ' + tq + '/.env | cut -d"=" -f2- || true',
+    'echo "===existing_data_root==="; [ -f ' + tq + '/.env ] && grep -m1 "^DATA_ROOT=" ' + tq + '/.env | cut -d"=" -f2- || true',
     'echo "===running==="; docker ps --format "{{.Names}}" 2>/dev/null || true',
     // Map of currently-bound ports to the docker container that owns
     // each. We use this to suppress "port conflict" warnings for ports
@@ -641,6 +647,20 @@ export async function detectEnv(
     ...mntChildren.filter((p) => !dataCandidatesBase.includes(p)),
   ]
 
+  // The INSTALL_DIR / DATA_ROOT an existing install is using (from its .env);
+  // null when there's no prior install. Drives the Detect/Configure warning
+  // when the user enters a different path (which would relocate the stack).
+  const cleanEnvPath = (s: string): string | null => {
+    // Strip quotes/CR, plus trailing slashes (preserving a bare "/") so a
+    // ".../Data/" in .env matches the slash-normalized value relocate-stack.sh
+    // compares against — otherwise the Detect screen fires a false "relocating"
+    // warning for a path that's actually unchanged.
+    const v = (s.split('\n')[0] ?? '').trim().replace(/^"|"$/g, '').replace(/\r/g, '').replace(/(.)\/+$/, '$1')
+    return v || null
+  }
+  const existingInstallDir = cleanEnvPath(section(o, 'existing_install_dir'))
+  const existingDataRoot = cleanEnvPath(section(o, 'existing_data_root'))
+
   // Pre-compute the family-appropriate defaults so the renderer doesn't
   // need to know the conventions — single source of truth lives here.
   const familyDefaults = pickFamilyDefaults(nasFamily, dataCandidates, mntChildren)
@@ -727,6 +747,8 @@ export async function detectEnv(
     dockerGroup,
     systemVendor: dmiVendor || null,
     existingInstall,
+    existingInstallDir,
+    existingDataRoot,
     portConflicts,
     disk,
     internet,

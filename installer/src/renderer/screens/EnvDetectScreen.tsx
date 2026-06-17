@@ -574,6 +574,38 @@ export function EnvDetectScreen() {
                   Paths must be absolute (start with <span className="font-mono">/</span>).
                 </p>
               )}
+              {(() => {
+                const inst = (config.INSTALL_DIR as string | undefined) ?? r.suggestedInstallDir
+                const data = (config.DATA_ROOT as string | undefined) ?? r.suggestedDataRoot
+                const instChanged = !!r.existingInstallDir && inst !== r.existingInstallDir
+                const dataChanged = !!r.existingDataRoot && data !== r.existingDataRoot
+                if (!instChanged && !dataChanged) return null
+                return (
+                  <div className="rounded-md border border-amber-700/40 bg-amber-900/15 px-3 py-2 space-y-1 text-amber-200/90">
+                    <div className="font-medium text-amber-200">⚠ Relocating an existing install</div>
+                    {instChanged && (
+                      <div>
+                        Install dir differs from the one already installed here (
+                        <span className="font-mono text-amber-100/80">{r.existingInstallDir}</span>).
+                      </div>
+                    )}
+                    {dataChanged && (
+                      <div>
+                        Data root differs from the one already installed here (
+                        <span className="font-mono text-amber-100/80">{r.existingDataRoot}</span>).
+                      </div>
+                    )}
+                    <div className="text-amber-200/70">
+                      <span className="text-amber-200/90">Same disk:</span> the stack is stopped and your
+                      configs + media are moved with an instant in-place rename — nothing is left at the old
+                      path. <span className="text-amber-200/90">Different disk:</span> the install stops
+                      without touching anything and prints manual <span className="font-mono">rsync</span>{' '}
+                      steps (or re-run with <span className="font-mono">MEDIARR_RELOCATE=1</span> to copy
+                      automatically). Double-check before continuing.
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
             {(r.cpuArch || r.ramMB) && (
               <div className="text-xs text-slate-500">

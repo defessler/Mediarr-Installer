@@ -216,6 +216,13 @@ export interface EnvDetectResult {
   /** Family-aware default for DATA_ROOT (where the user's media +
    *  downloads live — bind-mounted as /data inside the arr containers). */
   suggestedDataRoot: string
+  /** The INSTALL_DIR / DATA_ROOT an EXISTING install is using (read from the
+   *  on-NAS .env at the target dir), or null when there's no prior install.
+   *  The Detect/Configure screens warn when the user enters a DIFFERENT path,
+   *  because relocating an existing stack moves data (setup.sh runs
+   *  relocate-stack.sh to do it safely). */
+  existingInstallDir: string | null
+  existingDataRoot: string | null
   /** Family-aware fallback for PUID. Used to seed the Configure form
    *  before the /etc/passwd-driven user dropdown finishes populating;
    *  once that loads, the user picks a real account and PUID/PGID get

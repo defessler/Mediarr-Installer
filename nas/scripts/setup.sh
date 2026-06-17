@@ -1096,7 +1096,7 @@ echo "  Safe to re-run — all steps skip what's already done."
 # is never touched. Order-independent; the loop just `rm -f`s each match.
 if [ "$INSTALL_DIR" != "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR" ]; then
     LEGACY_LOOSE=(
-        setup.sh setup-chmod.sh setup-folders.sh setup-firewall.sh
+        setup.sh setup-chmod.sh setup-folders.sh relocate-stack.sh setup-firewall.sh
         setup-nordvpn.sh setup-validate.sh post-deploy-validate.sh
         setup-arr-config.py recyclarr-trigger.py recyclarr-sync.sh
         restart-qbit.sh tune-arrs.sh fix-imports.sh stop-all.sh
@@ -1193,6 +1193,38 @@ elif [ "$RESUME" = 1 ]; then
         echo "  ▶ --resume: no checkpoint found ($STATE_FILE) — running all steps."
     fi
 fi
+
+# ── Relocation pre-flight (before any path-touching steps) ───────────────────
+# If an existing install's LIVE containers are bind-mounted to a different
+# INSTALL_DIR/DATA_ROOT than .env now specifies, move the data NOW — before
+# setup-folders.sh creates the new (empty) dirs and before start_stack would
+# recreate containers against them, silently orphaning the old config + media.
+# No-op unless a real path change is detected (the common case). Same-filesystem
+# moves are an instant atomic rename; a cross-filesystem move aborts here with
+# manual steps (stack untouched) unless MEDIARR_RELOCATE=1 opts into the copy.
+#
+# Exit codes: 0 = nothing to relocate (common case) → carry on; 1 = aborted →
+# stop; 75 = relocation PERFORMED → the stack was torn down, so it MUST restart:
+# force START_STEP back to 1 so start_stack (step 6) runs even under --from N /
+# --resume (steps 1-5 are idempotent + cheap), otherwise we'd skip the restart
+# and hang waiting on zero containers.
+if [ -f "$SCRIPT_DIR/relocate-stack.sh" ]; then
+    bash "$SCRIPT_DIR/relocate-stack.sh"
+    _reloc_rc=$?
+else
+    # Engine absent (partial upload, or a build that didn't ship it). Relocation
+    # only matters for EXISTING installs; never let its absence block setup.
+    _reloc_rc=0
+fi
+if [ "$_reloc_rc" -eq 75 ]; then
+    if [ "$START_STEP" -gt 1 ]; then
+        echo "  ▶ Relocation stopped the stack — running all steps so it restarts (1-5 are idempotent)."
+        START_STEP=1
+    fi
+elif [ "$_reloc_rc" -ne 0 ]; then
+    exit 1
+fi
+unset _reloc_rc
 
 run_step 1 "Set file permissions" \
     bash "$SCRIPT_DIR/setup-chmod.sh"
