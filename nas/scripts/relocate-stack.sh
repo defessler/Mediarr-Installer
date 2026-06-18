@@ -220,6 +220,17 @@ same_fs() {
 }
 dest_blocked() { [ -e "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; }
 verify_copy() { [ -z "$(rsync -aHAXn "$1"/ "$2"/ 2>/dev/null)" ]; }
+# Carry the first-install marker to the NEW root so the next setup-arr-config.py
+# run keeps REINSTALL_PRESERVE=True (won't re-stamp wizard defaults over the
+# user's arr/qBit UI edits). Idempotent + best-effort; only acts when INSTALL_DIR
+# actually moved and the marker exists at the old root. Called from BOTH the
+# skip-all early-exit and the completed-move success path.
+carry_install_marker() {
+    [ -n "$OLD_INSTALL" ] && [ "$OLD_INSTALL" != "$NEW_INSTALL" ] || return 0
+    [ -f "$OLD_INSTALL/.wizard-stack-installed" ] || return 0
+    mkdir -p "$NEW_INSTALL" 2>/dev/null || true
+    cp -p "$OLD_INSTALL/.wizard-stack-installed" "$NEW_INSTALL/.wizard-stack-installed" 2>/dev/null || true
+}
 
 echo "────────────────────────────────────────────────────────────────────"
 echo "  Path change detected on an existing install. Relocating so your data"
@@ -254,6 +265,14 @@ if [ "$RESUMED_FROM_STATE" -eq 0 ] && [ "${MEDIARR_NARROW_RERUN:-}" = "1" ] && [
 fi
 
 # ── PRE-FLIGHT every move BEFORE touching the running stack ──────────────────
+# KEPT_PAIRS = pairs that still need a REAL move (empty/absent dest, or a
+# consented resume). A pair whose NEW location already has data is SKIPPED non-
+# destructively (see the dest_blocked branch below) and never enters KEPT_PAIRS,
+# so it is never recorded to .relocate-state and never moved. Only KEPT_PAIRS
+# drives the teardown + move below — so a populated target can never hard-fail
+# the install and the old copy is never touched.
+KEPT_PAIRS=()
+SKIPPED_OCCUPIED=0
 for ch in "${PAIRS[@]}"; do
     IFS='|' read -r o n l <<<"$ch"
     pair_same_fs=0
@@ -279,10 +298,21 @@ for ch in "${PAIRS[@]}"; do
             echo "      The original at $o is intact. It is safe to delete $n and re-run setup to resume."
             exit 1
         else
-            echo "  ✘ $l: destination already exists and is not empty:"
+            # FRESH path change, but the NEW location already holds data. Policy
+            # (user-chosen): NEVER hard-fail on a non-empty target, and REMOVE
+            # NOTHING. So do NOT mv/rsync onto it — a same-fs mv onto a non-empty
+            # dir ENOTEMPTY-fails anyway, and the cross-fs path would rsync-merge
+            # then rm the source. Instead SKIP this move: leave the old copy
+            # exactly where it is and let the stack bind to the data already at
+            # the new path. Drop the pair from the work set (never recorded, never
+            # moved). $o is named so the old copy stays discoverable/recoverable.
+            echo "  • $l: the new location already has data — leaving it in place (NOT overwriting):"
             echo "      $n"
-            echo "    Refusing to overwrite an existing config/library. Move it aside, then re-run setup."
-            exit 1
+            echo "    Your existing copy at $o was left untouched; nothing was removed. The stack"
+            echo "    will use the data already at $n."
+            echo "    (To force an actual move instead, empty $n first, then re-run setup.)"
+            SKIPPED_OCCUPIED=1
+            continue
         fi
     fi
     if [ "$pair_same_fs" -eq 0 ]; then
@@ -333,11 +363,32 @@ for ch in "${PAIRS[@]}"; do
             esac
         fi
     fi
+    # Survived every pre-flight guard and was NOT skipped as already-populated:
+    # this pair needs a real move. The fresh-occupied skip above `continue`s
+    # before here; the same-fs resume path `exit 1`s. So a single tail append is
+    # unambiguous — no membership/de-dupe test needed.
+    KEPT_PAIRS+=("$ch")
 done
+
+# ── If every detected move was skipped (each new location already held the
+# data), this relocation is a NO-OP: carry the marker, clear state, and exit 0
+# WITHOUT tearing the stack down. setup.sh then proceeds (setup-folders.sh +
+# setup-arr-config.py do the non-destructive in-place merge) and start_stack
+# brings the stack up at the new paths, which already hold the data. Nothing was
+# moved or removed. (Gating on the count keeps the empty-array out of the loops
+# below — same invariant the PAIRS check at the top relies on.)
+if [ ${#KEPT_PAIRS[@]} -eq 0 ]; then
+    if [ "$SKIPPED_OCCUPIED" -eq 1 ]; then
+        echo "  ✔ The new location(s) already hold your data — nothing to move; nothing removed."
+        carry_install_marker
+    fi
+    rm -f "$RELOCATE_STATE" 2>/dev/null
+    exit 0
+fi
 
 # ── Record the plan, THEN stop the stack, THEN move ──────────────────────────
 : > "$RELOCATE_STATE" 2>/dev/null || true
-for ch in "${PAIRS[@]}"; do printf '%s\n' "$ch" >> "$RELOCATE_STATE" 2>/dev/null || true; done
+for ch in "${KEPT_PAIRS[@]}"; do printf '%s\n' "$ch" >> "$RELOCATE_STATE" 2>/dev/null || true; done
 # Also record the install roots so a (re-)resume can carry the first-install
 # marker even after teardown. No "|" → the pair reader above skips these lines.
 if [ -n "$OLD_INSTALL" ] && [ "$OLD_INSTALL" != "$NEW_INSTALL" ]; then
@@ -371,7 +422,7 @@ relocate_one() {
 }
 
 rc=0
-for ch in "${PAIRS[@]}"; do
+for ch in "${KEPT_PAIRS[@]}"; do
     IFS='|' read -r o n l <<<"$ch"
     relocate_one "$o" "$n" "$l" || { rc=1; break; }   # stop on first failure; state file keeps the rest for resume
 done
@@ -382,14 +433,10 @@ if [ "$rc" -ne 0 ]; then
     exit 1
 fi
 rm -f "$RELOCATE_STATE" 2>/dev/null
-# Carry the first-install marker to the NEW root. The per-service move never
-# touches this top-level one-line file, so it stays at OLD_INSTALL — which would
-# leave the next setup-arr-config.py run seeing REINSTALL_PRESERVE=False at the
-# new path and re-stamping wizard defaults over every arr/qBit UI customization
-# the marker machinery exists to protect. Tiny file → just copy it (no cross-fs
-# concern). Only relevant when INSTALL_DIR actually moved.
-if [ -n "$OLD_INSTALL" ] && [ "$OLD_INSTALL" != "$NEW_INSTALL" ]; then
-    [ -f "$OLD_INSTALL/.wizard-stack-installed" ] && { mkdir -p "$NEW_INSTALL"; cp -p "$OLD_INSTALL/.wizard-stack-installed" "$NEW_INSTALL/.wizard-stack-installed" 2>/dev/null; }
-fi
+# Carry the first-install marker to the NEW root so the next setup-arr-config.py
+# run keeps REINSTALL_PRESERVE=True (the per-service move never touches this
+# top-level file; without the carry the next run re-stamps wizard defaults over
+# the user's arr/qBit UI edits). Same helper the skip-all early-exit uses.
+carry_install_marker
 echo "  ✔ Relocation complete. Restarting the stack at the new paths…"
 exit 75   # sentinel: relocation performed, stack is DOWN — setup.sh must run start_stack
