@@ -62,13 +62,40 @@ $RT info >/dev/null 2>&1 || exit 0
 env_val() { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | sed 's/^"//; s/"$//'; }
 NEW_INSTALL="$(env_val INSTALL_DIR)"
 NEW_DATA="$(env_val DATA_ROOT)"
-# Normalize trailing slashes so the .env-sourced NEW paths match the OLD paths
-# docker inspect reports (already clean) — otherwise a habitual
-# "DATA_ROOT=/volume1/Data/" looks like a path change and wedges a legit re-run.
-# Loop is multi-trailing-slash safe and preserves a bare "/".
-strip_slash() { local p="$1"; while [ "$p" != "/" ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done; printf '%s' "$p"; }
-NEW_INSTALL="$(strip_slash "$NEW_INSTALL")"
-NEW_DATA="$(strip_slash "$NEW_DATA")"
+# Lexically canonicalize the .env-sourced NEW paths the SAME way the Docker /
+# Podman daemon canonicalizes a bind-mount .Source (Go filepath.Clean): collapse
+# repeated "/", drop "/./", resolve "/../", strip a trailing "/". Without this a
+# non-canonical-but-equivalent path in .env (e.g. /volume1//Data, /volume1/./Data,
+# /volume1/Media/../Data, a trailing "/.") looks like a path change and wedges a
+# legit same-path re-run with "destination already exists and is not empty".
+# Pure string op: no filesystem access, no realpath/readlink (busybox-safe), no
+# symlink-semantics change. Preserves a bare "/" and paths containing spaces.
+clean() {
+    local in="$1" abs=0 out="" seg rest
+    case "$in" in /*) abs=1 ;; esac
+    rest="$in"
+    while [ -n "$rest" ]; do
+        seg="${rest%%/*}"
+        case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+        case "$seg" in
+            ''|'.') : ;;
+            '..')
+                if [ -n "$out" ]; then
+                    # Pop the last segment. ${out%/*} is a NO-OP when out holds a
+                    # lone segment (no "/"), so case-split to empty it correctly —
+                    # otherwise "/vol/../x" mis-cleans and can orphan live data.
+                    case "$out" in */*) out="${out%/*}" ;; *) out="" ;; esac
+                elif [ "$abs" -eq 0 ]; then
+                    out="${out:+$out/}.."
+                fi
+                ;;
+            *) [ -n "$out" ] && out="$out/$seg" || out="$seg" ;;
+        esac
+    done
+    if [ "$abs" -eq 1 ]; then printf '/%s' "$out"; else printf '%s' "${out:-.}"; fi
+}
+NEW_INSTALL="$(clean "$NEW_INSTALL")"
+NEW_DATA="$(clean "$NEW_DATA")"
 
 # Resume state lives next to .setup-state, in scripts/ — which the per-service
 # strategy never moves, so it survives a relocation and an SFTP re-upload (merge).
@@ -106,6 +133,11 @@ if [ -z "$OLD_DATA" ]; then
         case "$src" in */Media) OLD_DATA="${src%/Media}"; break ;; esac
     done
 fi
+# Canonicalize the OLD side the SAME way as NEW (the daemon already filepath.Clean's
+# .Source, so this is normally a no-op) — keeps every comparison below symmetric and
+# robust to any runtime that stores a less-canonical source. Idempotent.
+[ -n "$OLD_INSTALL" ] && OLD_INSTALL="$(clean "$OLD_INSTALL")"
+[ -n "$OLD_DATA" ]    && OLD_DATA="$(clean "$OLD_DATA")"
 
 # ── Nesting guard ────────────────────────────────────────────────────────────
 # If INSTALL_DIR and DATA_ROOT are nested (one inside the other) or equal AND a
@@ -127,7 +159,23 @@ fi
 
 # ── Build the move set (old|new|label) ───────────────────────────────────────
 PAIRS=()
-add_pair() { [ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ] && [ -d "$1" ] && PAIRS+=("$1|$2|$3"); }
+add_pair() {
+    [ -n "$1" ] && [ -n "$2" ] || return 0
+    # Same on-disk directory under two different spellings (a symlink, a bind, or
+    # anything the lexical clean() above can't see)? That is NOT a relocation —
+    # skip it. stat -c %d is already a dependency (same_fs); %i adds the inode.
+    # Require BOTH ids present, equal, AND a non-zero inode: some CIFS/NFS mounts
+    # report st_ino=0 for distinct paths, which must NOT be treated as identical.
+    # Suppression-only: it can never CREATE a move, so it cannot mask a genuine
+    # relocation (a real new path is absent → empty stat, or a different dir →
+    # different inode; both fall through to the string + -d check and proceed).
+    local ai bi
+    ai="$(stat -c '%d:%i' "$1" 2>/dev/null)"
+    bi="$(stat -c '%d:%i' "$2" 2>/dev/null)"
+    case "$ai" in *:0) ai="" ;; esac
+    [ -n "$ai" ] && [ "$ai" = "$bi" ] && return 0
+    [ "$1" != "$2" ] && [ -d "$1" ] && PAIRS+=("$1|$2|$3")
+}
 # INSTALL_DIR → per-service subtrees (NOT the whole root: scripts/ + the fresh
 # .env the installer just uploaded must stay put).
 if [ -n "$OLD_INSTALL" ] && [ "$OLD_INSTALL" != "$NEW_INSTALL" ]; then
@@ -148,6 +196,8 @@ add_pair "$OLD_DATA" "$NEW_DATA" "DATA_ROOT"
 RESUMED_FROM_STATE=0
 if [ ${#PAIRS[@]} -eq 0 ] && [ -f "$RELOCATE_STATE" ]; then
     while IFS='|' read -r o n l; do
+        [ -n "$o" ] && o="$(clean "$o")"
+        [ -n "$n" ] && n="$(clean "$n")"
         [ -n "$o" ] && [ -n "$n" ] && [ "$o" != "$n" ] && [ -d "$o" ] && PAIRS+=("$o|$n|$l")
     done < "$RELOCATE_STATE"
     [ ${#PAIRS[@]} -gt 0 ] && { RESUMED_FROM_STATE=1; echo "  Resuming an interrupted relocation (${#PAIRS[@]} item(s) left)…"; }

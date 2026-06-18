@@ -114,7 +114,7 @@ jobs:
             # Body minus commit trailers (Co-Authored-By / robot footer),
             # which are noise in public release notes.
             git show -s --format=%b "$GITHUB_REF_NAME" \
-              | grep -vE '^Co-[Aa]uthored-[Bb]y:|^🤖|^Generated with \[Claude'
+              | grep -vE '^Co-[Aa]uthored-[Bb]y:|^Claude-Session:|^🤖|^Generated with \[Claude'
             echo
             echo "---"
             echo
