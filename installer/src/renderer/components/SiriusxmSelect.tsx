@@ -55,11 +55,22 @@ export function SiriusxmSelect({ value, onChange }: Props) {
       ? emit(selected.filter((s) => s !== slug))
       : emit([...selected, slug])
   const remove = (slug: string) => emit(selected.filter((s) => s !== slug))
+  // xmplaylist slugs are bare identifiers (e.g. "octane", "the-pulse"). Scrub
+  // the same way SpotifyConnect.serialize does its labels: drop the CSV/field
+  // separators (',' and '|') that would corrupt parseSlugs / the container's
+  // sync.sh split, and strip ALL whitespace (a slug has none) — a stray space
+  // or comma would otherwise silently write an invalid slug that only fails
+  // later in the container log.
   const addCustom = () => {
-    const s = custom.trim()
+    const s = custom.trim().replace(/[,|]/g, '').replace(/\s+/g, '')
     if (s && !selectedSet.has(s)) emit([...selected, s])
     setCustom('')
   }
+  // Soft hint when the typed value has characters outside a real xmplaylist
+  // slug (they're all lowercase alphanumerics — e.g. "thepulse", "80son8").
+  // It's still added (after scrubbing), but the mismatch usually means a typo.
+  const customDirty =
+    custom.trim().length > 0 && !/^[a-z0-9]+$/.test(custom.trim())
 
   return (
     <div className="space-y-2">
@@ -175,6 +186,13 @@ export function SiriusxmSelect({ value, onChange }: Props) {
           Add
         </button>
       </div>
+      {customDirty && (
+        <div className="text-[11px] text-amber-400/90">
+          xmplaylist slugs are lowercase letters/numbers with no spaces (e.g.
+          <span className="font-mono"> thepulse</span>). Spaces and commas are
+          removed automatically.
+        </div>
+      )}
       <div className="text-[11px] text-slate-500">
         {selected.length} selected · {filtered.length} of {SIRIUSXM_STATIONS.length} channels
       </div>

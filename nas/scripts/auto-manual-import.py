@@ -276,12 +276,49 @@ def _drain_arr(label, base, key, api_version, media_field, build_file_payload,
         skip(f"{label.upper()}_API_KEY not set and config.xml lookup empty — skipping")
         return
 
-    queue = _arr_get(base, key, f"/{api_version}/queue?pageSize=500{include_query}")
-    if queue is None:
-        warn(f"can't read {label} queue (arr down, wrong key, or wrong port?)")
-        return
+    # Page through the whole queue. A single pageSize=500 fetch silently
+    # truncated any backlog over 500 — import-blocked items beyond page 1 were
+    # never fetched/drained, and because the count line below only fires when
+    # NOTHING is blocked, the truncation was invisible and a re-run (same fixed
+    # page) couldn't help. Loop using totalRecords (same field fix-imports.sh
+    # reads) until we've collected every record. PAGE_CAP is a safety stop so a
+    # mis-reported total can't spin forever — 40 × 500 = 20k records is far past
+    # any realistic queue.
+    PAGE_SIZE = 500
+    PAGE_CAP = 40
+    records = []
+    total_records = None
+    for page in range(1, PAGE_CAP + 1):
+        queue = _arr_get(
+            base, key,
+            f"/{api_version}/queue?page={page}&pageSize={PAGE_SIZE}{include_query}",
+        )
+        if queue is None:
+            if page == 1:
+                warn(f"can't read {label} queue (arr down, wrong key, or wrong port?)")
+                return
+            # A later page failed mid-drain — process what we have rather than
+            # abort, and note the partial read so the truncation stays visible.
+            warn(f"{label} queue page {page} read failed — processing the {len(records)} record(s) fetched so far")
+            break
+        page_records = queue.get('records', []) if isinstance(queue, dict) else (queue or [])
+        records.extend(page_records)
+        if isinstance(queue, dict) and isinstance(queue.get('totalRecords'), int):
+            total_records = queue['totalRecords']
+        # Stop when we've pulled everything the arr says exists, or when a short
+        # page (fewer than a full page) tells us we've hit the end. A non-dict
+        # response (older arr returning a bare list) has no paging — take it once.
+        if not isinstance(queue, dict):
+            break
+        if total_records is not None and len(records) >= total_records:
+            break
+        if len(page_records) < PAGE_SIZE:
+            break
+    else:
+        # Loop exhausted PAGE_CAP without a natural stop — report the truncation
+        # instead of pretending the queue was fully drained.
+        warn(f"{label} queue exceeds {PAGE_CAP * PAGE_SIZE} records — only the first {len(records)} were scanned this run")
 
-    records = queue.get('records', []) if isinstance(queue, dict) else (queue or [])
     blocked = [
         r for r in records
         if (r.get('trackedDownloadState') or '').lower() == 'importblocked'
@@ -309,9 +346,12 @@ def _drain_arr(label, base, key, api_version, media_field, build_file_payload,
         # this the manualimport endpoint silently filters out any
         # candidate whose target exists — but a re-import with the same
         # filename is exactly the case the user usually wants resolved.
+        # urlencode it — download_id is a tracker/usenet hash that can carry
+        # characters raw interpolation would mangle into a malformed request.
+        query = urlencode({'downloadId': download_id, 'filterExistingFiles': 'false'})
         candidates = _arr_get(
             base, key,
-            f"/{api_version}/manualimport?downloadId={download_id}&filterExistingFiles=false",
+            f"/{api_version}/manualimport?{query}",
         )
         if not candidates:
             warn(f"  {title[:80]} — manualimport returned no candidates")
@@ -498,8 +538,14 @@ def main():
 
     if _is_enabled(env, 'ENABLE_LIDARR'):
         _drain_arr(
+            # media_field='artist' (not 'album'): the _drain_arr "did the arr
+            # identify this?" probe checks media[media_field].id, and
+            # _lidarr_file_payload requires a matched artist.id (a candidate can
+            # carry an album stub with no artist). Probing 'artist' aligns the
+            # quick skip with the payload builder's real requirement. The album
+            # + track guards still live in _lidarr_file_payload.
             "Lidarr", f"http://{lan_ip}:49154", lidarr_key,
-            api_version="api/v1", media_field="album",
+            api_version="api/v1", media_field="artist",
             build_file_payload=_lidarr_file_payload,
             include_query="&includeArtist=true&includeAlbum=true",
         )

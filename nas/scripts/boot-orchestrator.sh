@@ -41,6 +41,17 @@
 
 set -uo pipefail
 
+# PATH for boot context. The DSM rc.d hook (and cron on every platform) runs
+# with a stripped PATH that omits the container-runtime bin dirs, so a bare
+# `command -v docker` returns false at boot — RT stays "docker", `docker info`
+# fails the whole 5-min wait, and this orchestrator silently no-ops, letting
+# qBittorrent hit the gluetun "must join at least one network" + restart-backoff
+# wedge this script exists to prevent. Export the FULL set the codebase
+# standardizes on (synology-path.ts / env-detector.ts): on modern DSM 7 docker
+# lives under /var/packages/ContainerManager/target/usr/bin, older DSM under
+# /var/packages/Docker/target/usr/bin, QNAP under container-station/bin.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/share/.qpkg/container-station/bin:${PATH:-}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Compose root depends on layout:
 #   v0.3.23+ → .env + compose live next to this script in scripts/
@@ -189,6 +200,17 @@ case "$(env_val ENABLE_PLAYLIST_SYNC | tr '[:upper:]' '[:lower:]')" in
             true|1|yes|on) case " ${PROFILES[*]} " in *" vpn "*) : ;; *) PROFILES+=("vpn") ;; esac ;;
         esac
         ;;
+esac
+# AzuraCast (broadcast radio) is OPT-IN (explicit true only — a missing key must
+# NOT enable it, so use the case-guard, NOT is_enabled). Without the "radio"
+# profile here, a reboot where the azuracast container no longer exists (removed
+# by a prior failed update/recreate or docker rm) would leave the station down
+# despite ENABLE_AZURACAST=true — the boot orchestrator exists to compose up the
+# user's opted-in services. AzuraCast is NOT VPN-coupled (it must stay
+# LAN-reachable for listeners), so no vpn-sidecar dup-guard is needed. Mirrors
+# setup.sh's PROFILES block.
+case "$(env_val ENABLE_AZURACAST | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("radio") ;;
 esac
 
 if [ "${#PROFILES[@]}" -gt 0 ]; then

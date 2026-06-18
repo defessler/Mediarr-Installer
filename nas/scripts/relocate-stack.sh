@@ -140,11 +140,23 @@ add_pair "$OLD_DATA" "$NEW_DATA" "DATA_ROOT"
 
 # ── Resume: if live detection found nothing, a prior run may have been
 # interrupted AFTER teardown (containers gone). Rebuild from the state file. ──
+# RESUMED_FROM_STATE marks PAIRS as a recorded-but-incomplete relocation (the
+# user already consented to it on the run that wrote the state file). The
+# narrow-rerun consent gate below is skipped for these — re-asking would dead-end
+# an interrupted move — and dest_blocked treats a partial dest as resumable
+# rather than a pre-existing library.
+RESUMED_FROM_STATE=0
 if [ ${#PAIRS[@]} -eq 0 ] && [ -f "$RELOCATE_STATE" ]; then
     while IFS='|' read -r o n l; do
         [ -n "$o" ] && [ -n "$n" ] && [ "$o" != "$n" ] && [ -d "$o" ] && PAIRS+=("$o|$n|$l")
     done < "$RELOCATE_STATE"
-    [ ${#PAIRS[@]} -gt 0 ] && echo "  Resuming an interrupted relocation (${#PAIRS[@]} item(s) left)…"
+    [ ${#PAIRS[@]} -gt 0 ] && { RESUMED_FROM_STATE=1; echo "  Resuming an interrupted relocation (${#PAIRS[@]} item(s) left)…"; }
+    # Recover the install roots the original run recorded: on a resume the live
+    # containers are already gone, so OLD_INSTALL can't be re-derived from them.
+    # Without this the first-install marker never reaches the new root and the
+    # next run reverts every arr/qBit UI customization (the harm R7 prevents).
+    [ -z "$OLD_INSTALL" ] && OLD_INSTALL="$(grep -m1 '^OLD_INSTALL=' "$RELOCATE_STATE" 2>/dev/null | cut -d= -f2-)"
+    [ -z "$NEW_INSTALL" ] && NEW_INSTALL="$(grep -m1 '^NEW_INSTALL=' "$RELOCATE_STATE" 2>/dev/null | cut -d= -f2-)"
 fi
 [ ${#PAIRS[@]} -eq 0 ] && { rm -f "$RELOCATE_STATE" 2>/dev/null; exit 0; }   # nothing to do / resume finished
 
@@ -165,16 +177,65 @@ echo "  isn't orphaned at the old location:"
 for ch in "${PAIRS[@]}"; do IFS='|' read -r o n l <<<"$ch"; echo "    • $l: $o  →  $n"; done
 echo "────────────────────────────────────────────────────────────────────"
 
+# ── Narrow-rerun consent gate ────────────────────────────────────────────────
+# A full (no-flag) setup run auto-relocates on a real path change — that's the
+# intended "auto-move when safe" behaviour. But under an explicit --from N /
+# --resume (setup.sh exports MEDIARR_NARROW_RERUN=1) the user asked for a NARROW
+# idempotent re-run, NOT a relocation; if .env's INSTALL_DIR/DATA_ROOT has drifted
+# from the live mounts (typo, half-finished edit, imported profile), silently
+# tearing the stack down to move every config subtree is the opposite of what they
+# asked for. So: detect a LIVE path change (RESUMED_FROM_STATE=0 — a state-file
+# resume was already consented to and must continue) and require explicit consent
+# (MEDIARR_RELOCATE=1) before proceeding; otherwise stop without touching the
+# running stack. The dest_blocked / cross-fs guards below still apply once consent
+# is given.
+if [ "$RESUMED_FROM_STATE" -eq 0 ] && [ "${MEDIARR_NARROW_RERUN:-}" = "1" ] && [ "${MEDIARR_RELOCATE:-}" != "1" ]; then
+    echo "  ✘ A path change was detected, but you ran setup with --from / --resume — a"
+    echo "    narrow re-run, not a relocation. Moving now would STOP and recreate the stack:"
+    stop_list=""
+    for c in $STACK_CONTAINERS; do container_exists "$c" && stop_list="$stop_list $c"; done
+    [ -n "$stop_list" ] && echo "      containers that would stop:$stop_list"
+    echo "    Nothing has been moved and the stack is still running. Either:"
+    echo "      • If you DID mean to relocate to the new paths, re-run WITHOUT --from/--resume"
+    echo "        (a full run auto-moves), or re-run as-is with MEDIARR_RELOCATE=1 to confirm."
+    echo "      • If the new paths are wrong, fix INSTALL_DIR / DATA_ROOT in .env to match the"
+    echo "        live install, then re-run."
+    exit 1
+fi
+
 # ── PRE-FLIGHT every move BEFORE touching the running stack ──────────────────
 for ch in "${PAIRS[@]}"; do
     IFS='|' read -r o n l <<<"$ch"
+    pair_same_fs=0
+    same_fs "$o" "$n" && pair_same_fs=1
     if dest_blocked "$n"; then
-        echo "  ✘ $l: destination already exists and is not empty:"
-        echo "      $n"
-        echo "    Refusing to overwrite an existing config/library. Move it aside, then re-run setup."
-        exit 1
+        # A non-empty dest is a hard block for a FRESH move (refuse to overwrite
+        # a real library). But when this is a RESUMED relocation, that dest is the
+        # user's OWN partial copy from the interrupted run — frame it as such
+        # instead of mis-reporting it as a pre-existing library.
+        if [ "$RESUMED_FROM_STATE" -eq 1 ] && [ "$pair_same_fs" -eq 0 ]; then
+            # Cross-fs resume: rsync -aHAX is restart-safe and reconciles into the
+            # partial dest. Don't abort here — fall through to the cross-fs block,
+            # which proceeds when re-confirmed (MEDIARR_RELOCATE=1) or otherwise
+            # prints the manual resume steps.
+            [ "${MEDIARR_RELOCATE:-}" = "1" ] && {
+                echo "  ↻ $l: resuming into the partial copy left at $n (rsync reconciles)."
+                echo "      The original at $o is intact and is only removed once the copy verifies."
+            }
+        elif [ "$RESUMED_FROM_STATE" -eq 1 ]; then
+            # Same-fs resume with a non-empty dest: an atomic rename leaves no
+            # partial state, so this is unexpected — name it precisely.
+            echo "  ✘ $l: $n is the partial copy left by the interrupted relocation of $o."
+            echo "      The original at $o is intact. It is safe to delete $n and re-run setup to resume."
+            exit 1
+        else
+            echo "  ✘ $l: destination already exists and is not empty:"
+            echo "      $n"
+            echo "    Refusing to overwrite an existing config/library. Move it aside, then re-run setup."
+            exit 1
+        fi
     fi
-    if ! same_fs "$o" "$n"; then
+    if [ "$pair_same_fs" -eq 0 ]; then
         if [ "${MEDIARR_RELOCATE:-}" != "1" ]; then
             echo "  ✘ $l would move ACROSS filesystems (different disk/volume):"
             echo "      $o  →  $n"
@@ -194,12 +255,45 @@ for ch in "${PAIRS[@]}"; do
             echo "    Install rsync, or do the cross-disk move manually (stop-all.sh, then mv/cp, then setup.sh)."
             exit 1
         }
+        # Best-effort free-space guard: refuse an undersized destination BEFORE
+        # teardown (like the rsync-missing guard above), so a multi-TB cross-disk
+        # move onto a too-small disk doesn't tear the stack down, half-fill the
+        # target, and fail mid-rsync. Skip silently if du/df output isn't numeric
+        # so a quirky environment never blocks a legitimate move. Only checked for
+        # a FRESH move: on a resume the partial copy already occupies the dest, so
+        # df reports less free than a full `du $o` needs and we'd false-refuse a
+        # legitimate resume (rsync only writes the remaining delta anyway).
+        if [ "$RESUMED_FROM_STATE" -eq 0 ]; then
+            need_k="$(du -sk "$o" 2>/dev/null | awk '{print $1}')"
+            free_k="$(df -Pk "$(nearest_existing "$n")" 2>/dev/null | awk 'NR==2{print $4}')"
+            # Both must be present AND all-digits — a blank or odd value skips the
+            # check (best-effort) rather than crashing the arithmetic below.
+            case "${need_k:-x}|${free_k:-x}" in
+                *[!0-9]*\|*|*\|*[!0-9]*) : ;;   # either side non-numeric → skip
+                *)
+                    # Require ~5% headroom (filesystem reserve + slack).
+                    if [ "$free_k" -lt "$((need_k + need_k / 20))" ]; then
+                        echo "  ✘ $l won't fit on the destination disk:"
+                        echo "      need ~$((need_k / 1048576)) GiB, have ~$((free_k / 1048576)) GiB free at $n"
+                        echo "    Free up space (or pick a larger DATA_ROOT/INSTALL_DIR) and re-run. The stack"
+                        echo "    is still running and nothing has been moved."
+                        exit 1
+                    fi
+                    ;;
+            esac
+        fi
     fi
 done
 
 # ── Record the plan, THEN stop the stack, THEN move ──────────────────────────
 : > "$RELOCATE_STATE" 2>/dev/null || true
 for ch in "${PAIRS[@]}"; do printf '%s\n' "$ch" >> "$RELOCATE_STATE" 2>/dev/null || true; done
+# Also record the install roots so a (re-)resume can carry the first-install
+# marker even after teardown. No "|" → the pair reader above skips these lines.
+if [ -n "$OLD_INSTALL" ] && [ "$OLD_INSTALL" != "$NEW_INSTALL" ]; then
+    printf 'OLD_INSTALL=%s\n' "$OLD_INSTALL" >> "$RELOCATE_STATE" 2>/dev/null || true
+    printf 'NEW_INSTALL=%s\n' "$NEW_INSTALL" >> "$RELOCATE_STATE" 2>/dev/null || true
+fi
 
 echo "  Stopping the stack so no files are in use…"
 for c in $STACK_CONTAINERS; do
@@ -238,5 +332,14 @@ if [ "$rc" -ne 0 ]; then
     exit 1
 fi
 rm -f "$RELOCATE_STATE" 2>/dev/null
+# Carry the first-install marker to the NEW root. The per-service move never
+# touches this top-level one-line file, so it stays at OLD_INSTALL — which would
+# leave the next setup-arr-config.py run seeing REINSTALL_PRESERVE=False at the
+# new path and re-stamping wizard defaults over every arr/qBit UI customization
+# the marker machinery exists to protect. Tiny file → just copy it (no cross-fs
+# concern). Only relevant when INSTALL_DIR actually moved.
+if [ -n "$OLD_INSTALL" ] && [ "$OLD_INSTALL" != "$NEW_INSTALL" ]; then
+    [ -f "$OLD_INSTALL/.wizard-stack-installed" ] && { mkdir -p "$NEW_INSTALL"; cp -p "$OLD_INSTALL/.wizard-stack-installed" "$NEW_INSTALL/.wizard-stack-installed" 2>/dev/null; }
+fi
 echo "  ✔ Relocation complete. Restarting the stack at the new paths…"
 exit 75   # sentinel: relocation performed, stack is DOWN — setup.sh must run start_stack

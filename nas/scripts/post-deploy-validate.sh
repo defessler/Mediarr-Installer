@@ -261,8 +261,24 @@ check_qbit() {
         fail "$label ($url) — gluetun is $gluetun_state (qBit shares its network)."
         fail "    Run: bash $SCRIPT_DIR/restart-qbit.sh   (or check '$COMPOSE logs gluetun --tail 50')"
     elif vpn_on && [ "$gluetun_health" = "unhealthy" ]; then
-        fail "$label ($url) — gluetun is unhealthy (qBit shares its network). VPN credentials may be wrong."
-        fail "    Check:  $COMPOSE logs gluetun --tail 50"
+        # gluetun reports "unhealthy" the moment its first healthcheck fails —
+        # which, on a slow NAS/uplink, is simply the first WireGuard handshake
+        # still in flight (it can take a couple of minutes), NOT a bad key. The
+        # script already downgrades the plain not-serving-yet path to a warn, so
+        # don't HARD-fail (and misdiagnose a fine credential as wrong) here on
+        # what is usually the same first-boot race. Reserve the hard fail for a
+        # CONFIRMED auth/key failure in gluetun's own logs.
+        local gluetun_logs
+        gluetun_logs=$($RT logs --tail 50 gluetun 2>&1 || true)
+        if echo "$gluetun_logs" | grep -qiE 'auth(entication)? (failed|error)|wrong .*(password|credential)|invalid .*(key|credential|token)|handshake did not complete|bad .*key'; then
+            fail "$label ($url) — gluetun logs show a VPN auth/key failure (qBit shares its network). Your VPN credentials/key are likely wrong."
+            fail "    Check:  $COMPOSE logs gluetun --tail 50"
+        else
+            warn "$label ($url) — gluetun is unhealthy (qBit shares its network), but its logs show no auth/key error yet."
+            warn "    The first WireGuard handshake can take a couple of minutes on a slow uplink — wait, then re-run:"
+            warn "      bash $SCRIPT_DIR/post-deploy-validate.sh"
+            warn "    Still unhealthy? Check:  $COMPOSE logs gluetun --tail 50"
+        fi
     else
         # Container's up, network's healthy, WebUI still doesn't answer.
         # On Synology spinning rust + non-trivial resume data this is
@@ -408,10 +424,15 @@ is_enabled ENABLE_PLEX        && check_url_lenient "Seerr" "http://$LAN_IP:5056"
 # it here.
 is_enabled ENABLE_FLARESOLVERR && check_url "Flaresolverr" "http://$LAN_IP:8191"
 # Recyclarr trigger webhook — port 8889 serves the "Sync Now" tile UI.
-# Apk-installs docker-cli at first start (5s) so HTTP isn't reachable
-# the instant the container exists; check_url has a 30s retry budget
-# which covers the slow boot just fine.
-is_enabled ENABLE_RECYCLARR   && check_url "Recyclarr trigger" "http://$LAN_IP:8889"
+# Apk-installs docker-cli at first start before binding the port, so HTTP
+# isn't reachable the instant the container exists. check_url makes a single
+# no-retry probe (--max-time 10), so on a slow/contended package mirror that
+# probe returns HTTP 000 and would HARD-fail a still-booting cosmetic tile —
+# reddening the whole install. Lenient check → a not-yet-serving trigger WARNS
+# (wait + re-run), exactly like Seerr/AzuraCast/slskd, which are the same kind
+# of non-critical late-binding tile.
+is_enabled ENABLE_RECYCLARR   && check_url_lenient "Recyclarr trigger" "http://$LAN_IP:8889" \
+    "Recyclarr trigger apk-installs docker-cli at first boot — wait a minute and re-run."
 # AzuraCast (opt-in radio) is HEAVY: its bundled MariaDB initialises on first
 # boot, so the web UI can still be returning HTTP 000 at end-of-install even
 # though the container reports "running". Lenient check → a not-yet-serving
@@ -535,7 +556,11 @@ fi
 # need updating as the canary changes); we just ask Prowlarr to TEST
 # each configured indexer (Prowlarr's own indexer-test endpoint does
 # the same connectivity probe its UI does) and report how many pass.
-# 0/N passing is a hard fail — the user has no working source.
+# 0/N passing is surfaced as a loud WARNING, not a hard fail: at install
+# time indexers frequently fail the test transiently (CloudFlare challenge
+# that Flaresolverr clears on the first real search, rate-limits, cold
+# caches), so red-failing a working stack over it would be a false negative.
+# See the rationale at the 0-working branch below.
 section "Indexer Health"
 PROWLARR_KEY=$(env_val PROWLARR_API_KEY)
 # Prowlarr's key isn't always in .env (auto-discovered from config.xml

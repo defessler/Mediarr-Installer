@@ -3,7 +3,7 @@
 // wizard is either omitted (auto-discovered later by setup-arr-config.py)
 // or emitted with a documented default.
 
-import { findVpnProvider } from './vpn-providers.js'
+import { findVpnProvider, findVpnProviderOrNull } from './vpn-providers.js'
 
 export interface EnvFormValues {
   // ── Service selection
@@ -305,7 +305,16 @@ const ESCAPE = (v: string) => {
   // \n and \r are listed explicitly (already covered by \s, but spelled out
   // so a future edit to the trigger set can't silently drop them) so a value
   // carrying one is always quoted.
-  if (/[\s"$`\\#\n\r]/.test(v)) {
+  //
+  // A single quote (') is in the trigger set too. An unquoted value containing
+  // one (e.g. a user-pinned SLSKD_API_KEY like a'b) is mis-read by the NAS-side
+  // shell reader: env_val's word-splitting saw the lone ' as an open quote and
+  // returned empty, so the `[ -z … ]` guard treated the key as unset and
+  // silently regenerated it — clobbering the user's chosen secret. Emitting it
+  // double-quoted ("a'b") makes both env_val and Python's _parse_env_value
+  // round-trip it intact (a ' inside "…" is literal, so the escape body below
+  // need not touch it).
+  if (/[\s"'$`\\#\n\r]/.test(v)) {
     // WHY: quoting alone isn't enough for newlines — a raw \n/\r inside the
     // quotes still splits the physical line, and the NAS-side parsers read
     // .env line-by-line (read_env in setup-arr-config.py), so the tail would
@@ -340,6 +349,19 @@ function renderVpnBlock(v: EnvFormValues): string[] {
   // VPN off → skip credential emission entirely (gluetun never starts).
   if ((v.VPN_ENABLED || 'false').toLowerCase() !== 'true') {
     out.push(line('VPN_PROVIDER', v.VPN_PROVIDER || 'nordvpn'))
+    return out
+  }
+  // Unknown but NON-empty provider (e.g. a hand-edited VPN_PROVIDER=pia that
+  // env-schema's reject branch didn't catch — a non-install caller rendering a
+  // partial config) → emit the user's value verbatim and STOP. Don't fall
+  // through to findVpnProvider's NordVPN default, which would silently rewrite
+  // VPN_PROVIDER=nordvpn and feed gluetun a NordVPN credential block, dropping
+  // the user's intended provider with no warning. (An empty VPN_PROVIDER still
+  // defaults to NordVPN below for legacy NordVPN-only profiles.)
+  if (v.VPN_PROVIDER && !findVpnProviderOrNull(v.VPN_PROVIDER)) {
+    out.push(line('VPN_PROVIDER', v.VPN_PROVIDER))
+    if (v.VPN_TYPE) out.push(line('VPN_TYPE', v.VPN_TYPE))
+    out.push(line('VPN_COUNTRIES', v.VPN_COUNTRIES))
     return out
   }
   const provider = findVpnProvider(v.VPN_PROVIDER)
@@ -450,6 +472,12 @@ export function renderEnv(v: EnvFormValues): string {
     line('TZ', v.TZ),
     '',
     '# Paths — NAS-family-portable. docker-compose.yml references both.',
+    // The '/volume1/*' fallbacks are now ONLY a last-resort: env-schema
+    // requires INSTALL_DIR/DATA_ROOT to be a non-empty absolute path, so
+    // the Configure footer + go() block the install before an empty value
+    // can reach renderEnv. Kept (not removed) so any non-install caller
+    // that renders a partially-filled config still emits a syntactically
+    // valid .env rather than a bare `INSTALL_DIR=`.
     line('INSTALL_DIR', v.INSTALL_DIR || '/volume1/docker/media'),
     line('DATA_ROOT',   v.DATA_ROOT   || '/volume1/Data'),
     // Only emit the runtime-socket override when it's actually set (Podman).

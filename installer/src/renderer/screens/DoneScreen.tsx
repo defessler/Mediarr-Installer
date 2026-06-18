@@ -53,7 +53,7 @@ type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
 const VALIDATE_CHANNEL = 'post-deploy-validate'
 
 export function DoneScreen() {
-  const { config, sessionId, targetDir, reset } = useWizard()
+  const { config, sessionId, targetDir, reset, setBusy } = useWizard()
   const ip = config.LAN_IP ?? '<NAS-IP>'
 
   // Starts true: the screen auto-runs post-deploy validation on mount (effect
@@ -177,6 +177,17 @@ export function DoneScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Publish the global "busy" flag while post-deploy validation streams
+  // over SSH (auto on mount + on every "Re-check health"), so App.tsx
+  // disables the in-place app-updater trigger. Without this the footer's
+  // "Install vX" / "Restart to update" controls stay live, and triggering
+  // an in-place update quits the app mid-validation — severing the SSH
+  // stream and silently truncating its local log. `running` already tracks
+  // the in-flight validation and flips false on stream close, so busy
+  // releases automatically. Unmount net clears it as a safety belt.
+  useEffect(() => { setBusy(running) }, [running, setBusy])
+  useEffect(() => () => setBusy(false), [setBusy])
+
   function open(url: string) {
     window.open(url, '_blank')
   }
@@ -197,6 +208,18 @@ export function DoneScreen() {
   // so a VPN IP-leak / hardlink-EXDEV / missing-key failure was hidden behind
   // confetti while the reachable-service tiles were all green.
   const installSucceeded = exit === 0
+  // Full-celebration gate: a clean validator exit AND nothing still warming up.
+  // On a typical first install Seerr is default-on and doesn't bind its port
+  // until the user finishes its first-run wizard, so warnCount>0 is the NORMAL
+  // end state and the validator still exits 0. Without the warnCount===0 guard
+  // the hero showed the full "You did it! … click any service to open it" +
+  // confetti while the footer simultaneously said "{warnCount} not ready yet" —
+  // the user clicked a green-celebrated tile, got connection-refused, and
+  // distrusted the wizard. allClear keys the hero + confetti off the SAME
+  // three-way partition the footer uses (565-581) so the two regions can't
+  // disagree. failCount is folded in too: exit!==0 ⟺ failCount>0 in practice,
+  // but checking both keeps the hero honest if the scrape and exit ever lag.
+  const allClear = installSucceeded && failCount === 0 && warnCount === 0
   // Media-server-aware tile NAMES. post-deploy-validate.sh names its
   // reachability line after whichever server is live (Plex or Jellyfin), so
   // both the tile grid AND the criticalIssues exclusion below must use these.
@@ -243,7 +266,11 @@ export function DoneScreen() {
   const firedConfettiRef = useRef(false)
   useEffect(() => {
     if (firedConfettiRef.current) return
-    if (!installSucceeded) return
+    // Only celebrate a TRUE all-clear — not a clean exit that still has
+    // services warming up (Seerr awaiting its wizard, a slow AzuraCast).
+    // Firing confetti while the footer reads "{warnCount} not ready yet"
+    // is the contradiction R5 fixes.
+    if (!allClear) return
     if (reduced) return
     firedConfettiRef.current = true
     // Small delay so the hero animation can lead before confetti.
@@ -264,7 +291,7 @@ export function DoneScreen() {
       confetti({ ...opts, origin: { x: 0.7, y: 0.6 }, angle: 110 })
     }, 350)
     return () => clearTimeout(t)
-  }, [installSucceeded, reduced])
+  }, [allClear, reduced])
 
   return (
     <div className="h-full flex flex-col">
@@ -282,19 +309,32 @@ export function DoneScreen() {
         <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-emerald-500/15 border border-emerald-500/30 mb-5" aria-hidden="true">
           <AnimatedCheck size={64} className="text-emerald-400" />
         </div>
+        {/* Hero headline + subhead mirror the footer's three-way partition
+            (565-581): all-clear / still-warming-up / failed. Gating the
+            "You did it! … click any service to open it" payoff on allClear
+            (clean exit AND warnCount===0) stops it contradicting a footer
+            that simultaneously reads "{warnCount} not ready yet". A clean
+            exit with services still warming up gets a softer, honest
+            headline — no "click any service" over-promise on tiles that
+            would connection-refuse. `running` is checked first so a
+            re-check shows "Checking…" rather than a stale verdict. */}
         <h1 className="text-4xl font-bold tracking-tight">
-          {installSucceeded
-            ? 'You did it!'
-            : running
-              ? 'Checking your stack…'
-              : 'Setup finished — with issues to review'}
+          {running
+            ? 'Checking your stack…'
+            : allClear
+              ? 'You did it!'
+              : installSucceeded
+                ? `Almost there — ${warnCount} service${warnCount === 1 ? '' : 's'} still warming up`
+                : 'Setup finished — with issues to review'}
         </h1>
         <p className="text-slate-400 mt-3 text-base max-w-md mx-auto">
-          {installSucceeded
-            ? 'Your media stack is live. Click any service below to open it.'
-            : running
-              ? 'Running post-deploy validation…'
-              : 'Validation flagged problems — review them below before relying on the stack.'}
+          {running
+            ? 'Running post-deploy validation…'
+            : allClear
+              ? 'Your media stack is live. Click any service below to open it.'
+              : installSucceeded
+                ? 'No failures — a few services just need another minute (or their first-run wizard) before they answer. The grid below shows which.'
+                : 'Validation flagged problems — review them below before relying on the stack.'}
         </p>
         <div className="mt-5 flex items-center justify-center gap-3">
           <BigButton

@@ -535,35 +535,65 @@ def _merge_master_pin_into_settings(content):
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
+# A network-level (URLError/OSError) failure on the LEADING GET of a config
+# helper is almost always a transient blip during Step 7 — the NAS is under
+# heavy load while every container boots — not a real "service has no such
+# config" answer. wait_ready() confirmed the service moments earlier, so retry
+# the GET a couple of times before giving up. Reads are idempotent so this is
+# safe; mutations (POST/PUT) are NOT retried here (they have their own re-GET-
+# confirm verify loops and a blind retry could double-submit), hence the
+# method=='GET' gate. The underlying error string is logged so a network
+# failure is distinguishable from a legitimate empty/None result in the log.
+_GET_RETRY_ATTEMPTS = 3
+_GET_RETRY_SLEEP = 2
+
 def _request(url, headers, method='GET', data=None):
     body = json.dumps(data).encode() if data is not None else None
     req = Request(url, data=body, headers=headers, method=method)
-    try:
-        with urlopen(req, timeout=15) as resp:
-            content = resp.read()
-            return json.loads(content) if content else {}
-    except HTTPError as e:
-        body_text = e.read().decode(errors='replace')
-        e._body_text = body_text
-        print(f"    HTTP {e.code}: {body_text[:200]}")
-        raise
-    except (URLError, OSError):
-        return None
+    attempts = _GET_RETRY_ATTEMPTS if method == 'GET' else 1
+    for attempt in range(1, attempts + 1):
+        try:
+            with urlopen(req, timeout=15) as resp:
+                content = resp.read()
+                return json.loads(content) if content else {}
+        except HTTPError as e:
+            body_text = e.read().decode(errors='replace')
+            e._body_text = body_text
+            print(f"    HTTP {e.code}: {body_text[:200]}")
+            raise
+        except (URLError, OSError) as e:
+            if attempt < attempts:
+                print(f"    GET {url} network error ({e}) — retry {attempt}/{attempts - 1}")
+                time.sleep(_GET_RETRY_SLEEP)
+                continue
+            print(f"    GET {url} failed after {attempts} attempt(s): {e}")
+            return None
 
 def _safe_request(url, headers, method='GET', data=None):
     """Like _request but returns (result_or_None, http_code_or_None)."""
     body = json.dumps(data).encode() if data is not None else None
     req = Request(url, data=body, headers=headers, method=method)
-    try:
-        with urlopen(req, timeout=15) as resp:
-            content = resp.read()
-            return (json.loads(content) if content else {}), resp.status
-    except HTTPError as e:
-        body_text = e.read().decode(errors='replace')
-        print(f"    HTTP {e.code}: {body_text[:200]}")
-        return None, e.code
-    except (URLError, OSError):
-        return None, None
+    # Same GET-only bounded retry as _request (see the note there): a transient
+    # network blip on a leading GET during Step 7 shouldn't fail the sub-step.
+    # POST/PUT are not retried (they have their own verify loops + re-GET-confirm
+    # to avoid double-submit), so only method=='GET' gets the extra attempts.
+    attempts = _GET_RETRY_ATTEMPTS if method == 'GET' else 1
+    for attempt in range(1, attempts + 1):
+        try:
+            with urlopen(req, timeout=15) as resp:
+                content = resp.read()
+                return (json.loads(content) if content else {}), resp.status
+        except HTTPError as e:
+            body_text = e.read().decode(errors='replace')
+            print(f"    HTTP {e.code}: {body_text[:200]}")
+            return None, e.code
+        except (URLError, OSError) as e:
+            if attempt < attempts:
+                print(f"    GET {url} network error ({e}) — retry {attempt}/{attempts - 1}")
+                time.sleep(_GET_RETRY_SLEEP)
+                continue
+            print(f"    GET {url} failed after {attempts} attempt(s): {e}")
+            return None, None
 
 def _arr_headers(key):
     return {'X-Api-Key': key, 'Content-Type': 'application/json',
@@ -849,6 +879,16 @@ def add_root_folder(base, key, api, path, extra_fields=None, container=None):
         acl_diagnostic(path)
 
 def add_download_client(base, key, api, name, implementation, field_overrides):
+    # Deliberate asymmetry: download-client connections are wizard-owned and
+    # stack-essential — they're re-applied on EVERY run, NOT preserve-gated
+    # (mirroring indexer connections in the lines 99-106 design note). host/port/
+    # useSsl must always follow VPN on/off + .env edits, so a UI tweak to any
+    # field (including `category`, the one field with no .env source) is rewritten
+    # back to wizard values whenever a diff is detected. Secrets (password/apiKey)
+    # still only re-write when a non-secret field already drifted (the intended
+    # .env-rotation path; see SECRET_FIELDS below). The wizard categories are
+    # hardcoded at the call sites (tv-sonarr / radarr / lidarr / etc.); a UI edit
+    # to them is intentionally not preserved.
     # ?forceSave=true mirrors what the arr UI does when the user clicks
     # Save with a validation warning — accepts the client despite
     # warnings (e.g. Lidarr's "Lidarr will be unable to perform
@@ -3084,6 +3124,13 @@ def configure_qbittorrent(base, username, password, env=None,
             AUTOMATED['qbit_prefs'] = True
         except Exception as e:
             warn(f"qBittorrent: couldn't set seeding/TMM defaults ({e}) — set manually in Settings → BitTorrent + Settings → Downloads")
+            # The seeding/TMM defaults POST threw after auth already succeeded.
+            # Block the install marker (mirroring the login-failure and slow-boot
+            # branches above) so the next run re-treats qBit as fresh and re-applies
+            # these defaults — otherwise the marker is written with them unset and
+            # REINSTALL_PRESERVE gates out user_preference forever. Doesn't flip the
+            # install red on its own (exit stays governed by `errors`).
+            note_unreachable()
 
     # ── No WebUI login on the LAN ─────────────────────────────────────────────
     # qBit skips the password for any client whose IP is in this subnet
@@ -5490,10 +5537,58 @@ def recyclarr_only_main():
     ok("recyclarr.yml regenerated — caller should `docker exec recyclarr recyclarr sync` to apply.")
 
 
+def _selftest_main():
+    """Tiny self-contained regression suite (run with --selftest). Never
+    touches a live stack — operates only in a throwaway temp dir. Exit 0 =
+    all pass, 1 = a failure. Added for the relocation/marker regression:
+    relocate-stack.sh must carry the install marker to the NEW root so the
+    next run preserves the user's UI customizations."""
+    failures = []
+
+    def check(name, cond):
+        # ASCII status (not the ✔/✘ glyphs the install paths use) so the
+        # selftest also runs on a non-UTF-8 dev console (e.g. Windows cp1252).
+        print(f"  [{'PASS' if cond else 'FAIL'}] {name}")
+        if not cond:
+            failures.append(name)
+
+    # Marker round-trips: absent → present once written.
+    work = tempfile.mkdtemp(prefix='mediarr-selftest-')
+    try:
+        old_install = os.path.join(work, 'old')
+        new_install = os.path.join(work, 'new')
+        os.makedirs(old_install)
+        os.makedirs(new_install)
+
+        check('is_reinstall False on a fresh INSTALL_DIR', not is_reinstall(old_install))
+        write_install_marker(old_install)
+        check('is_reinstall True after the marker is written', is_reinstall(old_install))
+
+        # Simulate relocate-stack.sh: the per-service move leaves the
+        # top-level marker at OLD_INSTALL, so without the carry-over the new
+        # root has none — is_reinstall(NEW) must be False here.
+        check('is_reinstall False at NEW root before the marker is carried',
+              not is_reinstall(new_install))
+        # The carry-over relocate-stack.sh performs (copy OLD→NEW marker).
+        shutil.copy2(_stack_marker_path(old_install), _stack_marker_path(new_install))
+        check('is_reinstall True at NEW root after a simulated relocation',
+              is_reinstall(new_install))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    if failures:
+        print(f"  {len(failures)} selftest failure(s).")
+        sys.exit(1)
+    print("  selftest OK")
+    sys.exit(0)
+
+
 if __name__ == '__main__':
-    # Tiny CLI dispatch — no argparse needed for two flags. Anything
+    # Tiny CLI dispatch — no argparse needed for a few flags. Anything
     # else falls through to the full main().
-    if '--homepage-only' in sys.argv:
+    if '--selftest' in sys.argv:
+        _selftest_main()
+    elif '--homepage-only' in sys.argv:
         homepage_only_main()
     elif '--recyclarr-only' in sys.argv:
         recyclarr_only_main()

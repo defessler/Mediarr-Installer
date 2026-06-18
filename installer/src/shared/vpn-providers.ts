@@ -323,10 +323,22 @@ export const VPN_PROVIDERS: VpnProvider[] = [
   NORDVPN, PROTONVPN, MULLVAD, AIRVPN, SURFSHARK, CUSTOM,
 ]
 
+/** Look up a provider by id, returning null on a miss (so callers can
+ *  distinguish "unknown provider" from a real hit). An empty/null/undefined
+ *  id is also a miss here — the NordVPN back-compat default lives only in the
+ *  findVpnProvider() wrapper below, for the genuinely-absent legacy case. */
+export function findVpnProviderOrNull(id: string | undefined | null): VpnProvider | null {
+  if (!id) return null
+  return VPN_PROVIDERS.find((p) => p.id === id) ?? null
+}
+
 export function findVpnProvider(id: string | undefined | null): VpnProvider {
-  // Fallback to NordVPN so existing profiles (which assumed nordvpn was
-  // the only option) keep working without explicit migration. The
-  // Configure screen still surfaces the picker; this just guarantees
-  // we never crash on null/undefined.
-  return VPN_PROVIDERS.find((p) => p.id === id) ?? NORDVPN
+  // Fallback to NordVPN ONLY for a genuinely null/undefined/empty id, so
+  // existing profiles (which assumed nordvpn was the only option, and have
+  // no VPN_PROVIDER key) keep working without explicit migration. A NON-empty
+  // but unknown id (e.g. a hand-edited VPN_PROVIDER=pia) is NOT silently
+  // remapped to NordVPN here — callers that must reject or surface it use
+  // findVpnProviderOrNull(). The Configure screen still surfaces the picker;
+  // this just guarantees we never crash on null/undefined.
+  return findVpnProviderOrNull(id) ?? NORDVPN
 }

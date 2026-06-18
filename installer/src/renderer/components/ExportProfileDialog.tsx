@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Upload, Lock, X as XIcon, AlertCircle } from 'lucide-react'
 import { BigButton } from './BigButton.js'
 import { PasswordInput } from './PasswordInput.js'
 import { reportError } from '../store/errors.js'
+import { useFocusTrap } from '../hooks/useFocusTrap.js'
 
 interface Props {
   profileId: string
@@ -53,18 +54,12 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
   const tooWeak = score < 2
   const canExport = !busy && !!pass && confirmsMatch && !tooWeak
 
-  // ESC closes the dialog (unless we're mid-export — the user almost
-  // certainly didn't mean to abandon their PBKDF2 work).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+  // Trap focus in the dialog + ESC to close — folded into one hook.
+  // Relaxed while busy so a mid-export PBKDF2 run isn't interrupted by
+  // Escape (the user almost certainly didn't mean to abandon it) and
+  // the disabled controls don't need re-trapping.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef, { active: !busy, onClose })
 
   async function doExport() {
     if (!canExport) return
@@ -85,6 +80,11 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
           { name: 'Mediarr profile (.json)', extensions: ['json'] },
           { name: 'All files', extensions: ['*'] },
         ],
+        // This envelope bundles every secret as AES-256-GCM ciphertext under a
+        // PBKDF2-600k key, but on a shared POSIX host a world-readable file
+        // leaves confidentiality resting solely on passphrase strength. Write
+        // it owner-only (0600).
+        restrictPermissions: true,
       })
       if (r.saved) onClose()
     } catch (e) {
@@ -108,6 +108,7 @@ export function ExportProfileDialog({ profileId, profileLabel, onClose }: Props)
       onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}
     >
       <motion.div
+        ref={dialogRef}
         initial={reduced ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}

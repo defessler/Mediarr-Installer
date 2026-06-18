@@ -250,11 +250,19 @@ run_pass() {
 }
 
 # ── scheduler ───────────────────────────────────────────────────────────────
+# die_slow: like die() but sleeps first so a misconfigured .env doesn't
+# crash-loop fast. The container is `restart: on-failure:5` (see compose) —
+# without this pause a validate() exit-1 burns all 5 restarts in seconds and
+# hammers the daemon. Mirrors recyclarr-trigger's sleep-before-exit. Only used
+# for the config-error path; the `unknown mode` die() stays fast (it's an
+# operator typo, not a restart loop).
+die_slow() { log "ERROR: $*" >&2; sleep 60; exit 1; }
+
 validate() {
     [ -n "${PLAYLIST_SLSK_USER:-}" ] && [ -n "${PLAYLIST_SLSK_PASS:-}" ] \
-        || die "PLAYLIST_SLSK_USER / PLAYLIST_SLSK_PASS are required (a 2nd free Soulseek account — slskd holds the stack's one session). Set them in .env and re-run setup."
+        || die_slow "PLAYLIST_SLSK_USER / PLAYLIST_SLSK_PASS are required (a 2nd free Soulseek account — slskd holds the stack's one session). Set them in .env and re-run setup."
     [ -n "${SIRIUSXM_CHANNELS:-}" ] || [ -n "${SPOTIFY_PLAYLISTS:-}" ] \
-        || die "no sources configured: set SIRIUSXM_CHANNELS and/or SPOTIFY_PLAYLISTS in .env."
+        || die_slow "no sources configured: set SIRIUSXM_CHANNELS and/or SPOTIFY_PLAYLISTS in .env."
 }
 
 scheduler() {

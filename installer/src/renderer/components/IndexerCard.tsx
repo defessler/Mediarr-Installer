@@ -67,6 +67,18 @@ export function IndexerCard({ def, values, onChange }: Props) {
   function toggle() {
     if (open) {
       // Collapsing — clear all fields so we don't write partials to .env.
+      // But a collapse is destructive when the user has already entered a
+      // credential (a private-tracker passkey, a usenet API key): the clear
+      // builds patch[key]=undefined for every field, onChange fires
+      // immediately, and autosave then flushes the loss to the on-disk
+      // profile ~600ms later — no undo. So when ANY field is non-empty,
+      // confirm before wiping; an empty card collapses silently as before.
+      const hasEntered = def.fields.some((f) => Boolean(values[f.key]))
+      if (hasEntered && !window.confirm(
+        `Turn off ${def.name}? This clears the credentials you entered for it.`,
+      )) {
+        return
+      }
       const patch: Partial<EnvFormValues> = {}
       for (const f of def.fields) patch[f.key] = undefined
       onChange(patch)

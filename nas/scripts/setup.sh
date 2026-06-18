@@ -313,8 +313,45 @@ run_python_besteffort() { run_python "$@" || true; }
 
 # Small helper for reading a value out of .env, strips inline comments
 # and surrounding whitespace. Returns empty string if the key is absent.
+#
+# Mirrors the wizard's ESCAPE writer (installer/src/shared/env-render.ts) and
+# the Python reader (_parse_env_value in setup-arr-config.py): a double-quoted
+# value is un-escaped in one left-to-right pass (\n→newline, \r→CR, and \\ \"
+# \$ \` → the literal char); a bare value has a whitespace-anchored ' #comment'
+# stripped and surrounding whitespace trimmed. The old `| xargs` did shell
+# word-splitting, so a value carrying a single quote made xargs abort with
+# "unmatched single quote" and return EMPTY — the `[ -z … ]` guard then treated
+# e.g. a user-pinned SLSKD_API_KEY as unset and silently regenerated it. xargs
+# also stripped a stray backslash from a $/backtick/backslash value. The awk
+# parser keeps all of these intact.
 env_val() {
-    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/[[:space:]]#.*//' | tr -d '\r' | xargs
+    grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | tr -d '\r' | awk '
+    {
+        s = substr($0, index($0, "=") + 1)
+        sub(/^[ \t]+/, "", s)              # leading ws (matches .strip() pre-quote)
+        if (substr(s, 1, 1) == "\"") {     # double-quoted → un-escape one pass
+            out = ""; n = length(s)
+            for (i = 2; i <= n; i++) {
+                c = substr(s, i, 1)
+                if (c == "\\" && i < n) {
+                    d = substr(s, i + 1, 1)
+                    out = out (d == "n" ? "\n" : d == "r" ? "\r" : d)
+                    i++; continue
+                }
+                if (c == "\"") break
+                out = out c
+            }
+            printf "%s", out
+        } else if (substr(s, 1, 1) == "\047") {  # single-quoted → strip quotes, literal
+            j = index(substr(s, 2), "\047")       # matches _parse_env_value + old xargs
+            printf "%s", (j > 0 ? substr(s, 2, j - 1) : substr(s, 2))
+        } else {                            # bare → strip inline comment + trailing ws
+            sub(/[ \t]#.*$/, "", s)
+            sub(/[ \t]+$/, "", s)
+            printf "%s", s
+        }
+        exit
+    }'
 }
 
 # Default-ON semantics: missing or empty key counts as enabled, only
@@ -1065,6 +1102,53 @@ wait_for_services() {
     return 1
 }
 
+# ── Gluetun tunnel-health gate ───────────────────────────────────────────────
+# A wrong/expired WireGuard key lets the stack come up "running" while the VPN
+# tunnel never establishes — and post-deploy only catches it through check_qbit,
+# so an install that enabled the VPN profile for Soulseek / Playlist Sync but NOT
+# qBittorrent would pass with a dead tunnel (a privacy/leak blind spot for exactly
+# the users who wanted the VPN). Gate it explicitly whenever the "vpn" profile is
+# active: VPN_ON AND any of qBit / Soulseek / Playlist Sync (each of which runs in
+# gluetun's namespace). Poll gluetun's own healthcheck — it has
+# HEALTH_VPN_DURATION_INITIAL=120s, so it stays "starting" until the handshake
+# lands — and hard-fail ONLY on a settled "unhealthy" (a still-"starting" timeout
+# is inconclusive: warn, don't red-fail a possibly-slow handshake).
+vpn_tunnel_gate() {
+    [ "$VPN_ON" -eq 1 ] || return 0
+    if ! is_enabled ENABLE_QBITTORRENT \
+       && ! is_optin_enabled ENABLE_SOULSEEK \
+       && ! is_optin_enabled ENABLE_PLAYLIST_SYNC; then
+        return 0
+    fi
+    echo ""
+    echo "── VPN tunnel health ──────────────────────────────"
+    echo "  Waiting for the gluetun WireGuard tunnel to come up..."
+    local waited=0 max=180 step=5 health
+    while [ "$waited" -lt "$max" ]; do
+        health=$($CONTAINER_RUNTIME inspect -f '{{.State.Health.Status}}' gluetun 2>/dev/null || echo "")
+        case "$health" in
+            healthy)
+                echo "  ✔ VPN tunnel is up (gluetun healthy) — traffic is routed through the VPN."
+                return 0 ;;
+            unhealthy)
+                echo ""
+                echo "  ✘ VPN tunnel failed to come up — check WireGuard key / provider creds"
+                echo "      ($COMPOSE logs gluetun --tail 50)"
+                return 1 ;;
+        esac
+        sleep "$step"
+        waited=$((waited + step))
+    done
+    # Never settled to healthy/unhealthy within the window (still "starting", or
+    # a gluetun with no healthcheck reporting "" / "none"). Inconclusive — a
+    # genuinely slow handshake shouldn't red-fail the whole install, so warn so
+    # the user verifies before trusting the VPN, but let setup continue.
+    echo "  ⚠ gluetun hasn't reported healthy after ${max}s (status: ${health:-unknown})."
+    echo "    The tunnel may still be settling. Verify before trusting the VPN:"
+    echo "      $COMPOSE logs gluetun --tail 50"
+    return 0
+}
+
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 
 echo ""
@@ -1203,13 +1287,22 @@ fi
 # moves are an instant atomic rename; a cross-filesystem move aborts here with
 # manual steps (stack untouched) unless MEDIARR_RELOCATE=1 opts into the copy.
 #
+# Consent under a narrow re-run: a FULL (no-flag) run auto-relocates on a real
+# path change. But --from N / --resume means the user asked for a NARROW idempotent
+# re-run, NOT a relocation — if .env's paths have drifted from the live mounts, a
+# silent teardown+move is the opposite of what they asked for. So we pass
+# MEDIARR_NARROW_RERUN=1; relocate-stack.sh then refuses to relocate a live stack
+# unless the user re-confirms (MEDIARR_RELOCATE=1) or re-runs without --from/--resume.
+#
 # Exit codes: 0 = nothing to relocate (common case) → carry on; 1 = aborted →
 # stop; 75 = relocation PERFORMED → the stack was torn down, so it MUST restart:
 # force START_STEP back to 1 so start_stack (step 6) runs even under --from N /
 # --resume (steps 1-5 are idempotent + cheap), otherwise we'd skip the restart
 # and hang waiting on zero containers.
+_narrow_rerun=0
+{ [ "$FROM_STEP" -gt 0 ] || [ "$RESUME" = 1 ]; } && _narrow_rerun=1
 if [ -f "$SCRIPT_DIR/relocate-stack.sh" ]; then
-    bash "$SCRIPT_DIR/relocate-stack.sh"
+    MEDIARR_NARROW_RERUN="$_narrow_rerun" bash "$SCRIPT_DIR/relocate-stack.sh"
     _reloc_rc=$?
 else
     # Engine absent (partial upload, or a build that didn't ship it). Relocation
@@ -1224,7 +1317,36 @@ if [ "$_reloc_rc" -eq 75 ]; then
 elif [ "$_reloc_rc" -ne 0 ]; then
     exit 1
 fi
-unset _reloc_rc
+unset _reloc_rc _narrow_rerun
+
+# ── Orderly cancel (INT/TERM) ────────────────────────────────────────────────
+# The installer wizard cancels a long-running install by sending TERM to this
+# script's channel (and escalates to KILL if it's ignored). Without a handler,
+# a TERM mid-`compose pull`/`up` would kill setup.sh but leave the stack in
+# whatever half-started state it was in, and (on the PID-file path) the lock
+# could outlive the process. Trap INT/TERM and tear OUR project's stack down in
+# order with `compose stop` — gentler than `down` (containers/networks/volumes
+# survive, so a later --resume picks straight back up), and it releases the
+# compose engine cleanly. Then exit so the EXIT trap (PID-file path) removes the
+# lock and the flock FD is released on shell teardown.
+#
+# Bash defers a trap until the current foreground child returns, so this runs
+# right AFTER the in-flight compose command finishes rather than interrupting it
+# mid-write — exactly when an orderly stop is safe. cd in a subshell so a failed
+# cd can't strand us, and swallow all output: a cancel path must never itself
+# error out. Registered here (not earlier) so COMPOSE / COMPOSE_FILES /
+# COMPOSE_PROFILES are all populated; before this point there's no stack to stop.
+on_cancel() {
+    trap '' INT TERM   # ignore a second signal while we tear down
+    echo ""
+    echo "  ⚠ Cancel requested — stopping the stack in order (it can be resumed)..."
+    if [ -n "$COMPOSE" ]; then
+        ( cd "$SCRIPT_DIR" && $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES stop ) >/dev/null 2>&1 || true
+    fi
+    echo "  Stopped. Resume later with: sudo bash $SCRIPT_DIR/setup.sh --resume"
+    exit 130
+}
+trap on_cancel INT TERM
 
 run_step 1 "Set file permissions" \
     bash "$SCRIPT_DIR/setup-chmod.sh"
@@ -1543,6 +1665,13 @@ run_step 6 "Start the stack" start_stack
 abort_if_failed
 
 wait_for_services || { FAIL=$((FAIL + 1)); abort_if_failed; }
+
+# Gate the VPN tunnel BEFORE configuring services that route through it, so a
+# broken WireGuard key fails the install with a VPN-specific message instead of
+# slipping to a passing post-deploy (esp. when qBittorrent is disabled but the
+# VPN profile is active for Soulseek / Playlist Sync). Mirrors wait_for_services'
+# bare FAIL+abort pattern (not a numbered step).
+vpn_tunnel_gate || { FAIL=$((FAIL + 1)); abort_if_failed; }
 
 # ── API Configuration ─────────────────────────────────────────────────────────
 

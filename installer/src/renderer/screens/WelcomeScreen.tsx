@@ -54,6 +54,17 @@ export function WelcomeScreen() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const reduced = useReducedMotion()
 
+  // Normalize the wizard mode back to 'install' whenever we land on
+  // Welcome. Returning here from an Update or Migrate run (Done, Back-to-
+  // start, the header switch, ConnectScreen's switch, a deleted-profile
+  // bounce) otherwise leaves mode='update'/'migrate', so the home screen
+  // renders the reduced Update/Migrate rail with the wrong accent over the
+  // generic "Welcome back" content. Doing it on mount fixes every entry
+  // path in one place and matches the merge() rehydrate intent (which also
+  // forces mode='install'). pickProfile() re-sets the real mode immediately
+  // after this, so an Install/Update/Migrate click is unaffected.
+  useEffect(() => { useWizard.getState().setMode('install') }, [])
+
   async function refreshAppInfo() {
     try {
       const info = await window.installer.app.getInfo()

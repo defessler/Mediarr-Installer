@@ -74,13 +74,25 @@ manual_hint() {
             echo "        'Run user defined startup processes'): bash $BOOT_SH" ;;
         unraid)
             echo "      User Scripts plugin → 'At First Array Start Only': bash $BOOT_SH" ;;
+        truenas)
+            echo "      Web UI → System Settings → Advanced → Init/Shutdown Scripts →"
+            echo "        Add → Type: Command, When: Post Init, Command: bash $BOOT_SH"
+            echo "      (a plain crontab entry does NOT persist on TrueNAS — the"
+            echo "       middleware rewrites cron and the rootfs resets on update.)" ;;
         *)
             echo "      sudo crontab -e  →  add:"
             echo "        @reboot sleep 30 && bash $BOOT_SH" ;;
     esac
     if [ "$INSTALL_GUARD" -eq 1 ]; then
-        echo "    And a self-heal check every 5 min:"
-        echo "        */5 * * * * bash $GUARD_SH"
+        case "$2" in
+            truenas)
+                echo "    And a self-heal check every 5 min — add as a middleware-persisted"
+                echo "    Cron Job (Web UI → System Settings → Advanced → Cron Jobs):"
+                echo "        Command: bash $GUARD_SH   Schedule: every 5 minutes, Run as: root" ;;
+            *)
+                echo "    And a self-heal check every 5 min:"
+                echo "        */5 * * * * bash $GUARD_SH" ;;
+        esac
     fi
 }
 
@@ -153,6 +165,11 @@ if [ -f /etc/synoinfo.conf ]; then
             printf '#!/bin/sh\n'
             printf '# mediarr-boot — auto-installed by setup.sh; safe to delete.\n'
             printf 'case "$1" in stop) exit 0 ;; esac\n'
+            # rc.d runs with a stripped PATH that omits the container-runtime bin
+            # dirs, so export the full Synology/QNAP set (matches the export at
+            # the top of boot-orchestrator.sh) before exec'ing it — otherwise
+            # docker isn't on PATH at boot and the ordered-boot feature no-ops.
+            printf 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:/share/CACHEDEV1_DATA/.qpkg/container-station/bin:/share/.qpkg/container-station/bin:${PATH:-}"\n'
             printf '[ -x "%s" ] && exec /bin/bash "%s"\n' "$BOOT_SH" "$BOOT_SH"
         } > "$_tmp"
         if [ -f "$RC" ] && cmp -s "$_tmp" "$RC"; then
@@ -269,6 +286,25 @@ if [ -f /etc/config/qpkg.conf ] || [ -d /share/CACHEDEV1_DATA ]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════════
+# TrueNAS SCALE / CORE — crontab is middleware-owned and the rootfs resets on
+# update, so a plain `crontab -` write LOOKS installed (exit 0) but vanishes on
+# the next reboot/update. Don't claim success — point at the persistent
+# Init/Shutdown-script + Cron-Job mechanisms (same detection signal env-detector
+# uses for the truenas family). Checked BEFORE the generic crontab branch so
+# TrueNAS never falls through to the misleading "installed in root crontab".
+# ════════════════════════════════════════════════════════════════════════
+if grep -qiE 'truenas|freenas' /etc/version 2>/dev/null || [ -f /etc/truenas_version ]; then
+    echo "  ⚠ TrueNAS detected — crontab here is managed by the middleware and is reset"
+    echo "    on reboot/update, so an auto-installed hook would not survive. Wire it via"
+    echo "    the persistent Web UI mechanism instead:"
+    manual_hint "TrueNAS middleware-managed cron isn't persistent" truenas
+    echo "  ℹ Reboots are still partly covered by Docker's restart policy (every"
+    echo "    container is restart: unless-stopped); the boot hook only adds a faster,"
+    echo "    strictly-ordered start, and (on a VPN setup) the self-heal recovers qBit."
+    exit 0
+fi
+
+# ════════════════════════════════════════════════════════════════════════
 # UGREEN / OMV / generic Linux — root crontab (@reboot + */5), atomic RMW
 # ════════════════════════════════════════════════════════════════════════
 if command -v crontab >/dev/null 2>&1; then
@@ -279,18 +315,30 @@ if command -v crontab >/dev/null 2>&1; then
     # then re-add canonical lines — a single atomic `crontab -` rewrite, so
     # nothing duplicates and an unrelated foreign entry is left untouched.
     cur="$(crontab -l 2>/dev/null | grep -vF "$BOOT_TAG" | grep -vF "$GUARD_TAG" | grep -vF "$BOOT_SH" | grep -vF "$GUARD_SH")"
+    wrote_ok=0
     {
         printf '%s\n' "$cur"
         printf '%s\n' "$BOOT_LINE"
         [ "$INSTALL_GUARD" -eq 1 ] && printf '%s\n' "$GUARD_LINE"
-    } | grep -v '^[[:space:]]*$' | crontab - && {
+    } | grep -v '^[[:space:]]*$' | crontab - && wrote_ok=1
+    # Confirm the write actually PERSISTED before claiming success. On a
+    # read-only / appliance rootfs (e.g. ZimaOS) or a middleware-owned cron,
+    # `crontab -` can exit 0 yet the entry is gone on the next read (and the
+    # next reboot) — so re-read crontab -l for our marked boot line. If it
+    # isn't there, print manual steps + a warning instead of overstating it.
+    if [ "$wrote_ok" -eq 1 ] && crontab -l 2>/dev/null | grep -qF "$BOOT_TAG"; then
         echo "  ✔ Boot hook installed in root crontab (@reboot)"
         if [ "$INSTALL_GUARD" -eq 1 ]; then
             echo "  ✔ Self-heal cron installed in root crontab (every 5 min)"
         else
             echo "  ⏭ Self-heal cron skipped — only needed when VPN_ENABLED=true + qBittorrent on"
         fi
-    }
+    else
+        echo "  ⚠ Boot hook did not persist — this host's crontab looks read-only or"
+        echo "    middleware-managed (the entry was gone when re-read), so it wouldn't"
+        echo "    survive a reboot/update."
+        manual_hint "crontab not persistent on this host" linux
+    fi
     exit 0
 fi
 

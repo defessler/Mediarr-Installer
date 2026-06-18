@@ -157,16 +157,29 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
   const { items, parseError } = useMemo(() => parseCustomIndexers(raw), [raw])
   const [advanced, setAdvanced] = useState(false)
   const [draftRaw, setDraftRaw] = useState<string | null>(null)
+  // Parse error for the raw-JSON draft (Apply). Distinct from `parseError`,
+  // which describes the persisted CUSTOM_INDEXERS_JSON; this one describes
+  // what's currently in the textarea so a failed Apply gets visible feedback
+  // (the label promises "bad JSON is rejected" — without this it was silent).
+  const [draftError, setDraftError] = useState<string | null>(null)
 
   /** Replace the whole list with `next`, serialise, and push to the
    *  wizard's config store. Single source of truth — every mutation
-   *  flows through here so the JSON round-trip is consistent. */
+   *  flows through here so the JSON round-trip is consistent.
+   *
+   *  Guarded against data loss: when the persisted blob is malformed,
+   *  parseCustomIndexers returned items:[], so committing any form edit
+   *  would re-serialise to empty and clobber the user's recoverable text.
+   *  Refuse while a parse error is present — the rose banner's "Reset to
+   *  empty" stays the only sanctioned clear. */
   function commit(next: CustomIndexer[]) {
+    if (parseError) return
     const json = serializeCustomIndexers(next)
     onChange({ CUSTOM_INDEXERS_JSON: json || undefined })
   }
 
   function addEmpty() {
+    if (parseError) return
     commit([...items, { name: '', url: '' }])
   }
 
@@ -186,13 +199,18 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
     try {
       const parsed = JSON.parse(draftRaw)
       if (!Array.isArray(parsed)) {
-        // surface the issue but don't overwrite
+        // Surface the issue but don't overwrite the persisted blob.
+        setDraftError('Expected a JSON array of indexer objects (e.g. [ { … } ]).')
         return
       }
-      commit(parsed as CustomIndexer[])
+      const json = serializeCustomIndexers(parsed as CustomIndexer[])
+      onChange({ CUSTOM_INDEXERS_JSON: json || undefined })
+      setDraftError(null)
       setDraftRaw(null)
-    } catch {
-      // surface via the textarea's invalid border below
+    } catch (e) {
+      // Malformed JSON — surface the parser message + invalid border
+      // instead of silently swallowing it.
+      setDraftError((e as Error).message)
     }
   }
 
@@ -371,6 +389,10 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
           variant="secondary"
           icon={<Plus size={14} fill="currentColor" aria-hidden="true" />}
           onClick={addEmpty}
+          disabled={parseError != null}
+          title={parseError != null
+            ? 'Fix or reset the malformed JSON above before adding entries'
+            : undefined}
         >
           Add custom indexer
         </BigButton>
@@ -379,6 +401,7 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
           onClick={() => {
             setAdvanced((v) => !v)
             setDraftRaw(advanced ? null : (raw ?? ''))
+            setDraftError(null)
           }}
           className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded px-1"
           aria-expanded={advanced}
@@ -426,16 +449,36 @@ export function CustomIndexerEditor({ values, onChange }: Props) {
               <textarea
                 id="custom-indexers-json-raw"
                 value={draftRaw ?? ''}
-                onChange={(e) => setDraftRaw(e.target.value)}
+                onChange={(e) => { setDraftRaw(e.target.value); setDraftError(null) }}
                 rows={10}
-                className="w-full px-2.5 py-2 text-xs font-mono bg-slate-950 border border-slate-700 rounded focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition-colors"
+                aria-invalid={draftError ? true : undefined}
+                aria-describedby={draftError ? 'custom-indexers-json-raw-error' : undefined}
+                className={
+                  'w-full px-2.5 py-2 text-xs font-mono bg-slate-950 border rounded focus:outline-none focus:ring-1 transition-colors ' +
+                  (draftError
+                    ? 'border-rose-600 focus:ring-rose-400/40'
+                    : 'border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/40')
+                }
                 placeholder='[\n  {\n    "name": "My Indexer",\n    "url": "https://example.com",\n    "apiKey": "abc123"\n  }\n]'
               />
+              {draftError && (
+                <div
+                  id="custom-indexers-json-raw-error"
+                  role="alert"
+                  className="rounded-md border border-rose-700/40 bg-rose-900/20 p-3 text-xs text-rose-100 flex items-start gap-2"
+                >
+                  <AlertCircle size={16} className="text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
+                  <div className="flex-1">
+                    <div className="font-semibold">Can't apply — the JSON is invalid</div>
+                    <pre className="mt-1 whitespace-pre-wrap font-mono">{draftError}</pre>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-end gap-2">
                 <BigButton
                   size="sm"
                   variant="ghost"
-                  onClick={() => { setDraftRaw(raw ?? '') }}
+                  onClick={() => { setDraftRaw(raw ?? ''); setDraftError(null) }}
                 >
                   Revert
                 </BigButton>

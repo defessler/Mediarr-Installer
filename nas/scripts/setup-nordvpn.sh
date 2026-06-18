@@ -97,11 +97,25 @@ case "$VPN_PROVIDER" in
     protonvpn|mullvad|airvpn|surfshark|custom)
         # User pasted credentials directly into Configure — nothing to fetch.
         echo "  ⏭ VPN_PROVIDER=$VPN_PROVIDER — using user-supplied credentials in .env."
-        # Sanity-check the common case (WireGuard providers): warn if the
-        # private key isn't there. Don't fail — gluetun will surface a
-        # clearer error if creds are missing.
-        case "$VPN_PROVIDER" in
-            protonvpn|mullvad|airvpn)
+        # Sanity-check that the credential gluetun actually needs is present, so a
+        # blank field is caught HERE instead of slipping through to a dead tunnel
+        # (a leak blind-spot for VPN users). Don't fail — gluetun surfaces a
+        # clearer error if creds are missing. Which credential matters depends on
+        # VPN_TYPE: surfshark is OpenVPN (user/pass), the WireGuard providers use
+        # the private key, and custom can be either (VPN_TYPE parsed from the
+        # pasted gluetun env). Default to wireguard when VPN_TYPE is unset.
+        VPN_TYPE=$(env_val VPN_TYPE | tr '[:upper:]' '[:lower:]')
+        case "$VPN_TYPE" in
+            openvpn)
+                OVPN_USER=$(env_val OPENVPN_USER)
+                OVPN_PASS=$(env_val OPENVPN_PASSWORD)
+                if [ -z "$OVPN_USER" ] || [ -z "$OVPN_PASS" ]; then
+                    echo "  ⚠ OPENVPN_USER / OPENVPN_PASSWORD is empty in .env — gluetun won't connect."
+                    echo "    Re-run the wizard's Configure screen and paste your provider's"
+                    echo "    OpenVPN username + password."
+                fi
+                ;;
+            *)
                 WG=$(env_val WIREGUARD_PRIVATE_KEY)
                 if [ -z "$WG" ]; then
                     echo "  ⚠ WIREGUARD_PRIVATE_KEY is empty in .env — gluetun won't connect."

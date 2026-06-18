@@ -9,6 +9,12 @@ export async function saveTextToFile(args: {
   content: string
   title?: string
   filters?: { name: string; extensions: string[] }[]
+  /** When true, write the file owner-only (0600). Set for sensitive payloads
+   *  like the encrypted profile export — its secrets are AES-256-GCM
+   *  ciphertext, but on a shared POSIX host a world-readable file leaves
+   *  confidentiality resting solely on passphrase strength. The shared
+   *  log-export path leaves this unset (logs stay default-mode). */
+  restrictPermissions?: boolean
 }): Promise<{ saved: boolean; path: string | null }> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   const result = await dialog.showSaveDialog(win, {
@@ -21,7 +27,18 @@ export async function saveTextToFile(args: {
     ],
   })
   if (result.canceled || !result.filePath) return { saved: false, path: null }
-  await fs.writeFile(result.filePath, args.content, 'utf8')
+  // mode in writeFile only applies when CREATING a new file (ignored on
+  // overwrite, and ignored entirely on Windows), so also chmod explicitly on
+  // POSIX to cover the overwrite-an-existing-file case.
+  await fs.writeFile(
+    result.filePath,
+    args.content,
+    args.restrictPermissions ? { encoding: 'utf8', mode: 0o600 } : 'utf8',
+  )
+  if (args.restrictPermissions && process.platform !== 'win32') {
+    try { await fs.chmod(result.filePath, 0o600) }
+    catch { /* best-effort: e.g. a filesystem that doesn't support chmod */ }
+  }
   return { saved: true, path: result.filePath }
 }
 

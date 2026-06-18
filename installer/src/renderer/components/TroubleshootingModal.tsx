@@ -13,13 +13,14 @@
 //     often through SSH on a flaky home network. Help that needs the
 //     internet would fail at the moment it's most needed.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   HelpCircle, Search, X, Clipboard, ClipboardCheck, ExternalLink, SearchX,
   Download, Loader2, CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { BigButton } from './BigButton.js'
+import { useFocusTrap } from '../hooks/useFocusTrap.js'
 import type { NasFamily } from '../../shared/ipc.js'
 
 /** Substitution context handed to family-aware command builders + the
@@ -511,7 +512,7 @@ bash <SCRIPTS_DIR>/post-deploy-validate.sh`,
     cause:
       'NordVPN does NOT support port forwarding via gluetun (no third-party PF API). Only ProtonVPN, PIA, PrivateVPN and Perfect Privacy support PF natively. With NordVPN, your seed ratio is capped by peer reachability — incoming connections never reach qBit through the VPN tunnel.',
     fix:
-      'Either accept the limitation (downloading still works, seeding is just slower) or switch providers. Set VPN_PROVIDER=protonvpn (or pia/privatevpn) in .env, paste the corresponding WIREGUARD_PRIVATE_KEY/WIREGUARD_ADDRESSES, then VPN_PORT_FORWARDING=on and re-run setup.sh.',
+      'Either accept the limitation (downloading still works, seeding is just slower) or switch providers. For ProtonVPN, set VPN_PROVIDER=protonvpn in .env and paste the corresponding WIREGUARD_PRIVATE_KEY/WIREGUARD_ADDRESSES. For PIA or PrivateVPN (not in the provider list), pick "Custom / other" in the wizard and paste their gluetun env block instead — setting VPN_PROVIDER to an unsupported value is now rejected so it can\'t silently fall back to NordVPN. Then add VPN_PORT_FORWARDING=on and re-run setup.sh.',
   },
   {
     category: 'VPN (gluetun)',
@@ -787,14 +788,10 @@ export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pg
     pgid: pgid || '100',
   }
 
-  // ESC closes — standard modal hygiene matching IssuesModal.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // Trap focus + ESC to close — standard modal hygiene matching
+  // IssuesModal, folded into the shared focus-trap hook.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef, { active: true, onClose })
 
   // Filter items by family first (hide platform-specific entries that
   // don't apply to the detected NAS — but show everything while the
@@ -844,6 +841,7 @@ export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pg
       transition={{ duration: 0.18 }}
     >
       <motion.div
+        ref={dialogRef}
         className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-xl shadow-black/40"
         onClick={(e) => e.stopPropagation()}
         initial={reduced ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96, y: 8 }}

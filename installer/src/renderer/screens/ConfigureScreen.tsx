@@ -11,6 +11,7 @@ import {
 import { BigButton } from '../components/BigButton.js'
 import { PasswordInput } from '../components/PasswordInput.js'
 import { useWizard } from '../store/wizard.js'
+import { RelocationWarning } from './EnvDetectScreen.js'
 import { envSchema } from '../../shared/env-schema.js'
 import {
   type EnvFormValues,
@@ -818,7 +819,7 @@ function CollapsibleGroup({
 // but the single-page form scored better in usability testing — users
 // could see the full picture at once and tab between fields naturally.
 export function ConfigureScreen() {
-  const { config, setConfig, sessionId, targetDir, setTargetDir, setStep } = useWizard()
+  const { config, setConfig, sessionId, targetDir, setTargetDir, setStep, existingInstallDir, existingDataRoot } = useWizard()
   const [errors, setErrors] = useState<string[]>([])
   const [vpnToken, setVpnToken] = useState('')
   const [vpnBusy, setVpnBusy] = useState(false)
@@ -944,7 +945,30 @@ export function ConfigureScreen() {
   function go() {
     const parsed = envSchema.safeParse(config)
     if (!parsed.success) {
-      setErrors(parsed.error.issues.map((i) => `${humanizeKey(i.path.join('.'))}: ${i.message}`))
+      // The qBittorrent user/pass inputs are GATED behind the "Use same
+      // credentials as ARR Web UI" checkbox (qbitSameAsArr) — when it's
+      // checked they aren't even rendered. So an all-defaults Continue
+      // (qBit pass empty, fails the 8-char rule) would otherwise show a
+      // blocking error pointing at a field the user can't see. Reveal the
+      // qBit fields whenever validation flags them, so the SAME Continue
+      // click that surfaces the error also makes the input editable.
+      const qbitFlagged = parsed.error.issues.some(
+        (i) => i.path[0] === 'QBITTORRENT_USER' || i.path[0] === 'QBITTORRENT_PASS',
+      )
+      // Capture whether the fields were hidden BEFORE we reveal them, so the
+      // error text can tell the user exactly how to get out of the dead-end.
+      const qbitWasHidden = qbitFlagged && qbitSameAsArr
+      if (qbitFlagged) setQbitSameAsArr(false)
+      setErrors(parsed.error.issues.map((i) => {
+        const base = `${humanizeKey(i.path.join('.'))}: ${i.message}`
+        // Make the qBit credential errors actionable: when the creds were
+        // mirrored from (blank) ARR auth, the user needs to either fill an
+        // ARR password or use the qBit field we just revealed.
+        if (qbitWasHidden && (i.path[0] === 'QBITTORRENT_USER' || i.path[0] === 'QBITTORRENT_PASS')) {
+          return `${base} — fill it in the qBittorrent WebUI fields just revealed under Downloads & VPN, or set an ARR password in Advanced.`
+        }
+        return base
+      }))
       // Un-hide every flagged field. The error list references env keys whose
       // inputs may live inside collapsed groups (all but Services start
       // collapsed), so a first-timer can be blocked by a field they literally
@@ -1517,6 +1541,18 @@ export function ConfigureScreen() {
             label="Data root (media + downloads, bind-mounted as /data inside containers)"
             k="DATA_ROOT"
             placeholder="/volume1/Data"
+          />
+          {/* Same "relocating an existing install" warning the Detect screen
+              shows — rendered here so editing the path on Configure (or
+              loading a profile and tweaking it) gets the heads-up that this
+              stops the stack + moves data. existing* come from the last
+              detect (null when none ran / no prior install), so this is
+              silent on a fresh box. */}
+          <RelocationWarning
+            installDir={config.INSTALL_DIR ?? targetDir}
+            dataRoot={config.DATA_ROOT ?? ''}
+            existingInstallDir={existingInstallDir}
+            existingDataRoot={existingDataRoot}
           />
         </section>
 

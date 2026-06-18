@@ -274,7 +274,15 @@ export async function detectEnv(
       'p=' + tq + '; ' +
       'while [ -n "$p" ] && [ "$p" != "/" ] && [ ! -e "$p" ]; do p=$(dirname "$p"); done; ' +
       'df -kP "$p" 2>/dev/null | tail -n +2',
-    'echo "===netstat==="; netstat -lnt 2>/dev/null | awk \'NR>2 {n=split($4,a,":"); print a[n]}\' | sort -un',
+    // Listening ports → the Detect screen's pre-Install port-conflict warning.
+    // Mirror setup.sh's snapshot logic: prefer `ss -ltn` (iproute2, present on
+    // every modern NAS incl. UGREEN/Debian-12), fall back to `netstat -lnt`,
+    // else nothing. The old netstat-ONLY probe yielded an empty section on
+    // Debian-12/UGREEN (no net-tools), so boundPorts came back empty and the
+    // warning NEVER fired. Match the trailing :PORT on $4 (as setup.sh:963 does)
+    // instead of an NR>2 header-skip — ss has a 1-line header, so NR>2 would eat
+    // its first data row; the :PORT filter drops both tools\' header lines.
+    'echo "===netstat==="; (command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null || netstat -lnt 2>/dev/null) | awk \'$4 ~ /:[0-9]+$/ {n=split($4,a,":"); print a[n]}\' | sort -un',
     'echo "===dockerhub==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://registry-1.docker.io/v2/ 2>/dev/null || echo 000',
     'echo "===plextv==="; curl -sm 5 -o /dev/null -w "%{http_code}" https://plex.tv 2>/dev/null || echo 000',
     // DNS resolution fallback — Synology\'s stock curl sometimes fails

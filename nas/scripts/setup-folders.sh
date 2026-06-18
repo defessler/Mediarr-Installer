@@ -2,10 +2,19 @@
 # ── Media Stack Folder Setup ──
 #
 # Creates all required directories for the stack and sets correct ownership.
-# Safe to run multiple times — skips folders that already exist.
+# Safe to run multiple times — folders that already exist keep their contents;
+# only the directory NODE's own ownership/mode is re-asserted on a re-run, NOT
+# the whole tree underneath it. (A blanket `chown -R`/`chmod -R` on every re-run
+# would rewrite the user's multi-TB Media + Plex tree each pass: set the execute
+# bit on every .mkv, force group-write onto files locked down on purpose, strip
+# Plex's 755 SQLite/cache perms, and clobber ownership a peer app set. The
+# recursive sweep is reserved for an explicit opt-in.)
 #
 # Usage:
 #   sudo bash /volume1/docker/media/setup-folders.sh
+#   # Force a one-time recursive ownership/mode repair of EVERY dir+file
+#   # (use only after a known permissions breakage — it is an O(inodes) walk):
+#   sudo MEDIARR_FIX_PERMS=1 bash /volume1/docker/media/setup-folders.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Compose root = scripts/ parent in the new layout, or SCRIPT_DIR
@@ -54,8 +63,17 @@ fi
 : "${INSTALL_DIR:=$INSTALL_DIR_DEFAULT}"
 : "${DATA_ROOT:=/volume1/Data}"
 
+# Opt-in full recursive ownership/mode repair. Default OFF: a normal re-run only
+# (re-)asserts the directory NODE's own ownership + mode, so re-toggling one
+# service never rewrites the user's whole multi-TB library tree. Set
+# MEDIARR_FIX_PERMS=1 to force the old O(inodes) `chown -R`/`chmod -R` sweep over
+# every dir AND file — only wanted after an actual permissions breakage.
+FIX_PERMS=0
+case "${MEDIARR_FIX_PERMS:-}" in 1|true|yes|on) FIX_PERMS=1 ;; esac
+
 echo "Using PUID=$PUID PGID=$PGID  (from ${ENV_FILE})"
 echo "       INSTALL_DIR=$INSTALL_DIR  DATA_ROOT=$DATA_ROOT"
+[ "$FIX_PERMS" -eq 1 ] && echo "       MEDIARR_FIX_PERMS=1 — forcing recursive ownership/mode repair"
 echo ""
 
 # ── Config directories ─────────────────────────────────────────────────────────
@@ -132,17 +150,42 @@ DATA_DIRS=(
 )
 
 # ── Create and chown ───────────────────────────────────────────────────────────
+#
+# Permission strategy (see header): a re-run must NOT walk an existing dir's
+# whole tree. So we only `chown -R`/`chmod -R` a dir this script just CREATED
+# (its subtree is brand-new and ours) or when MEDIARR_FIX_PERMS=1 forces a full
+# repair. For a dir that already existed we re-assert ONLY the node itself. And
+# the recursive case splits dir vs file modes so plain files (.mkv, .db, .conf)
+# never get the execute bit a flat `chmod -R 7xx` would set on everything.
+#
+#   apply_perms <dir> <created?0|1> <owner> <dirmode> <filemode>
+apply_perms() {
+    local dir="$1" created="$2" owner="$3" dmode="$4" fmode="$5"
+    if [ "$created" -eq 1 ] || [ "$FIX_PERMS" -eq 1 ]; then
+        chown -R "$owner" "$dir"
+        find "$dir" -type d -exec chmod "$dmode" {} +
+        find "$dir" -type f -exec chmod "$fmode" {} +
+    else
+        # Existing dir on a re-run: touch only the directory node, never its
+        # contents — preserves any per-file ownership/mode the user or a peer
+        # app set, and avoids the O(inodes) walk over multi-TB libraries.
+        chown "$owner" "$dir"
+        chmod "$dmode" "$dir"
+    fi
+}
 
 echo "Creating config directories..."
 for dir in "${CONFIG_DIRS[@]}"; do
     if [ ! -d "$dir" ]; then
         mkdir -p "$dir"
         echo "  Created: $dir"
+        created=1
     else
         echo "  Exists:  $dir"
+        created=0
     fi
-    chown -R $PUID:$PGID "$dir"
-    chmod -R 755 "$dir"
+    # Config: 755 dirs / 644 files (no group-write; matches Plex's own layout).
+    apply_perms "$dir" "$created" "$PUID:$PGID" 755 644
 done
 
 echo ""
@@ -151,15 +194,17 @@ for dir in "${DATA_DIRS[@]}"; do
     if [ ! -d "$dir" ]; then
         mkdir -p "$dir"
         echo "  Created: $dir"
+        created=1
     else
         echo "  Exists:  $dir"
+        created=0
     fi
-    chown -R $PUID:$PGID "$dir"
-    # 775 instead of 755 on the data tree — Sonarr/Radarr/etc all run
-    # as the same PUID:PGID, and group write means peer containers can
-    # cross-write into shared dirs (eg sonarr → /data/Media/TV Shows
-    # while bazarr drops .srt files alongside).
-    chmod -R 775 "$dir"
+    # 775 dirs / 664 files on the data tree — Sonarr/Radarr/etc all run as the
+    # same PUID:PGID, and group write means peer containers can cross-write into
+    # shared dirs (eg sonarr → /data/Media/TV Shows while bazarr drops .srt
+    # files alongside). Files get 664 (group-write, NO execute) instead of the
+    # old flat 775 that put +x on every .mkv/.mp4.
+    apply_perms "$dir" "$created" "$PUID:$PGID" 775 664
 done
 
 # ── AzuraCast (opt-in) persistence dirs — chown 1000:1000, NOT PUID:PGID ──────
@@ -198,13 +243,26 @@ case "$(grep -m1 '^ENABLE_AZURACAST=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- |
             if [ ! -d "$dir" ]; then
                 mkdir -p "$dir"
                 echo "  Created: $dir"
+                created=1
             else
                 echo "  Exists:  $dir"
+                created=0
             fi
             # Fixed 1000:1000 — see the WHY note above. AzuraCast ignores
             # PUID/PGID; chowning to the wizard's PUID/PGID would crash-loop it.
-            chown -R 1000:1000 "$dir"
-            chmod -R 755 "$dir"
+            # Gated like CONFIG_DIRS/DATA_DIRS: only sweep the tree on a dir we
+            # just created (subtree empty + ours) or under MEDIARR_FIX_PERMS=1; a
+            # re-run touches only the node. We never `chmod -R` the FILES here —
+            # db_data is MariaDB's live /var/lib/mysql and it manages its own
+            # per-file modes (some 600/660 on keys); a flat file-mode rewrite
+            # would corrupt them. Only directory modes are normalised.
+            if [ "$created" -eq 1 ] || [ "$FIX_PERMS" -eq 1 ]; then
+                chown -R 1000:1000 "$dir"
+                find "$dir" -type d -exec chmod 755 {} +
+            else
+                chown 1000:1000 "$dir"
+                chmod 755 "$dir"
+            fi
         done
         ;;
 esac
@@ -305,32 +363,63 @@ if [ -d "$DATA_ROOT" ]; then
         # re-runs of the wizard. Grep -get output first; only -add
         # when the target ACE isn't already present.
         TARGET_ACE="user:${USERNAME}:allow:rwxpdDaARWcCo:fd--"
+        ACE_WAS_PRESENT=0
         if "$SYNOACL" -get "$DATA_ROOT" 2>/dev/null | grep -qF "$TARGET_ACE"; then
             echo "  ✔ ACL ACE already present for $USERNAME (skipped to avoid duplicate)"
+            ACE_WAS_PRESENT=1
         elif "$SYNOACL" -add "$DATA_ROOT" "$TARGET_ACE"; then
             echo "  ✔ ACL granted to user $USERNAME"
         else
             echo "  ⚠ synoacltool -add failed — grant write access manually in"
             echo "    DSM → Control Panel → Shared Folder → Data → Edit → Permissions"
         fi
-        # Re-apply ACLs from parent to all existing children so paths
-        # the arrs need are usable on first run, not just new ones.
-        if "$SYNOACL" -enforce-inherit "$DATA_ROOT" 2>/dev/null; then
-            echo "  ✔ Inheritance propagated to existing children"
+        # Re-apply ACLs from parent to all existing children so paths the arrs
+        # need are usable on first run, not just new ones. This is an O(inodes)
+        # recursive walk, so only run it when we ACTUALLY (re)established the ACE
+        # — i.e. it wasn't already present (the first install, or a renumbered
+        # PUID) — or when MEDIARR_FIX_PERMS=1 forces a repair. On a plain re-run
+        # the grant + inheritance are already in place, so re-propagating each
+        # time just re-walks the whole multi-TB share for no change.
+        if [ "$ACE_WAS_PRESENT" -eq 0 ] || [ "$FIX_PERMS" -eq 1 ]; then
+            if "$SYNOACL" -enforce-inherit "$DATA_ROOT" 2>/dev/null; then
+                echo "  ✔ Inheritance propagated to existing children"
+            else
+                echo "  ⚠ enforce-inherit failed — older child files may still"
+                echo "    use the original ACL. New files will inherit correctly."
+            fi
         else
-            echo "  ⚠ enforce-inherit failed — older child files may still"
-            echo "    use the original ACL. New files will inherit correctly."
+            echo "  ⏭ Inheritance already propagated (skipping recursive re-walk;"
+            echo "    run with MEDIARR_FIX_PERMS=1 to force a full re-propagation)."
         fi
     elif [ -n "$SETFACL" ]; then
         echo ""
         echo "Granting POSIX ACL: uid=$PUID (rwx, inherited) on $DATA_ROOT..."
         echo "  (using $SETFACL)"
-        # -m sets access ACL; -d sets the default ACL (applied to new
-        # entries created inside). -R is recursive on existing entries.
-        "$SETFACL" -R -m  "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
-        "$SETFACL" -R -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
-            echo "  ✔ POSIX ACL applied" || \
-            echo "  ⚠ setfacl failed — filesystem may not support ACLs"
+        # -m sets access ACL; -d sets the default ACL (applied to new entries
+        # created inside). -R is recursive on existing entries.
+        #
+        # The default ACL on the DATA_ROOT node is cheap and makes every NEW
+        # child inherit u:PUID:rwx, so we always (re)set it. The RECURSIVE
+        # access-ACL rewrite (`-R -m`) is the O(inodes) walk over the whole
+        # multi-TB tree, so we only run it when the ACL isn't already in place
+        # (first install) or when MEDIARR_FIX_PERMS=1 forces a repair — a plain
+        # re-run shouldn't re-walk the library to re-apply an ACL that's already
+        # there. getfacl is setfacl's sibling (same `acl` package); if it can't
+        # be probed we fall back to the recursive path (safe, matches old behavior).
+        ACL_PRESENT=0
+        if command -v getfacl >/dev/null 2>&1; then
+            getfacl -pn "$DATA_ROOT" 2>/dev/null | grep -q "^user:${PUID}:" && ACL_PRESENT=1
+        fi
+        "$SETFACL" -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null
+        if [ "$ACL_PRESENT" -eq 0 ] || [ "$FIX_PERMS" -eq 1 ]; then
+            "$SETFACL" -R -m  "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
+            "$SETFACL" -R -d -m "u:${PUID}:rwx" "$DATA_ROOT" 2>/dev/null && \
+                echo "  ✔ POSIX ACL applied" || \
+                echo "  ⚠ setfacl failed — filesystem may not support ACLs"
+        else
+            echo "  ⏭ POSIX ACL already present (set default on $DATA_ROOT for new"
+            echo "    children; skipping recursive re-walk — MEDIARR_FIX_PERMS=1 to force)."
+        fi
     elif [ -n "$SYNOACL" ] && [ -z "$USERNAME" ]; then
         echo ""
         echo "  ⚠ Found $SYNOACL but couldn't resolve a username for"
@@ -569,8 +658,13 @@ print("@ByteArray("+base64.b64encode(salt).decode()+":"+base64.b64encode(key).de
         # inspect later if anything in there was customised by hand.
         if [ -f "$QB_CONF_FILE" ]; then
             BACKUP="$QB_CONF_FILE.before-mediarr-$(date +%Y%m%d-%H%M%S).bak"
-            cp "$QB_CONF_FILE" "$BACKUP" 2>/dev/null \
-                && echo "  Backed up previous conf → $BACKUP"
+            if cp "$QB_CONF_FILE" "$BACKUP" 2>/dev/null; then
+                # The backup carries the same WebUI password hash as the live
+                # conf, so lock it down to 600 too (cp inherits the source
+                # mode, which may still be a world-readable qBit-written 644).
+                chmod 600 "$BACKUP" 2>/dev/null || true
+                echo "  Backed up previous conf → $BACKUP"
+            fi
         fi
         mkdir -p "$QB_CONF_DIR"
         cat > "$QB_CONF_FILE" <<EOF
@@ -616,7 +710,12 @@ size=1
 1\\dir=/downloads/ToFetch
 EOF
         chown -R $PUID:$PGID "$INSTALL_DIR/qbittorrent/config"
-        chmod 644 "$QB_CONF_FILE"
+        # 600, not 644: this file holds the salted PBKDF2 WebUI password hash,
+        # the username, and the LAN AuthSubnetWhitelist — the same secret class
+        # that lives at 600 in .env. World-readable invited offline brute-force
+        # by any local user/process. Already chowned to $PUID:$PGID (the qBit
+        # container UID), so the container still reads it fine.
+        chmod 600 "$QB_CONF_FILE"
         echo "  ✔ $QB_CONF_FILE written (user: $QB_USER, watched: /downloads/ToFetch)"
         WROTE_CONF=true
     fi

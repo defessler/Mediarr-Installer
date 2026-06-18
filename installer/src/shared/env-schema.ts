@@ -77,10 +77,19 @@ export const envSchema = z.object({
   // way lies madness. Cross-validated below: INSTALL_DIR and DATA_ROOT
   // must NOT be the same dir (the .env file + compose stack would
   // collide with the user's media).
-  INSTALL_DIR: optStr.refine((v) => !v || v.startsWith('/'),
-    'must be an absolute path starting with /'),
-  DATA_ROOT: optStr.refine((v) => !v || v.startsWith('/'),
-    'must be an absolute path starting with /'),
+  //
+  // REQUIRED + non-empty (not optStr): an emptied field must FAIL
+  // safeParse, not silently fall through to env-render's /volume1
+  // default. On a non-Synology NAS (UGREEN/Unraid/QNAP/Linux) that
+  // default points at a path which doesn't exist, and clearing
+  // INSTALL_DIR also blanks the wizard's targetDir → setup.sh would
+  // write a root-anchored /.env while the rendered .env still says
+  // /volume1 (an internally inconsistent broken install). Failing the
+  // parse blocks the Ready footer + go() before that can happen.
+  INSTALL_DIR: z.string().min(1, 'required — set an absolute install path')
+    .refine((v) => v.startsWith('/'), 'must be an absolute path starting with /'),
+  DATA_ROOT: z.string().min(1, 'required — set an absolute data path')
+    .refine((v) => v.startsWith('/'), 'must be an absolute path starting with /'),
 
   // Container-runtime socket override (Podman). renderEnv emits this key
   // verbatim and setup.sh exports it as DOCKER_HOST, so a relative path or
@@ -148,8 +157,8 @@ export const envSchema = z.object({
   // host-published side in docker-compose.yml, so reject a non-numeric value.
   // No creds collected.
   AZURACAST_HTTP_PORT: optStr.refine(
-    (v) => !v || /^\d+$/.test(v),
-    'must be a port number',
+    (v) => !v || (/^\d+$/.test(v) && +v >= 1 && +v <= 65535),
+    'must be a port number between 1 and 65535',
   ),
 
   // Playlist Sync (SiriusXM + Spotify → Plex) — all optional at the schema
@@ -184,8 +193,8 @@ export const envSchema = z.object({
   // SABnzbd usenet provider (all optional — host gates the rest)
   USENET_HOST: optStr,
   USENET_PORT: optStr.refine(
-    (v) => !v || /^\d+$/.test(v),
-    'must be a port number',
+    (v) => !v || (/^\d+$/.test(v) && +v >= 1 && +v <= 65535),
+    'must be a port number between 1 and 65535',
   ),
   USENET_USER: optStr,
   USENET_PASS: optStr,
@@ -390,18 +399,36 @@ export const envSchema = z.object({
     }
   }
 
-  // VPN config only validated when VPN_ENABLED is explicitly on AND
-  // qBittorrent is in the stack. Without qBittorrent there's no
-  // service the VPN routes for, so even VPN_ENABLED=true should not
-  // trigger required-cred validation (the install just won't activate
-  // the "vpn" profile in COMPOSE_PROFILES).
+  // The VPN provider-id is validated whenever VPN_ENABLED is on — a
+  // hand-edited/migrated .env with a bogus VPN_PROVIDER must be caught even
+  // for a Soulseek/Playlist-Sync-only VPN (setup.sh starts gluetun for those
+  // too, not just qBittorrent). The provider-specific CREDENTIAL/country
+  // checks further down stay gated on qBittorrent (historically the only
+  // required-cred path) so this doesn't change validation for existing configs.
   const vpnOn = (v.VPN_ENABLED ?? 'false').toLowerCase() === 'true'
-  if (!vpnOn || !qbitOn) return
+  if (!vpnOn) return
   if (!v.VPN_PROVIDER) {
     ctx.addIssue({ code: 'custom', path: ['VPN_PROVIDER'],
       message: 'Pick a VPN provider (or turn VPN off).' })
     return
   }
+  // Reject a NON-empty provider that isn't in the registry. Without this, a
+  // hand-edited / migrated .env with e.g. VPN_PROVIDER=pia was silently
+  // rendered as a NordVPN .env (findVpnProvider's old default), dropping the
+  // user's intended provider with no warning. Mirror the VpnProviderId set
+  // from vpn-providers.ts here (this shared file deliberately doesn't import
+  // that module — see the cred-checks note below). 'custom' is the escape
+  // hatch for any gluetun provider we don't model.
+  const KNOWN_VPN_PROVIDERS = ['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom']
+  if (!KNOWN_VPN_PROVIDERS.includes(v.VPN_PROVIDER)) {
+    ctx.addIssue({ code: 'custom', path: ['VPN_PROVIDER'],
+      message: 'Unknown VPN provider — pick a supported one or use Custom.' })
+    return
+  }
+  // Credential/country requirements only apply when qBittorrent is in the
+  // stack (the historical required-cred path); a provider-only VPN for
+  // Soulseek/Playlist-Sync still gets the provider-id sanity check above.
+  if (!qbitOn) return
   if (!v.VPN_COUNTRIES && v.VPN_PROVIDER !== 'custom') {
     ctx.addIssue({ code: 'custom', path: ['VPN_COUNTRIES'],
       message: 'Pick at least one country when VPN is enabled.' })

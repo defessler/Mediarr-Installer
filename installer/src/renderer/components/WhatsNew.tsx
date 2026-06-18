@@ -4,6 +4,7 @@ import { Sparkles, Download, ExternalLink, ChevronDown, FileText, RefreshCw, X }
 import type { AppInfo, UpdaterState } from '../../shared/ipc.js'
 import { reportError } from '../store/errors.js'
 import { BigButton } from './BigButton.js'
+import { splitTrailingUrl } from './UpdateOverlay.js'
 
 interface Props {
   /** Used only to render "you're on vX.Y.Z" — all update info comes
@@ -371,15 +372,36 @@ export function WhatsNew({ info }: Props) {
 
       {/* Updater error banner — separate from the toast tray so it stays
           visible while the user reads it, not auto-dismissing after 6s. */}
-      {updater.kind === 'error' && (
-        <div
-          className="rounded-md border border-rose-700/40 bg-rose-900/15 px-3 py-2 text-xs text-rose-200 flex items-start gap-2"
-          role="alert"
-        >
-          <span className="font-medium">Update failed:</span>
-          <span className="flex-1">{updater.message}</span>
-        </div>
-      )}
+      {updater.kind === 'error' && (() => {
+        // Render a trailing "...update manually from <url>" as a real link
+        // (this is the surface that actually shows the post-quit swap-failure
+        // sentinel message; see splitTrailingUrl in UpdateOverlay).
+        const { text, url } = splitTrailingUrl(updater.message)
+        return (
+          <div
+            className="rounded-md border border-rose-700/40 bg-rose-900/15 px-3 py-2 text-xs text-rose-200 flex items-start gap-2"
+            role="alert"
+          >
+            <span className="font-medium">Update failed:</span>
+            <span className="flex-1">
+              {text}
+              {url && (
+                <>
+                  {' '}
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline text-rose-100 hover:text-white break-all"
+                  >
+                    {url}
+                  </a>
+                </>
+              )}
+            </span>
+          </div>
+        )
+      })()}
 
       {(mode === 'install' || mode === 'download') && (
         <details className="rounded-md bg-slate-900/40 text-sm group">

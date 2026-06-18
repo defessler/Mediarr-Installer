@@ -92,29 +92,49 @@ export function RunScreen() {
   // are [sessionId]). Lets us tell a user-Cancel apart from a real drop.
   const cancelingRef = useRef(false)
   useEffect(() => { cancelingRef.current = canceling }, [canceling])
-  // Safety net for a swallowed Cancel. streamCancel is best-effort; if the
-  // remote command ignores the signal (or the close event never arrives), the
-  // stream never closes, onStreamClose never fires, and `canceling` would stay
-  // true forever — pinning the UI on "Stopping…" with Back + the stepper
-  // busy-locked, recoverable only by restarting the app. After a grace period,
-  // force-unlock locally: setup.sh is idempotent/resumable, so dropping to
-  // 'failed' is safe (the user can Retry to resume, or navigate away). The
-  // normal path clears `canceling` well within the window, cancelling this.
-  useEffect(() => {
-    if (!canceling) return
-    const t = setTimeout(() => {
-      setCanceling(false)
-      setPhase((p) => (p === 'running-setup' ? 'failed' : p))
-    }, 15_000)
-    return () => clearTimeout(t)
-  }, [canceling])
   /** True when the last run ended because the SSH connection DROPPED (stream
    *  closed with a null exit and no Cancel in flight) rather than setup.sh
    *  failing a step. We keep phase==='failed' so the whole failed-state UI works
    *  unchanged, and only swap the Retry button for "Reconnect & resume". */
   const [droppedConnection, setDroppedConnection] = useState(false)
+  /** True specifically when the failed-state was reached because a Cancel was
+   *  SWALLOWED — the swallowed-cancel net force-unlocked the UI but the stream
+   *  never closed, so setup.sh may STILL be converging (or tearing down) on the
+   *  NAS. Distinct from a real connection drop: we reuse the same "Reconnect &
+   *  resume" affordance (droppedConnection drives it) but swap the copy to make
+   *  clear the stop signal was sent and the NAS may still be finishing — rather
+   *  than the flat "Install paused / Retry" that invited an immediate Retry
+   *  racing the still-live first run. Reset wherever droppedConnection resets. */
+  const [cancelStalled, setCancelStalled] = useState(false)
   /** True while reconnect-and-resume is re-establishing SSH (drives the label). */
   const [reconnecting, setReconnecting] = useState(false)
+  // Safety net for a swallowed Cancel. streamCancel is best-effort; if the
+  // remote command ignores the signal (or the close event never arrives), the
+  // stream never closes, onStreamClose never fires, and `canceling` would stay
+  // true forever — pinning the UI on "Stopping…" with Back + the stepper
+  // busy-locked, recoverable only by restarting the app. After a grace period,
+  // force-unlock locally: setup.sh is idempotent/resumable, so the user can
+  // resume. The normal path clears `canceling` well within the window,
+  // cancelling this.
+  useEffect(() => {
+    if (!canceling) return
+    const t = setTimeout(() => {
+      setCanceling(false)
+      setPhase((p) => {
+        if (p !== 'running-setup') return p
+        // The stream never closed within the grace window — the remote process
+        // tree swallowed our TERM (ssh-service escalates to KILL after ~8s, but
+        // a late close may still be in flight) and setup.sh may STILL be
+        // converging / tearing down on the NAS. Offer Reconnect & resume rather
+        // than a from-scratch Retry that could launch a SECOND setup.sh over
+        // the live one. cancelStalled swaps the copy to say so.
+        setDroppedConnection(true)
+        setCancelStalled(true)
+        return 'failed'
+      })
+    }, 15_000)
+    return () => clearTimeout(t)
+  }, [canceling])
   /** Issues parsed out of the streaming log. Surfaces failures and
    *  warnings from setup-arr-config.py et al as a tidy summary above
    *  the log panel, so the user doesn't have to scroll 500 lines to
@@ -145,6 +165,15 @@ export function RunScreen() {
    *  Any real config edit shows up in the render (the .env round-trip invariant),
    *  forcing a full go(). Null until the first run writes it → Retry → go(). */
   const lastRenderedEnvRef = useRef<string | null>(null)
+  // The session whose stream events we currently accept. Read at event-time by
+  // the stream handlers so they can drop late data/close from a SUPERSEDED
+  // session (after a reconnect-and-resume swaps in a fresh session, a wedged
+  // prior run can still emit on the same channelId). A ref (read live) rather
+  // than the closure-captured `sessionId` so there's no window where the new
+  // run's own events are mistaken for stale ones. Updated in an effect below
+  // and synchronously by reconnectAndResume the instant it mints a session.
+  const liveSessionIdRef = useRef<string | null>(sessionId)
+  useEffect(() => { liveSessionIdRef.current = sessionId }, [sessionId])
   // Guards go() against re-entry from a double-click on "Start install".
   // phase stays 'idle' through go()'s async prelude (the installLog.start
   // await) until setPhase('uploading'), so a second queued click would
@@ -377,13 +406,26 @@ export function RunScreen() {
   useEffect(() => {
     if (!sessionId) return
     const offData = window.installer.ssh.onStreamData((d) => {
-      // Forward both the main install stream and any per-step re-runs
-      // into the same log buffer.
+      // Ignore events from a SUPERSEDED session. After a reconnect-and-resume
+      // mints a fresh session, a wedged prior run's late stream events still
+      // arrive on the same channelId; they now carry the OLD sessionId, so we
+      // drop them rather than let a dead run keep writing into the new one.
+      // Compare against the live-session ref (read now) so the new run's OWN
+      // events are never mistaken for stale. Missing sessionId (older main
+      // build) is treated as "current" so nothing regresses.
+      if (d.sessionId && d.sessionId !== liveSessionIdRef.current) return
+      // Forward both the main install stream and any per-step re-runs into the
+      // same log buffer.
       if (d.channelId !== CHANNEL_ID && !d.channelId.startsWith(RERUN_CHANNEL_PREFIX)) return
       lastChunkAtRef.current = Date.now()
       appendChunk(d.chunk)
     })
     const offClose = window.installer.ssh.onStreamClose((d) => {
+      // Drop a close from a superseded session (see onStreamData above): a
+      // wedged prior run's late close carries the OLD sessionId and must not
+      // flip a freshly-resumed run to failed/done. Missing sessionId (older
+      // main build) is treated as current so behaviour is unchanged there.
+      if (d.sessionId && d.sessionId !== liveSessionIdRef.current) return
       if (d.channelId === CHANNEL_ID) {
         setExitCode(d.exitCode)
         // A null exit with no Cancel in flight = the channel died (socket drop
@@ -391,6 +433,9 @@ export function RunScreen() {
         // the footer offers "Reconnect & resume" (re-runs setup.sh --resume from
         // the .setup-state checkpoint) instead of a from-scratch Retry.
         setDroppedConnection(d.exitCode === null && !cancelingRef.current)
+        // A real close arrived — the cancel was honoured (or the run finished),
+        // so this isn't a swallowed-cancel stall.
+        setCancelStalled(false)
         setCanceling(false)
         setPhase(d.exitCode === 0 ? 'done' : 'failed')
         // The remote setup.sh finished — flush + close the on-disk
@@ -445,11 +490,27 @@ export function RunScreen() {
         // The transcript lines themselves carry "✔ Step N complete." or
         // "✘ Step N failed" which the marker parser already handled. As
         // a safety net, force the step to ok/fail based on exit code.
-        setSteps((prev) => prev.map((s) =>
+        // Build the freshly-updated array first so we can decide below
+        // whether this success cleared the last red step.
+        const updated = stepsRef.current.map((s) =>
           s.number === stepNumber
-            ? { ...s, status: d.exitCode === 0 ? 'ok' : 'fail' }
+            ? { ...s, status: (d.exitCode === 0 ? 'ok' : 'fail') as SetupStep['status'] }
             : s,
-        ))
+        )
+        setSteps(updated)
+        // If the re-run succeeded and NOTHING is left failing or running,
+        // the install is actually complete — promote it out of the stuck
+        // 'failed' state instead of leaving the bar red / Continue disabled.
+        // Mirrors the main-channel exitCode===0 cleanup above (clear the
+        // dropped/error flags + consume the now-spent Plex claim).
+        if (d.exitCode === 0 && updated.every((s) => s.status === 'ok')) {
+          setPhase('done')
+          setDroppedConnection(false)
+          setCancelStalled(false)
+          setErrorMsg(null)
+          setConfig({ PLEX_CLAIM: undefined })
+          if (activeProfileId) clearRunResult(activeProfileId)
+        }
       }
     })
     const offProg = window.installer.sftp.onProgress((p) => {
@@ -588,6 +649,10 @@ export function RunScreen() {
     if (reconnecting) return
     setReconnecting(true)
     setErrorMsg(null)
+    // We're acting on the affordance now — no longer in the swallowed-cancel
+    // "stop signal sent" limbo, so drop that copy. streamSetup mints a fresh
+    // generation, so the wedged run's late close (if it ever lands) is ignored.
+    setCancelStalled(false)
     // Keep droppedConnection===true through the reconnect window so the button
     // reads "Reconnecting…" and the dropped-state copy stays put (phase is still
     // 'failed' until streamSetup flips it). onStreamClose recomputes it when the
@@ -597,11 +662,24 @@ export function RunScreen() {
       // Tear down the wedged/old session first. A stall→reconnect loop would
       // otherwise leak a fully-connected ssh2 Client each cycle (the stall
       // watchdog never ends the client, and connect() mints a fresh session),
-      // exhausting DSM's MaxSessions=10 cap. Best-effort + fire-and-forget so a
-      // hung disconnect can't block the reconnect.
+      // exhausting DSM's MaxSessions=10 cap. Await it (bounded) so the old
+      // channel leaves ssh-service's activeChannels map before execStream
+      // re-subscribes the same CHANNEL_ID — otherwise the "already running"
+      // guard can reject the first resume. Capped at 1.5s so a hung disconnect
+      // still can't block the reconnect.
       const oldId = sessionId
-      if (oldId) window.installer.ssh.disconnect(oldId).catch(() => { /* best-effort */ })
+      if (oldId) {
+        await Promise.race([
+          window.installer.ssh.disconnect(oldId).catch(() => { /* best-effort */ }),
+          new Promise<void>((res) => setTimeout(res, 1500)),
+        ])
+      }
       const r = await window.installer.ssh.connect(toConnectConfig(connection))
+      // Accept the NEW session's stream events immediately (synchronously),
+      // before React flushes the setSessionId re-render — so the resumed run's
+      // own close isn't dropped as "stale" and the dead old run's late close
+      // (old sessionId) is.
+      liveSessionIdRef.current = r.sessionId
       setSessionId(r.sessionId)
       if (activeProfileId) window.installer.profiles.touch(activeProfileId).catch(() => { /* non-fatal */ })
       try {
@@ -637,6 +715,7 @@ export function RunScreen() {
     }
     setErrorMsg(null)
     setDroppedConnection(false)
+    setCancelStalled(false)
     linesRef.current = []
     resetSteps()
     setIssues([])
@@ -935,6 +1014,14 @@ export function RunScreen() {
         const DISCOVERED = [
           'SONARR_API_KEY', 'RADARR_API_KEY', 'LIDARR_API_KEY', 'PROWLARR_API_KEY',
           'SABNZBD_API_KEY', 'BAZARR_API_KEY', 'SEERR_API_KEY',
+          // R8: the internal slskd↔soularr shared secret is generated + persisted
+          // to .env by setup.sh when blank, exactly like a discovered API key.
+          // renderEnv blanks it on a re-render (the wizard config rarely carries
+          // it), so carry the on-NAS value forward — otherwise every re-install
+          // rotates the key, forcing setup-arr-config.py to rewrite soularr's
+          // config.ini and bounce both containers. A value typed in the wizard
+          // still wins (its rendered line is non-blank, so the fill is skipped).
+          'SLSKD_API_KEY',
         ]
         const cur = await window.installer.ssh.exec({
           sessionId,
@@ -979,8 +1066,23 @@ export function RunScreen() {
       // exit code arrives via the stream-close handler in useEffect above.
       await streamSetup(sessionId, false)
     } catch (e) {
-      setErrorMsg((e as Error).message)
+      const msg = (e as Error).message
+      setErrorMsg(msg)
       setPhase('failed')
+      // R4: the prelude (prep chown / ACL / SFTP upload / .env write) runs
+      // BEFORE setup.sh streams, so a Wi-Fi blip or NAS sleep here rejects one
+      // of those awaits — not the stream — and the close handler that normally
+      // sets droppedConnection never fires. The user was stranded on the
+      // developer-facing "unknown sessionId <uuid>" with only a from-scratch
+      // Retry (which itself re-throws "no session"). Detect a dropped-session
+      // signature on the rejection (accounting for Electron's "Error invoking
+      // remote method '…'" wrapping) and offer the same "Reconnect & resume"
+      // affordance the streamSetup drop path uses — it mints a fresh session
+      // and runs setup.sh --resume. setup.sh is idempotent, so resuming after a
+      // prelude drop simply re-does the cheap prep/upload steps it already ran.
+      if (/unknown sessionId|not connected|ECONNRESET|EPIPE|channel .*clos|No SSH session|not opened|read ECONN|socket hang ?up/i.test(msg)) {
+        setDroppedConnection(true)
+      }
       reportError('Install', e)
     }
   }
@@ -1201,7 +1303,12 @@ export function RunScreen() {
     : phase === 'running-setup' && currentStep ? currentStep.label
     : phase === 'running-setup' ? 'Working on the next step…'
     : phase === 'done' ? 'All done — moving on'
-    : phase === 'failed' ? (droppedConnection ? 'Connection dropped — reconnect to resume' : 'Something needs attention')
+    : phase === 'failed'
+      ? (cancelStalled
+          ? 'Stop signal sent — reconnect to resume'
+          : droppedConnection
+            ? 'Connection dropped — reconnect to resume'
+            : 'Something needs attention')
     : 'Starting…'
 
   return (
@@ -1209,7 +1316,7 @@ export function RunScreen() {
       <header className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
-            {phase === 'failed' ? (droppedConnection ? 'Connection lost' : 'Install paused') : phase === 'done' ? 'Done' : 'Installing the stack'}
+            {phase === 'failed' ? (cancelStalled ? 'Stop signal sent' : droppedConnection ? 'Connection lost' : 'Install paused') : phase === 'done' ? 'Done' : 'Installing the stack'}
           </div>
           {/* Animated status headline — re-mounts on each phase change so
               the user sees motion when work progresses, even while the
@@ -1477,7 +1584,16 @@ export function RunScreen() {
           </BigButton>
         )}
         <div className="flex-1 text-sm text-center text-slate-400" role="status" aria-live="polite">
-          {phase === 'uploading'  && `Uploading files... ${progress?.pct ?? 0}%`}
+          {phase === 'uploading'  && (
+            // The prep chown (2-5 min on a large Synology library) + ACL +
+            // SFTP run here with Back disabled and no Cancel. The bare
+            // "Uploading… 0%" reads as a freeze; spell out that this is
+            // expected and uninterruptible so the wait doesn't feel wedged.
+            <span>
+              Preparing files on the NAS{progress?.pct ? ` — ${progress.pct}%` : ''} — on a large
+              existing library this can take several minutes and can&apos;t be cancelled mid-copy.
+            </span>
+          )}
           {phase === 'writing-env' && 'Writing .env'}
           {phase === 'running-setup' && 'Running setup.sh — see log'}
           {phase === 'done'   && (
@@ -1488,7 +1604,12 @@ export function RunScreen() {
           {phase === 'failed' && (
             <span className="inline-flex items-start gap-1.5 text-amber-200/90">
               <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              {droppedConnection ? (
+              {cancelStalled ? (
+                <span>
+                  Stop signal sent — the NAS may still be finishing. Tap <span className="text-slate-200 font-medium">Reconnect &amp; resume</span> to
+                  reconnect and pick up where it left off; steps that already finished are skipped.
+                </span>
+              ) : droppedConnection ? (
                 <span>
                   Connection to the NAS dropped — tap <span className="text-slate-200 font-medium">Reconnect &amp; resume</span> to
                   pick up where it left off. Steps that already finished are skipped.
@@ -1509,9 +1630,11 @@ export function RunScreen() {
           disabled={phase !== 'failed' || reconnecting}
           title={
             phase === 'failed'
-              ? (droppedConnection
-                  ? 'Reconnect to the NAS and resume setup.sh from the last completed step'
-                  : 'Re-run the install — resumes from the failed step if nothing changed, or replays from the top to apply a setting you edited')
+              ? (cancelStalled
+                  ? 'The stop signal may not have landed yet — reconnect and resume setup.sh from the last completed step (a plain Retry could race the still-running install)'
+                  : droppedConnection
+                    ? 'Reconnect to the NAS and resume setup.sh from the last completed step'
+                    : 'Re-run the install — resumes from the failed step if nothing changed, or replays from the top to apply a setting you edited')
               : phase === 'done'
                 ? 'Install already finished successfully'
                 : 'Available once the install has paused'

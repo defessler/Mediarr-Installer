@@ -25,7 +25,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { RefreshCw, ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Play, ChevronDown, Wrench } from 'lucide-react'
+import { RefreshCw, ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Play, ChevronDown, Wrench, RotateCw } from 'lucide-react'
 import { BigButton } from '../components/BigButton.js'
 import { useWizard } from '../store/wizard.js'
 import { LogPanel } from '../components/LogPanel.js'
@@ -33,6 +33,7 @@ import { LogActions } from '../components/LogActions.js'
 import { PATH_PREFIX } from '../../shared/synology-path.js'
 import { reportError } from '../store/errors.js'
 import { SETUP_STEPS } from '../components/StepperRail.js'
+import { toConnectConfig } from '../../shared/connect-config.js'
 
 const CHANNEL_ID = 'compose-update'
 
@@ -54,9 +55,31 @@ type Phase = 'idle' | 'running' | 'done' | 'failed'
 type Action = 'full' | 'pull' | 'sync' | 'homepage' | `step-${number}` | null
 
 export function UpdateRunScreen() {
-  const { sessionId, targetDir, setStep, setBusy } = useWizard()
+  const { sessionId, targetDir, setStep, setBusy, connection, setSessionId, activeProfileId } = useWizard()
   const [phase, setPhase] = useState<Phase>('idle')
   const [lastAction, setLastAction] = useState<Action>(null)
+  /** Mirror of `lastAction` so the stream-close handler (whose effect deps
+   *  are [sessionId]) reads the LIVE value instead of a stale closure — it
+   *  needs to know whether a dropped connection happened during the
+   *  end-to-end "Update to latest" run (the only action that gets the
+   *  resume/reconnect affordance; the short pull/sync/rerun actions don't). */
+  const lastActionRef = useRef<Action>(null)
+  useEffect(() => { lastActionRef.current = lastAction }, [lastAction])
+  /** Live mirror of sessionId so the stream handlers can reject events from a
+   *  superseded (wedged old) session after reconnect-and-resume mints a new
+   *  one — otherwise a dead run's late close could clobber the resumed run.
+   *  Mirrors RunScreen. */
+  const liveSessionIdRef = useRef<string | null>(sessionId)
+  useEffect(() => { liveSessionIdRef.current = sessionId }, [sessionId])
+  /** True when the in-flight "Update to latest" run died because the SSH
+   *  connection DROPPED (stream closed with a null exit) rather than
+   *  setup.sh failing. Keeps phase==='failed' so the failed-state UI works
+   *  unchanged; the footer swaps Continue's neighbour for "Reconnect &
+   *  resume". Scoped to lastAction==='full' — a dropped short action just
+   *  reads as a normal failure (re-running it from scratch is cheap). */
+  const [droppedConnection, setDroppedConnection] = useState(false)
+  /** True while reconnect-and-resume is re-establishing SSH (drives the label). */
+  const [reconnecting, setReconnecting] = useState(false)
   /** Whether the action controls (primary card + targeted-action grid) are
    *  shown. Collapsing them hands the full height to the log — which is what
    *  the user wants while a run streams. Auto-collapses when a run starts. */
@@ -96,11 +119,19 @@ export function UpdateRunScreen() {
     if (!sessionId) return
     const offData = window.installer.ssh.onStreamData((d) => {
       if (d.channelId !== CHANNEL_ID) return
+      if (d.sessionId && d.sessionId !== liveSessionIdRef.current) return
       appendChunk(d.chunk)
     })
     const offClose = window.installer.ssh.onStreamClose((d) => {
       if (d.channelId !== CHANNEL_ID) return
+      if (d.sessionId && d.sessionId !== liveSessionIdRef.current) return
       setExitCode(d.exitCode)
+      // A null exit on the end-to-end "Update to latest" run = the channel
+      // died (socket drop / stall abort), not a setup.sh step failure. Flag
+      // it so the footer offers "Reconnect & resume" (re-runs setup.sh
+      // --resume from the .setup-state checkpoint) instead of a from-scratch
+      // re-run. Other actions (and a real non-zero exit) clear the flag.
+      setDroppedConnection(d.exitCode === null && lastActionRef.current === 'full')
       setPhase(d.exitCode === 0 ? 'done' : 'failed')
     })
     return () => { offData(); offClose() }
@@ -113,9 +144,10 @@ export function UpdateRunScreen() {
 
   // Publish the global "busy" flag while a stack action streams, so the
   // in-place app-updater trigger in App.tsx is disabled — self-updating
-  // quits the app, which would sever the live SSH action. Cleared on
-  // done/failed and on unmount.
-  useEffect(() => { setBusy(phase === 'running') }, [phase, setBusy])
+  // quits the app, which would sever the live SSH action. Also held while
+  // reconnect-and-resume is re-establishing SSH (phase is still 'failed'
+  // until the resumed run starts). Cleared on done/failed and on unmount.
+  useEffect(() => { setBusy(phase === 'running' || reconnecting) }, [phase, reconnecting, setBusy])
   useEffect(() => () => setBusy(false), [setBusy])
 
   // Reset on each action start so a previous run's output doesn't
@@ -127,6 +159,7 @@ export function UpdateRunScreen() {
     linesRef.current = []
     setTick((t) => t + 1)
     setExitCode(null)
+    setDroppedConnection(false)
   }
 
   /** SFTP-only upload of the bundled nas/ payload to targetDir.
@@ -370,16 +403,33 @@ export function UpdateRunScreen() {
     if (!synced) return    // syncPayload already set phase=failed
 
     wlog('Re-running setup.sh against your existing .env (idempotent — your data, configs and secrets are preserved)...')
+    await streamSetupSh(sessionId, false)
+  }
+
+  /** Stream-run setup.sh on the given session for the end-to-end "Update to
+   *  latest" path. resume=true appends --resume so setup.sh skips the steps
+   *  already recorded in .setup-state and picks up at the failed one — valid
+   *  here because Update NEVER rewrites .env, so the recorded env_hash still
+   *  matches. Shared by updateStack() (resume=false), resumeUpdate() (in-place
+   *  resume after a step failure) and reconnectAndResume() (after a drop). */
+  async function streamSetupSh(sid: string, resume: boolean) {
+    setReconnecting(false)
+    setPhase('running')
+    // Append --resume only when resuming. When resume=false we run the bare
+    // `bash setup.sh` (no trailing arg) exactly as before — passing an empty
+    // quoted '' would trip setup.sh's "ignoring unknown argument ''" branch
+    // on every normal Update run.
+    const RESUME_ARG = resume ? ' --resume' : ''
     try {
       await window.installer.ssh.execStream({
-        sessionId,
+        sessionId: sid,
         cmd:
           PATH_PREFIX +
           // v0.3.23+ keeps setup.sh under scripts/; fall back to the
           // install root for pre-v0.3.23 layouts that haven't migrated.
           `cd ${shellQuote(targetDir)} && ` +
           `if [ -f scripts/setup.sh ]; then cd scripts; fi && ` +
-          `bash setup.sh`,
+          `bash setup.sh${RESUME_ARG}`,
         sudo: true,
         channelId: CHANNEL_ID,
       })
@@ -387,6 +437,67 @@ export function UpdateRunScreen() {
       setErrorMsg((e as Error).message)
       setPhase('failed')
       reportError('Update stack to latest', e)
+    }
+  }
+
+  /** Resume the CURRENT (still-connected) "Update to latest" run from
+   *  setup.sh's checkpoint after a normal step failure — re-runs setup.sh
+   *  --resume against the UNTOUCHED on-NAS .env (no re-sync, no .env rewrite),
+   *  so already-finished steps are skipped and the failed one re-runs. The
+   *  in-place analogue of a from-scratch re-update; far cheaper than
+   *  re-pulling + re-validating + re-running every step. */
+  async function resumeUpdate() {
+    if (!sessionId || phase === 'running') return
+    setErrorMsg(null)
+    setExitCode(null)
+    setLastAction('full')
+    wlog('Resuming setup.sh from the last completed step…')
+    setPhase('running')
+    await streamSetupSh(sessionId, true)
+  }
+
+  /** Reconnect a DROPPED SSH session and resume the "Update to latest" run
+   *  from its checkpoint. Offered only after a connection drop during the
+   *  end-to-end update (droppedConnection): re-establishes SSH with the saved
+   *  connection, then re-runs setup.sh --resume against the on-NAS .env (no
+   *  re-sync, no .env rewrite). Mirrors RunScreen.reconnectAndResume(). */
+  async function reconnectAndResume() {
+    if (reconnecting || phase === 'running') return
+    setReconnecting(true)
+    setErrorMsg(null)
+    setExitCode(null)
+    setLastAction('full')
+    wlog('Connection dropped — reconnecting to the NAS to resume…')
+    try {
+      // Tear down the wedged/old session first so a stall→reconnect loop
+      // doesn't leak a connected ssh2 client (DSM caps MaxSessions=10). Await
+      // it (bounded) so the old channel leaves activeChannels before
+      // streamSetupSh re-subscribes the same CHANNEL_ID — otherwise the
+      // "already running" guard can reject the first resume. Capped at 1.5s so
+      // a hung disconnect still can't block the reconnect.
+      const oldId = sessionId
+      if (oldId) {
+        await Promise.race([
+          window.installer.ssh.disconnect(oldId).catch(() => { /* best-effort */ }),
+          new Promise<void>((res) => setTimeout(res, 1500)),
+        ])
+      }
+      const r = await window.installer.ssh.connect(toConnectConfig(connection))
+      // Accept the NEW session's events synchronously before React flushes
+      // setSessionId — so the resumed run's own close isn't dropped as stale,
+      // and a wedged old session's late close (old sessionId) is.
+      liveSessionIdRef.current = r.sessionId
+      setSessionId(r.sessionId)
+      if (activeProfileId) window.installer.profiles.touch(activeProfileId).catch(() => { /* non-fatal */ })
+      wlog('Reconnected. Resuming setup.sh from the last completed step…')
+      await streamSetupSh(r.sessionId, true)
+    } catch (e) {
+      setReconnecting(false)
+      setDroppedConnection(true)   // keep the Reconnect button available
+      setPhase('failed')
+      setExitCode(null)
+      setErrorMsg(`Couldn’t reconnect to the NAS: ${(e as Error).message} — check it’s back online, then tap Reconnect again.`)
+      reportError('Reconnect', e)
     }
   }
 
@@ -871,9 +982,9 @@ docker compose $FILES --progress plain --ansi never up -d`
           variant="secondary"
           icon={<ArrowLeft size={18} />}
           onClick={() => setStep('welcome')}
-          disabled={running}
+          disabled={running || reconnecting}
           title={
-            running
+            running || reconnecting
               ? 'Wait for the in-flight action to finish before going back'
               : 'Return to the welcome screen'
           }
@@ -889,11 +1000,50 @@ docker compose $FILES --progress plain --ansi never up -d`
             </span>
           )}
           {phase === 'failed' && (
-            <span className="inline-flex items-center gap-1.5 text-amber-200/90">
-              <AlertCircle size={16} aria-hidden="true" /> {lastActionLabel} paused — see log
+            <span className="inline-flex items-start gap-1.5 text-amber-200/90">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              {droppedConnection ? (
+                <span>
+                  Connection to the NAS dropped — tap{' '}
+                  <span className="text-slate-200 font-medium">Reconnect &amp; resume</span> to pick
+                  up where it left off. Steps that already finished are skipped.
+                </span>
+              ) : lastAction === 'full' ? (
+                <span>
+                  {lastActionLabel} paused — tap{' '}
+                  <span className="text-slate-200 font-medium">Resume</span> to pick up from the
+                  failed step, or check the log first.
+                </span>
+              ) : (
+                <span>{lastActionLabel} paused — see log</span>
+              )}
             </span>
           )}
         </div>
+        {/* Resume / Reconnect — only on the end-to-end "Update to latest"
+            run, which is the one that streams setup.sh and writes a
+            .setup-state checkpoint. A dropped connection reconnects then
+            resumes; a normal step failure resumes in place. The short
+            pull/sync/rerun actions don't get this (re-running them from
+            scratch is cheap), so the button is absent for them. */}
+        {phase === 'failed' && lastAction === 'full' && (
+          <BigButton
+            size="md"
+            variant="primary"
+            icon={<RotateCw size={18} />}
+            onClick={droppedConnection ? reconnectAndResume : resumeUpdate}
+            disabled={reconnecting}
+            title={
+              droppedConnection
+                ? 'Reconnect to the NAS and resume setup.sh from the last completed step'
+                : 'Resume setup.sh from the failed step against your existing .env'
+            }
+          >
+            {droppedConnection
+              ? (reconnecting ? 'Reconnecting…' : 'Reconnect & resume')
+              : 'Resume'}
+          </BigButton>
+        )}
         <BigButton
           size="md"
           variant={phase === 'done' ? 'primary' : 'secondary'}

@@ -27,6 +27,14 @@ interface ConnectArgs {
   clientSecret: string
 }
 
+// Serializes overlapping sign-ins. The first attempt holds the loopback
+// listener (REDIRECT_PORT) for up to AUTH_TIMEOUT_MS while the user finishes
+// the browser consent. A second attempt (double-clicked Connect, a retry, or a
+// separate window — there's no single-instance lock) would otherwise race the
+// first onto the same port and surface a misleading EADDRINUSE. Reject the
+// second one up front with an accurate message instead.
+let inFlight = false
+
 export async function spotifyConnect(args: ConnectArgs): Promise<SpotifyConnectResult> {
   const clientId = (args?.clientId || '').trim()
   const clientSecret = (args?.clientSecret || '').trim()
@@ -34,11 +42,20 @@ export async function spotifyConnect(args: ConnectArgs): Promise<SpotifyConnectR
     throw new Error('Enter your Spotify Client ID and Secret first, then click Connect.')
   }
 
+  if (inFlight) {
+    throw new Error('A Spotify sign-in is already in progress — finish (or cancel) the open browser tab, then try again.')
+  }
+
   const state = randomBytes(16).toString('hex')
-  const code = await awaitAuthCode(clientId, state)
-  const tokens = await exchangeCode(code, clientId, clientSecret)
-  const playlists = await fetchAllPlaylists(tokens.access_token)
-  return { playlists, refreshToken: tokens.refresh_token }
+  inFlight = true
+  try {
+    const code = await awaitAuthCode(clientId, state)
+    const tokens = await exchangeCode(code, clientId, clientSecret)
+    const playlists = await fetchAllPlaylists(tokens.access_token)
+    return { playlists, refreshToken: tokens.refresh_token }
+  } finally {
+    inFlight = false
+  }
 }
 
 /** Start the loopback listener, open the browser to Spotify's consent page, and
@@ -96,7 +113,7 @@ function awaitAuthCode(clientId: string, state: string): Promise<string> {
     server.on('error', (e: NodeJS.ErrnoException) => {
       finish(() => reject(new Error(
         e.code === 'EADDRINUSE'
-          ? `Port ${REDIRECT_PORT} is already in use — close whatever is using it and click Connect again.`
+          ? `Port ${REDIRECT_PORT} is already in use — a Spotify sign-in may already be in progress (finish or close that browser tab), or close whatever else is using it, then click Connect again.`
           : `Could not start the local sign-in listener: ${e.message}`)))
     })
 

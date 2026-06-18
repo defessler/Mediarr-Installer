@@ -352,7 +352,7 @@ def get_or_create_tag(base, key, label):
 
 # ── Add indexer ───────────────────────────────────────────────────────────────
 
-def _post_indexer(base, key, name, schema, verify_name=None):
+def _post_indexer(base, key, name, schema, verify_name=None, cred_env_vars=None):
     """POST the indexer schema; classify 400 errors into clean messages.
 
     verify_name: the name the indexer is actually SAVED under, used for
@@ -364,6 +364,20 @@ def _post_indexer(base, key, name, schema, verify_name=None):
     NOT in Prowlarr's list" warning on every fuzzy-resolved add. When
     verify_name is given we check the list against IT; otherwise we fall
     back to `name` (the exact-match case where they're identical).
+
+    cred_env_vars: the .env var name(s) that feed this indexer's
+    credentials (only passed for credential-bearing indexers — private
+    trackers and account-required usenet). When a 400 is a CREDENTIAL
+    rejection (wrong/empty passkey, cookie, apiKey, rssKey → "must not be
+    empty", "unauthorized", "invalid", etc.) we fail() naming these vars
+    instead of force-saving: a wrong-but-nonempty credential that's
+    force-saved enters the DB and Prowlarr quietly auto-disables it on the
+    first scheduled search with NO breadcrumb pointing the user back at the
+    .env var they need to fix. forceSave stays reserved for CONNECTIVITY-
+    class 400s (CloudFlare/redirect/timeout/refused) which Flaresolverr or
+    a fresher mirror can heal and which aren't the user's credential fault.
+    Public indexers carry no creds, so they pass cred_env_vars=None and the
+    pre-existing force-save behaviour is unchanged for them.
 
     Network-level transient failures (status=None) get one retry with
     a 3-second backoff before being demoted to warn(). Real-world install
@@ -435,6 +449,40 @@ def _post_indexer(base, key, name, schema, verify_name=None):
         if _is_db_locked(err):
             warn(f"{name}: Prowlarr DB was locked (write contention) — re-run step 8 to add it")
             return
+        # Credential-class 400 on a credential-bearing indexer (private
+        # tracker / account-required usenet). A wrong-but-nonempty passkey /
+        # cookie / apiKey / rssKey / PID is exactly what we must NOT force-
+        # save: forceSave would push it into the DB, Prowlarr would pass
+        # schema validation, then quietly auto-disable the indexer on its
+        # first scheduled search — with nothing in the Issues panel and no
+        # pointer back at the .env var that's wrong. Surface it as fail()
+        # (which the wizard's issue parser flags, unlike info()) naming the
+        # feeding .env var so the user knows exactly what to fix.
+        #
+        # We reserve forceSave for CONNECTIVITY-class failures (CloudFlare /
+        # redirect / timeout / refused) — those aren't the user's credential
+        # fault and self-heal (Flaresolverr, DNS recovery, fresher mirror),
+        # so we check connectivity keywords FIRST and only treat the
+        # remainder as credential-class. The connectivity guard also keeps
+        # the broad 'validation'/'invalid' keywords safe: Prowlarr's generic
+        # body says "check the log above the ValidationFailure" on nearly
+        # every 400 (including pure connectivity ones), so without the guard
+        # those words would mis-fail a CloudFlare/timeout error.
+        if cred_env_vars:
+            connectivity_keywords = (
+                'cloudflare', 'blocked by', 'redirect', 'unable to connect',
+                'unable to access', 'timed out', 'timeout', 'refused',
+                'connection reset',
+            )
+            credential_keywords = (
+                'must not be empty', 'validation', 'invalid', 'unauthor',
+                'forbidden', 'passkey', 'api key', 'apikey', 'cookie',
+            )
+            is_connectivity = any(k in err_lower for k in connectivity_keywords)
+            if not is_connectivity and any(k in err_lower for k in credential_keywords):
+                fail(f"{name}: credential rejected by tracker — {_prowlarr_error(err)}. "
+                     f"Check {', '.join(cred_env_vars)} in .env, then re-run step 8")
+                return
         # Prowlarr's POST /api/v1/indexer runs a synchronous test of the
         # indexer's reachability as part of validation, and returns 400
         # WITHOUT saving when the test fails. The previous "added but
@@ -698,7 +746,7 @@ def _record_secret_hash(name, secret_values):
         pass
 
 def add_private_indexer(base, key, name, implementation, field_map, schemas, existing_names,
-                        flaresolverr_tag_id=None, existing_indexers=None):
+                        flaresolverr_tag_id=None, existing_indexers=None, field_env_map=None):
     """Add OR re-sync a private torrent tracker.
 
     Two modes:
@@ -712,7 +760,13 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
 
     field_map values here are already resolved STRINGS from .env (not
     env-var names). Caller does the env lookup so we can compare
-    apples-to-apples to Prowlarr's stored field values."""
+    apples-to-apples to Prowlarr's stored field values.
+
+    field_env_map ({field: env-var-name}) is the un-resolved mapping —
+    forwarded to _post_indexer so a credential-rejection 400 on the NEW-add
+    path can name the exact .env var(s) the user must fix in the Issues
+    panel (a wrong passkey/cookie/PID otherwise gets silently force-saved
+    and auto-disabled by Prowlarr with no breadcrumb)."""
 
     # Re-sync path: indexer already exists, compare/update creds.
     if name.lower() in existing_names:
@@ -823,7 +877,8 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
         info(f"  Schema fields: {', '.join(schema_field_names)}")
         info(f"  This is usually a Prowlarr-side schema change; the env-to-schema mapping needs an update.")
 
-    _post_indexer(base, key, name, schema)
+    _post_indexer(base, key, name, schema,
+                  cred_env_vars=list(field_env_map.values()) if field_env_map else None)
 
 def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1):
     """Set priority and seed time on all public (no-login) indexers.
@@ -868,14 +923,21 @@ def apply_public_settings(base, key, public_names, priority=50, seed_time_mins=1
             # this in the wizard's issues panel — disproportionate.
             info(f"{indexer['name']}: settings update flaked — tweak priority/seedTime in Prowlarr UI if you care")
 
-def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, existing_indexers=None):
+def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, existing_indexers=None,
+                api_key_env=None):
     """Add or re-sync a Newznab usenet indexer.
 
     Re-sync semantics match add_private_indexer: if the indexer's
     already in Prowlarr, compare its stored apiKey + baseUrl to what
     we'd write. If they differ, PATCH. This lets users rotate API
     keys (NZBGeek + other paid usenet providers often require periodic
-    refresh) by editing .env and re-running step 8."""
+    refresh) by editing .env and re-running step 8.
+
+    api_key_env: the .env var name holding this indexer's API key (for
+    account-required usenet). Forwarded to _post_indexer so a NEW-add
+    credential-rejection 400 ("Indexer requires an API key", "invalid
+    api key", ...) fails() naming the var instead of being force-saved
+    and silently auto-disabled. Free no-key indexers pass None."""
 
     if name.lower() in existing_names:
         if existing_indexers is None:
@@ -957,7 +1019,8 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
         if fname in fm:
             schema['fields'][fm[fname]]['value'] = fval
 
-    _post_indexer(base, key, name, schema)
+    _post_indexer(base, key, name, schema,
+                  cred_env_vars=[api_key_env] if api_key_env else None)
 
 # ── Read .env ─────────────────────────────────────────────────────────────────
 
@@ -1167,13 +1230,15 @@ def main():
                 ok_note = f"{name} (with API key — higher limits)"
             else:
                 ok_note = name
-            add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names, existing_indexers=existing)
+            add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names, existing_indexers=existing,
+                        api_key_env=(optional_key if api_key else None))
         else:
             api_key = env.get(required_key, '')
             if not api_key:
                 skip(f"{name} (set {required_key} in .env to enable)")
             else:
-                add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names, existing_indexers=existing)
+                add_newznab(PROWLARR, PROWLARR_KEY, name, api_url, api_key, schemas, existing_names, existing_indexers=existing,
+                            api_key_env=required_key)
 
     # ── Private torrent trackers ──────────────────────────────────────────────
 
@@ -1190,7 +1255,8 @@ def main():
         add_private_indexer(PROWLARR, PROWLARR_KEY, name, implementation,
                             creds, schemas, existing_names,
                             flaresolverr_tag_id=flaresolverr_tag_id,
-                            existing_indexers=existing)
+                            existing_indexers=existing,
+                            field_env_map=field_env_map)
         private_added += 1
 
     if private_added == 0:

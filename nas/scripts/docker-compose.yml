@@ -428,7 +428,8 @@ services:
     # Distinct "vpn" profile (not "torrenting") so the no-vpn override
     # can keep gluetun out of the start set even when qBittorrent's
     # "torrenting" profile is active. setup.sh adds "vpn" to COMPOSE_
-    # PROFILES only when VPN_ENABLED=true AND ENABLE_QBITTORRENT=true.
+    # PROFILES when VPN_ENABLED=true AND any VPN-routed service is on
+    # (ENABLE_QBITTORRENT, ENABLE_SOULSEEK, or ENABLE_PLAYLIST_SYNC).
     profiles: ["vpn"]
     cap_add:
       - NET_ADMIN
@@ -899,7 +900,13 @@ services:
       # sockseek.conf (generated from env) + per-playlist skip indexes.
       - ${INSTALL_DIR}/playlistsync/config:/config
     logging: *logging
-    restart: unless-stopped
+    # restart: on-failure:5 instead of unless-stopped (mirrors recyclarr-
+    # trigger) so a hand-edited .env that clears a required source/cred —
+    # which makes validate() exit 1 near-instantly — can't crash-loop
+    # forever and pin the docker daemon. After 5 failures the container
+    # stays stopped; user fixes .env + re-runs setup (or docker compose
+    # up -d playlistsync).
+    restart: on-failure:5
 
   # ── Broadcast Radio ───────────────────────────────────────
 

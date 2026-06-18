@@ -87,3 +87,8 @@ services:
     security_opt:
       - no-new-privileges:true
     depends_on: !reset null
+    # Mirror the base file's restart policy (on-failure:5) so a hand-edited
+    # .env that clears a required source/cred can't crash-loop forever in
+    # VPN-off mode either. Restated here (rather than relying on the merge)
+    # to keep the cap visible next to the override. See docker-compose.yml.
+    restart: on-failure:5

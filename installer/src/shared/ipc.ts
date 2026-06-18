@@ -533,12 +533,20 @@ export interface SshStreamData {
   channelId: string
   type: 'stdout' | 'stderr'
   chunk: string
+  /** SSH session the stream belongs to. Lets a screen ignore late events from
+   *  a SUPERSEDED session — after a reconnect-and-resume mints a fresh session,
+   *  a wedged prior run's data/close can still arrive on the same channelId and
+   *  would otherwise clobber the new run's phase/log. Optional for back-compat
+   *  (older emit paths omit it; consumers treat missing as "current"). */
+  sessionId?: string
 }
 
 export interface SshStreamClose {
   channelId: string
   exitCode: number | null
   signal: string | null
+  /** See SshStreamData.sessionId. */
+  sessionId?: string
 }
 
 // ── Spotify Connect (OAuth) — main process lists the user's playlists ────────

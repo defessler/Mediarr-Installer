@@ -85,6 +85,17 @@ interface WizardState {
   nasFamily: NasFamily | null
   setNasFamily: (f: NasFamily | null) => void
 
+  /** INSTALL_DIR / DATA_ROOT an EXISTING install on the scanned NAS is
+   *  using (read from its on-NAS .env at detect time), or null when there's
+   *  no prior install / no detect has run this session. Transient (not
+   *  persisted) — set alongside setNasFamily when env:detect returns.
+   *  Lifted out of EnvDetectScreen's local result state so the Configure
+   *  screen can show the SAME "relocating an existing install" warning when
+   *  the user edits the path there, not only on Detect. */
+  existingInstallDir: string | null
+  existingDataRoot: string | null
+  setDetectExisting: (e: { installDir: string | null; dataRoot: string | null }) => void
+
   /** MigrateScreen form state — source arr/qBit URLs + creds the user
    *  pasted. Persisted via the active profile (encrypted blob), NOT
    *  localStorage, so credentials don't sit in plaintext. The hook
@@ -236,6 +247,11 @@ export const useWizard = create<WizardState>()(
       nasFamily: null,
       setNasFamily: (nasFamily) => set({ nasFamily }),
 
+      existingInstallDir: null,
+      existingDataRoot: null,
+      setDetectExisting: ({ installDir, dataRoot }) =>
+        set({ existingInstallDir: installDir, existingDataRoot: dataRoot }),
+
       migrate: {},
       setMigrate: (m) => set((s) => ({ migrate: { ...s.migrate, ...m } })),
 
@@ -286,6 +302,8 @@ export const useWizard = create<WizardState>()(
           plexClaimSetAt: null,
           targetDir: p.targetDir || DEFAULT_TARGET,
           nasFamily: null,    // re-detected when this profile's NAS is scanned
+          existingInstallDir: null,  // re-read from the NAS on next detect
+          existingDataRoot: null,
           migrate: p.migrate ?? {},
           sessionId: null,    // any prior session is dead now
         })
@@ -303,6 +321,8 @@ export const useWizard = create<WizardState>()(
           plexClaimSetAt: null,
           targetDir: DEFAULT_TARGET,
           nasFamily: null,
+          existingInstallDir: null,
+          existingDataRoot: null,
           migrate: {},
         }),
     }),

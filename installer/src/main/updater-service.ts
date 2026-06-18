@@ -129,6 +129,31 @@ function writeSkippedVersion(v: string): void {
   catch (e) { log.error('updater: skip-version write failed:', e) }
 }
 
+/** Sentinel the post-quit swap helper drops when robocopy fails (rc>=8)
+ *  so the swap couldn't replace program files. Lives in userData (it
+ *  survives a swap that never happened) and is read+consumed on the very
+ *  next boot of the OLD build — which would otherwise silently re-detect
+ *  the same release and re-offer it, looping the user through
+ *  download+extract+fail with the only cause buried in a %TEMP% log. The
+ *  helper writes the robocopy return code as the file's contents. */
+function updateFailedFilePath(): string {
+  return join(app.getPath('userData'), 'update-failed.txt')
+}
+/** Read the swap-failure sentinel (if any), DELETE it, and return its
+ *  robocopy/move return code plus the version it failed to replace (line 2,
+ *  or null for a pre-stamp sentinel). null when the file is absent. Consumed
+ *  exactly once per boot so the warning shows then clears. */
+function consumeUpdateFailed(): { code: string; version: string | null } | null {
+  const p = updateFailedFilePath()
+  let raw: string
+  try { raw = readFileSync(p, 'utf8') }
+  catch { return null }
+  try { rmSync(p, { force: true }) }
+  catch (e) { log.warn('updater: failed to clear update-failed sentinel:', e) }
+  const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0)
+  return { code: lines[0] || '', version: lines[1] ?? null }
+}
+
 export function getUpdateState(): UpdaterState {
   return lastState
 }
@@ -483,6 +508,13 @@ async function downloadUpdateImpl(): Promise<void> {
   try {
     log.info(`updater: extracting to ${stagingDir}`)
     await extractZip(zipPath, stagingDir)
+    // Extraction succeeded — the ~200 MB zip is now dead weight. Drop it
+    // immediately rather than leaving it in %TEMP%\mediarr-update until the
+    // next update wipes tmpRoot (could be weeks). Best-effort: a lingering AV
+    // handle just means it gets reaped with tmpRoot on the next download. We
+    // do NOT remove tmpRoot here — the staging dir robocopy reads from lives
+    // inside it.
+    try { rmSync(zipPath, { force: true }) } catch { /* reaped with tmpRoot later */ }
   } catch (e) {
     const msg = (e as Error).message ?? String(e)
     log.error('updater: extract failed:', msg)
@@ -589,6 +621,7 @@ async function installUpdate(): Promise<void> {
       stagingDir: pendingUpdate.stagingDir,
       installDir,
       exeName,
+      userDataDir: app.getPath('userData'),
     })
     log.info(`updater: spawning swap helper ${vbsPath}`)
     const child = spawn('wscript.exe', [vbsPath], {
@@ -709,11 +742,17 @@ function writeSwapScript(opts: {
   stagingDir: string
   installDir: string
   exeName: string
+  userDataDir: string
 }): { cmdPath: string; vbsPath: string } {
-  const { pid, stagingDir, installDir, exeName } = opts
+  const { pid, stagingDir, installDir, exeName, userDataDir } = opts
   const swapPath = join(tmpdir(), `mediarr-swap-${pid}.cmd`)
   const vbsPath  = join(tmpdir(), `mediarr-swap-${pid}.vbs`)
   const logPath  = join(tmpdir(), 'mediarr-update.log')
+  // Sentinel the relaunched OLD build reads on its next boot to learn the
+  // swap couldn't replace program files (see consumeUpdateFailed). Sibling
+  // of installDir's parent isn't safe — installDir gets moved aside on
+  // failure — so it lives in userData, which the swap never touches.
+  const failFile = join(userDataDir, 'update-failed.txt')
 
   // cmd.exe expands %VAR% at parse time even inside double quotes, and '%' is a
   // legal Windows path char (the portable build extracts to any folder the user
@@ -723,11 +762,26 @@ function writeSwapScript(opts: {
   // (%date%, %TARGET_PID%, %TARGET_EXE%, %RC%, %ERRORLEVEL%, %~f0) are written
   // literally and must NOT be doubled.
   const pe = (s: string) => s.replace(/%/g, '%%')
+  // Atomic-swap scratch dirs, siblings of installDir so the move is a same-
+  // volume rename (instant, no cross-device copy): build the new tree in
+  // `.new-<pid>`, then move the old aside to `.bak` and the new into place.
+  // On ANY move failure we restore `.bak`, so installDir is never left a
+  // half-old/half-new mix — it's either entirely the old build or entirely
+  // the new one. `.bak` is deleted only after a clean swap.
+  const bakDir   = installDir + `.bak-${pid}`
+  const newDir   = installDir + `.new-${pid}`
   const stagingC = pe(stagingDir)
   const installC = pe(installDir)
+  const bakC     = pe(bakDir)
+  const newC     = pe(newDir)
   const exeC     = pe(exeName)
   const logC     = pe(logPath)
   const vbsC     = pe(vbsPath)
+  const failC    = pe(failFile)
+  // Version being replaced — stamped as the sentinel's 2nd line so a stale
+  // sentinel a LATER successful update inherits (different version) isn't
+  // mistaken for "this build failed to update" (see consumeUpdateFailed).
+  const oldVerC  = pe(app.getVersion())
 
   const cmdLines = [
     '@echo off',
@@ -744,24 +798,65 @@ function writeSwapScript(opts: {
     '    timeout /t 1 /nobreak >NUL',
     '    goto wait',
     ')',
-    `>>"${logC}" echo [%date% %time%] target gone, copying`,
-    // robocopy exit codes: 0..7 = success (various flavors of "copied
-    // some / nothing / mismatch but ok"), 8+ = actual failure. So we
-    // test `LSS 8`. /E copies in place (no purge), so on failure the old
-    // build is still present and launchable.
-    `robocopy "${stagingC}" "${installC}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logC}"`,
+    `>>"${logC}" echo [%date% %time%] target gone, building new tree`,
+    // Clear any leftover scratch from a prior interrupted swap so the
+    // build/move below start clean (a stale .new/.bak would wedge them).
+    `rmdir /S /Q "${newC}" 2>NUL`,
+    `rmdir /S /Q "${bakC}" 2>NUL`,
+    // Build the COMPLETE new tree in a sibling first (atomic-swap step 1).
+    // robocopy exit codes: 0..7 = success (copied / nothing-to-copy / extra
+    // files / mismatch-but-ok), 8+ = actual failure. Test `GEQ 8`. Copying
+    // into a fresh sibling (not in place) means a mid-copy failure can NEVER
+    // leave installDir half-overwritten — installDir is still pristine here.
+    `robocopy "${stagingC}" "${newC}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logC}"`,
     'set RC=%ERRORLEVEL%',
     `>>"${logC}" echo [%date% %time%] robocopy rc=%RC%`,
-    'if %RC% LSS 8 (',
-    `    >>"${logC}" echo [%date% %time%] launching new build`,
+    'if %RC% GEQ 8 (',
+    // New tree is incomplete — abort the swap entirely. installDir was never
+    // touched, so relaunch it; keep staging for diagnosis; drop the sentinel
+    // so the relaunched build surfaces the failure instead of re-offering.
+    `    >>"${logC}" echo [%date% %time%] robocopy failed (rc=%RC%) - install untouched, relaunching existing build, staging kept at ${stagingC}`,
+    `    >"${failC}" echo %RC%`,
+    `    >>"${failC}" echo ${oldVerC}`,
+    `    rmdir /S /Q "${newC}" 2>NUL`,
     `    start "" "${installC}\\${exeC}"`,
-    `    rmdir /S /Q "${stagingC}" 2>NUL`,
-    ') else (',
-    // Robocopy genuinely failed — relaunch the existing (in-place) build so the
-    // user is never left with no app, and keep staging for diagnosis.
-    `    >>"${logC}" echo [%date% %time%] robocopy failed (rc=%RC%) - relaunching existing build, staging kept at ${stagingC}`,
-    `    start "" "${installC}\\${exeC}"`,
+    '    goto cleanup',
     ')',
+    // Atomic swap (step 2): move the old build aside, then the new into place.
+    // Same-volume renames, so each is instant and reversible.
+    `move "${installC}" "${bakC}" >>"${logC}" 2>&1`,
+    'if errorlevel 1 (',
+    // Couldn't move the old build (a lingering lock on our just-exited exe).
+    // installDir is still the OLD build, intact — relaunch it, keep the new
+    // tree + staging, and flag the failure for the next boot.
+    `    >>"${logC}" echo [%date% %time%] move install aside failed - old build intact, relaunching`,
+    `    >"${failC}" echo 8`,
+    `    >>"${failC}" echo ${oldVerC}`,
+    `    rmdir /S /Q "${newC}" 2>NUL`,
+    `    start "" "${installC}\\${exeC}"`,
+    '    goto cleanup',
+    ')',
+    `move "${newC}" "${installC}" >>"${logC}" 2>&1`,
+    'if errorlevel 1 (',
+    // The new tree didn't move into place — RESTORE the old build from .bak so
+    // the user is never left with no app, then relaunch it and flag failure.
+    `    >>"${logC}" echo [%date% %time%] move new into place failed - restoring old build from backup`,
+    `    move "${bakC}" "${installC}" >>"${logC}" 2>&1`,
+    `    >"${failC}" echo 8`,
+    `    >>"${failC}" echo ${oldVerC}`,
+    `    rmdir /S /Q "${newC}" 2>NUL`,
+    `    start "" "${installC}\\${exeC}"`,
+    '    goto cleanup',
+    ')',
+    // Clean swap — old build is fully replaced. Launch the NEW build, then
+    // delete the backup and staging now that the new tree is confirmed in
+    // place. The sentinel is intentionally NOT written; the new build clears
+    // any stale one on boot.
+    `>>"${logC}" echo [%date% %time%] swap ok - launching new build`,
+    `start "" "${installC}\\${exeC}"`,
+    `rmdir /S /Q "${bakC}" 2>NUL`,
+    `rmdir /S /Q "${stagingC}" 2>NUL`,
+    ':cleanup',
     // Tidy up: delete the .vbs (wscript has already exited; it's just
     // a leftover file at this point) and self-delete the .cmd via the
     // classic `(goto) 2>nul & del "%~f0"` trick.
@@ -817,16 +912,46 @@ export async function initUpdater(win: BrowserWindow, isMock: boolean): Promise<
   ipcMain.handle('updater:cancel',   () => { cancelDownload() })
   ipcMain.handle('updater:skip',     () => { skipCurrentVersion() })
 
-  // Check for updates on first launch. A tiny delay lets the Welcome
-  // screen paint + the renderer register its updater-state listener first;
-  // then we hit GitHub. Silent so a failed check (offline / rate-limited)
-  // never pins an error banner at startup — only an actual update surfaces.
-  startupTimeoutHandle = setTimeout(() => {
-    log.info('updater: running first-launch update check')
-    checkForUpdates({ silent: true }).catch((e) => {
-      log.error('updater: startup check failed:', e)
-    })
-  }, STARTUP_DELAY_MS)
+  // Consume the post-quit swap-failure sentinel (read + delete) on EVERY
+  // boot. Two outcomes:
+  //   - present  → the last update's robocopy/move couldn't replace program
+  //                files; the relaunched OLD build would otherwise silently
+  //                re-detect the same release and re-offer it, looping the
+  //                user through download+extract+fail. Surface a clear,
+  //                actionable error and SKIP this session's startup re-offer.
+  //   - absent   → normal boot (incl. a clean swap into the NEW build, which
+  //                never writes the sentinel); just clears any stale file.
+  const failed = consumeUpdateFailed()
+  // Only warn if we're genuinely the OLD build that didn't get replaced: the
+  // sentinel stamps the version it failed to replace. A stale sentinel that a
+  // LATER successful update inherited carries a different (older) version, so
+  // the running build won't match → delete-and-ignore (consume already deleted
+  // it) instead of a false "update failed" on a success. A version-less
+  // sentinel (pre-stamp) keeps the old always-warn behavior.
+  if (failed !== null && (failed.version === null || failed.version === app.getVersion())) {
+    const code = failed.code || 'unknown'
+    const releasesUrl = `https://github.com/${REPO}/releases/latest`
+    log.warn(`updater: previous in-place update failed (robocopy/move code ${code}) — surfacing, suppressing startup re-offer`)
+    // Defer the broadcast like the startup check so the renderer's updater
+    // listener is mounted to receive it.
+    startupTimeoutHandle = setTimeout(() => {
+      broadcast({
+        kind: 'error',
+        message: `The last update couldn’t replace the program files (code ${code}). Close any other apps or antivirus that may be locking the install folder and try again, or update manually from ${releasesUrl}`,
+      })
+    }, STARTUP_DELAY_MS)
+  } else {
+    // Check for updates on first launch. A tiny delay lets the Welcome
+    // screen paint + the renderer register its updater-state listener first;
+    // then we hit GitHub. Silent so a failed check (offline / rate-limited)
+    // never pins an error banner at startup — only an actual update surfaces.
+    startupTimeoutHandle = setTimeout(() => {
+      log.info('updater: running first-launch update check')
+      checkForUpdates({ silent: true }).catch((e) => {
+        log.error('updater: startup check failed:', e)
+      })
+    }, STARTUP_DELAY_MS)
+  }
 
   // Periodic re-check — covers the long-install scenario where the
   // wizard is open for an hour+ while a fresh release ships.

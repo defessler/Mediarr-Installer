@@ -1,7 +1,9 @@
+import { useRef } from 'react'
 import { motion } from 'motion/react'
 import {
   Download, Loader2, CheckCircle2, RefreshCw, AlertTriangle, X,
 } from 'lucide-react'
+import { useFocusTrap } from '../hooks/useFocusTrap.js'
 import type { UpdaterState } from '../../shared/ipc.js'
 
 interface Props {
@@ -22,6 +24,19 @@ interface Props {
 
 function mb(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1)
+}
+
+// Split a trailing https?:// URL off an error message so it can be rendered
+// as a real clickable link (the post-quit "update manually from <url>"
+// guidance is useless as inert text). Returns the message with the URL
+// removed plus the URL itself, or a null url when there isn't one.
+export function splitTrailingUrl(message: string): { text: string; url: string | null } {
+  // Anchored to end-of-string, so the whole match (m[0]) is the trailing URL
+  // plus any whitespace before it; lop that off the end to get the lead text.
+  // (Compute from length rather than m.index, which is typed number|undefined.)
+  const m = message.match(/\s*(https?:\/\/\S+)\s*$/)
+  if (!m) return { text: message, url: null }
+  return { text: message.slice(0, message.length - m[0].length), url: m[1] }
 }
 
 /**
@@ -49,6 +64,14 @@ export function UpdateOverlay({
       ? state.version
       : ''
 
+  // Trap focus within the overlay so Tab can't reach the wizard behind
+  // it. No onClose: this overlay is intentionally not Escape-dismissable
+  // (the update is all-or-nothing; the only exits are the explicit
+  // Cancel/Install/Defer/Close buttons per phase). The trap still
+  // restores focus to the opener when the overlay unmounts.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef, { active: true })
+
   return (
     <motion.div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm"
@@ -61,6 +84,7 @@ export function UpdateOverlay({
       aria-label="Updating Mediarr Installer"
     >
       <motion.div
+        ref={dialogRef}
         className="w-full max-w-md mx-4 rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50 p-8 text-center"
         initial={{ scale: 0.94, y: 8 }}
         animate={{ scale: 1, y: 0 }}
@@ -166,9 +190,27 @@ export function UpdateOverlay({
               <AlertTriangle size={32} className="text-rose-300" strokeWidth={1.75} aria-hidden="true" />
             </div>
             <h2 className="text-xl font-bold text-slate-100">Update failed</h2>
-            <p className="text-sm text-rose-200/90 mt-1.5 break-words">
-              {state.message}
-            </p>
+            {(() => {
+              const { text, url } = splitTrailingUrl(state.message)
+              return (
+                <p className="text-sm text-rose-200/90 mt-1.5 break-words">
+                  {text}
+                  {url && (
+                    <>
+                      {' '}
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-emerald-300 underline hover:text-emerald-200 break-all"
+                      >
+                        {url}
+                      </a>
+                    </>
+                  )}
+                </p>
+              )
+            })()}
             <p className="text-xs text-slate-500 mt-2">
               Your current version is untouched. You can try again from the
               footer.

@@ -10,6 +10,52 @@ import type { EnvDetectResult } from '../../shared/ipc.js'
 import { type EnvFormValues, isEnabled } from '../../shared/env-render.js'
 import { reportError } from '../store/errors.js'
 
+/** "⚠ Relocating an existing install" warning. Rendered under the
+ *  INSTALL_DIR / DATA_ROOT inputs on BOTH the Detect screen and the
+ *  Configure screen so the warning follows the field — a user who accepts
+ *  the Detect paths, advances, then edits the install/data path on
+ *  Configure gets the same heads-up that this stops the stack and moves
+ *  data (setup.sh runs relocate-stack.sh). Returns null when neither path
+ *  differs from what's already installed (existing* null = no prior
+ *  install, so nothing to relocate). */
+export function RelocationWarning({
+  installDir, dataRoot, existingInstallDir, existingDataRoot,
+}: {
+  installDir: string
+  dataRoot: string
+  existingInstallDir: string | null
+  existingDataRoot: string | null
+}) {
+  const instChanged = !!existingInstallDir && installDir !== existingInstallDir
+  const dataChanged = !!existingDataRoot && dataRoot !== existingDataRoot
+  if (!instChanged && !dataChanged) return null
+  return (
+    <div className="rounded-md border border-amber-700/40 bg-amber-900/15 px-3 py-2 space-y-1 text-amber-200/90">
+      <div className="font-medium text-amber-200">⚠ Relocating an existing install</div>
+      {instChanged && (
+        <div>
+          Install dir differs from the one already installed here (
+          <span className="font-mono text-amber-100/80">{existingInstallDir}</span>).
+        </div>
+      )}
+      {dataChanged && (
+        <div>
+          Data root differs from the one already installed here (
+          <span className="font-mono text-amber-100/80">{existingDataRoot}</span>).
+        </div>
+      )}
+      <div className="text-amber-200/70">
+        <span className="text-amber-200/90">Same disk:</span> the stack is stopped and your
+        configs + media are moved with an instant in-place rename — nothing is left at the old
+        path. <span className="text-amber-200/90">Different disk:</span> the install stops
+        without touching anything and prints manual <span className="font-mono">rsync</span>{' '}
+        steps (or re-run with <span className="font-mono">MEDIARR_RELOCATE=1</span> to copy
+        automatically). Double-check before continuing.
+      </div>
+    </div>
+  )
+}
+
 /** Map a stack-container name to the ENABLE_* form key that toggles
  *  it on/off. Used by the "Bring your own" panel to translate "I see
  *  Plex already running" into "set ENABLE_PLEX=false" with one click.
@@ -173,7 +219,7 @@ function pickLanIp(args: {
 }
 
 export function EnvDetectScreen() {
-  const { sessionId, setStep, setConfig, setMode, setNasFamily, config, connection, targetDir } = useWizard()
+  const { sessionId, setStep, setConfig, setMode, setNasFamily, setDetectExisting, config, connection, targetDir } = useWizard()
   const [status, setStatus] = useState<Status>('detecting')
   const [result, setResult] = useState<EnvDetectResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -209,6 +255,10 @@ export function EnvDetectScreen() {
         // outside this screen (the Help modal) can tailor its platform-
         // specific instructions.
         setNasFamily(r.nasFamily)
+        // Publish the EXISTING install's paths (read from the on-NAS .env)
+        // so the Configure screen can show the same "relocating an existing
+        // install" warning when the user edits INSTALL_DIR/DATA_ROOT there.
+        setDetectExisting({ installDir: r.existingInstallDir, dataRoot: r.existingDataRoot })
 
         // Auto-fill anything we detected that the user hasn't already typed.
         // PUID/PGID intentionally NOT auto-filled from the SSH user —
@@ -574,38 +624,12 @@ export function EnvDetectScreen() {
                   Paths must be absolute (start with <span className="font-mono">/</span>).
                 </p>
               )}
-              {(() => {
-                const inst = (config.INSTALL_DIR as string | undefined) ?? r.suggestedInstallDir
-                const data = (config.DATA_ROOT as string | undefined) ?? r.suggestedDataRoot
-                const instChanged = !!r.existingInstallDir && inst !== r.existingInstallDir
-                const dataChanged = !!r.existingDataRoot && data !== r.existingDataRoot
-                if (!instChanged && !dataChanged) return null
-                return (
-                  <div className="rounded-md border border-amber-700/40 bg-amber-900/15 px-3 py-2 space-y-1 text-amber-200/90">
-                    <div className="font-medium text-amber-200">⚠ Relocating an existing install</div>
-                    {instChanged && (
-                      <div>
-                        Install dir differs from the one already installed here (
-                        <span className="font-mono text-amber-100/80">{r.existingInstallDir}</span>).
-                      </div>
-                    )}
-                    {dataChanged && (
-                      <div>
-                        Data root differs from the one already installed here (
-                        <span className="font-mono text-amber-100/80">{r.existingDataRoot}</span>).
-                      </div>
-                    )}
-                    <div className="text-amber-200/70">
-                      <span className="text-amber-200/90">Same disk:</span> the stack is stopped and your
-                      configs + media are moved with an instant in-place rename — nothing is left at the old
-                      path. <span className="text-amber-200/90">Different disk:</span> the install stops
-                      without touching anything and prints manual <span className="font-mono">rsync</span>{' '}
-                      steps (or re-run with <span className="font-mono">MEDIARR_RELOCATE=1</span> to copy
-                      automatically). Double-check before continuing.
-                    </div>
-                  </div>
-                )
-              })()}
+              <RelocationWarning
+                installDir={(config.INSTALL_DIR as string | undefined) ?? r.suggestedInstallDir}
+                dataRoot={(config.DATA_ROOT as string | undefined) ?? r.suggestedDataRoot}
+                existingInstallDir={r.existingInstallDir}
+                existingDataRoot={r.existingDataRoot}
+              />
             </div>
             {(r.cpuArch || r.ramMB) && (
               <div className="text-xs text-slate-500">

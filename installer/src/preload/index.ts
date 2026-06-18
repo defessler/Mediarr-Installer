@@ -125,6 +125,7 @@ const installer = {
     saveText: (args: {
       defaultName: string; content: string; title?: string
       filters?: { name: string; extensions: string[] }[]
+      restrictPermissions?: boolean
     }): Promise<{ saved: boolean; path: string | null }> =>
       ipcRenderer.invoke(IPC.dialogSaveText, args),
     openText: (args: {

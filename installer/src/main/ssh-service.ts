@@ -56,6 +56,11 @@ const sessions = new Map<string, Session>()
 const activeChannels = new Map<string, ClientChannel>()
 let mainWindow: BrowserWindow | null = null
 
+// SSH handshake budget handed to ssh2 as readyTimeout (see buildConnectConfig
+// for the full rationale). Shared so connectClient can derive its independent
+// wall-clock backstop strictly above it instead of pre-empting it.
+const READY_TIMEOUT_MS = 30_000
+
 export function bindMainWindow(win: BrowserWindow) {
   mainWindow = win
 }
@@ -76,7 +81,7 @@ function buildConnectConfig(cfg: ConnectionConfig): ConnectConfig {
     // is busy with another DSM process (Snapshot Replication, Hyper
     // Backup, etc). 15s was tight; 30s covers every real-world case
     // without making the user wait too long on a truly unreachable host.
-    readyTimeout: 30_000,
+    readyTimeout: READY_TIMEOUT_MS,
     // Keepalive: ping every 30s, allow 6 missed before disconnect.
     // Default is 3 missed = 90s tolerance, which fires during long-
     // running setup.sh on flaky WiFi. 6 × 30s = 3min tolerance covers
@@ -143,11 +148,17 @@ function connectClient(cfg: ConnectionConfig): Promise<{ client: Client; banner?
     let banner: string | undefined
     let settled = false
 
-    // Hard wall-clock timeout. ssh2's readyTimeout only fires after the
-    // underlying TCP connect completes; if the OS itself hangs the
-    // connect (NAT black hole, router silently dropping packets,
-    // wrong host) we'd wait indefinitely otherwise.
-    const HARD_TIMEOUT_MS = 20_000
+    // Hard wall-clock timeout. ssh2's readyTimeout is a 30s handshake budget
+    // that starts when client.connect() is called and fires its own
+    // "Timed out while waiting for handshake" on a host that accepts the TCP
+    // connection but stalls the SSH negotiation (busy DSM, auth backend
+    // paging). It does NOT cover an OS-level connect hang where the SYN goes
+    // into a black hole (NAT/router silently dropping packets, wrong host) —
+    // that can outlive readyTimeout. So we keep an independent backstop, but
+    // make it STRICTLY LONGER than readyTimeout (40s = 30s + 10s) so it never
+    // pre-empts the more specific handshake timeout on a slow-but-healthy NAS
+    // that connects at ~22-28s; it only catches the connect-hang case.
+    const HARD_TIMEOUT_MS = READY_TIMEOUT_MS + 10_000
     const hardTimer = setTimeout(() => {
       if (settled) return
       settled = true
@@ -603,6 +614,22 @@ export async function execStream(args: {
   const sess = sessions.get(args.sessionId)
   if (!sess) throw new Error(`unknown sessionId ${args.sessionId}`)
 
+  // Don't launch a SECOND stream over a channelId that's already live. WHY:
+  // the install uses one fixed channelId (setup-sh-main). If a Cancel was
+  // swallowed (the remote process tree ignored TERM) the old channel is still
+  // open and setup.sh is still converging on the NAS; a Retry that reuses the
+  // same channelId would start a SECOND setup.sh racing the first (caught by
+  // .setup.lock, but a confusing lock-conflict on top of a "failed" that
+  // wasn't). Reject clearly instead so the renderer keeps offering "Reconnect
+  // & resume" rather than stacking runs.
+  if (activeChannels.has(args.channelId)) {
+    throw new Error(
+      `channel ${args.channelId} is already running — a previous run hasn't ` +
+      `released it yet (its Cancel may still be taking effect on the NAS). ` +
+      `Wait a moment, or use Reconnect & resume.`,
+    )
+  }
+
   // Same fail-fast as exec(): if a streamed step needs root and there's no
   // escalation path, surface a clear error rather than running it unprivileged.
   if (args.sudo && privMode(sess) === 'fail') {
@@ -643,7 +670,10 @@ export async function execStream(args: {
         if (watchdog) clearTimeout(watchdog)
         activeChannels.delete(channelId)
         appendInstallLog(note)
-        send<SshStreamClose>(IPC.evtStreamClose, { channelId, exitCode: code, signal })
+        // Tag with the owning session so the renderer can ignore a late close
+        // from a SUPERSEDED session after a reconnect-and-resume (the new run
+        // reuses the same channelId on a fresh session).
+        send<SshStreamClose>(IPC.evtStreamClose, { channelId, exitCode: code, signal, sessionId: args.sessionId })
         resolve()
       }
       // Inactivity watchdog: a live install streams progress continuously,
@@ -673,7 +703,7 @@ export async function execStream(args: {
         bumpWatchdog()
         const chunk = redactStreamChunk(d.toString('utf8'), secrets)
         if (!chunk) return
-        send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stdout', chunk })
+        send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stdout', chunk, sessionId: args.sessionId })
         // Mirror to the on-disk install log so the user has a permanent
         // record. install-log no-ops if no log file is open.
         appendInstallLog(chunk)
@@ -682,7 +712,7 @@ export async function execStream(args: {
         bumpWatchdog()
         const chunk = redactStreamChunk(d.toString('utf8'), secrets)
         if (!chunk) return
-        send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stderr', chunk })
+        send<SshStreamData>(IPC.evtStreamData, { channelId, type: 'stderr', chunk, sessionId: args.sessionId })
         appendInstallLog(chunk)
       })
       // A socket error on the channel (NAS dropped, network blip) would
@@ -701,13 +731,34 @@ export async function execStream(args: {
 export function streamCancel(channelId: string): void {
   const ch = activeChannels.get(channelId)
   if (!ch) return
+  // Send a graceful TERM first and KEEP the channel handle. WHY: deleting it
+  // here used to discard our only escalation path — if the remote process tree
+  // swallowed the TERM (a long `compose pull`/`up` whose child ignores it),
+  // setup.sh kept running on the NAS while the wizard had no way to force it
+  // down. Leave the channel in activeChannels (its 'close' handler in
+  // execStream removes it) and, if it's still alive after a grace period,
+  // escalate to KILL + close so the remote process actually dies and the
+  // channel is freed. Idempotent: a second Cancel on an already-TERM'd channel
+  // just re-arms the same escalation, which is harmless.
   try {
     ch.signal('TERM')
   } catch {
-    // ssh2 throws if the server doesn't support signals — fall back to close.
-    ch.close()
+    // ssh2 throws if the server doesn't support signals — fall back to close
+    // immediately (no escalation possible) and drop the handle.
+    try { ch.close() } catch { /* already closing */ }
+    activeChannels.delete(channelId)
+    return
   }
-  activeChannels.delete(channelId)
+  // ~8s for an orderly TERM (and setup.sh's INT/TERM trap tearing the stack
+  // down in order) before we force it. If the channel already closed, the map
+  // no longer holds THIS handle and we leave it alone.
+  setTimeout(() => {
+    if (activeChannels.get(channelId) !== ch) return
+    try { ch.signal('KILL') } catch { /* server may not support signals */ }
+    try { ch.close() } catch { /* already closing */ }
+    // Leave the map delete to the channel's own 'close' handler so we don't
+    // race execStream's finishClose; close() above triggers it.
+  }, 8_000)
 }
 
 // ── SFTP accessors (used by sftp-service.ts) ─────────────────────────────────

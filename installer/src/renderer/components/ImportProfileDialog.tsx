@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Download, X as XIcon, FileText, Lock, AlertCircle, ArrowLeft } from 'lucide-react'
 import { BigButton } from './BigButton.js'
 import { PasswordInput } from './PasswordInput.js'
 import { reportError } from '../store/errors.js'
+import { useFocusTrap } from '../hooks/useFocusTrap.js'
 import type { ProfileExportEnvelope, SavedProfile } from '../../shared/ipc.js'
 
 interface Props {
@@ -22,19 +23,12 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ESC closes the dialog unless mid-import (PBKDF2 takes ~200ms; not
-  // worth letting the user accidentally cancel and have to retype the
-  // passphrase). Same pattern as ExportProfileDialog.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+  // Trap focus in the dialog + ESC to close — folded into one hook.
+  // Relaxed while busy (PBKDF2 takes ~200ms; not worth letting the user
+  // accidentally cancel and retype the passphrase). Same pattern as
+  // ExportProfileDialog.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef, { active: !busy, onClose })
 
   async function pickFile() {
     setBusy(true); setError(null)
@@ -111,6 +105,7 @@ export function ImportProfileDialog({ onClose, onImported }: Props) {
       onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose() }}
     >
       <motion.div
+        ref={dialogRef}
         initial={reduced ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}

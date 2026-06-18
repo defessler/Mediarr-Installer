@@ -135,6 +135,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC.dialogSaveText, (_e, args: {
     defaultName: string; content: string; title?: string
     filters?: { name: string; extensions: string[] }[]
+    restrictPermissions?: boolean
   }) => saveTextToFile(args))
   ipcMain.handle(IPC.dialogOpenText, (_e, args: {
     title?: string

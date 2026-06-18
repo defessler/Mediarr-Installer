@@ -14,20 +14,26 @@
 #      indexers on every UI status call. A timing-out CloudFlare-bounded
 #      indexer (e.g., 1337x when its anti-bot kicks in) adds 10s per ping.
 #      6 dead indexers = 60s freeze every time you click around. We test
-#      each indexer in Prowlarr, disable the failing ones, let Prowlarr's
-#      sync propagate that to the arrs.
+#      each indexer in Prowlarr and report the failing ones; with
+#      --disable-broken we re-test the failures a few times and disable only
+#      the persistent ones, then let Prowlarr's sync propagate that to the arrs.
 #
 # Run when:
 #   - "Sonarr / Radarr UI feels slow on every page navigation"
 #   - "Seerr takes 30s to load search results"
 #   - "post-deploy-validate.sh reports N of M indexers failing"
 #
-# Safe to re-run any time. Stops only the service being vacuumed (others
-# stay up). Plex / qBit / SAB are not touched.
+# Re-running is safe for the DB vacuum (it backs up first and only touches the
+# service being vacuumed; Plex / qBit / SAB are untouched). Step 2 is REPORT-ONLY
+# by default — it tests indexers and tells you which look broken but changes
+# nothing, so a re-run can never silently prune a working setup. Pass
+# --disable-broken to actually disable the failing ones (each is re-tested a few
+# times first to ride out transient CloudFlare/rate-limit failures).
 #
 # Usage:
 #   sudo bash /volume1/docker/media/tune-arrs.sh
-#   sudo bash /volume1/docker/media/tune-arrs.sh --skip-vacuum     # only disable broken indexers
+#   sudo bash /volume1/docker/media/tune-arrs.sh --disable-broken  # also disable indexers that fail repeated tests
+#   sudo bash /volume1/docker/media/tune-arrs.sh --skip-vacuum     # only run the indexer step
 #   sudo bash /volume1/docker/media/tune-arrs.sh --skip-indexers   # only vacuum DBs
 #   sudo bash /volume1/docker/media/tune-arrs.sh --dry-run         # show what WOULD change
 
@@ -54,11 +60,13 @@ cd "$COMPOSE_DIR" || { echo "tune-arrs: cannot cd to $COMPOSE_DIR — aborting."
 DRY_RUN=0
 SKIP_VACUUM=0
 SKIP_INDEXERS=0
+DISABLE_BROKEN=0
 for arg in "$@"; do
     case "$arg" in
         --dry-run)        DRY_RUN=1 ;;
         --skip-vacuum)    SKIP_VACUUM=1 ;;
         --skip-indexers)  SKIP_INDEXERS=1 ;;
+        --disable-broken) DISABLE_BROKEN=1 ;;
         --help|-h)
             sed -n '2,/^set -uo/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//' | head -n -2
             exit 0 ;;
@@ -268,21 +276,33 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────────
-# Step 2 — Test every Prowlarr indexer; disable the failing ones
+# Step 2 — Test every Prowlarr indexer; report (and optionally disable)
+#          the failing ones
 # ──────────────────────────────────────────────────────────────────────
 #
 # Sonarr/Radarr health-check their indexer connectivity periodically.
 # A timing-out indexer adds ~10s to every status call. We test each
 # indexer via Prowlarr's /api/v1/indexer/test endpoint (same probe
-# Prowlarr's UI uses), then PUT enable=false on any that fail.
+# Prowlarr's UI uses, and the same one post-deploy-validate.sh runs).
 #
-# Prowlarr syncs indexer config to the *arrs automatically; once an
-# indexer is disabled here, the arrs see it as disabled within ~30s
-# and stop pinging it.
+# IMPORTANT: this step is REPORT-ONLY unless --disable-broken is passed.
+# A single failed test is NOT proof an indexer is dead — the common case
+# the project documents is a CloudFlare challenge / Flaresolverr-in-flight
+# / rate-limit that clears on the next real search. Disabling on one
+# transient failure would make Prowlarr propagate enable=false to
+# Sonarr/Radarr/Lidarr within ~30s, silently leaving the user with FEWER
+# working sources than before they ran this "fix" — so by default we match
+# post-deploy-validate.sh's warn-don't-touch stance. With --disable-broken,
+# each failing indexer is RE-TESTED a few times with a short backoff first,
+# and only the ones that fail every attempt are disabled.
 
 if [ "$SKIP_INDEXERS" -eq 0 ]; then
     echo ""
-    echo "── Step 2: Disable broken Prowlarr indexers ───────────────────"
+    if [ "$DISABLE_BROKEN" -eq 1 ]; then
+        echo "── Step 2: Test + disable broken Prowlarr indexers ────────────"
+    else
+        echo "── Step 2: Test Prowlarr indexers (report-only) ───────────────"
+    fi
 
     if [ -z "$PROWLARR_KEY" ]; then
         echo "  ⚠ Prowlarr API key not found in .env or config.xml — skipping"
@@ -299,11 +319,14 @@ if [ "$SKIP_INDEXERS" -eq 0 ]; then
         # to jq + curl + arithmetic in bash, and we already require
         # python3 for the indexer test in post-deploy-validate.sh.
         python3 - <<PY
-import json, sys, urllib.request, urllib.error
+import json, sys, time, urllib.request, urllib.error
 
 URL = "$PROWLARR_URL"
 KEY = "$PROWLARR_KEY"
 DRY = $DRY_RUN
+DISABLE = $DISABLE_BROKEN          # 0 = report-only (default), 1 = --disable-broken
+RETRIES = 3                        # total test attempts before disabling
+BACKOFF = 8                        # seconds between retries (ride out CloudFlare/rate-limit)
 
 def api(method, path, body=None):
     req = urllib.request.Request(
@@ -313,6 +336,26 @@ def api(method, path, body=None):
     if body is not None:
         req.data = json.dumps(body).encode()
     return urllib.request.urlopen(req, timeout=20)
+
+def test_once(ix):
+    # Returns (ok, msg). A failed /indexer/test is a 400 with details; any
+    # other exception (timeout, connection reset) is also a failure.
+    try:
+        api('POST', '/api/v1/indexer/test', ix)
+        return True, ''
+    except urllib.error.HTTPError as e:
+        msg = ''
+        try:
+            err = json.loads(e.read().decode(errors='replace'))
+            if isinstance(err, list) and err:
+                msg = err[0].get('errorMessage', '') or err[0].get('detailedDescription', '')
+            elif isinstance(err, dict):
+                msg = err.get('message', '') or err.get('errorMessage', '')
+        except Exception:
+            pass
+        return False, (msg[:100] or 'test failed')
+    except Exception as e:
+        return False, str(e)[:100]
 
 try:
     indexers = json.loads(api('GET', '/api/v1/indexer').read())
@@ -326,42 +369,52 @@ if not indexers:
 
 print(f"  Found {len(indexers)} indexer(s). Testing each (20s timeout)...")
 
-disabled, failed_to_test = [], []
+disabled, broken, failed_to_test = [], [], []
 for ix in indexers:
     name = ix.get('name', '?')
     if not ix.get('enable', True):
         print(f"    ⏭  {name} — already disabled, skipping")
         continue
-    try:
-        api('POST', '/api/v1/indexer/test', ix)
+    ok, msg = test_once(ix)
+    if ok:
         print(f"    ✔ {name}")
-    except urllib.error.HTTPError as e:
-        # Test endpoint returns 400 with details on failure
-        msg = ''
-        try:
-            err = json.loads(e.read().decode(errors='replace'))
-            if isinstance(err, list) and err:
-                msg = err[0].get('errorMessage', '') or err[0].get('detailedDescription', '')
-            elif isinstance(err, dict):
-                msg = err.get('message', '') or err.get('errorMessage', '')
-        except Exception:
-            pass
-        print(f"    ✘ {name} — {msg[:100] or 'test failed'}")
-        if DRY:
-            disabled.append((name, msg[:80]))
-            continue
-        # Disable: PUT the indexer back with enable=False
-        ix_off = dict(ix); ix_off['enable'] = False
-        try:
-            api('PUT', f"/api/v1/indexer/{ix['id']}", ix_off)
-            print(f"      → disabled")
-            disabled.append((name, msg[:80]))
-        except Exception as e2:
-            print(f"      ✘ could not disable: {e2}")
-            failed_to_test.append((name, str(e2)[:80]))
-    except Exception as e:
-        print(f"    ✘ {name} — could not test: {e}")
-        failed_to_test.append((name, str(e)[:80]))
+        continue
+    print(f"    ✘ {name} — {msg}")
+
+    # Report-only (default): note it but DON'T touch it. A single failed test
+    # is usually a transient CloudFlare/rate-limit, not a dead indexer, so we
+    # never silently prune a working source. The user opts into disabling.
+    if not DISABLE:
+        broken.append((name, msg[:80]))
+        continue
+
+    # --disable-broken: re-test a few times with a backoff before disabling, to
+    # ride out CloudFlare challenges / Flaresolverr-in-flight / rate-limits. Only
+    # disable if EVERY attempt fails — a single recovery means it's still working.
+    recovered = False
+    for attempt in range(2, RETRIES + 1):
+        time.sleep(BACKOFF)
+        print(f"      retry {attempt}/{RETRIES}...")
+        ok, msg = test_once(ix)
+        if ok:
+            print(f"      ✔ recovered on retry — leaving enabled")
+            recovered = True
+            break
+    if recovered:
+        continue
+
+    if DRY:
+        disabled.append((name, msg[:80]))
+        continue
+    # Disable: PUT the indexer back with enable=False
+    ix_off = dict(ix); ix_off['enable'] = False
+    try:
+        api('PUT', f"/api/v1/indexer/{ix['id']}", ix_off)
+        print(f"      → disabled (failed {RETRIES} consecutive tests)")
+        disabled.append((name, msg[:80]))
+    except Exception as e2:
+        print(f"      ✘ could not disable: {e2}")
+        failed_to_test.append((name, str(e2)[:80]))
 
 print()
 if disabled:
@@ -374,6 +427,16 @@ if disabled:
         print("  Prowlarr's app-sync will propagate the disabled state to Sonarr/")
         print("  Radarr/Lidarr within ~30s. Refresh your arr UI after that — page")
         print("  loads should be noticeably faster.")
+elif broken:
+    # Report-only path: we changed nothing. Tell the user what looked broken and
+    # how to act, without having pruned anything behind their back.
+    print(f"  ⚠ {len(broken)} indexer(s) failed the test (NOT changed — report only):")
+    for n, m in broken:
+        print(f"    - {n}  ({m})")
+    print()
+    print("  These often clear on the first real search (CloudFlare/Flaresolverr/")
+    print("  rate-limit) — try a search before disabling them. To auto-disable the")
+    print("  ones that fail repeated tests, re-run with:  --disable-broken")
 else:
     print(f"  ✔ All {len(indexers)} indexers responding — nothing to disable.")
 PY

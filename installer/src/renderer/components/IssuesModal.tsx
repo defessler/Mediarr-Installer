@@ -19,10 +19,11 @@
 //   - Needs Action: manual steps + non-blocking flakes the user might
 //     want to know about
 
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { X as XIcon, XCircle, AlertTriangle, Info } from 'lucide-react'
 import { BigButton } from './BigButton.js'
+import { useFocusTrap } from '../hooks/useFocusTrap.js'
 
 export type Issue = {
   severity: 'fail' | 'warn' | 'note'
@@ -48,14 +49,10 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
   // "warn" tier because in practice warn always degrades into noise.
   const actions = issues.filter((i) => i.severity !== 'fail')
 
-  // ESC closes the dialog — standard modal hygiene.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // Trap focus + ESC to close — standard modal hygiene, folded into one
+  // hook shared across the dialog set.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef, { active: true, onClose })
 
   // Default to whatever tab opened the modal, unless that tab is empty
   // (e.g. user clicked "Failed: 0" — shouldn't happen because the
@@ -81,6 +78,7 @@ export function IssuesModal({ initialTab, issues, onClose }: Props) {
       }}
     >
       <motion.div
+        ref={dialogRef}
         initial={reduced ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}

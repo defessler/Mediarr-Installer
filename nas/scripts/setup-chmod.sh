@@ -97,5 +97,16 @@ for cfg_dir in "$SCRIPT_DIR" "$INSTALL_DIR"; do
     [ "$cfg_dir" = "$SCRIPT_DIR" ] && [ "$INSTALL_DIR" = "$SCRIPT_DIR" ] && break
 done
 
+# Re-assert 600 on qBittorrent.conf — it holds the PBKDF2 WebUI password hash
+# (same secret class as .env, which is 600 above). setup-folders.sh writes it
+# 600, but an older install may have left it world-readable, and qBittorrent
+# itself rewrites the file at runtime with its own mode; this idempotent
+# re-run pins it back down.
+QB_CONF="$INSTALL_DIR/qbittorrent/config/qBittorrent/qBittorrent.conf"
+if [ -f "$QB_CONF" ]; then
+    chmod 600 "$QB_CONF"
+    echo "  ✔ $QB_CONF (owner read-only — contains the WebUI password hash)"
+fi
+
 echo ""
 echo "Done."

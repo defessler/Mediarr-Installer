@@ -3,8 +3,10 @@
 
 Plex does NOT watch folders for .m3u, so after playlistsync downloads a
 playlist's tracks and writes its .m3u, this uploads it via Plex's
-/playlists/upload endpoint. Idempotent: an existing playlist of the same
-title is deleted first so re-runs don't pile up duplicates.
+/playlists/upload endpoint. Idempotent: a same-titled playlist that existed
+before the upload is deleted AFTER a successful upload so re-runs don't pile up
+duplicates — uploading first means a transient Plex error can't leave the user
+with no playlist at all.
 
 Usage: plex-upload.py <m3u-dir> <playlist-name>
   <m3u-dir>        folder under /data/Music/Playlists/ holding exactly one .m3u
@@ -88,20 +90,27 @@ def music_section_id(base, token):
     raise SystemExit("no music (type=artist) library section found in Plex")
 
 
-def delete_existing(base, token, name):
+def existing_rating_keys(base, token, name):
+    """ratingKeys of all playlists currently titled `name` (the ones to prune
+    AFTER a successful upload). Returns [] if Plex has no /playlists yet."""
     try:
         data = json.loads(api(base, "/playlists", token))
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return
+            return []
         raise
-    for pl in data.get("MediaContainer", {}).get("Metadata", []):
-        if pl.get("title") == name and pl.get("ratingKey"):
-            try:
-                api(base, "/playlists/" + str(pl["ratingKey"]), token, method="DELETE")
-                err("replaced existing playlist '%s'" % name)
-            except Exception as e:
-                err("warning: could not delete existing '%s' (%s)" % (name, e))
+    return [str(pl["ratingKey"])
+            for pl in data.get("MediaContainer", {}).get("Metadata", [])
+            if pl.get("title") == name and pl.get("ratingKey")]
+
+
+def delete_rating_keys(base, token, name, keys):
+    for key in keys:
+        try:
+            api(base, "/playlists/" + key, token, method="DELETE")
+            err("replaced existing playlist '%s'" % name)
+        except Exception as e:
+            err("warning: could not delete existing '%s' (%s)" % (name, e))
 
 
 def main():
@@ -118,7 +127,13 @@ def main():
 
     base, token = plex_base(), plex_token()
     section = music_section_id(base, token)
-    delete_existing(base, token, name)
+    # Upload FIRST, prune AFTER: capture the OLD same-titled playlist(s) now, do
+    # the upload, and only delete those pre-existing ones once it succeeds. A
+    # transient Plex error (mid-restart, 500, scanner busy, claim/login race)
+    # thus leaves the user's existing playlist intact instead of destroying it.
+    # Plex tolerates two same-titled playlists for the moment between upload and
+    # prune; deleting by the captured ratingKeys can't touch the new one.
+    stale_keys = existing_rating_keys(base, token, name)
     q = urllib.parse.urlencode({"sectionID": section, "path": plex_path})
     try:
         api(base, "/playlists/upload?" + q, token, method="POST")
@@ -126,6 +141,7 @@ def main():
         raise SystemExit("Plex /playlists/upload failed: HTTP %s — %s"
                          % (e.code, (e.read() or b"")[:200]))
     err("uploaded playlist '%s' from %s" % (name, plex_path))
+    delete_rating_keys(base, token, name, stale_keys)
 
 
 if __name__ == "__main__":
