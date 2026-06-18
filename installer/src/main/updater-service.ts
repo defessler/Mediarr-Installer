@@ -759,8 +759,8 @@ function writeSwapScript(opts: {
   // picks). Double every literal '%' in the interpolated PATHS so cmd treats it
   // as data, not a variable — otherwise the whole swap silently targets a
   // garbled directory. The intentional cmd vars in the templates below
-  // (%date%, %TARGET_PID%, %TARGET_EXE%, %RC%, %ERRORLEVEL%, %~f0) are written
-  // literally and must NOT be doubled.
+  // (%date%, %TARGET_EXE%, %WAITED%, %MVTRY%, %RC%, %ERRORLEVEL%, %~f0) are
+  // written literally and must NOT be doubled.
   const pe = (s: string) => s.replace(/%/g, '%%')
   // Atomic-swap scratch dirs, siblings of installDir so the move is a same-
   // volume rename (instant, no cross-device copy): build the new tree in
@@ -787,17 +787,38 @@ function writeSwapScript(opts: {
     '@echo off',
     'setlocal',
     `>>"${logC}" echo [%date% %time%] swap start pid=${pid} exe=${exeC}`,
-    `set TARGET_PID=${pid}`,
     `set TARGET_EXE=${exeC}`,
+    // Wait for EVERY process running our exe image to exit — not just the
+    // launching PID. Electron spawns GPU / renderer / utility children that
+    // SHARE the exe image name (different PIDs) and keep the program files
+    // memory-mapped after the main PID is gone. Touching the install dir while
+    // a mapped section is still open fails with "the process cannot access the
+    // file" / "user-mapped section open" — the robocopy rc=9 / move failures
+    // users actually hit. Matching the image name (not the PID) waits out the
+    // children too. Bounded to ~30s so a wedged child can't hang the swap
+    // forever: if any linger past that, force-kill them. Everything with this
+    // image name is a leftover of the build we are replacing (the new build is
+    // not launched until after the swap), so killing by image name is safe and
+    // releases the file locks.
+    'set /a WAITED=0',
     ':wait',
-    // Filter on PID *and* image name — Windows recycles PIDs quickly
-    // and a recycled PID hitting, say, chrome.exe would spin this
-    // loop forever. /FI flags are AND-combined.
-    'tasklist /FI "PID eq %TARGET_PID%" /FI "IMAGENAME eq %TARGET_EXE%" /NH 2>NUL | find /I "%TARGET_EXE%" >NUL',
-    'if not errorlevel 1 (',
-    '    timeout /t 1 /nobreak >NUL',
-    '    goto wait',
+    'tasklist /FI "IMAGENAME eq %TARGET_EXE%" /NH 2>NUL | find /I "%TARGET_EXE%" >NUL',
+    'if errorlevel 1 goto gone',
+    'set /a WAITED+=1',
+    'if %WAITED% GEQ 30 (',
+    `    >>"${logC}" echo [%date% %time%] %TARGET_EXE% still running after %WAITED%s - force-killing leftovers`,
+    `    taskkill /F /IM "%TARGET_EXE%" >>"${logC}" 2>&1`,
+    '    goto settle',
     ')',
+    'timeout /t 1 /nobreak >NUL',
+    'goto wait',
+    ':gone',
+    `>>"${logC}" echo [%date% %time%] all %TARGET_EXE% processes exited after %WAITED%s`,
+    ':settle',
+    // Even once every process has exited, Windows can take a beat to tear down
+    // the memory-mapped image/data sections. A short settle avoids a first-move
+    // failure on a lock that is about to clear on its own.
+    'timeout /t 2 /nobreak >NUL',
     `>>"${logC}" echo [%date% %time%] target gone, building new tree`,
     // Clear any leftover scratch from a prior interrupted swap so the
     // build/move below start clean (a stale .new/.bak would wedge them).
@@ -824,18 +845,29 @@ function writeSwapScript(opts: {
     ')',
     // Atomic swap (step 2): move the old build aside, then the new into place.
     // Same-volume renames, so each is instant and reversible.
+    // Move the old build aside (atomic same-volume rename), retrying briefly: a
+    // memory-mapped section can linger a beat past the last process exit, so a
+    // single attempt is racy. Up to 5 tries x 2s before giving up.
+    'set /a MVTRY=0',
+    ':moveaside',
     `move "${installC}" "${bakC}" >>"${logC}" 2>&1`,
-    'if errorlevel 1 (',
-    // Couldn't move the old build (a lingering lock on our just-exited exe).
-    // installDir is still the OLD build, intact — relaunch it, keep the new
-    // tree + staging, and flag the failure for the next boot.
-    `    >>"${logC}" echo [%date% %time%] move install aside failed - old build intact, relaunching`,
-    `    >"${failC}" echo 8`,
-    `    >>"${failC}" echo ${oldVerC}`,
-    `    rmdir /S /Q "${newC}" 2>NUL`,
-    `    start "" "${installC}\\${exeC}"`,
-    '    goto cleanup',
+    'if not errorlevel 1 goto moved',
+    'set /a MVTRY+=1',
+    'if %MVTRY% LSS 5 (',
+    `    >>"${logC}" echo [%date% %time%] move install aside failed (try %MVTRY%) - retrying in 2s`,
+    '    timeout /t 2 /nobreak >NUL',
+    '    goto moveaside',
     ')',
+    // Still couldn't move the old build after retries (a stuck lock on our
+    // just-exited exe). installDir is still the OLD build, intact — relaunch it,
+    // keep the new tree + staging, and flag the failure for the next boot.
+    `>>"${logC}" echo [%date% %time%] move install aside failed after %MVTRY% tries - old build intact, relaunching`,
+    `>"${failC}" echo 8`,
+    `>>"${failC}" echo ${oldVerC}`,
+    `rmdir /S /Q "${newC}" 2>NUL`,
+    `start "" "${installC}\\${exeC}"`,
+    'goto cleanup',
+    ':moved',
     `move "${newC}" "${installC}" >>"${logC}" 2>&1`,
     'if errorlevel 1 (',
     // The new tree didn't move into place — RESTORE the old build from .bak so
