@@ -351,6 +351,17 @@ export const envSchema = z.object({
     if (!v.PLAYLIST_SLSK_USER || v.PLAYLIST_SLSK_USER.length === 0) {
       ctx.addIssue({ code: 'custom', path: ['PLAYLIST_SLSK_USER'],
         message: 'A second Soulseek account (username) is required when Playlist Sync is enabled' })
+    } else if (
+      !!v.SLSKD_USER
+      && v.PLAYLIST_SLSK_USER.trim().toLowerCase() === v.SLSKD_USER.trim().toLowerCase()
+    ) {
+      // Soulseek allows ONE login session per account, so Playlist Sync MUST use a
+      // different account than the main slskd one. Reusing it makes both fight over
+      // the single session, and a mismatched password is silently rejected as
+      // INVALIDPASS — the "no playlists ever download" failure. Any brand-new
+      // username auto-registers on first connect, so a fresh name needs no setup.
+      ctx.addIssue({ code: 'custom', path: ['PLAYLIST_SLSK_USER'],
+        message: 'Use a DIFFERENT Soulseek account than your main one (above) — Soulseek allows one login session per account, so reusing it makes both fail to connect. Pick any new username; it auto-registers on first use.' })
     }
     if (!v.PLAYLIST_SLSK_PASS || v.PLAYLIST_SLSK_PASS.length === 0) {
       ctx.addIssue({ code: 'custom', path: ['PLAYLIST_SLSK_PASS'],
