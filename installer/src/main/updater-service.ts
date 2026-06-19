@@ -628,6 +628,14 @@ async function installUpdate(): Promise<void> {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
+      // The helper MUST NOT inherit installDir as its working directory: Windows
+      // refuses to rename a directory that is any live process's CWD, so a
+      // cmd.exe parked in installDir blocks its OWN `move installDir
+      // installDir.bak` swap — the confirmed reason a v0.16.2 self-update went
+      // through the motions but never applied (stayed on the old version) and
+      // never relaunched. Pin the helper's CWD to TEMP here; the .cmd also cd's
+      // to %SystemRoot% first as belt-and-suspenders.
+      cwd: tmpdir(),
     })
     // Only commit to quitting once the helper has actually launched. A spawn
     // failure (wscript.exe missing, or blocked by AppLocker/SRP/GPO/AV)
@@ -786,6 +794,14 @@ function writeSwapScript(opts: {
   const cmdLines = [
     '@echo off',
     'setlocal',
+    // Move our CWD OUT of installDir before anything else. cmd.exe inherits the
+    // launching app's working directory (== installDir for a double-clicked
+    // build), and a directory that is a live process's CWD CANNOT be renamed —
+    // so leaving cmd parked in installDir makes the `move "${installC}"
+    // "${bakC}"` swap below fail every retry with a self-inflicted sharing
+    // violation (the confirmed v0.16.2 "update never applies" root cause).
+    // %SystemRoot% always exists on a fixed volume.
+    'cd /d "%SystemRoot%"',
     `>>"${logC}" echo [%date% %time%] swap start pid=${pid} exe=${exeC}`,
     `set TARGET_EXE=${exeC}`,
     // Wait for EVERY process running our exe image to exit — not just the
@@ -836,7 +852,11 @@ function writeSwapScript(opts: {
     // New tree is incomplete — abort the swap entirely. installDir was never
     // touched, so relaunch it; keep staging for diagnosis; drop the sentinel
     // so the relaunched build surfaces the failure instead of re-offering.
-    `    >>"${logC}" echo [%date% %time%] robocopy failed (rc=%RC%) - install untouched, relaunching existing build, staging kept at ${stagingC}`,
+    // NOTE: a literal ( or ) inside an echo within an `if (...)` block closes
+    // the block at parse time → the script syntax-dies before the relaunch /
+    // sentinel (the v0.16.2 "never starts back up + silently re-offers" bug).
+    // Keep every echo inside an if-block paren-free.
+    `    >>"${logC}" echo [%date% %time%] robocopy failed rc=%RC% - install untouched, relaunching existing build, staging kept at ${stagingC}`,
     `    >"${failC}" echo %RC%`,
     `    >>"${failC}" echo ${oldVerC}`,
     `    rmdir /S /Q "${newC}" 2>NUL`,
@@ -854,7 +874,7 @@ function writeSwapScript(opts: {
     'if not errorlevel 1 goto moved',
     'set /a MVTRY+=1',
     'if %MVTRY% LSS 5 (',
-    `    >>"${logC}" echo [%date% %time%] move install aside failed (try %MVTRY%) - retrying in 2s`,
+    `    >>"${logC}" echo [%date% %time%] move install aside failed try %MVTRY% - retrying in 2s`,
     '    timeout /t 2 /nobreak >NUL',
     '    goto moveaside',
     ')',
