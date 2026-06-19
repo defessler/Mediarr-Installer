@@ -81,9 +81,8 @@ These require a free account at the indexer's website. The wizard collects crede
 | Indexer | URL | Coverage | Notes |
 |---|---|---|---|
 | **ABNzb** | https://abnzb.com | General + anime | "Always Be NZB-ing." Free signup → API key. Lower daily limits than paid indexers but adequate for casual use. |
-| **Althub** | https://althub.co.za | General | South-African-hosted, free signup. Similar coverage to ABNzb. |
 
-Both are decent supplements to AnimeTosho. The free tiers cap daily API calls (~50–100/day typical), which is fine for personal use but limits aggressive Sonarr re-checks.
+ABNzb is a decent supplement to AnimeTosho. Its free tier caps daily API calls (~50–100/day typical), which is fine for personal use but limits aggressive Sonarr re-checks.
 
 ---
 

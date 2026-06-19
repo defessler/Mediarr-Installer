@@ -210,7 +210,6 @@ export interface EnvFormValues {
   BINSEARCH_NO_KEY?: string
   // Free-with-signup indexers — API key collected, sent to .env.
   ABNZB_API_KEY?: string
-  ALTHUB_API_KEY?: string
   // Paid usenet indexers
   NZBGEEK_API_KEY?: string
   NZBFINDER_API_KEY?: string
@@ -586,7 +585,6 @@ export function renderEnv(v: EnvFormValues): string {
     '# Usenet indexers',
     line('ANIMETOSHO_API_KEY', v.ANIMETOSHO_API_KEY),
     line('ABNZB_API_KEY', v.ABNZB_API_KEY),
-    line('ALTHUB_API_KEY', v.ALTHUB_API_KEY),
     line('NZBGEEK_API_KEY', v.NZBGEEK_API_KEY),
     line('NZBFINDER_API_KEY', v.NZBFINDER_API_KEY),
     line('DRUNKENSLUG_API_KEY', v.DRUNKENSLUG_API_KEY),
@@ -749,14 +747,6 @@ export const USENET_INDEXERS: IndexerDef[] = [
     href: 'https://abnzb.com',
     note: 'Free signup → API key. ~50–100 daily calls — fine for casual use.',
     fields: [{ key: 'ABNZB_API_KEY', label: 'API key' }],
-    category: 'usenet-free',
-    tags: ['general', 'free-signup'],
-  },
-  {
-    id: 'ALTHUB_API_KEY', name: 'Althub',
-    href: 'https://althub.co.za',
-    note: 'Free signup → API key. South-African-hosted, similar to ABNzb.',
-    fields: [{ key: 'ALTHUB_API_KEY', label: 'API key' }],
     category: 'usenet-free',
     tags: ['general', 'free-signup'],
   },

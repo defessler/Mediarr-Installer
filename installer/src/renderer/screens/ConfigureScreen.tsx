@@ -1293,10 +1293,11 @@ export function ConfigureScreen() {
               Soulseek finds music for Lidarr off the Soulseek network — through
               your VPN, like torrents. All you need is a{' '}
               <span className="font-medium text-slate-300">free Soulseek account</span>,
-              and there&apos;s no sign-up page: just pick{' '}
-              <span className="font-medium text-slate-300">any username and password</span>{' '}
+              and there&apos;s no sign-up page: just pick a{' '}
+              <span className="font-medium text-slate-300">unique username and password</span>{' '}
               below — they&apos;re registered on the Soulseek network automatically the
-              first time the client connects. (If you already use the official
+              first time the client connects (a name someone already took rejects the
+              login, so make it distinctive). (If you already use the official
               Soulseek desktop app from{' '}
               <a
                 href="https://www.slsknet.org"

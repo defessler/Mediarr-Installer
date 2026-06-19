@@ -3,7 +3,7 @@
 setup-indexers.py — Add indexers to Prowlarr
 
 Public torrent indexers are added automatically (no credentials needed).
-Free usenet indexers (AnimeTosho, ABNzb, Althub) are added automatically.
+Free usenet indexers (AnimeTosho, ABNzb) are added automatically.
 Account-required usenet indexers are added if their key is set in .env.
 Private torrent trackers are added if credentials are set in .env.
 
@@ -167,11 +167,10 @@ USENET_INDEXERS = [
     # Users who want them can still add via Prowlarr's UI (where they
     # can paste a working mirror by hand).
     # ── Free with free signup (requires API key) ─────────────────────────────
-    # ABNzb and Althub historically allowed RSS-only access without a
-    # key, but their current backends reject add-attempts without
-    # `Indexer requires an API key`. Skip silently if the key is blank.
+    # ABNzb historically allowed RSS-only access without a key, but its
+    # current backend rejects add-attempts without `Indexer requires an
+    # API key`. Skip silently if the key is blank.
     ("ABNzb",          "https://abnzb.com",                "ABNZB_API_KEY",         None),
-    ("Althub",         "https://www.althub.co.za",         "ALTHUB_API_KEY",        None),
     # ── Paid account required ────────────────────────────────────────────────
     ("NZBGeek",        "https://api.nzbgeek.info",         "NZBGEEK_API_KEY",       None),
     ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY",     None),
