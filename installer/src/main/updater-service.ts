@@ -59,6 +59,7 @@ import {
   readdirSync,
   readFileSync,
   readSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -361,19 +362,33 @@ async function downloadUpdateImpl(): Promise<void> {
     total: update.sizeBytes || 0,
   })
 
-  // Fresh staging root per call — wipe any previous attempt to avoid
-  // accumulating ~200 MB extracted builds in %TEMP%. ASYNC (await rm, not the
-  // blocking rmSync) so wiping a leftover ~200 MB staging dir — common after a
-  // failed update, and slowed further by AV-lock retries — can't stall the main
-  // thread and hitch the UI right as the overlay opens.
+  // Set up the abort handle FIRST — before any cleanup or the fetch — so the
+  // overlay's Cancel works the instant the modal opens. It used to be created
+  // only AFTER the staging wipe; when that wipe was slow (a big, AV-locked
+  // leftover), the user sat stuck at 0% with a dead Cancel — there was no
+  // controller to abort yet (the v0.16.5 regression).
+  currentDownloadAbort = new AbortController()
+
+  // Staging root. This attempt writes into a UNIQUE staging-<ver>-<ts> dir and
+  // overwrites its own zip, so we do NOT need to wipe leftovers before starting
+  // — and we must NOT: an inline wipe of a ~200 MB, often AV-locked leftover
+  // BLOCKED the download from starting. Instead move any previous root aside
+  // with an instant same-volume rename, then delete it in the BACKGROUND so
+  // housekeeping never stalls the download or the Cancel button. If the rename
+  // fails we just proceed — the unique staging dir keeps this attempt
+  // collision-free regardless.
   const tmpRoot = join(tmpdir(), 'mediarr-update')
   if (existsSync(tmpRoot)) {
-    // maxRetries/retryDelay rides out transient Windows locks (AV real-time
-    // scanning the ~200 MB build, or a lingering handle on the old zip) that
-    // would otherwise leave the previous staging/ behind and make the next
-    // extract die with "...app.asar already exists".
-    try { await rm(tmpRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
-    catch (e) { log.warn('updater: tmpRoot rm failed (non-fatal):', e) }
+    try {
+      const stale = `${tmpRoot}.old-${Date.now()}`
+      renameSync(tmpRoot, stale)
+      // Fire-and-forget: deleting a multi-hundred-MB, possibly AV-locked tree
+      // can take a while; it must not block the download or Cancel.
+      void rm(stale, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        .catch((e) => log.warn('updater: background staging prune failed (non-fatal):', e))
+    } catch (e) {
+      log.warn('updater: could not move old staging aside (non-fatal):', e)
+    }
   }
   mkdirSync(tmpRoot, { recursive: true })
   const zipPath = join(tmpRoot, `update-${update.version}.zip`)
@@ -389,7 +404,8 @@ async function downloadUpdateImpl(): Promise<void> {
   const stagingDir = join(tmpRoot, `staging-${update.version}-${Date.now()}`)
 
   // ── Download ─────────────────────────────────────────────────────
-  currentDownloadAbort = new AbortController()
+  // (currentDownloadAbort was created above — before the staging prune — so
+  // Cancel is live for the whole flow, not just once the fetch begins.)
   try {
     log.info(`updater: downloading ${update.downloadUrl}`)
     const res = await fetch(update.downloadUrl, {
