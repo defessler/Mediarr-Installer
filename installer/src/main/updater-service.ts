@@ -63,6 +63,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -346,15 +347,32 @@ async function downloadUpdateImpl(): Promise<void> {
   }
   const update = pendingUpdate
 
+  // Open the progress overlay IMMEDIATELY — before the (possibly slow) staging
+  // cleanup and the network connect — so the modal appears the instant the user
+  // hits "Install", not ~150 ms after the first byte lands (by which point the
+  // bar would already be part-way through). The real throttled 'downloading'
+  // events overwrite this 0 % seed within a beat; total is pre-filled from the
+  // known asset size so the bar scales correctly from the very first frame.
+  broadcast({
+    kind: 'downloading',
+    percent: 0,
+    bytesPerSecond: 0,
+    transferred: 0,
+    total: update.sizeBytes || 0,
+  })
+
   // Fresh staging root per call — wipe any previous attempt to avoid
-  // accumulating ~200 MB extracted builds in %TEMP%.
+  // accumulating ~200 MB extracted builds in %TEMP%. ASYNC (await rm, not the
+  // blocking rmSync) so wiping a leftover ~200 MB staging dir — common after a
+  // failed update, and slowed further by AV-lock retries — can't stall the main
+  // thread and hitch the UI right as the overlay opens.
   const tmpRoot = join(tmpdir(), 'mediarr-update')
   if (existsSync(tmpRoot)) {
     // maxRetries/retryDelay rides out transient Windows locks (AV real-time
     // scanning the ~200 MB build, or a lingering handle on the old zip) that
     // would otherwise leave the previous staging/ behind and make the next
     // extract die with "...app.asar already exists".
-    try { rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
+    try { await rm(tmpRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
     catch (e) { log.warn('updater: tmpRoot rm failed (non-fatal):', e) }
   }
   mkdirSync(tmpRoot, { recursive: true })
