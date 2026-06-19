@@ -522,13 +522,42 @@ check_media() {
     local container="$1"
     local path="$2"
     local label="$3"
-    local count
-    count=$($RT exec "$container" find "$path" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
-    if [ "$count" -gt 0 ]; then
-        ok "$label — $count items found ($container:$path)"
-    else
-        warn "$label — folder is empty ($container:$path)"
-    fi
+    local result
+    # Classify the path from the CONTAINER's point of view in ONE exec, so a
+    # swallowed find error can't masquerade as "folder is empty" — the three
+    # outcomes look identical to a bare `find … 2>/dev/null | wc -l` but mean
+    # very different things and need different fixes:
+    #   MISSING — the path doesn't exist there. The bind mount is fine (other
+    #             folders list), so it's a renamed / differently-CASED library
+    #             folder (Linux is case-sensitive: "TV Shows" != "TV shows"),
+    #             or your content lives under a different DATA_ROOT.
+    #   DENIED  — it exists but the container's PUID can't list it: an
+    #             ownership / mode / Synology-ACL issue, NOT emptiness.
+    #   <n>     — n immediate children (0 = genuinely empty, e.g. nothing
+    #             grabbed yet on a fresh install).
+    result=$($RT exec "$container" sh -c '
+        p="$1"
+        if [ ! -d "$p" ]; then echo MISSING; exit 0; fi
+        if ls -A -- "$p" >/dev/null 2>&1; then
+            find "$p" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l
+        else
+            echo DENIED
+        fi
+    ' _ "$path" 2>/dev/null | tr -d '[:space:]')
+    case "$result" in
+        MISSING)
+            warn "$label — NOT FOUND in $container ($path). The mount works (other folders list), so this exact path isn't there — a renamed or differently-cased folder, or content under a different DATA_ROOT."
+            ;;
+        DENIED)
+            warn "$label — $container can't read $path (permissions / ownership / ACL, NOT emptiness). Re-run setup (it chowns these to PUID:PGID) or fix the folder's owner."
+            ;;
+        ''|0)
+            warn "$label — folder is empty ($container:$path)"
+            ;;
+        *)
+            ok "$label — $result items found ($container:$path)"
+            ;;
+    esac
 }
 
 if is_enabled ENABLE_SONARR; then
