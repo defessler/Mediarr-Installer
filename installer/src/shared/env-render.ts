@@ -383,6 +383,10 @@ function renderVpnBlock(v: EnvFormValues): string[] {
     isCustom ? (gluetunEnv.VPN_SERVICE_PROVIDER || provider.id) : provider.id))
   out.push(line('VPN_TYPE',
     isCustom ? (gluetunEnv.VPN_TYPE || provider.vpnType) : provider.vpnType))
+  // Persist the raw pasted custom block so a re-render sourced from a saved .env
+  // keeps it — otherwise CUSTOM_VPN_ENV (required when provider=custom) is
+  // dropped and the next validation fails on an otherwise-valid install.
+  if (isCustom && v.CUSTOM_VPN_ENV) out.push(line('CUSTOM_VPN_ENV', v.CUSTOM_VPN_ENV))
   out.push(line('VPN_COUNTRIES', v.VPN_COUNTRIES))
   for (const [k, val] of Object.entries(gluetunEnv)) {
     // Skip VPN_SERVICE_PROVIDER / VPN_TYPE / SERVER_COUNTRIES — already

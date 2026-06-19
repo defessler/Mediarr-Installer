@@ -523,6 +523,14 @@ check_media() {
     local path="$2"
     local label="$3"
     local result
+    # A stopped / missing container makes the exec fail → empty result, which
+    # would mis-report as "folder is empty". Probe liveness first so a down
+    # container gets an honest message (the Containers section already flagged it)
+    # rather than a misleading empty-folder warning.
+    if ! $RT exec "$container" true 2>/dev/null; then
+        warn "$label — can't check ($container isn't running / exec failed): $path"
+        return
+    fi
     # Classify the path from the CONTAINER's point of view in ONE exec, so a
     # swallowed find error can't masquerade as "folder is empty" — the three
     # outcomes look identical to a bare `find … 2>/dev/null | wc -l` but mean

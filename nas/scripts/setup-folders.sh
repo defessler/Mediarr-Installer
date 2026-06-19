@@ -512,6 +512,15 @@ env_val() {
                     printf "%s", out
                 }'
             ;;
+        "'"*)
+            # Single-quoted (hand-edited .env): strip the wrapping quotes and take
+            # the literal content up to the closing quote — matches setup.sh /
+            # setup-arr-config.py so all three readers agree. (The bare *) branch
+            # below would feed a single-quoted value to xargs, which aborts on the
+            # unmatched quote and silently empties it — e.g. blanking QBITTORRENT_PASS.)
+            raw="${raw#"'"}"
+            printf '%s' "${raw%%"'"*}"
+            ;;
         *)
             # Unquoted (the common case: enable flags, ports, paths): strip a
             # whitespace-anchored inline comment and trim — unchanged behavior.

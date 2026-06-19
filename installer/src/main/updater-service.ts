@@ -515,8 +515,16 @@ async function downloadUpdateImpl(): Promise<void> {
       // clean slate. We catch+swallow because a half-written file may
       // still be locked by the OS for a few ms after the pipeline
       // errors out — best-effort cleanup is fine, %TEMP% gets reaped.
-      try { rmSync(tmpRoot, { recursive: true, force: true }) }
-      catch (cleanupErr) { log.warn('updater: cleanup after cancel failed (non-fatal):', cleanupErr) }
+      // Non-blocking cleanup: move the partial tree aside instantly, delete it
+      // in the background. A synchronous rmSync of a ~200 MB (possibly AV-locked)
+      // tree on the main thread is the same hitch v0.16.5/16.7 removed from the
+      // download path — mirror that rename-aside pattern here on the cancel path.
+      try {
+        const stale = `${tmpRoot}.old-${Date.now()}`
+        renameSync(tmpRoot, stale)
+        void rm(stale, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+          .catch((e) => log.warn('updater: background cleanup after cancel failed (non-fatal):', e))
+      } catch (cleanupErr) { log.warn('updater: cleanup after cancel failed (non-fatal):', cleanupErr) }
       broadcast({
         kind: 'available',
         version: update.version,
@@ -879,7 +887,7 @@ function writeSwapScript(opts: {
     // files / mismatch-but-ok), 8+ = actual failure. Test `GEQ 8`. Copying
     // into a fresh sibling (not in place) means a mid-copy failure can NEVER
     // leave installDir half-overwritten — installDir is still pristine here.
-    `robocopy "${stagingC}" "${newC}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logC}"`,
+    `robocopy "${stagingC}" "${newC}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >>"${logC}" 2>&1`,
     'set RC=%ERRORLEVEL%',
     `>>"${logC}" echo [%date% %time%] robocopy rc=%RC%`,
     'if %RC% GEQ 8 (',
@@ -894,7 +902,7 @@ function writeSwapScript(opts: {
     `    >"${failC}" echo %RC%`,
     `    >>"${failC}" echo ${oldVerC}`,
     `    rmdir /S /Q "${newC}" 2>NUL`,
-    `    start "" "${installC}\\${exeC}"`,
+    `    start "" /d "${installC}" "${installC}\\${exeC}"`,
     '    goto cleanup',
     ')',
     // Atomic swap (step 2): move the old build aside, then the new into place.
@@ -919,7 +927,7 @@ function writeSwapScript(opts: {
     `>"${failC}" echo 8`,
     `>>"${failC}" echo ${oldVerC}`,
     `rmdir /S /Q "${newC}" 2>NUL`,
-    `start "" "${installC}\\${exeC}"`,
+    `start "" /d "${installC}" "${installC}\\${exeC}"`,
     'goto cleanup',
     ':moved',
     `move "${newC}" "${installC}" >>"${logC}" 2>&1`,
@@ -931,7 +939,7 @@ function writeSwapScript(opts: {
     `    >"${failC}" echo 8`,
     `    >>"${failC}" echo ${oldVerC}`,
     `    rmdir /S /Q "${newC}" 2>NUL`,
-    `    start "" "${installC}\\${exeC}"`,
+    `    start "" /d "${installC}" "${installC}\\${exeC}"`,
     '    goto cleanup',
     ')',
     // Clean swap — old build is fully replaced. Launch the NEW build, then
@@ -939,7 +947,7 @@ function writeSwapScript(opts: {
     // place. The sentinel is intentionally NOT written; the new build clears
     // any stale one on boot.
     `>>"${logC}" echo [%date% %time%] swap ok - launching new build`,
-    `start "" "${installC}\\${exeC}"`,
+    `start "" /d "${installC}" "${installC}\\${exeC}"`,
     `rmdir /S /Q "${bakC}" 2>NUL`,
     `rmdir /S /Q "${stagingC}" 2>NUL`,
     ':cleanup',
