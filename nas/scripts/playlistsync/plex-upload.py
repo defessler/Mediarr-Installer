@@ -54,6 +54,9 @@ TIMEOUT = 30
 # self-heals via the full-scan retry below and the next run.
 SCAN_TIMEOUT = int(os.environ.get("PLAYLIST_PLEX_SCAN_TIMEOUT", "120"))
 SCAN_POLL = 3                       # seconds between scan-status polls
+SCAN_SETTLE = 2                     # grace after a scan clears, for metadata to commit
+MEASURE_TRIES = 4                   # re-query attempts for the new playlist's track count
+MEASURE_POLL = 3                    # seconds between those attempts (leafCount can lag)
 
 
 def err(msg):
@@ -144,6 +147,7 @@ def wait_for_scan(base, token, section):
     while time.time() < deadline:
         try:
             if not section_refreshing(base, token, section):
+                time.sleep(SCAN_SETTLE)  # let metadata commit before we match
                 return
         except Exception:
             pass  # Plex busy/restarting — try again on the next tick
@@ -178,23 +182,32 @@ def delete_playlist(base, token, key):
         err("warning: could not delete playlist %s (%s)" % (key, e))
 
 
-def upload_and_measure(base, token, section, plex_path, name, stale_keys):
-    """POST the .m3u as a playlist, then RE-QUERY to learn the new playlist's key
-    and how many tracks actually matched — /playlists/upload returns an empty body,
-    so the count can only be read back afterwards. Returns (ratingKey|None, leaf)."""
+def upload_and_measure(base, token, section, plex_path, name):
+    """POST the .m3u as a playlist, then identify the NEW playlist by set-difference
+    (which same-titled keys appeared) and read its real track count. The upload
+    returns an empty body, and Plex can lag `leafCount` right after the synchronous
+    create, so re-query a few times before trusting a 0 (otherwise a populated
+    playlist gets misread as a 0-match and needlessly torn down). Identifying by
+    "keys that weren't there before this POST" — not by max(leafCount) — keeps us
+    from ever mistaking some other same-titled playlist for the one we just made.
+    Returns (ratingKey|None, leafCount)."""
+    pre = {k for k, _ in playlists_by_title(base, token, name)}
     q = urllib.parse.urlencode({"sectionID": section, "path": plex_path})
     try:
         api(base, "/playlists/upload?" + q, token, method="POST")
     except urllib.error.HTTPError as e:
         raise SystemExit("Plex /playlists/upload failed: HTTP %s — %s"
                          % (e.code, (e.read() or b"")[:200]))
-    # The newly-created playlist is the same-titled one that wasn't there before.
-    fresh = [(k, lf) for k, lf in playlists_by_title(base, token, name)
-             if k not in stale_keys]
-    if not fresh:
-        return None, 0
-    key, leaf = max(fresh, key=lambda t: t[1])  # the populated one, if any
-    return key, leaf
+    new_key, leaf = None, 0
+    for _ in range(MEASURE_TRIES):
+        fresh = [(k, lf) for k, lf in playlists_by_title(base, token, name)
+                 if k not in pre]
+        if fresh:
+            new_key, leaf = max(fresh, key=lambda t: t[1])  # populated one, if any
+            if leaf > 0:
+                break
+        time.sleep(MEASURE_POLL)
+    return new_key, leaf
 
 
 def main():
@@ -211,50 +224,64 @@ def main():
     folder = os.path.dirname(plex_path)  # /media/Music/Playlists/<label>
 
     base, token = plex_base(), plex_token()
-    section = music_section_id(base, token)
+    try:
+        section = music_section_id(base, token)
 
-    # Capture the OLD same-titled playlist(s) now; prune them only AFTER a
-    # confirmed-non-empty upload, so a transient miss never destroys a good one.
-    stale_keys = [k for k, _ in playlists_by_title(base, token, name)]
+        # The OLD same-titled playlist(s) we'll REPLACE — captured before we touch
+        # anything, pruned only AFTER a confirmed-non-empty upload so a transient
+        # miss never destroys a good one.
+        stale_keys = [k for k, _ in playlists_by_title(base, token, name)]
 
-    # 1) Scan the just-downloaded folder into Plex and WAIT until it settles.
-    #    Without this the brand-new tracks aren't in the library yet, so the
-    #    upload below matches nothing.
-    err("scanning %s into the Plex music library ..." % folder)
-    trigger_refresh(base, token, section, folder)
-    wait_for_scan(base, token, section)
-
-    # 2) Upload and verify how many tracks actually matched (re-query, since the
-    #    upload returns no body).
-    new_key, leaf = upload_and_measure(base, token, section, plex_path, name, stale_keys)
-
-    # 3) Nothing matched? The targeted scan may not have landed. Escalate to a
-    #    whole-library scan, drop the empty upload so we don't pile duplicates,
-    #    wait, and retry ONCE.
-    if leaf == 0:
-        err("0 tracks matched — running a full library scan and retrying once ...")
-        delete_playlist(base, token, new_key)
-        trigger_refresh(base, token, section, None)
+        # 1) Scan the just-downloaded folder into Plex and WAIT until it settles —
+        #    /playlists/upload only matches tracks Plex has already indexed.
+        err("scanning %s into the Plex music library ..." % folder)
+        trigger_refresh(base, token, section, folder)
         wait_for_scan(base, token, section)
-        new_key, leaf = upload_and_measure(base, token, section, plex_path, name, stale_keys)
 
-    if leaf == 0:
-        # Still empty: keep the user's PRIOR good playlist (do NOT prune), drop
-        # the empty new one, and fail loudly so sync.sh surfaces it.
-        delete_playlist(base, token, new_key)
-        raise SystemExit(
-            "Plex matched 0 tracks for '%s' even after a full scan — the files "
-            "aren't in the Music library yet; it should populate on the next run"
-            % name)
+        # 2) Upload and measure. Track every playlist we create so a non-winner
+        #    (e.g. an empty first attempt) can be cleaned up in one place even if
+        #    an interim delete gets swallowed.
+        created = []
+        new_key, leaf = upload_and_measure(base, token, section, plex_path, name)
+        if new_key:
+            created.append(new_key)
 
-    err("uploaded playlist '%s' from %s (%d track%s)"
-        % (name, plex_path, leaf, "" if leaf == 1 else "s"))
-    # Safe now: prune the pre-existing same-titled playlist(s) so re-runs don't
-    # pile up duplicates. Deleting by the captured ratingKeys can't touch the new
-    # one.
-    for key in stale_keys:
-        delete_playlist(base, token, key)
-        err("replaced previous playlist '%s'" % name)
+        # 3) Nothing matched? The targeted scan may not have landed. Escalate to a
+        #    whole-library scan and retry ONCE. We don't delete the empty attempt
+        #    here — set-difference still identifies the retry's playlist, and the
+        #    cleanup below removes every non-winner in one place.
+        if leaf == 0:
+            err("0 tracks matched — running a full library scan and retrying once ...")
+            trigger_refresh(base, token, section, None)
+            wait_for_scan(base, token, section)
+            new_key, leaf = upload_and_measure(base, token, section, plex_path, name)
+            if new_key and new_key not in created:
+                created.append(new_key)
+
+        if leaf == 0:
+            # Still empty: keep the user's PRIOR playlist (do NOT prune it), drop
+            # every empty upload we made, and fail loudly so sync.sh surfaces it.
+            for k in created:
+                delete_playlist(base, token, k)
+            raise SystemExit(
+                "Plex matched 0 tracks for '%s' even after a full scan — the files "
+                "aren't in the Music library yet; it should populate on the next run"
+                % name)
+
+        err("uploaded playlist '%s' from %s (%d track%s)"
+            % (name, plex_path, leaf, "" if leaf == 1 else "s"))
+        # Safe now: delete the prior same-titled playlist(s) we're replacing AND
+        # any non-winner duplicate we created (retrying in case an earlier delete
+        # was swallowed). Never touch the winner.
+        for k in set(stale_keys) | set(created):
+            if k != new_key:
+                delete_playlist(base, token, k)
+    except (urllib.error.URLError, OSError) as e:
+        # Plex momentarily unreachable (connection refused / DNS / timeout). Exit
+        # cleanly — sync.sh keeps the downloaded tracks and retries next run —
+        # instead of dying with a raw traceback.
+        raise SystemExit("Plex API unreachable (%s) — tracks are downloaded; "
+                         "will retry next run" % e)
 
 
 if __name__ == "__main__":

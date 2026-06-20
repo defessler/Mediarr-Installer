@@ -99,14 +99,16 @@ write_conf() {
 # bare/relative entry against the .m3u's own directory (which not all Plex builds
 # do). The downloader writes /data/Music/... paths; Plex sees the same tree at
 # /media/Music, so we translate the prefix and re-root each basename there.
-# #EXTINF/#EXTM3U/comment/blank lines are preserved verbatim.
+# Entries whose file is NOT on disk are DROPPED: sockseek's index lives on
+# /config and survives even if /data was cleared, so a re-run can otherwise list
+# ghost tracks that Plex 0-matches. #EXTINF/#EXTM3U/comment/blank lines are kept.
 normalise_m3u() {
     python3 - "$1" <<'PY'
 import os, sys
 p = sys.argv[1]
 HOST_PREFIX = "/data/Music"
 PLEX_PREFIX = "/media/Music"
-# The playlist folder as Plex sees it, derived from the .m3u's own location.
+# The playlist folder, on disk (host_dir) and as Plex sees it (plex_dir).
 host_dir = os.path.dirname(os.path.abspath(p))
 plex_dir = (PLEX_PREFIX + host_dir[len(HOST_PREFIX):]
             if host_dir.startswith(HOST_PREFIX) else host_dir)
@@ -117,14 +119,23 @@ except OSError as e:
     sys.stderr.write("normalise_m3u: cannot read %s: %s\n" % (p, e))
     sys.exit(1)
 out = []
+dropped = 0
 for ln in lines:
     s = ln.rstrip()
     if s == '' or s.lstrip().startswith('#'):
         out.append(s)
+        continue
+    bn = os.path.basename(s)
+    # Keep only entries whose file actually exists, so the .m3u means "real
+    # files on disk" and a stale index can't seed a 0-match Plex upload.
+    if os.path.exists(os.path.join(host_dir, bn)):
+        out.append(plex_dir + '/' + bn)
     else:
-        out.append(plex_dir + '/' + os.path.basename(s))
+        dropped += 1
 with open(p, 'w', encoding='utf-8') as f:
     f.write('\n'.join(out) + '\n')
+if dropped:
+    sys.stderr.write("normalise_m3u: dropped %d entry(ies) with no file on disk\n" % dropped)
 PY
 }
 
@@ -200,6 +211,13 @@ process_source() {
     fi
 
     normalise_m3u "$_m3u" || { warn "[$_label] could not normalise .m3u — skipping Plex upload"; return 1; }
+
+    # normalise_m3u drops entries whose file is missing; re-check that something
+    # real remains, else Plex would just 0-match and we'd churn a full rescan.
+    if ! m3u_has_tracks "$_m3u"; then
+        warn "[$_label] the downloaded .m3u lists no files that exist on disk (stale index, or the playlist folder was cleared) — skipping Plex upload"
+        return 1
+    fi
 
     log "[$_label] uploading playlist to Plex ..."
     if python3 "$SCRIPT_DIR/plex-upload.py" "$_dir" "$_label"; then

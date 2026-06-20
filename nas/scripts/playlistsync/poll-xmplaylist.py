@@ -143,23 +143,39 @@ def _is_404(err):
 def _extract_results(payload):
     """Return the list of result items from an API payload.
 
-    The live endpoints wrap their lists in `{"results": [...]}`, but we also
-    accept a bare top-level list so a future shape change back to that form
-    doesn't break us. Anything else yields an empty list (callers treat that
-    as "no data" rather than crashing)."""
-    if isinstance(payload, dict):
-        results = payload.get('results')
-        return results if isinstance(results, list) else []
+    Live endpoints wrap their lists in `{"results": [...]}`; we also accept a
+    bare top-level list. An empty `results` list is valid (low-traffic channels
+    legitimately report nothing). But an UNRECOGNISED shape — a dict with no
+    `results` key, a `results` that isn't a list, or a non-dict/non-list payload
+    — means xmplaylist changed its format under us; raise loudly so the caller
+    exits non-zero instead of silently treating it as "no data" (which would
+    masquerade as an empty channel and yield an empty CSV → no playlist)."""
     if isinstance(payload, list):
         return payload
-    return []
+    if isinstance(payload, dict):
+        if 'results' in payload:
+            results = payload.get('results')
+            if isinstance(results, list):
+                return results
+            raise RuntimeError(
+                "unexpected API response: 'results' is %s, not a list"
+                % type(results).__name__)
+        raise RuntimeError(
+            "unexpected API response shape (keys: %s) — xmplaylist's format "
+            "may have changed"
+            % (', '.join(sorted(map(str, payload.keys()))) or '<none>'))
+    raise RuntimeError(
+        "unexpected API response type %s (expected an object or a list)"
+        % type(payload).__name__)
 
 
-def resolve_slug(slug):
+def resolve_slug(slug, days):
     """Return a canonical station `deeplink` for the user-supplied `slug`.
 
     Fast path: if `{slug}/most-heard` already exists we return `slug`
-    unchanged without ever hitting the station list (one call, no waste).
+    unchanged without ever hitting the station list (one call, no waste). The
+    existence probe uses the SAME `days` window as the real fetch, so a valid
+    channel isn't misjudged "not found" by a narrower probe window.
 
     Fallback (the given slug 404s): fetch /api/station and match
     case-insensitively against each station's canonical `deeplink`, its
@@ -173,7 +189,7 @@ def resolve_slug(slug):
     """
     # Fast path: does the channel endpoint resolve as-is?
     try:
-        _http_get_json(f'{API_BASE}/station/{slug}/most-heard?days=1')
+        _http_get_json(f'{API_BASE}/station/{slug}/most-heard?days={days}')
         return slug
     except RuntimeError as e:
         if not _is_404(e):
@@ -349,7 +365,7 @@ def main(argv=None):
         return 2
 
     try:
-        slug = resolve_slug(args.slug)
+        slug = resolve_slug(args.slug, args.days)
         items = fetch_tracks(slug, args.days)
     except RuntimeError as e:
         print(f'error: {e}', file=sys.stderr)
