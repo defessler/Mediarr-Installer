@@ -4,7 +4,7 @@ import { Sparkles, Download, ExternalLink, ChevronDown, FileText, RefreshCw, X }
 import type { AppInfo, UpdaterState } from '../../shared/ipc.js'
 import { reportError } from '../store/errors.js'
 import { BigButton } from './BigButton.js'
-import { splitTrailingUrl } from './UpdateOverlay.js'
+import { splitTrailingUrl } from '../../shared/update-message.js'
 
 interface Props {
   /** Used only to render "you're on vX.Y.Z" — all update info comes
@@ -375,7 +375,7 @@ export function WhatsNew({ info }: Props) {
       {updater.kind === 'error' && (() => {
         // Render a trailing "...update manually from <url>" as a real link
         // (this is the surface that actually shows the post-quit swap-failure
-        // sentinel message; see splitTrailingUrl in UpdateOverlay).
+        // sentinel message; see splitTrailingUrl in shared/update-message).
         const { text, url } = splitTrailingUrl(updater.message)
         return (
           <div

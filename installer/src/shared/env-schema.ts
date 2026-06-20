@@ -18,7 +18,7 @@ const optStr = z.string().optional()
 const flagOn = (v: string | undefined): boolean =>
   !ENABLE_DISABLED_VALUES.has((v ?? '').trim().toLowerCase())
 
-export const envSchema = z.object({
+export const envObject = z.object({
   // Service selection — per-service ENABLE_* opt-out flags. All optional;
   // missing is treated as enabled. The superRefine block below uses
   // these to skip credential validation for services the user has
@@ -282,7 +282,12 @@ export const envSchema = z.object({
   OPENSUBTITLESCOM_PASS: optStr,
   ADDIC7ED_USER: optStr,
   ADDIC7ED_PASS: optStr,
-}).superRefine((v, ctx) => {
+})
+
+// envObject is the per-field schema; envSchema layers the cross-field rules
+// on top. Both are exported — envObject.shape gives tests the canonical env
+// key set via zod's public API (the .superRefine() wrapper hides .shape).
+export const envSchema = envObject.superRefine((v, ctx) => {
   // INSTALL_DIR and DATA_ROOT can't be the same path — the wizard
   // writes .env + docker-compose.yml under INSTALL_DIR, and bind-
   // mounts DATA_ROOT into every container as /data. If they're the

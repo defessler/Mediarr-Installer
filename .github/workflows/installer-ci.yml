@@ -1,8 +1,8 @@
 name: Installer CI
 
-# Runs typecheck + electron-vite build on every PR and on push to the
-# main branches. Doesn't invoke electron-builder — that lives in
-# installer-release.yml on tag push.
+# Runs typecheck, the Vitest unit + cross-language test suite, and the
+# electron-vite build on every PR and on push to the main branches. Doesn't
+# invoke electron-builder — that lives in installer-release.yml on tag push.
 
 on:
   pull_request:
@@ -59,6 +59,42 @@ jobs:
           name: vite-build-output
           path: installer/out/
           retention-days: 3
+
+  # Vitest unit + cross-language oracle suites. The cross-language tests
+  # (installer/test/cross-lang/) extract the REAL shipped bash/python parsers
+  # from nas/scripts and run them against the TS wizard's .env output, so this
+  # job needs both bash (native on ubuntu) and python3 on PATH. A standalone
+  # sentinel (test/cross-lang/_interpreters.test.ts) hard-FAILS under CI=1 if
+  # either interpreter is missing, so the suite can never go silently green with
+  # the oracle tests skipped. Runs alongside the typecheck job — no build needed
+  # (vitest transforms the TS sources directly).
+  unit-tests:
+    name: Unit + cross-language tests (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: installer/package-lock.json
+
+      # python3 serves double duty: node-gyp (native deps in npm ci) and the
+      # cross-language oracle tests, which run setup-arr-config.py's real
+      # _parse_env_value against the TS ESCAPE writer.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run Vitest (unit + cross-language oracle)
+        run: npm run test:run
 
   # Lint shell + Python in nas-payload — the bash/python scripts ship
   # unchanged into nas-payload/ so a syntax typo would break installs
