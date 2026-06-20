@@ -883,6 +883,9 @@ services:
       - PLAYLIST_SYNC_CRON=${PLAYLIST_SYNC_CRON:-0 4 * * *}
       - PLAYLIST_PREF_FORMAT=${PLAYLIST_PREF_FORMAT:-flac}
       - PLAYLIST_RUN_ON_START=${PLAYLIST_RUN_ON_START:-true}
+      # Seconds plex-upload.py waits for Plex to finish scanning freshly
+      # downloaded tracks before uploading the playlist (raise on slow boxes).
+      - PLAYLIST_PLEX_SCAN_TIMEOUT=${PLAYLIST_PLEX_SCAN_TIMEOUT:-120}
       # SiriusXM rotation window / play-count floor (passed to poll-xmplaylist).
       - PLAYLIST_SXM_DAYS=${PLAYLIST_SXM_DAYS:-}
       - PLAYLIST_SXM_MIN_PLAYS=${PLAYLIST_SXM_MIN_PLAYS:-}

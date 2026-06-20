@@ -18,7 +18,8 @@
 #                                                                      |
 #                          /data/Music/Playlists/<label>/{tracks,.m3u} |
 #                                                                      v
-#                          normalise .m3u entries to bare filenames  --> plex-upload.py
+#                     normalise .m3u to absolute /media paths  --> plex-upload.py
+#                     (plex-upload.py scans the folder into Plex, waits, uploads)
 #
 # Why per-source folders (not one shared library): each playlist must be
 # COMPLETE and independently playable in Plex. A shared index could skip a track
@@ -91,14 +92,24 @@ write_conf() {
 }
 
 # ── one source ──────────────────────────────────────────────────────────────
-# Rewrite a .m3u so every track entry is a BARE FILENAME. Plex reads the .m3u
-# from its own /media view and resolves relative entries against the file's
-# directory — so basenames resolve correctly regardless of the /data-vs-/media
-# prefix. #EXTINF/#EXTM3U/comment/blank lines are preserved verbatim.
+# Rewrite a .m3u so every track entry is an ABSOLUTE Plex-side path
+# (/media/Music/Playlists/<label>/<file>). Plex's /playlists/upload matches each
+# entry against indexed library items BY PATH; an absolute path equal to the
+# file's indexed location matches exactly, instead of relying on Plex resolving a
+# bare/relative entry against the .m3u's own directory (which not all Plex builds
+# do). The downloader writes /data/Music/... paths; Plex sees the same tree at
+# /media/Music, so we translate the prefix and re-root each basename there.
+# #EXTINF/#EXTM3U/comment/blank lines are preserved verbatim.
 normalise_m3u() {
     python3 - "$1" <<'PY'
 import os, sys
 p = sys.argv[1]
+HOST_PREFIX = "/data/Music"
+PLEX_PREFIX = "/media/Music"
+# The playlist folder as Plex sees it, derived from the .m3u's own location.
+host_dir = os.path.dirname(os.path.abspath(p))
+plex_dir = (PLEX_PREFIX + host_dir[len(HOST_PREFIX):]
+            if host_dir.startswith(HOST_PREFIX) else host_dir)
 try:
     with open(p, encoding='utf-8', errors='replace') as f:
         lines = f.read().splitlines()
@@ -111,7 +122,7 @@ for ln in lines:
     if s == '' or s.lstrip().startswith('#'):
         out.append(s)
     else:
-        out.append(os.path.basename(s))
+        out.append(plex_dir + '/' + os.path.basename(s))
 with open(p, 'w', encoding='utf-8') as f:
     f.write('\n'.join(out) + '\n')
 PY
