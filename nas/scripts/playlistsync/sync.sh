@@ -73,6 +73,17 @@ write_conf() {
         # Soulseek-first; yt-dlp is the fallback when a track has no acceptable
         # Soulseek source. ffmpeg (in the image) backs yt-dlp's extraction.
         printf 'yt-dlp = true\n'
+        # Force the yt-dlp fallback to RE-ENCODE to MP3 so Plex indexes it as a
+        # music track (yt-dlp's native bestaudio is usually .opus/.webm, which
+        # Plex may skip). This is sockseek v2.6.0's built-in default arg string
+        # (slsk-batchdl Extractors/YouTube.cs) with `--audio-format mp3
+        # --audio-quality 0` appended; we KEEP the required -f bestaudio/best, the
+        # -o "{savepath-noext}.%(ext)s" template and -x so sockseek still locates
+        # and indexes the file (it globs <savepath>.* and accepts .mp3 — Utils.cs
+        # musicExtensions). Inert for Soulseek-only playlists: consumed only when
+        # the yt-dlp fallback actually runs. The doubled %% is required so printf
+        # emits a literal %(ext)s into the conf.
+        printf 'yt-dlp-argument = "{id}" -f bestaudio/best -ci -o "{savepath-noext}.%%(ext)s" -x --audio-format mp3 --audio-quality 0\n'
         printf 'write-playlist = true\n'
         # Optional FREE Spotify Developer app credentials. When present, sockseek
         # reads Spotify playlists via the official API (robust); when absent it
@@ -301,6 +312,77 @@ run_pass() {
     [ "$_fail" -eq 0 ]
 }
 
+# ── pass-level lock ──────────────────────────────────────────────────────────
+# run-on-start, the cron-fired pass, and a manual `sync.sh run` are SEPARATE
+# processes that all call run_pass; two overlapping passes can download the same
+# tracks twice and upload DUPLICATE Plex playlists. We serialise them with one
+# filesystem lock. `flock` is NOT in the image (no util-linux; BusyBox has no
+# flock applet), so we use an ATOMIC `mkdir`: mkdir of an existing dir fails on
+# POSIX, so exactly one racer creates it.
+#
+# Crash safety: the holder writes its PID + a start timestamp into the lockdir.
+# We reclaim a lock only when its holder PID is gone (crashed) OR it is older
+# than PASS_LOCK_TTL (guards a wedge / PID reuse). A LIVE holder is NEVER
+# reclaimed — an empty/half-written timestamp just means it is mid-write, so we
+# BLOCK rather than steal its lock. A trap frees the lock if THIS process is
+# killed mid-pass; the normal path frees it EXPLICITLY, because a trap does NOT
+# fire across the scheduler's `exec crond` (the process is replaced, not exited).
+LOCKDIR=/config/sync.lock
+PASS_LOCK_TTL=21600          # 6h: longer than any sane pass; an older lock is wedged.
+
+# Remove the lock only if we still own it (our PID in its pid file). Trap-safe:
+# never deletes a lock a DIFFERENT process now holds.
+_pass_lock_release() {
+    [ -d "$LOCKDIR" ] || return 0
+    if [ "$(cat "$LOCKDIR/pid" 2>/dev/null || echo '')" = "$$" ]; then
+        rm -rf "$LOCKDIR"
+    fi
+}
+
+# Acquire the pass lock, or return 1 if another LIVE pass already holds it.
+_pass_lock_acquire() {
+    _try=0
+    while [ "$_try" -lt 5 ]; do
+        _try=$((_try+1))
+        if mkdir "$LOCKDIR" 2>/dev/null; then        # atomic: only one racer wins
+            printf '%s\n' "$$" > "$LOCKDIR/pid" 2>/dev/null
+            date +%s           > "$LOCKDIR/ts"  2>/dev/null
+            return 0
+        fi
+        # Couldn't create it — inspect the current holder.
+        _p="$(cat "$LOCKDIR/pid" 2>/dev/null || echo '')"
+        _t="$(cat "$LOCKDIR/ts"  2>/dev/null || echo '')"
+        if [ -n "$_p" ] && kill -0 "$_p" 2>/dev/null; then
+            # Holder is ALIVE. A not-yet-numeric timestamp means it is mid-write
+            # (mkdir, then pid, then ts are separate steps) — BLOCK; we must never
+            # reclaim a live holder or two passes run and duplicate playlists.
+            case "$_t" in ''|*[!0-9]*) return 1 ;; esac
+            _age=$(( $(date +%s) - _t ))
+            [ "$_age" -le "$PASS_LOCK_TTL" ] && return 1   # live + recent -> held
+            # else: live but older than the TTL -> genuinely wedged; fall through.
+        fi
+        # Dead holder, or a live one wedged past the TTL: reclaim and retry mkdir.
+        warn "stale pass lock (holder pid='${_p:-?}', ts='${_t:-?}') — reclaiming"
+        rm -rf "$LOCKDIR"
+    done
+    return 1
+}
+
+# run_pass under the lock. Skips (NON-fatal) when another pass is in progress, so
+# the scheduler still comes up and the cron keeps trying.
+run_pass_locked() {
+    if ! _pass_lock_acquire; then
+        warn "another playlist pass is already running — skipping this one to avoid duplicate Plex playlists"
+        return 0
+    fi
+    trap '_pass_lock_release' EXIT INT TERM HUP
+    run_pass
+    _rc=$?
+    _pass_lock_release          # explicit: a trap does NOT fire across exec crond
+    trap - EXIT INT TERM HUP
+    return "$_rc"
+}
+
 # ── scheduler ───────────────────────────────────────────────────────────────
 # die_slow: like die() but sleeps first so a misconfigured .env doesn't
 # crash-loop fast. The container is `restart: on-failure:5` (see compose) —
@@ -341,7 +423,7 @@ scheduler() {
     # must still come up so the cron keeps trying.
     if [ "${PLAYLIST_RUN_ON_START:-true}" = "true" ]; then
         log "running an initial pass (PLAYLIST_RUN_ON_START=true) ..."
-        run_pass || warn "initial pass had failures — the schedule will retry"
+        run_pass_locked || warn "initial pass had failures — the schedule will retry"
     fi
 
     log "handing off to crond (foreground)."
@@ -349,7 +431,7 @@ scheduler() {
 }
 
 case "${1:-}" in
-    run)        shift; run_pass ;;
+    run)        shift; run_pass_locked ;;
     scheduler|"") scheduler ;;
     *)          die "unknown mode '$1' (use: no args = scheduler, or 'run' = one pass)" ;;
 esac

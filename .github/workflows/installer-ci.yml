@@ -87,7 +87,7 @@ jobs:
         # block CI: SC2164 (cd-without-||-exit), SC2064 (trap quoting),
         # SC2178/SC2128 (array-vs-string), SC2221/SC2222 (overlapping
         # case patterns).
-        run: shellcheck --severity=warning -e SC2086,SC2155 nas/scripts/*.sh nas/migration/*.sh
+        run: shellcheck --severity=warning -e SC2086,SC2155 nas/scripts/*.sh nas/scripts/playlistsync/*.sh nas/migration/*.sh
 
       - uses: actions/setup-python@v6
         with:

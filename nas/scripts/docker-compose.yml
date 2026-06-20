@@ -886,6 +886,10 @@ services:
       # Seconds plex-upload.py waits for Plex to finish scanning freshly
       # downloaded tracks before uploading the playlist (raise on slow boxes).
       - PLAYLIST_PLEX_SCAN_TIMEOUT=${PLAYLIST_PLEX_SCAN_TIMEOUT:-120}
+      # Seconds plex-upload.py waits for Plex to finish claim/login (writing
+      # PlexOnlineToken) before failing — covers a run-on-start pass that fires
+      # while Plex is still claiming on a fresh install. 0 disables the wait.
+      - PLAYLIST_PLEX_CLAIM_TIMEOUT=${PLAYLIST_PLEX_CLAIM_TIMEOUT:-180}
       # SiriusXM rotation window / play-count floor (passed to poll-xmplaylist).
       - PLAYLIST_SXM_DAYS=${PLAYLIST_SXM_DAYS:-}
       - PLAYLIST_SXM_MIN_PLAYS=${PLAYLIST_SXM_MIN_PLAYS:-}

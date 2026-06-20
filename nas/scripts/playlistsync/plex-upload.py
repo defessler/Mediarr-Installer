@@ -57,16 +57,24 @@ SCAN_POLL = 3                       # seconds between scan-status polls
 SCAN_SETTLE = 2                     # grace after a scan clears, for metadata to commit
 MEASURE_TRIES = 4                   # re-query attempts for the new playlist's track count
 MEASURE_POLL = 3                    # seconds between those attempts (leafCount can lag)
+# How long to wait for Plex to finish claim/login and write PlexOnlineToken into
+# Preferences.xml before giving up. The run-on-start pass (PLAYLIST_RUN_ON_START)
+# can fire while Plex is still claiming on a fresh install, so poll rather than
+# hard-fail on the first empty read. Bounded so a never-claimed Plex can't hang
+# the cron job; set to 0 to disable the wait (single read, original behaviour).
+CLAIM_TIMEOUT = int(os.environ.get("PLAYLIST_PLEX_CLAIM_TIMEOUT", "180"))
+CLAIM_POLL = 3                      # seconds between Preferences.xml re-reads
 
 
 def err(msg):
     sys.stderr.write("plex-upload: " + msg + "\n")
 
 
-def plex_token():
-    tok = os.environ.get("X_PLEX_TOKEN", "").strip()
-    if tok:
-        return tok
+def _read_online_token():
+    """Read PlexOnlineToken from the read-only Plex config mount, or '' if it
+    isn't there yet. The file being absent, half-written, or unparseable mid-claim
+    all read as 'not ready yet' ('') instead of an error, so the caller can poll.
+    Returns (token, prefs_path)."""
     # Canonical linuxserver/plex location, with a recursive glob fallback in case
     # a future image lays Preferences.xml somewhere else under the config dir.
     prefs = os.path.join(PLEX_CONFIG_DIR, PLEX_PREFS_SUBPATH)
@@ -78,11 +86,36 @@ def plex_token():
     try:
         # Preferences.xml is a single self-closing <Preferences .../> element.
         tok = (ET.parse(prefs).getroot().get("PlexOnlineToken") or "").strip()
-    except Exception as e:
-        raise SystemExit("no X_PLEX_TOKEN and could not read %s (%s)" % (prefs, e))
-    if not tok:
-        raise SystemExit("PlexOnlineToken empty in %s — has Plex finished claim/login?" % prefs)
-    return tok
+    except Exception:
+        tok = ""
+    return tok, prefs
+
+
+def plex_token():
+    tok = os.environ.get("X_PLEX_TOKEN", "").strip()
+    if tok:
+        return tok
+    # Fast path: token already written -> return on the first read, no sleeping.
+    tok, prefs = _read_online_token()
+    if tok:
+        return tok
+    # Slow path: Plex may still be claiming/logging in (common when the
+    # run-on-start pass fires on a fresh install before claim finishes). Poll
+    # Preferences.xml until PlexOnlineToken appears, bounded by CLAIM_TIMEOUT so a
+    # never-claimed Plex can't hang the cron job.
+    if CLAIM_TIMEOUT > 0:
+        err("PlexOnlineToken not set yet — waiting up to %ds for Plex to finish "
+            "claim/login ..." % CLAIM_TIMEOUT)
+        deadline = time.time() + CLAIM_TIMEOUT
+        while time.time() < deadline:
+            time.sleep(CLAIM_POLL)
+            tok, prefs = _read_online_token()
+            if tok:
+                return tok
+    raise SystemExit(
+        "PlexOnlineToken empty in %s after %ds — has Plex finished claim/login? "
+        "(raise PLAYLIST_PLEX_CLAIM_TIMEOUT to wait longer, or set X_PLEX_TOKEN to "
+        "skip the wait)" % (prefs, CLAIM_TIMEOUT))
 
 
 def plex_base():
@@ -270,6 +303,9 @@ def main():
 
         err("uploaded playlist '%s' from %s (%d track%s)"
             % (name, plex_path, leaf, "" if leaf == 1 else "s"))
+        err("note: an already-open Plexamp may need a pull-to-refresh (or a "
+            "relaunch) before a brand-new playlist appears — Plex has no API to "
+            "push the refresh to connected clients.")
         # Safe now: delete the prior same-titled playlist(s) we're replacing AND
         # any non-winner duplicate we created (retrying in case an earlier delete
         # was swallowed). Never touch the winner.
