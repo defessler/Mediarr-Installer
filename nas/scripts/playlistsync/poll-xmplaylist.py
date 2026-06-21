@@ -355,6 +355,11 @@ def main(argv=None):
     parser.add_argument('--days', type=int, default=7, metavar='D',
                         help='Trailing window in days for the API query '
                              '(default: 7)')
+    parser.add_argument('--limit', type=int, default=0, metavar='N',
+                        help='Keep only the TOP N tracks by play count. The API '
+                             'returns most-heard first and parse_rows preserves '
+                             'that order, so this is a true top-N (0 = all, '
+                             'default). Used by the monthly Top-50 archive.')
     args = parser.parse_args(argv)
 
     if args.days < 1:
@@ -362,6 +367,9 @@ def main(argv=None):
         return 2
     if args.min_plays < 0:
         print('error: --min-plays must be >= 0', file=sys.stderr)
+        return 2
+    if args.limit < 0:
+        print('error: --limit must be >= 0', file=sys.stderr)
         return 2
 
     try:
@@ -372,6 +380,12 @@ def main(argv=None):
         return 1
 
     rows = parse_rows(items, args.min_plays)
+
+    # Top-N: the API returns most-heard first and parse_rows preserves that
+    # order, so the first N rows are the N most-played. The monthly archive uses
+    # --limit 50 over a month-to-date window to get "this month's top 50".
+    if args.limit > 0:
+        rows = rows[:args.limit]
 
     if not rows:
         # Not a hard failure on its own — but warn loudly, because an empty

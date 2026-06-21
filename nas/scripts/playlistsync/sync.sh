@@ -268,6 +268,28 @@ run_pass() {
                     ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
                 if process_source "SiriusXM - $_slug" csv "$_csv"; then
                     _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
+                # Permanent monthly Top-50 archive — a SEPARATE dated playlist
+                # "<station> (YYYY-MM)" holding this calendar month's 50 most-
+                # played tracks. Fresh poll over a month-to-date window (--days =
+                # day-of-month) capped to the top 50; its OWN folder+index, so
+                # past months are never rebuilt and plex-upload's exact-title
+                # prune only ever matches the CURRENT month → archives stay
+                # forever. Opt out with PLAYLIST_MONTHLY_ARCHIVE=false.
+                if [ "${PLAYLIST_MONTHLY_ARCHIVE:-true}" = "true" ]; then
+                    _ym="$(date +%Y-%m)"
+                    _dom="$(date +%d)"           # day-of-month; poll-xmplaylist int()-parses "08" fine
+                    _acsv="/tmp/sxm-arch-$(sanitize "$_slug").csv"
+                    log "[SiriusXM - $_slug ($_ym)] polling month-to-date top 50 ..."
+                    if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_acsv" \
+                            --days "$_dom" --limit 50 \
+                            ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
+                        if process_source "SiriusXM - $_slug ($_ym)" csv "$_acsv"; then
+                            _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
+                    else
+                        warn "[SiriusXM - $_slug ($_ym)] archive poll failed — skipping (rolling playlist unaffected)"
+                    fi
+                    rm -f "$_acsv"
+                fi
             else
                 warn "[SiriusXM - $_slug] xmplaylist poll failed — skipping"
                 _fail=$((_fail+1))

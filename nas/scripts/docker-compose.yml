@@ -893,6 +893,9 @@ services:
       # SiriusXM rotation window / play-count floor (passed to poll-xmplaylist).
       - PLAYLIST_SXM_DAYS=${PLAYLIST_SXM_DAYS:-}
       - PLAYLIST_SXM_MIN_PLAYS=${PLAYLIST_SXM_MIN_PLAYS:-}
+      # Permanent monthly Top-50 archive playlists per SiriusXM station —
+      # "<station> (YYYY-MM)", kept forever. Default on; false to disable.
+      - PLAYLIST_MONTHLY_ARCHIVE=${PLAYLIST_MONTHLY_ARCHIVE:-true}
     volumes:
       # Same Music tree Plex scans (Plex sees it at /media/Music). Downloads +
       # per-playlist .m3u land under /data/Music/Playlists/<label>/.
