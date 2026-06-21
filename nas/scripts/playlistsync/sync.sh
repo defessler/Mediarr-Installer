@@ -163,6 +163,8 @@ process_source() {
     _label="$(sanitize "$1")"
     _type="$2"
     _input="$3"
+    _art_flag="${4:-}"   # optional --art-sxm-slug|--art-spotify passed to plex-upload
+    _art_val="${5:-}"    #   ...and its value; captured now because `set --` below reuses $@
     [ -n "$_label" ] || { warn "empty label for input '$_input' — skipping"; return 1; }
     # Once Soulseek has rejected the login this run, every source fails the same
     # way — skip the rest with one clear note instead of N stack traces.
@@ -231,7 +233,7 @@ process_source() {
     fi
 
     log "[$_label] uploading playlist to Plex ..."
-    if python3 "$SCRIPT_DIR/plex-upload.py" "$_dir" "$_label"; then
+    if python3 "$SCRIPT_DIR/plex-upload.py" "$_dir" "$_label" ${_art_flag:+"$_art_flag" "$_art_val"}; then
         log "[$_label] done."
         return 0
     fi
@@ -266,7 +268,7 @@ run_pass() {
             if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_csv" \
                     ${PLAYLIST_SXM_DAYS:+--days "$PLAYLIST_SXM_DAYS"} \
                     ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
-                if process_source "SiriusXM - $_slug" csv "$_csv"; then
+                if process_source "SiriusXM - $_slug" csv "$_csv" --art-sxm-slug "$_slug"; then
                     _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
                 # Permanent monthly Top-50 archive — a SEPARATE dated playlist
                 # "<station> (YYYY-MM)" holding this calendar month's 50 most-
@@ -283,7 +285,7 @@ run_pass() {
                     if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_acsv" \
                             --days "$_dom" --limit 50 \
                             ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
-                        if process_source "SiriusXM - $_slug ($_ym)" csv "$_acsv"; then
+                        if process_source "SiriusXM - $_slug ($_ym)" csv "$_acsv" --art-sxm-slug "$_slug"; then
                             _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
                     else
                         warn "[SiriusXM - $_slug ($_ym)] archive poll failed — skipping (rolling playlist unaffected)"
@@ -319,7 +321,7 @@ run_pass() {
                 *"|"*) _label="$(trim "${_entry%%|*}")"; _url="$(trim "${_entry#*|}")" ;;
                 *)     _url="$_entry"; _label="Spotify - $(spotify_id "$_url")" ;;
             esac
-            if process_source "$_label" spotify "$_url"; then
+            if process_source "$_label" spotify "$_url" --art-spotify "$_url"; then
                 _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
             IFS=','
         done

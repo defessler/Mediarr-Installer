@@ -31,6 +31,7 @@ track entries must ALSO be absolute /media/... paths so Plex matches them by the
 indexed location rather than relying on relative-path resolution (normalise_m3u
 in sync.sh writes them that way).
 """
+import argparse
 import glob
 import json
 import os
@@ -253,10 +254,62 @@ def upload_and_measure(base, token, section, plex_path, name):
     return new_key, leaf
 
 
+def _get_json(url):
+    """Plain GET + JSON from an EXTERNAL host (xmplaylist / Spotify oEmbed) — no
+    Plex token. Used only for best-effort poster-art lookup."""
+    req = urllib.request.Request(
+        url, headers={"Accept": "application/json", "User-Agent": "mediarr-playlistsync"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def resolve_art_url(spotify_ref=None, sxm_slug=None):
+    """Best-effort cover-image URL for the playlist poster. SiriusXM: look up the
+    channel's official Spotify playlist via xmplaylist (channel.spotifyPlaylist),
+    then Spotify oEmbed (no auth) → its cover. Spotify: oEmbed the playlist URL
+    directly. Returns None on ANY failure — the poster is purely cosmetic, so a
+    miss just leaves Plex's auto-generated collage."""
+    try:
+        if sxm_slug and not spotify_ref:
+            data = _get_json("https://xmplaylist.com/api/station/%s"
+                             % urllib.parse.quote(sxm_slug))
+            spotify_ref = (data.get("channel") or {}).get("spotifyPlaylist")
+        if not spotify_ref:
+            return None
+        ref = (spotify_ref if str(spotify_ref).startswith("http")
+               else "https://open.spotify.com/playlist/%s" % spotify_ref)
+        o = _get_json("https://open.spotify.com/oembed?url=%s"
+                      % urllib.parse.quote(ref, safe=":/"))
+        return o.get("thumbnail_url") or None
+    except Exception as e:
+        err("note: couldn't resolve poster art (%s) — keeping Plex's default" % e)
+        return None
+
+
+def set_poster(base, token, rating_key, art_url):
+    """POST an image URL as the playlist's poster (Plex fetches it server-side).
+    Best-effort: a failure just leaves the auto-generated collage."""
+    if not (rating_key and art_url):
+        return
+    try:
+        api(base, "/library/metadata/%s/posters?%s"
+            % (rating_key, _qs({"url": art_url})), token, method="POST")
+        err("set playlist poster from %s" % art_url)
+    except Exception as e:
+        err("note: couldn't set playlist poster (%s) — keeping Plex's default" % e)
+
+
 def main():
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: plex-upload.py <m3u-dir> <playlist-name>")
-    m3u_dir, name = sys.argv[1], sys.argv[2]
+    ap = argparse.ArgumentParser(
+        description="Turn a downloaded .m3u into a Plex playlist (+ optional poster).")
+    ap.add_argument("m3u_dir", help="folder under /data/Music/Playlists/ holding one .m3u")
+    ap.add_argument("name", help="Plex playlist title (matches the .m3u basename)")
+    ap.add_argument("--art-spotify", default=None, metavar="URL_OR_ID",
+                    help="Spotify playlist URL/ID; its cover (oEmbed) becomes the poster")
+    ap.add_argument("--art-sxm-slug", default=None, metavar="SLUG",
+                    help="SiriusXM xmplaylist slug; the channel's Spotify-playlist cover becomes the poster")
+    args = ap.parse_args()
+    m3u_dir, name = args.m3u_dir, args.name
     matches = sorted(glob.glob(os.path.join(m3u_dir, "*.m3u8"))
                      + glob.glob(os.path.join(m3u_dir, "*.m3u")))
     if not matches:
@@ -322,6 +375,13 @@ def main():
         for k in set(stale_keys) | set(created):
             if k != new_key:
                 delete_playlist(base, token, k)
+
+        # Cosmetic: replace Plex's auto-collage with the channel/playlist's real
+        # cover. Fully best-effort — resolve_art_url + set_poster swallow every
+        # failure, so a missing/blocked image never affects the (already-done)
+        # upload.
+        set_poster(base, token, new_key,
+                   resolve_art_url(spotify_ref=args.art_spotify, sxm_slug=args.art_sxm_slug))
     except (urllib.error.URLError, OSError) as e:
         # Plex momentarily unreachable (connection refused / DNS / timeout). Exit
         # cleanly — sync.sh keeps the downloaded tracks and retries next run —
