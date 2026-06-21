@@ -273,11 +273,24 @@ run_pass() {
             [ -n "$_slug" ] || continue
             _any=1
             _csv="/tmp/sxm-$(sanitize "$_slug").csv"
-            log "[$_slug - SiriusXM] polling xmplaylist ..."
+            _namef="/tmp/sxm-name-$(sanitize "$_slug").txt"
+            rm -f "$_namef"
+            log "[$_slug] polling xmplaylist ..."
             if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_csv" \
+                    --name-out "$_namef" \
                     ${PLAYLIST_SXM_DAYS:+--days "$PLAYLIST_SXM_DAYS"} \
                     ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
-                if process_source "$_slug - SiriusXM" csv "$_csv" --art-sxm-slug "$_slug"; then
+                # Friendly channel name (xmplaylist channel.name, e.g. "SiriusXM
+                # Turbo") with the redundant "SiriusXM " prefix stripped -> "Turbo",
+                # so the playlist reads "Turbo - SiriusXM". Falls back to the slug
+                # if the name lookup turned up nothing.
+                _friendly="$_slug"
+                if [ -s "$_namef" ]; then
+                    _raw="$(cat "$_namef")"
+                    _friendly="${_raw#SiriusXM }"
+                    [ -n "$_friendly" ] || _friendly="$_raw"
+                fi
+                if process_source "$_friendly - SiriusXM" csv "$_csv" --art-sxm-slug "$_slug"; then
                     _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
                 # Permanent monthly Top-50 archive — a SEPARATE dated playlist
                 # "<station> (YYYY-MM)" holding this calendar month's 50 most-
@@ -290,14 +303,14 @@ run_pass() {
                     _ym="$(date +%Y-%m)"
                     _dom="$(date +%d)"           # day-of-month; poll-xmplaylist int()-parses "08" fine
                     _acsv="/tmp/sxm-arch-$(sanitize "$_slug").csv"
-                    log "[$_slug - SiriusXM ($_ym)] polling month-to-date top 50 ..."
+                    log "[$_friendly - SiriusXM ($_ym)] polling month-to-date top 50 ..."
                     if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_acsv" \
                             --days "$_dom" --limit 50 \
                             ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
-                        if process_source "$_slug - SiriusXM ($_ym)" csv "$_acsv" --art-sxm-slug "$_slug"; then
+                        if process_source "$_friendly - SiriusXM ($_ym)" csv "$_acsv" --art-sxm-slug "$_slug"; then
                             _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
                     else
-                        warn "[$_slug - SiriusXM ($_ym)] archive poll failed — skipping (rolling playlist unaffected)"
+                        warn "[$_friendly - SiriusXM ($_ym)] archive poll failed — skipping (rolling playlist unaffected)"
                     fi
                     rm -f "$_acsv"
                 fi
@@ -305,7 +318,7 @@ run_pass() {
                 warn "[$_slug - SiriusXM] xmplaylist poll failed — skipping"
                 _fail=$((_fail+1))
             fi
-            rm -f "$_csv"
+            rm -f "$_csv" "$_namef"
             IFS=','
         done
         IFS=$_OLDIFS

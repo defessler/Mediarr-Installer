@@ -257,6 +257,25 @@ def fetch_tracks(slug, days):
     return _extract_results(_http_get_json(url))
 
 
+def fetch_channel_name(slug):
+    """Return the channel's friendly display name (e.g. "SiriusXM Turbo") from
+    /api/station/<slug>'s `channel.name`, or None on any failure.
+
+    Best-effort and intentionally swallowing: it only prettifies the playlist
+    TITLE, so a miss just falls back to the slug — it must never cost the CSV the
+    downloader actually needs. A SEPARATE call because the most-heard endpoint
+    carries no channel metadata (only `results`); /api/station/<slug> does, in a
+    `channel` object (the same one plex-upload reads spotifyPlaylist from)."""
+    try:
+        data = _http_get_json(f'{API_BASE}/station/{slug}')
+    except RuntimeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    name = (data.get('channel') or {}).get('name')
+    return name.strip() if isinstance(name, str) and name.strip() else None
+
+
 def parse_rows(items, min_plays):
     """Turn raw API items into a de-duplicated list of (artist, title) rows.
 
@@ -360,6 +379,12 @@ def main(argv=None):
                              'returns most-heard first and parse_rows preserves '
                              'that order, so this is a true top-N (0 = all, '
                              'default). Used by the monthly Top-50 archive.')
+    parser.add_argument('--name-out', metavar='PATH', default=None,
+                        help="Also write the channel's friendly display name "
+                             "(channel.name from /api/station, e.g. 'SiriusXM "
+                             "Turbo') to PATH for the caller to use as a playlist "
+                             "title. Best-effort: nothing is written if the "
+                             "lookup fails (caller should fall back to the slug).")
     args = parser.parse_args(argv)
 
     if args.days < 1:
@@ -380,6 +405,18 @@ def main(argv=None):
         return 1
 
     rows = parse_rows(items, args.min_plays)
+
+    # Friendly channel name for the caller's playlist title (best-effort; a
+    # failure here must NOT abort — the CSV above is what the downloader needs).
+    if args.name_out:
+        name = fetch_channel_name(slug)
+        if name:
+            try:
+                with open(args.name_out, 'w', encoding='utf-8') as f:
+                    f.write(name)
+            except OSError as e:
+                print(f'note: could not write --name-out {args.name_out}: {e}',
+                      file=sys.stderr)
 
     # Top-N: the API returns most-heard first and parse_rows preserves that
     # order, so the first N rows are the N most-played. The monthly archive uses
