@@ -860,6 +860,14 @@ services:
       # Plex base URL is http://${LAN_IP}:32400; the token is read at sync time
       # from the read-only plex/config mount below (PlexOnlineToken).
       - LAN_IP=${LAN_IP}
+      # Media-server selector + Jellyfin creds. Plex reads its token from the
+      # plex-config mount below; Jellyfin has no claim flow, so jellyfin-upload.py
+      # uses an API KEY you create post-deploy (Dashboard -> API Keys) and skips
+      # cleanly until it's set. JELLYFIN_USER_ID is auto-resolved (optional override).
+      - MEDIA_SERVER=${MEDIA_SERVER:-plex}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID:-}
+      - PLAYLIST_JF_SCAN_TIMEOUT=${PLAYLIST_JF_SCAN_TIMEOUT:-120}
       # A SECOND free Soulseek account: slskd holds the stack's single Soulseek
       # session and Soulseek permits one session per account, so playlistsync
       # needs its own login. 2-minute signup in the Soulseek desktop client.

@@ -232,12 +232,21 @@ process_source() {
         return 1
     fi
 
-    log "[$_label] uploading playlist to Plex ..."
-    if python3 "$SCRIPT_DIR/plex-upload.py" "$_dir" "$_label" ${_art_flag:+"$_art_flag" "$_art_val"}; then
+    # Upload to whichever media server is active. plex-upload.py and
+    # jellyfin-upload.py take the IDENTICAL args (<dir> <name> [--art-*]), so the
+    # art-flag plumbing is unchanged. MEDIA_SERVER is the installer's canonical
+    # selector (default plex).
+    if [ "${MEDIA_SERVER:-plex}" = "jellyfin" ]; then
+        _uploader="jellyfin-upload.py"; _server="Jellyfin"
+    else
+        _uploader="plex-upload.py"; _server="Plex"
+    fi
+    log "[$_label] uploading playlist to $_server ..."
+    if python3 "$SCRIPT_DIR/$_uploader" "$_dir" "$_label" ${_art_flag:+"$_art_flag" "$_art_val"}; then
         log "[$_label] done."
         return 0
     fi
-    warn "[$_label] Plex upload failed (tracks are downloaded; will retry next run)"
+    warn "[$_label] $_server upload failed (tracks are downloaded; will retry next run)"
     return 1
 }
 

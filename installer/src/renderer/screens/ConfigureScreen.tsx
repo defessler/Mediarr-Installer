@@ -172,7 +172,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
   { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
   { key: 'ENABLE_AZURACAST',   label: 'AzuraCast',    hint: '24/7 radio stations from your library', icon: Radio, iconColor: 'text-rose-300', warn: 'Heavy service — wants 2–4 GB RAM (~1.4 GB image, runs its own MariaDB/Redis/Nginx/Liquidsoap). Skip it on a low-memory NAS.' },
-  { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM + Spotify playlists → Plex (auto-download)', icon: Music2, iconColor: 'text-green-400', needs: ['ENABLE_PLEX'] },
+  { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM + Spotify playlists → Plex or Jellyfin (auto-download)', icon: Music2, iconColor: 'text-green-400' },
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
@@ -1401,9 +1401,9 @@ export function ConfigureScreen() {
 
         {/* ── Playlist Sync ───────────────────────────────────────
             Opt-in, toggled in the Services group (like Soulseek). Mirrors
-            SiriusXM channels + public Spotify playlists into Plex playlists,
-            downloading each track Soulseek-first (its OWN 2nd account) with a
-            yt-dlp fallback. Requires Plex. */}
+            SiriusXM channels + public Spotify playlists into Plex OR Jellyfin
+            playlists, downloading each track Soulseek-first (its OWN 2nd account)
+            with a yt-dlp fallback. Works with either media server. */}
         <div className="border-t border-slate-800 pt-4">
           {isOptInEnabled(config.ENABLE_PLAYLIST_SYNC as string | undefined) ? (
             <section className="space-y-4">
@@ -1488,9 +1488,9 @@ export function ConfigureScreen() {
                   <div className="font-medium text-green-100">Auto-sync SiriusXM &amp; Spotify playlists</div>
                   <p className="text-xs text-slate-400 mt-1">
                     Mirror specific SiriusXM channels and public Spotify playlists into
-                    Plex — each track is downloaded Soulseek-first (yt-dlp fallback) on a
-                    schedule and surfaced as a Plex playlist you can play in Plexamp.
-                    Needs Plex; we&apos;ll make sure it&apos;s on.
+                    your media server — each track is downloaded Soulseek-first (yt-dlp
+                    fallback) on a schedule and surfaced as a playlist you can play in
+                    Plexamp (Plex) or Finamp (Jellyfin).
                   </p>
                 </div>
                 <BigButton

@@ -391,10 +391,13 @@ export const envSchema = envObject.superRefine((v, ctx) => {
           message: 'Spotify Client Secret required to sync Spotify playlists (from your Spotify Developer app dashboard)' })
       }
     }
-    // Plex-only: the playlist upload targets Plex's API.
-    if (v.MEDIA_SERVER === 'jellyfin' || !flagOn(v.ENABLE_PLEX)) {
+    // Needs a media server to upload playlists to. Works with EITHER: Plex
+    // (auto-claimed token) or Jellyfin (an API key you create in the dashboard
+    // post-deploy — jellyfin-upload.py skips cleanly until it's set, so we do
+    // NOT require it at wizard time). Error only if NEITHER is configured.
+    if (v.MEDIA_SERVER !== 'jellyfin' && !flagOn(v.ENABLE_PLEX)) {
       ctx.addIssue({ code: 'custom', path: ['ENABLE_PLAYLIST_SYNC'],
-        message: 'Playlist Sync uploads playlists to Plex — use Plex as your media server' })
+        message: 'Playlist Sync needs a media server — enable Plex, or choose Jellyfin as your media server' })
     }
   }
 

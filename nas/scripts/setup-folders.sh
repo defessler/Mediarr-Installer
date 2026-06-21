@@ -81,6 +81,11 @@ echo ""
 CONFIG_DIRS=(
     "$INSTALL_DIR/plex/config"
     "$INSTALL_DIR/jellyfin/config"
+    # Pre-create Jellyfin's Playlists dir: Jellyfin makes <config>/data/Playlists
+    # lazily on the first UI-created playlist, so without this the first Playlist
+    # Sync run on Jellyfin hits "parentFolder doesn't exist" on POST /Playlists.
+    # Pre-making it (PUID:PGID-owned) makes the Jellyfin sync hands-off.
+    "$INSTALL_DIR/jellyfin/config/data/Playlists"
     "$INSTALL_DIR/tautulli/config"
     "$INSTALL_DIR/seerr/config"
     "$INSTALL_DIR/prowlarr/config"
