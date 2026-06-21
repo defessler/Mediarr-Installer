@@ -1647,7 +1647,7 @@ def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
     applies to indexers that share at least one tag with the proxy. A
     Flaresolverr proxy created with `tags: []` is functionally dead —
     Prowlarr never routes through it, and every CloudFlare-protected
-    indexer (1337x, EZTV, TorrentGalaxy, etc.) silently fails the
+    indexer (1337x, EZTV, etc.) silently fails the
     reachability test during add.
 
     Correct flow (matches the canonical TRaSH guide):

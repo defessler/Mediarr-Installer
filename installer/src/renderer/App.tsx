@@ -619,7 +619,9 @@ export function App() {
                   checkState === 'up-to-date'
                     ? 'You are running the latest published release.'
                     : checkState === 'error'
-                      ? 'Something went wrong contacting GitHub. Click to retry.'
+                      ? (updaterState.kind === 'error'
+                          ? updaterState.message
+                          : 'Something went wrong contacting GitHub. Click to retry.')
                       : 'Ask GitHub if there is a newer release. Auto-runs on launch too.'
                 }
               >

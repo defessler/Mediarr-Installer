@@ -10,10 +10,9 @@ Read it before buying any indexer subscription — the right mix depends a lot o
 
 - [How indexers work in this stack](#how-indexers-work-in-this-stack)
 - [Tier 1: Free, no account](#tier-1-free-no-account)
-- [Tier 2: Free with free account](#tier-2-free-with-free-account)
-- [Tier 3: Paid usenet indexers](#tier-3-paid-usenet-indexers)
-- [Tier 4: Public torrent indexers](#tier-4-public-torrent-indexers)
-- [Tier 5: Private trackers (invite + ratio)](#tier-5-private-trackers-invite--ratio)
+- [Tier 2: Paid usenet indexers](#tier-2-paid-usenet-indexers)
+- [Tier 3: Public torrent indexers](#tier-3-public-torrent-indexers)
+- [Tier 4: Private trackers (invite + ratio)](#tier-4-private-trackers-invite--ratio)
 - [Anime — recommended mix](#anime--recommended-mix)
 - [Korean drama — recommended mix](#korean-drama--recommended-mix)
 - [What's not included + why](#whats-not-included--why)
@@ -63,7 +62,6 @@ The wizard adds all three to Prowlarr at install time. Together they cover ~80% 
 | **YTS** | https://yts.mx | Movies (English) | Small file sizes, English-friendly. Good entry point for a casual movie library. |
 | **1337x** | https://1337x.to | General | Wide release coverage. CloudFlare-gated — the wizard's Flaresolverr proxy handles the challenge automatically. |
 | **The Pirate Bay** | https://thepiratebay.org | General | Veteran public tracker. |
-| **TorrentGalaxy** | https://torrentgalaxy.to | General | Newer general index with active uploaders. |
 | **EZTV** | https://eztv.re | TV (English) | TV-only catalogue, RSS-friendly. |
 | **Knaben** | https://knaben.org | General (Scandinavian-flavoured) | Norwegian-run general index with surprisingly good worldwide coverage; well-categorised. |
 | **ShowRSS** | https://showrss.info | TV (English) | Curated RSS feeds for TV shows — handy as a Sonarr "always-on" feed for popular shows. |
@@ -72,21 +70,7 @@ The wizard adds all of these to Prowlarr automatically. You'll get them on a fre
 
 ---
 
-## Tier 2: Free with free account
-
-These require a free account at the indexer's website. The wizard collects credentials on the Configure screen → Advanced → Usenet indexers section, and the install adds them to Prowlarr if credentials are provided.
-
-### Usenet
-
-| Indexer | URL | Coverage | Notes |
-|---|---|---|---|
-| **ABNzb** | https://abnzb.com | General + anime | "Always Be NZB-ing." Free signup → API key. Lower daily limits than paid indexers but adequate for casual use. |
-
-ABNzb is a decent supplement to AnimeTosho. Its free tier caps daily API calls (~50–100/day typical), which is fine for personal use but limits aggressive Sonarr re-checks.
-
----
-
-## Tier 3: Paid usenet indexers
+## Tier 2: Paid usenet indexers
 
 These charge a one-time or annual fee for a fuller-featured API. The wizard collects API keys but doesn't auto-add anything you don't have a key for.
 
@@ -107,13 +91,13 @@ The honest answer: **for anime, the combination of free AnimeTosho + paid NZBFin
 
 ---
 
-## Tier 4: Public torrent indexers
+## Tier 3: Public torrent indexers
 
 Already listed in Tier 1. The wizard adds them all automatically.
 
 ---
 
-## Tier 5: Private trackers (invite + ratio)
+## Tier 4: Private trackers (invite + ratio)
 
 Private trackers offer fundamentally better selection + quality for niche content, at the cost of invite gates and ratio requirements (you have to upload back at least as much as you download).
 
@@ -196,7 +180,7 @@ A non-exhaustive list of indexers we deliberately don't ship + the reason:
 |---|---|
 | **NZBStars** | Paid, was unreliable last we checked. Not worth competing with the established names. |
 | **Newzleech** | Public free usenet indexer that's been intermittently down for years. Not stable enough to default-add. |
-| **NZBIndex.com** | Freemium, but free tier is heavily ad-loaded + has download-count limits. Doesn't add coverage AnimeTosho + ABNzb don't already provide. |
+| **NZBIndex.com** | Freemium, but free tier is heavily ad-loaded + has download-count limits. Doesn't add coverage AnimeTosho doesn't already provide. |
 | **Solidtorrents / BitSearch** | Removed from Prowlarr's upstream indexer DB (renamed / discontinued). Adding them produces "indexer not found" errors at install. |
 | **Anidex** | Currently slow + sparsely-populated. Nyaa covers what it offers. |
 | **Pantheon, Tracker01, ...** | Long tail of private trackers without strong English-language onboarding. Out of scope for a turnkey installer. |

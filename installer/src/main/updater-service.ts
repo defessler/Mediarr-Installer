@@ -83,6 +83,15 @@ const STARTUP_DELAY_MS = 2 * 1000
 const PERIODIC_INTERVAL_MS = 6 * 60 * 60 * 1000  // 6 hours
 const UA = 'Mediarr-Installer-Updater'
 
+// GitHub's unauthenticated REST API allows only ~60 requests/hour/IP — easily
+// exhausted by a few app restarts (each runs a startup check), the 6h poll, and
+// a user clicking "Check for updates" a handful of times (worse behind a shared
+// NAT). Past the ceiling every check returns HTTP 403. The guards in
+// checkForUpdates keep us well under it: skip if a check is already in flight,
+// reuse a result fetched < MIN_CHECK_INTERVAL_MS ago, and back off until the
+// rate-limit window resets instead of re-hammering the API.
+const MIN_CHECK_INTERVAL_MS = 60 * 1000
+
 interface PendingUpdate {
   version: string
   tagName: string
@@ -108,6 +117,13 @@ let installInProgress = false
 let downloadInProgress = false
 let intervalHandle: NodeJS.Timeout | null = null
 let startupTimeoutHandle: NodeJS.Timeout | null = null
+// Rate-limit guards for checkForUpdates (see MIN_CHECK_INTERVAL_MS). checkInProgress
+// coalesces concurrent checks into one fetch; lastCheckAt throttles rapid re-checks;
+// rateLimitedUntil is the epoch-ms GitHub said our quota resets (from a 403's
+// X-RateLimit-Reset), during which we serve the cached state instead of re-fetching.
+let checkInProgress = false
+let lastCheckAt = 0
+let rateLimitedUntil = 0
 /** AbortController for the in-flight download. Non-null only while
  *  downloadUpdate() is between fetch() start and pipeline() end. The
  *  user's "Cancel" button calls cancelDownload(), which signals abort
@@ -215,6 +231,28 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
     if (!silent) broadcast(lastState)
     return pendingUpdate
   }
+  // Skip if a check is already hitting GitHub — startup, the 6h poll and a
+  // manual click can overlap, and concurrent fetches are exactly what blows the
+  // 60-req/hr API limit into HTTP 403s. The in-flight check broadcasts the
+  // result, so the renderer's spinner still resolves.
+  if (checkInProgress) {
+    if (!silent) broadcast(lastState)
+    return pendingUpdate
+  }
+  const nowMs = Date.now()
+  // Back off while GitHub has us rate-limited rather than earning another 403.
+  if (rateLimitedUntil > nowMs) {
+    const mins = Math.max(1, Math.ceil((rateLimitedUntil - nowMs) / 60_000))
+    if (!silent) broadcast({ kind: 'error', message: `GitHub's update API is rate-limited right now (too many checks in a short time). It resets in about ${mins} min — your install is unaffected, and the app keeps checking automatically.` })
+    else broadcast(lastState)
+    return pendingUpdate
+  }
+  // Reuse a very recent result so mashing "Check for updates" doesn't re-poll.
+  if (lastCheckAt > 0 && nowMs - lastCheckAt < MIN_CHECK_INTERVAL_MS) {
+    if (!silent) broadcast(lastState)
+    return pendingUpdate
+  }
+  checkInProgress = true
   broadcast({ kind: 'checking' })
   try {
     const ac = new AbortController()
@@ -231,9 +269,24 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
     )
     clearTimeout(t)
     if (!res.ok) {
-      log.warn(`updater: GitHub releases fetch returned HTTP ${res.status}`)
-      if (!silent) broadcast({ kind: 'error', message: `GitHub HTTP ${res.status}` })
-      else broadcast({ kind: 'not-available' })
+      // GitHub signals rate-limiting with 403/429 + X-RateLimit-Remaining: 0.
+      // Record the reset epoch so later checks back off (above) instead of
+      // earning more 403s, and explain it calmly — a throttled check is not a
+      // broken update.
+      const remaining = res.headers.get('x-ratelimit-remaining')
+      const resetMs = Number(res.headers.get('x-ratelimit-reset')) * 1000
+      const rateLimited = (res.status === 403 || res.status === 429) && remaining === '0'
+      if (rateLimited && Number.isFinite(resetMs) && resetMs > Date.now()) {
+        rateLimitedUntil = resetMs
+        const mins = Math.max(1, Math.ceil((resetMs - Date.now()) / 60_000))
+        log.warn(`updater: GitHub API rate-limited (HTTP ${res.status}) — backing off ~${mins} min`)
+        if (!silent) broadcast({ kind: 'error', message: `GitHub's update API is rate-limited right now (too many checks in a short time). It resets in about ${mins} min — your install is unaffected, and the app keeps checking automatically.` })
+        else broadcast({ kind: 'not-available' })
+      } else {
+        log.warn(`updater: GitHub releases fetch returned HTTP ${res.status}`)
+        if (!silent) broadcast({ kind: 'error', message: `Couldn't reach GitHub to check for updates (HTTP ${res.status}). Your install is unaffected — try again shortly.` })
+        else broadcast({ kind: 'not-available' })
+      }
       return null
     }
     const releases = (await res.json()) as GithubRelease[]
@@ -304,9 +357,14 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
       broadcast({ kind: 'not-available' })
     } else {
       log.error('updater: check failed:', msg)
-      broadcast({ kind: 'error', message: msg })
+      broadcast({ kind: 'error', message: `Couldn't reach GitHub to check for updates (${msg}). Your install is unaffected — try again shortly.` })
     }
     return null
+  } finally {
+    // Always release the in-flight guard and stamp the fetch time, so the next
+    // check coalesces/throttles correctly whether this one succeeded or threw.
+    checkInProgress = false
+    lastCheckAt = Date.now()
   }
 }
 

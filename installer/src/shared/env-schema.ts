@@ -221,7 +221,6 @@ export const envObject = z.object({
 
   // Indexers (all optional — leave blank to skip)
   ANIMETOSHO_API_KEY: optStr,
-  ABNZB_API_KEY: optStr,
   NZBGEEK_API_KEY: optStr,
   NZBFINDER_API_KEY: optStr,
   DRUNKENSLUG_API_KEY: optStr,
@@ -239,7 +238,6 @@ export const envObject = z.object({
   ANIDEX_NO_KEY: optStr,
   TOKYOTOSHO_NO_KEY: optStr,
   X1337_NO_KEY: optStr,
-  TGX_NO_KEY: optStr,
   THEPIRATEBAY_NO_KEY: optStr,
   EZTV_NO_KEY: optStr,
   THERARBG_NO_KEY: optStr,

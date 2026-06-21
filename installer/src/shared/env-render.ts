@@ -208,8 +208,6 @@ export interface EnvFormValues {
   // and the Configure-screen card renders for documentation.
   NZBKING_NO_KEY?: string
   BINSEARCH_NO_KEY?: string
-  // Free-with-signup indexers — API key collected, sent to .env.
-  ABNZB_API_KEY?: string
   // Paid usenet indexers
   NZBGEEK_API_KEY?: string
   NZBFINDER_API_KEY?: string
@@ -229,7 +227,6 @@ export interface EnvFormValues {
   ANIDEX_NO_KEY?: string
   TOKYOTOSHO_NO_KEY?: string
   X1337_NO_KEY?: string
-  TGX_NO_KEY?: string
   THEPIRATEBAY_NO_KEY?: string
   EZTV_NO_KEY?: string
   THERARBG_NO_KEY?: string
@@ -588,7 +585,6 @@ export function renderEnv(v: EnvFormValues): string {
     '',
     '# Usenet indexers',
     line('ANIMETOSHO_API_KEY', v.ANIMETOSHO_API_KEY),
-    line('ABNZB_API_KEY', v.ABNZB_API_KEY),
     line('NZBGEEK_API_KEY', v.NZBGEEK_API_KEY),
     line('NZBFINDER_API_KEY', v.NZBFINDER_API_KEY),
     line('DRUNKENSLUG_API_KEY', v.DRUNKENSLUG_API_KEY),
@@ -745,15 +741,6 @@ export const USENET_INDEXERS: IndexerDef[] = [
     category: 'usenet-free',
     tags: ['anime', 'no-signup'],
   },
-  // ── Free-with-signup usenet ───────────────────────────────────
-  {
-    id: 'ABNZB_API_KEY', name: 'ABNzb',
-    href: 'https://abnzb.com',
-    note: 'Free signup → API key. ~50–100 daily calls — fine for casual use.',
-    fields: [{ key: 'ABNZB_API_KEY', label: 'API key' }],
-    category: 'usenet-free',
-    tags: ['general', 'free-signup'],
-  },
   // ── Paid usenet — well-established indexers ───────────────────
   // WHY: these all note "Paid account" — tag them 'paid' (cost axis), not
   // 'free-signup', so the cost filter classifies them correctly. (Before,
@@ -869,14 +856,6 @@ export const PUBLIC_TRACKERS: IndexerDef[] = [
     id: 'X1337_NO_KEY', name: '1337x',
     href: 'https://1337x.to',
     note: 'General-purpose public tracker — movies, TV, software. No account.',
-    fields: [],
-    category: 'tracker-public',
-    tags: ['general', 'no-signup'],
-  },
-  {
-    id: 'TGX_NO_KEY', name: 'TorrentGalaxy',
-    href: 'https://torrentgalaxy.to',
-    note: 'General-purpose public tracker. Good UI, no account.',
     fields: [],
     category: 'tracker-public',
     tags: ['general', 'no-signup'],

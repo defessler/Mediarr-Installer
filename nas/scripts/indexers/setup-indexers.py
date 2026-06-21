@@ -3,7 +3,7 @@
 setup-indexers.py — Add indexers to Prowlarr
 
 Public torrent indexers are added automatically (no credentials needed).
-Free usenet indexers (AnimeTosho, ABNzb) are added automatically.
+Free usenet indexers (AnimeTosho) are added automatically.
 Account-required usenet indexers are added if their key is set in .env.
 Private torrent trackers are added if credentials are set in .env.
 
@@ -51,6 +51,7 @@ BOLD   = "\033[1m"
 RESET  = "\033[0m"
 
 errors = 0
+warnings = 0
 
 def ok(msg):   print(f"  {GREEN}✔{RESET}  {msg}")
 def skip(msg): print(f"  –  {msg}")
@@ -63,7 +64,16 @@ def info(msg):
     # user should be alarmed about. Uses 'ℹ' marker (UTF-8 ℹ) with
     # a dim prefix character that's outside the parser's match set.
     print(f"  {DIM}ℹ{RESET}  {msg}")
-def warn(msg): print(f"  {YELLOW}!{RESET}  {msg}")
+def warn(msg):
+    global warnings; warnings += 1
+    print(f"  {YELLOW}!{RESET}  {msg}")
+# fail() is reserved for GENUINE STACK-BREAKING errors — the install can't
+# proceed or a service won't work (Prowlarr unreachable, bad API key). Those
+# already sys.exit(1) earlier. A single indexer that won't add is NOT stack-
+# breaking: those are warn()/info() (best-effort; the user can add any missing
+# one from Prowlarr's UI in seconds). The wizard's parser renders ✘ as "Failed"
+# and ⚠/! as "Needs action", so reserving ✘ keeps a healthy install from
+# looking broken over an optional indexer.
 def fail(msg):
     global errors; errors += 1
     print(f"  {RED}✘{RESET}  {msg}")
@@ -85,9 +95,9 @@ def section(title):
 #   base_url  — override the BaseUrl field in the schema before POSTing.
 #               For indexers whose Prowlarr-bundled URL points at a
 #               domain that's been redirected away or gone dark.
-#   skip_if_missing — when True, missing schema is logged as info()
-#                     rather than fail(). Use for indexers we know
-#                     have flaky/in-flux upstream definitions where
+#   skip_if_missing — when True, a missing schema is a silent info()
+#                     instead of the default warn(). Use for indexers we
+#                     know have flaky/in-flux upstream definitions where
 #                     the user can't usefully fix anything.
 INDEXER_OVERRIDES = {
     # TheRARBG — Prowlarr added the definition in v1.20 (Feb 2024).
@@ -98,16 +108,6 @@ INDEXER_OVERRIDES = {
     # newer Prowlarr build — not something the wizard can patch over.
     'TheRARBG': {
         'skip_if_missing': True,
-    },
-    # TorrentGalaxy moves its canonical domain every few months as
-    # mirrors rotate (.to → .mx → .lol → .info → ...). Prowlarr's
-    # bundled BaseUrl goes stale fast. Setting a fresher current
-    # mirror reduces the rate of "Redirected to ..." reachability
-    # failures. Prowlarr's reachability test rejects 30x redirects
-    # so we want a domain that serves 200 directly. As of 2025-Q4 the
-    # torrentgalaxy.to mirror has been the most stable.
-    'TorrentGalaxy': {
-        'base_url': 'https://torrentgalaxy.to',
     },
     # AniDex — same pattern; bundled URL has been 502'ing intermittently.
     # Their primary domain is anidex.info; if Prowlarr's bundled URL
@@ -123,7 +123,6 @@ PUBLIC_TORRENT_INDEXERS = [
     "1337x",
     "YTS",
     "EZTV",
-    "TorrentGalaxy",
     "The Pirate Bay",
     "Knaben",            # Large Norwegian index, excellent general coverage
     # TheRARBG — community-run successor to RARBG (which shut down in
@@ -166,11 +165,6 @@ USENET_INDEXERS = [
     # Neither has a code-side fix the wizard can reliably maintain.
     # Users who want them can still add via Prowlarr's UI (where they
     # can paste a working mirror by hand).
-    # ── Free with free signup (requires API key) ─────────────────────────────
-    # ABNzb historically allowed RSS-only access without a key, but its
-    # current backend rejects add-attempts without `Indexer requires an
-    # API key`. Skip silently if the key is blank.
-    ("ABNzb",          "https://abnzb.com",                "ABNZB_API_KEY",         None),
     # ── Paid account required ────────────────────────────────────────────────
     ("NZBGeek",        "https://api.nzbgeek.info",         "NZBGEEK_API_KEY",       None),
     ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY",     None),
@@ -454,9 +448,10 @@ def _post_indexer(base, key, name, schema, verify_name=None, cred_env_vars=None)
         # save: forceSave would push it into the DB, Prowlarr would pass
         # schema validation, then quietly auto-disable the indexer on its
         # first scheduled search — with nothing in the Issues panel and no
-        # pointer back at the .env var that's wrong. Surface it as fail()
-        # (which the wizard's issue parser flags, unlike info()) naming the
-        # feeding .env var so the user knows exactly what to fix.
+        # pointer back at the .env var that's wrong. Surface it as warn()
+        # ("Needs action", which the wizard flags — unlike info() — but NOT a
+        # stack-breaking "Failed" error), naming the feeding .env var so the
+        # user knows exactly what to fix IF they want this indexer.
         #
         # We reserve forceSave for CONNECTIVITY-class failures (CloudFlare /
         # redirect / timeout / refused) — those aren't the user's credential
@@ -479,8 +474,9 @@ def _post_indexer(base, key, name, schema, verify_name=None, cred_env_vars=None)
             )
             is_connectivity = any(k in err_lower for k in connectivity_keywords)
             if not is_connectivity and any(k in err_lower for k in credential_keywords):
-                fail(f"{name}: credential rejected by tracker — {_prowlarr_error(err)}. "
-                     f"Check {', '.join(cred_env_vars)} in .env, then re-run step 8")
+                warn(f"{name}: credential rejected by tracker — {_prowlarr_error(err)}. "
+                     f"Fix {', '.join(cred_env_vars)} in .env and re-run step 8 if you want "
+                     f"this indexer — the rest of the stack is unaffected")
                 return
         # Prowlarr's POST /api/v1/indexer runs a synchronous test of the
         # indexer's reachability as part of validation, and returns 400
@@ -525,9 +521,9 @@ def _post_indexer(base, key, name, schema, verify_name=None, cred_env_vars=None)
                 info(f"{name}: saved with forceSave — initial test failed: {_prowlarr_error(err)}")
             return
         # forceSave ALSO rejected. Inspect the error message: if it's a
-        # connectivity / domain-redirect issue (TorrentGalaxy moves its
-        # canonical domain every few weeks; Prowlarr's bundled URLs go
-        # stale), that's not actually the wizard's fault and not
+        # connectivity / domain-redirect issue (some public indexers rotate
+        # their canonical domain and Prowlarr's bundled URLs go stale),
+        # that's not actually the wizard's fault and not
         # something the user can fix from here — they'd need a fresher
         # Prowlarr build or to manually point the indexer at a working
         # mirror. Demote to info() so this single-indexer failure
@@ -535,14 +531,16 @@ def _post_indexer(base, key, name, schema, verify_name=None, cred_env_vars=None)
         # install LOOK broken.
         #
         # Real schema mismatches (indexer renamed upstream, missing
-        # required field) still fail() — those need code-side fixes
-        # and we want them surfaced.
+        # required field) need a code-side fix, but a single un-addable
+        # indexer doesn't break the stack — so it's a warn() ("Needs
+        # action"), not a "Failed" error. Surfaced (not info()) because it's
+        # unexpected and worth a maintainer's eyes.
         combined = (err_lower + ' ' + (_prowlarr_error(force_err) or '').lower())
         if any(k in combined for k in ('redirect', 'unable to connect', 'unable to access', 'timed out', 'refused')):
             info(f"{name}: couldn't add — {_prowlarr_error(force_err or err)}")
             info(f"  Bundled URL is likely stale; try adding from the Prowlarr UI which may have a fresher mirror.")
             return
-        fail(f"{name}: forceSave also rejected — original: {_prowlarr_error(err)} / forceSave: {_prowlarr_error(force_err)}")
+        warn(f"{name}: couldn't be added — original: {_prowlarr_error(err)} / forceSave: {_prowlarr_error(force_err)}. Skipped; add it from the Prowlarr UI if you want it")
     else:
         # status=None means the POST didn't get a response at all
         # (network timeout, connection reset, DNS). Most often: Prowlarr
@@ -594,7 +592,7 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
     flaresolverr_tag_id: if provided, attached to the indexer's tags
     so Prowlarr routes the indexer's HTTP requests through the
     FlareSolverr proxy. Mandatory for CloudFlare-protected indexers
-    (1337x, EZTV, TorrentGalaxy, etc.) — without it the add fails the
+    (1337x, EZTV, etc.) — without it the add fails the
     reachability test and the indexer never enters the DB. Cheap and
     safe to apply to non-CloudFlare indexers too: Flaresolverr just
     passes their requests through transparently."""
@@ -621,15 +619,15 @@ def add_indexer(base, key, name, schemas, existing_names, flaresolverr_tag_id=No
                        if needle in s.get('name', '').lower()
                        or s.get('name', '').lower() in needle]
         hint = f" — did you mean: {', '.join(suggestions[:5])}" if suggestions else ""
-        # skip_if_missing demotes "Prowlarr doesn't ship this definition
-        # yet" to an info() rather than fail() — there's no code fix
-        # available for the user, the wizard log already covers what
-        # to do (update Prowlarr or add manually). Keeps the install's
-        # Issues panel clean.
+        # A missing definition is never the user's fault and never breaks the
+        # stack, so NEITHER path is a "Failed" error: skip_if_missing (known-
+        # optional) is a silent info(); anything else is a warn() ("Needs
+        # action") that says it was skipped and can be added from Prowlarr's
+        # UI. Keeps a healthy install's Issues panel clean.
         if overrides.get('skip_if_missing'):
             info(f"{name}: not in this Prowlarr build's definitions{hint} — skip (update Prowlarr or add via its UI)")
         else:
-            fail(f"{name}: not found in Prowlarr{hint}")
+            warn(f"{name}: not found in Prowlarr{hint} — skipped; add it from Prowlarr's UI if you want it")
         return None
 
     if resolved_name != name and resolved_name.lower() in existing_names:
@@ -847,7 +845,7 @@ def add_private_indexer(base, key, name, implementation, field_map, schemas, exi
     # New-indexer path: fetch schema, fill creds, POST.
     schema, resolved_name = _find_schema(implementation, schemas)
     if schema is None:
-        fail(f"{name}: implementation '{implementation}' not found in Prowlarr")
+        warn(f"{name}: implementation '{implementation}' not found in Prowlarr — skipped; add it from Prowlarr's UI if you want it")
         return
 
     # Deep-copy before mutating — _find_schema returns the shared schema
@@ -1006,7 +1004,7 @@ def add_newznab(base, key, name, api_url, api_key, schemas, existing_names, exis
     schema = next((s for s in schemas
                    if s.get('implementation', '').lower() == 'newznab'), None)
     if schema is None:
-        fail(f"{name}: Newznab implementation not found"); return
+        warn(f"{name}: Newznab implementation not found — skipped; add it from Prowlarr's UI if you want it"); return
 
     schema = json.loads(json.dumps(schema))  # deep copy — reused across calls
     schema['name'] = name
@@ -1152,7 +1150,7 @@ def main():
     # the Flaresolverr IndexerProxy — Prowlarr only routes through
     # the proxy for indexers that SHARE a tag with it. Without this
     # tag on the indexer, CloudFlare-protected adds (1337x, EZTV,
-    # TorrentGalaxy, AnimeTorrents, etc.) fail the reachability test
+    # AnimeTorrents, etc.) fail the reachability test
     # during add and never enter the DB. Passing the tag to every
     # public + private indexer add is safe (Flaresolverr proxies
     # non-CloudFlare requests transparently with negligible overhead).
@@ -1334,13 +1332,17 @@ def main():
     # ── Summary ───────────────────────────────────────────────────────────────
 
     print(f"\n{'═' * 52}")
-    if errors == 0:
+    if errors == 0 and warnings == 0:
         print(f"{GREEN}{BOLD}  All done — no errors.{RESET}")
+    elif errors == 0:
+        # Warnings only = optional indexers that couldn't be added. The stack
+        # is fine, so don't make a healthy install look broken.
+        print(f"{GREEN}{BOLD}  Done — stack is healthy.{RESET}  {YELLOW}{warnings} optional indexer(s) skipped (see above).{RESET}")
+        print(f"  Those are best-effort additions; each can be added/tweaked")
+        print(f"  manually via the Prowlarr UI in seconds. None block the")
+        print(f"  install or the rest of the stack.")
     else:
-        print(f"{YELLOW}{BOLD}  Done with {errors} per-indexer issue(s) — review output above.{RESET}")
-        print(f"  These are best-effort additions; each failed indexer can be")
-        print(f"  added/tweaked manually via the Prowlarr UI in seconds. None")
-        print(f"  of them block the rest of the install.")
+        print(f"{YELLOW}{BOLD}  Done with {errors} error(s) — review output above.{RESET}")
     print(f"{'═' * 52}\n")
     # Always exit 0 once we've reached this point. Real "step 8 broken"
     # scenarios (Prowlarr unreachable, API key wrong, etc.) sys.exit(1)

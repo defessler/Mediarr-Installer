@@ -467,14 +467,6 @@ bash <SCRIPTS_DIR>/setup.sh`,
   // ── Indexers ────────────────────────────────────────────────────────
   {
     category: 'Indexers',
-    symptom: 'TorrentGalaxy add failed (Redirected from indexer request)',
-    cause:
-      'The TorrentGalaxy URL bundled with Prowlarr is stale — the site moved to a new mirror.',
-    fix:
-      'In Prowlarr → Indexers → Add Indexer → search for TorrentGalaxy. The Prowlarr-bundled list may have a fresher mirror than the wizard\'s built-in defaults.',
-  },
-  {
-    category: 'Indexers',
     symptom: 'Indexers fail with Flaresolverr / CloudFlare blocks',
     cause:
       'The Flaresolverr proxy tag isn\'t applied to that indexer. CloudFlare-protected sites need the request routed through Flaresolverr to solve the JS challenge.',
