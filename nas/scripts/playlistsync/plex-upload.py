@@ -288,15 +288,23 @@ def resolve_art_url(spotify_ref=None, sxm_slug=None):
 
 def set_poster(base, token, rating_key, art_url):
     """POST an image URL as the playlist's poster (Plex fetches it server-side).
-    Best-effort: a failure just leaves the auto-generated collage."""
+    A PLAYLIST lives under /playlists/<key>, so that is the correct posters
+    endpoint — /library/metadata/<key>/posters 404s for a playlist ratingKey
+    (that was the v0.16.19 bug: it failed silently and left the collage). Try
+    the playlist path first, then the library path as a version-quirk fallback.
+    Best-effort throughout: a miss just keeps Plex's auto-generated collage."""
     if not (rating_key and art_url):
         return
-    try:
-        api(base, "/library/metadata/%s/posters?%s"
-            % (rating_key, _qs({"url": art_url})), token, method="POST")
-        err("set playlist poster from %s" % art_url)
-    except Exception as e:
-        err("note: couldn't set playlist poster (%s) — keeping Plex's default" % e)
+    q = _qs({"url": art_url})
+    for path in ("/playlists/%s/posters?%s" % (rating_key, q),
+                 "/library/metadata/%s/posters?%s" % (rating_key, q)):
+        try:
+            api(base, path, token, method="POST")
+            err("set playlist poster from %s" % art_url)
+            return
+        except Exception as e:
+            err("note: poster POST to %s failed (%s)" % (path.split("?", 1)[0], e))
+    err("note: couldn't set playlist poster — keeping Plex's default")
 
 
 def main():

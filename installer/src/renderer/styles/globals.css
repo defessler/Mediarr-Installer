@@ -18,6 +18,11 @@
 
 html, body, #root {
   height: 100%;
+  /* The app frame must NEVER scroll — it's a fixed-size desktop window with a
+     pinned title strip + footer; only the per-screen content area scrolls (each
+     screen owns an overflow-y-auto). Without this, a sub-pixel/elastic overflow
+     let the whole frame scroll, leaving dead space below the footer. */
+  overflow: hidden;
 }
 
 /* Root font-size drives every Tailwind text-* class (they're rem-based),

@@ -318,7 +318,10 @@ export function App() {
     : INSTALL_STEPS
 
   return (
-    <div className="h-full flex flex-col">
+    // h-screen (explicit 100vh), not h-full: don't depend on the html/body/#root
+    // height chain resolving — pin the frame to the viewport directly so the
+    // footer/title strip stay put and there's no dead space / frame scroll.
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* Drag region for the frameless title bar. The native window
           controls (minimize/maximize/close on Windows, traffic lights
           on macOS) are painted by the OS on top of this strip via
