@@ -189,6 +189,7 @@ export const envObject = z.object({
     (v) => !v || /^\d+$/.test(v),
     'must be a non-negative integer',
   ),
+  PLAYLIST_MONTHLY_ARCHIVE: optStr,
 
   // SABnzbd usenet provider (all optional — host gates the rest)
   USENET_HOST: optStr,

@@ -169,6 +169,8 @@ export interface EnvFormValues {
   /** SiriusXM rotation window (days) + min play-count floor (optional). */
   PLAYLIST_SXM_DAYS?: string
   PLAYLIST_SXM_MIN_PLAYS?: string
+  /** Keep permanent monthly Top-50 archive playlists per SiriusXM station (default on). */
+  PLAYLIST_MONTHLY_ARCHIVE?: string
 
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
@@ -565,6 +567,7 @@ export function renderEnv(v: EnvFormValues): string {
     line('PLAYLIST_RUN_ON_START', v.PLAYLIST_RUN_ON_START || 'true'),
     line('PLAYLIST_SXM_DAYS', v.PLAYLIST_SXM_DAYS),
     line('PLAYLIST_SXM_MIN_PLAYS', v.PLAYLIST_SXM_MIN_PLAYS),
+    line('PLAYLIST_MONTHLY_ARCHIVE', v.PLAYLIST_MONTHLY_ARCHIVE || 'true'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),
