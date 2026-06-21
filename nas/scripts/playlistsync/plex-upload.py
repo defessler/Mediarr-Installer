@@ -139,6 +139,16 @@ def api_json(base, path, token):
     return json.loads(api(base, path, token) or b"{}")
 
 
+def _qs(params):
+    """urlencode, but spaces become %20 (quote) NOT '+' (quote_plus, urlencode's
+    default). Plex reads a `path` query param as a server-side FILE path and does
+    NOT decode '+' back to a space — so a '+'-encoded space makes Plex look for a
+    literally-'+' path: /playlists/upload then fails with HTTP 500 and a path-
+    scoped section scan silently misses. Playlist labels routinely contain spaces
+    (e.g. 'SiriusXM - <channel>'), so this bit every space-containing playlist."""
+    return urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+
+
 def music_section_id(base, token):
     data = api_json(base, "/library/sections", token)
     for d in data.get("MediaContainer", {}).get("Directory", []):
@@ -163,7 +173,7 @@ def trigger_refresh(base, token, section, path):
     request that errors must not abort the run."""
     p = "/library/sections/%s/refresh" % section
     if path:
-        p += "?" + urllib.parse.urlencode({"path": path})
+        p += "?" + _qs({"path": path})  # %20 not '+' — see _qs()
     try:
         api(base, p, token)  # GET, empty body
     except Exception as e:
@@ -225,7 +235,7 @@ def upload_and_measure(base, token, section, plex_path, name):
     from ever mistaking some other same-titled playlist for the one we just made.
     Returns (ratingKey|None, leafCount)."""
     pre = {k for k, _ in playlists_by_title(base, token, name)}
-    q = urllib.parse.urlencode({"sectionID": section, "path": plex_path})
+    q = _qs({"sectionID": section, "path": plex_path})  # %20 not '+' — see _qs()
     try:
         api(base, "/playlists/upload?" + q, token, method="POST")
     except urllib.error.HTTPError as e:
