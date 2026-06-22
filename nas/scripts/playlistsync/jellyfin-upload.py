@@ -406,13 +406,14 @@ def _get_json(url):
 
 def resolve_art_url(spotify_ref=None, sxm_slug=None):
     """Best-effort cover-image URL for the playlist poster — IDENTICAL logic to
-    plex-upload.py (xmplaylist channel.spotifyPlaylist -> Spotify oEmbed, or a
-    direct Spotify oEmbed). Returns None on ANY failure."""
+    plex-upload.py. SiriusXM: the channel's official LOGO, hosted by xmplaylist at
+    /img/station/<slug>-lg.png (far better than Spotify's auto-mosaic, and Jellyfin
+    fetches it server-side so it's not subject to the VPN exit-IP block). Spotify:
+    oEmbed the playlist URL -> its real cover. Returns None on ANY failure."""
     try:
         if sxm_slug and not spotify_ref:
-            data = _get_json("https://xmplaylist.com/api/station/%s"
-                             % urllib.parse.quote(sxm_slug))
-            spotify_ref = (data.get("channel") or {}).get("spotifyPlaylist")
+            return ("https://xmplaylist.com/img/station/%s-lg.png"
+                    % urllib.parse.quote(sxm_slug))
         if not spotify_ref:
             return None
         ref = (spotify_ref if str(spotify_ref).startswith("http")

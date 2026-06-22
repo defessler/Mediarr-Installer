@@ -264,16 +264,24 @@ def _get_json(url):
 
 
 def resolve_art_url(spotify_ref=None, sxm_slug=None):
-    """Best-effort cover-image URL for the playlist poster. SiriusXM: look up the
-    channel's official Spotify playlist via xmplaylist (channel.spotifyPlaylist),
-    then Spotify oEmbed (no auth) → its cover. Spotify: oEmbed the playlist URL
-    directly. Returns None on ANY failure — the poster is purely cosmetic, so a
-    miss just leaves Plex's auto-generated collage."""
+    """Best-effort cover-image URL for the playlist poster.
+
+    SiriusXM: use the channel's official LOGO, which xmplaylist hosts at a stable
+    path (/img/station/<slug>-lg.png) its API doesn't advertise. Far better than
+    the channel's Spotify-playlist cover — which is usually Spotify's auto-
+    generated 4-track MOSAIC, visually indistinguishable from Plex's own collage.
+    Bonus: this needs NO network call here — Plex fetches the URL server-side from
+    its own (non-VPN) IP, so it can't be blocked by the VPN exit IP the way the
+    xmplaylist/Spotify API lookups can. A channel with no logo just 404s on Plex's
+    side and keeps the default art.
+
+    Spotify: oEmbed the playlist URL → its real cover.
+
+    Returns None on any failure — the poster is purely cosmetic."""
     try:
         if sxm_slug and not spotify_ref:
-            data = _get_json("https://xmplaylist.com/api/station/%s"
-                             % urllib.parse.quote(sxm_slug))
-            spotify_ref = (data.get("channel") or {}).get("spotifyPlaylist")
+            return ("https://xmplaylist.com/img/station/%s-lg.png"
+                    % urllib.parse.quote(sxm_slug))
         if not spotify_ref:
             return None
         ref = (spotify_ref if str(spotify_ref).startswith("http")
