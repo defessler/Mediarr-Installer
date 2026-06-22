@@ -48,6 +48,11 @@ export const envObject = z.object({
   // below gates its creds + a source requirement + the Plex requirement on an
   // explicit-true check. A missing key stays OFF everywhere.
   ENABLE_PLAYLIST_SYNC: optStr,
+  // OPT-IN (default off), mirroring ENABLE_PLAYLIST_SYNC. The superRefine block
+  // below gates a source requirement on an explicit-true check. Downloads curated
+  // YouTube music videos into a browsable Music Videos library. A missing key
+  // stays OFF everywhere.
+  ENABLE_MUSIC_VIDEOS: optStr,
 
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
@@ -176,6 +181,14 @@ export const envObject = z.object({
   // read PRIVATE playlists (sockseek --spotify-refresh). Optional.
   SPOTIFY_REFRESH_TOKEN: optStr,
   PLAYLIST_SYNC_CRON: optStr.refine(
+    (v) => !v || /^\S+(\s+\S+){4}$/.test(v.trim()),
+    'must be a 5-field cron expression like "0 4 * * *"',
+  ),
+  // Music Videos sources — comma/newline list of "Artist | URL" or bare URL.
+  // Optional at the schema level; the superRefine block escalates it to
+  // required when ENABLE_MUSIC_VIDEOS is explicitly on.
+  MUSIC_VIDEO_SOURCES: optStr,
+  MUSIC_VIDEO_CRON: optStr.refine(
     (v) => !v || /^\S+(\s+\S+){4}$/.test(v.trim()),
     'must be a 5-field cron expression like "0 4 * * *"',
   ),
@@ -398,6 +411,17 @@ export const envSchema = envObject.superRefine((v, ctx) => {
     if (v.MEDIA_SERVER !== 'jellyfin' && !flagOn(v.ENABLE_PLEX)) {
       ctx.addIssue({ code: 'custom', path: ['ENABLE_PLAYLIST_SYNC'],
         message: 'Playlist Sync needs a media server — enable Plex, or choose Jellyfin as your media server' })
+    }
+  }
+
+  // Music Videos — OPT-IN, gate on explicit true (mirrors is_optin_enabled,
+  // NOT flagOn). When on: at least one source entry must be configured.
+  const musicVideosOn = ['true', '1', 'yes', 'on']
+    .includes((v.ENABLE_MUSIC_VIDEOS ?? '').trim().toLowerCase())
+  if (musicVideosOn) {
+    if (!v.MUSIC_VIDEO_SOURCES || !v.MUSIC_VIDEO_SOURCES.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['MUSIC_VIDEO_SOURCES'],
+        message: 'Add at least one "Artist | URL" music-video source' })
     }
   }
 

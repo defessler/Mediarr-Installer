@@ -173,6 +173,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
   { key: 'ENABLE_AZURACAST',   label: 'AzuraCast',    hint: '24/7 radio stations from your library', icon: Radio, iconColor: 'text-rose-300', warn: 'Heavy service — wants 2–4 GB RAM (~1.4 GB image, runs its own MariaDB/Redis/Nginx/Liquidsoap). Skip it on a low-memory NAS.' },
   { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM + Spotify playlists → Plex or Jellyfin (auto-download)', icon: Music2, iconColor: 'text-green-400' },
+  { key: 'ENABLE_MUSIC_VIDEOS', label: 'Music Videos', hint: 'Curated YouTube music videos -> a browsable library', icon: Music2, iconColor: 'text-indigo-400' },
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
@@ -186,7 +187,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_AZURACAST', 'ENABLE_PLAYLIST_SYNC'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_AZURACAST', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_MUSIC_VIDEOS'])
 
 function ServicesSection({
   config, update,
@@ -746,6 +747,9 @@ const FIELD_LABELS: Record<string, string> = {
   SIRIUSXM_CHANNELS: 'SiriusXM channels',
   SPOTIFY_CLIENT_SECRET: 'Spotify Client Secret',
   PLAYLIST_SYNC_CRON: 'Playlist Sync schedule',
+  ENABLE_MUSIC_VIDEOS: 'Music Videos',
+  MUSIC_VIDEO_SOURCES: 'Music video sources',
+  MUSIC_VIDEO_CRON: 'Music Videos schedule',
   USENET_USER: 'Usenet username',
   USENET_PASS: 'Usenet password',
   VPN_PROVIDER: 'VPN provider',
@@ -1505,6 +1509,82 @@ export function ConfigureScreen() {
                   }}
                 >
                   Enable Playlist Sync
+                </BigButton>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Music Videos ────────────────────────────────────────
+            Opt-in, toggled in the Services group. Downloads curated YouTube
+            music videos via yt-dlp into a browsable artist-grouped library.
+            No media-server API needed — files only; Plex/Jellyfin picks them
+            up on the next library scan. */}
+        <div className="border-t border-slate-800 pt-4">
+          {isOptInEnabled(config.ENABLE_MUSIC_VIDEOS as string | undefined) ? (
+            <section className="space-y-4">
+              <p className="text-sm text-slate-400">
+                Music Videos downloads curated{' '}
+                <span className="font-medium text-slate-300">YouTube music videos</span>{' '}
+                via yt-dlp on a schedule into{' '}
+                <span className="font-medium text-slate-300">Music Videos/&lt;Artist&gt;/</span>{' '}
+                — add it as an{' '}
+                <span className="text-indigo-300">Other Videos</span> library (Plex) or a{' '}
+                <span className="text-indigo-300">Music Videos</span> library (Jellyfin) to browse by artist.
+                New videos appear after the server&apos;s next library scan.
+              </p>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-300">
+                  Music video sources
+                </label>
+                <textarea
+                  rows={4}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/60 resize-y"
+                  placeholder={'Metallica | https://www.youtube.com/@MetallicaTV\nNirvana | https://www.youtube.com/playlist?list=...'}
+                  value={(config.MUSIC_VIDEO_SOURCES as string | undefined) ?? ''}
+                  onChange={(e) => update('MUSIC_VIDEO_SOURCES', e.target.value || undefined)}
+                />
+                <p className="text-xs text-slate-500">
+                  One source per line: <code className="font-mono text-slate-400">Artist | URL</code> for a channel/playlist/video
+                  (reliable grouping), or a bare URL to derive the artist from yt-dlp metadata per video.
+                  YouTube channel, playlist, or individual video URLs all work.
+                </p>
+              </div>
+              <details className="text-sm group">
+                <summary className="cursor-pointer text-slate-400 hover:text-slate-200 select-none inline-flex items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+                  <ChevronDown size={14} className="text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+                  Optional — schedule
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <Field label="Schedule (cron)" k="MUSIC_VIDEO_CRON" placeholder="0 4 * * * (daily 4am)" />
+                </div>
+              </details>
+              <p className="text-xs text-slate-500">
+                To turn this off, untick <span className="font-medium">Music Videos</span> in
+                the Services group above.
+              </p>
+            </section>
+          ) : (
+            <div className="rounded-md border border-indigo-700/30 bg-indigo-900/10 p-4 flex items-start gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-md bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
+                <Music2 size={20} className="text-indigo-300" strokeWidth={1.75} aria-hidden="true" />
+              </div>
+              <div className="space-y-3 min-w-0">
+                <div>
+                  <div className="font-medium text-indigo-100">Curated YouTube music videos</div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Download music videos from YouTube channels, playlists, or individual
+                    URLs via yt-dlp — grouped by artist into a browsable Music Videos
+                    library in Plex or Jellyfin. No extra accounts needed.
+                  </p>
+                </div>
+                <BigButton
+                  size="md"
+                  variant="primary"
+                  icon={<Music2 size={16} />}
+                  onClick={() => update('ENABLE_MUSIC_VIDEOS', 'true')}
+                >
+                  Enable Music Videos
                 </BigButton>
               </div>
             </div>

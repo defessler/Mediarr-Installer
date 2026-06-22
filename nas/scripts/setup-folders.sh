@@ -108,6 +108,9 @@ CONFIG_DIRS=(
     # Playlist Sync (opt-in). Holds the generated sockseek.conf + per-playlist
     # skip indexes. Not a linuxserver image; created up front like slskd's.
     "$INSTALL_DIR/playlistsync/config"
+    # Music Videos (opt-in). Holds yt-dlp download archive (dedup), crontab,
+    # and lock file. Created up front so the container can write on first run.
+    "$INSTALL_DIR/musicvideos/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -152,6 +155,9 @@ DATA_DIRS=(
     # /downloads, Lidarr imports it as /data/Downloads/Soulseek. Must be
     # PUID:PGID-owned so slskd can write + Lidarr can hardlink/import.
     "$DATA_ROOT/Downloads/Soulseek"
+    # Music Videos (opt-in) library root. Plex "Other Videos" or Jellyfin
+    # "Music Videos" library. Layout: <Artist>/<Artist> - <Title>.mp4.
+    "$DATA_ROOT/Media/Music Videos"
 )
 
 # ── Create and chown ───────────────────────────────────────────────────────────

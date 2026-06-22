@@ -1045,6 +1045,42 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # ── Music Videos ──────────────────────────────────────────
+
+  musicvideos:
+    # CI-built image (ghcr.io/defessler/mediarr-musicvideos). Built+pushed by
+    # .github/workflows/musicvideos-image.yml from nas/scripts/musicvideos/.
+    image: ghcr.io/defessler/mediarr-musicvideos:latest
+    container_name: musicvideos
+    # Opt-in, cron-scheduled yt-dlp downloader that fills a dedicated Music
+    # Videos library on disk. Default OFF. setup.sh adds the "musicvideos"
+    # profile to COMPOSE_PROFILES only when ENABLE_MUSIC_VIDEOS is explicitly
+    # true (is_optin_enabled).
+    #
+    # BRIDGE network (NOT network_mode: container:gluetun): YouTube hard-blocks
+    # datacenter/VPN exit IPs ("confirm you're not a bot"), so this service
+    # MUST exit via the real NAS IP. Music videos are public content — no VPN
+    # needed. Same bridge pattern as AzuraCast.
+    profiles: ["musicvideos"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - MUSIC_VIDEO_SOURCES=${MUSIC_VIDEO_SOURCES}
+      - MUSIC_VIDEO_CRON=${MUSIC_VIDEO_CRON:-0 4 * * *}
+      - MUSIC_VIDEO_RUN_ON_START=${MUSIC_VIDEO_RUN_ON_START:-true}
+    volumes:
+      # Music Videos library — Plex "Other Videos" or Jellyfin "Music Videos".
+      # Layout: /media/<Artist>/<Artist> - <Title>.mp4
+      - ${DATA_ROOT}/Media/Music Videos:/media
+      # Persistent config: yt-dlp download archive (dedup), crontab, lock file.
+      - ${INSTALL_DIR}/musicvideos/config:/config
+    # No ports — headless worker; writes files only, no API/UI.
+    logging: *logging
+    restart: on-failure:5
+
 networks:
   media:
     driver: bridge

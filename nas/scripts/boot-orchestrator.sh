@@ -213,6 +213,10 @@ case "$(env_val ENABLE_AZURACAST | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("radio") ;;
 esac
 
+case "$(env_val ENABLE_MUSIC_VIDEOS | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("musicvideos") ;;
+esac
+
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

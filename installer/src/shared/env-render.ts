@@ -172,6 +172,18 @@ export interface EnvFormValues {
   /** Keep permanent monthly Top-50 archive playlists per SiriusXM station (default on). */
   PLAYLIST_MONTHLY_ARCHIVE?: string
 
+  // ── Music Videos (YouTube yt-dlp downloader → browsable library)
+  //    Only used when ENABLE_MUSIC_VIDEOS=true. OPT-IN like Playlist Sync
+  //    (isOptInEnabled). A missing key counts as OFF.
+  /** Whether to install the Music Videos worker. A missing key counts as OFF;
+   *  emitted via isOptInEnabled so a pre-feature .env never gains it. */
+  ENABLE_MUSIC_VIDEOS?: string
+  /** Comma/newline list of "Artist | URL" entries (channel, playlist, or single
+   *  video URL). Bare URL = artist derived from yt-dlp metadata per video. */
+  MUSIC_VIDEO_SOURCES?: string
+  /** Cron schedule for the music-videos downloader (default 0 4 * * *). */
+  MUSIC_VIDEO_CRON?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -568,6 +580,14 @@ export function renderEnv(v: EnvFormValues): string {
     line('PLAYLIST_SXM_DAYS', v.PLAYLIST_SXM_DAYS),
     line('PLAYLIST_SXM_MIN_PLAYS', v.PLAYLIST_SXM_MIN_PLAYS),
     line('PLAYLIST_MONTHLY_ARCHIVE', v.PLAYLIST_MONTHLY_ARCHIVE || 'true'),
+    '',
+    '# Music Videos (yt-dlp → browsable library). OPT-IN; off by default.',
+    '# A missing ENABLE_MUSIC_VIDEOS key counts as OFF — emitted via isOptInEnabled',
+    '# so a pre-feature .env never silently gains it on upgrade.',
+    '# MUSIC_VIDEO_SOURCES: comma/newline list of "Artist | URL" or bare URL entries.',
+    line('ENABLE_MUSIC_VIDEOS', isOptInEnabled(v.ENABLE_MUSIC_VIDEOS) ? 'true' : 'false'),
+    line('MUSIC_VIDEO_SOURCES', v.MUSIC_VIDEO_SOURCES),
+    line('MUSIC_VIDEO_CRON', v.MUSIC_VIDEO_CRON || '0 4 * * *'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),
