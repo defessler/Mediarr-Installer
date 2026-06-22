@@ -59,6 +59,28 @@ spotify_id() {
     printf '%s' "$_id"
 }
 
+# Run poll-xmplaylist.py (args passed straight through). If it reports an
+# IP-level block (exit 3 = Cloudflare HTTP 403 / 429 rate-limit on the VPN exit
+# IP), ask gluetun to reconnect for a FRESH exit IP — at most ONCE per pass — and
+# retry the poll. Returns poll-xmplaylist's final exit code. Disable the
+# auto-reset with PLAYLIST_VPN_RESET=false. _VPN_RESET_DONE is the pass-level
+# latch (run_pass resets it to 0 at the start of every pass).
+poll_xmplaylist() {
+    python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$@"
+    _prc=$?
+    if [ "$_prc" -eq 3 ] \
+            && [ "${PLAYLIST_VPN_RESET:-true}" = "true" ] \
+            && [ "${_VPN_RESET_DONE:-0}" = "0" ]; then
+        _VPN_RESET_DONE=1
+        warn "xmplaylist is blocking the VPN exit IP (HTTP 403/429) — reconnecting gluetun for a fresh IP ..."
+        if python3 "$SCRIPT_DIR/vpn-reset.py"; then
+            python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$@"
+            _prc=$?
+        fi
+    fi
+    return $_prc
+}
+
 # ── sockseek.conf generation ────────────────────────────────────────────────
 # Creds + global prefs live in the conf (mode 600) rather than on the command
 # line, so they never show up in `ps`. Per-source paths are passed as CLI flags.
@@ -263,6 +285,7 @@ run_pass() {
     _fail=0
     _any=0
     _SLSK_LOGIN_FAILED=0
+    _VPN_RESET_DONE=0   # pass-level latch: reset the VPN exit IP at most once per pass
 
     # SiriusXM channels: each slug -> xmplaylist rotation CSV -> sockseek.
     if [ -n "${SIRIUSXM_CHANNELS:-}" ]; then
@@ -276,7 +299,7 @@ run_pass() {
             _namef="/tmp/sxm-name-$(sanitize "$_slug").txt"
             rm -f "$_namef"
             log "[$_slug] polling xmplaylist ..."
-            if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_csv" \
+            if poll_xmplaylist "$_slug" "$_csv" \
                     --name-out "$_namef" \
                     ${PLAYLIST_SXM_DAYS:+--days "$PLAYLIST_SXM_DAYS"} \
                     ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
@@ -304,7 +327,7 @@ run_pass() {
                     _dom="$(date +%d)"           # day-of-month; poll-xmplaylist int()-parses "08" fine
                     _acsv="/tmp/sxm-arch-$(sanitize "$_slug").csv"
                     log "[$_friendly - SiriusXM ($_ym)] polling month-to-date top 50 ..."
-                    if python3 "$SCRIPT_DIR/poll-xmplaylist.py" "$_slug" "$_acsv" \
+                    if poll_xmplaylist "$_slug" "$_acsv" \
                             --days "$_dom" --limit 50 \
                             ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
                         if process_source "$_friendly - SiriusXM ($_ym)" csv "$_acsv" --art-sxm-slug "$_slug"; then

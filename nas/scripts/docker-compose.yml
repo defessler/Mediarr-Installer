@@ -868,6 +868,13 @@ services:
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
       - JELLYFIN_USER_ID=${JELLYFIN_USER_ID:-}
       - PLAYLIST_JF_SCAN_TIMEOUT=${PLAYLIST_JF_SCAN_TIMEOUT:-120}
+      # Auto-reset the VPN exit IP when xmplaylist's Cloudflare 403/429-blocks it
+      # (shared VPN/datacenter IPs get flagged). sync.sh asks gluetun to reconnect
+      # for a fresh IP — at most once per pass — then retries. false to disable.
+      # GLUETUN_CONTROL_APIKEY is only needed if you locked down gluetun's control
+      # server (v3.40+ auth); blank works for the default (open) control server.
+      - PLAYLIST_VPN_RESET=${PLAYLIST_VPN_RESET:-true}
+      - GLUETUN_CONTROL_APIKEY=${GLUETUN_CONTROL_APIKEY:-}
       # A SECOND free Soulseek account: slskd holds the stack's single Soulseek
       # session and Soulseek permits one session per account, so playlistsync
       # needs its own login. 2-minute signup in the Soulseek desktop client.

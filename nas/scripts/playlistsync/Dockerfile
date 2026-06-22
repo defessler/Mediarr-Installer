@@ -108,8 +108,8 @@ RUN apk add --no-cache \
 COPY --from=build /out/sockseek /usr/local/bin/sockseek
 
 WORKDIR /app
-COPY poll-xmplaylist.py plex-upload.py jellyfin-upload.py sync.sh /app/
-RUN chmod +x /app/sync.sh /app/poll-xmplaylist.py /app/plex-upload.py /app/jellyfin-upload.py
+COPY poll-xmplaylist.py plex-upload.py jellyfin-upload.py vpn-reset.py sync.sh /app/
+RUN chmod +x /app/sync.sh /app/poll-xmplaylist.py /app/plex-upload.py /app/jellyfin-upload.py /app/vpn-reset.py
 
 # .NET on musl: keep its temp-extract dir inside the container's writable layer.
 ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp/.net

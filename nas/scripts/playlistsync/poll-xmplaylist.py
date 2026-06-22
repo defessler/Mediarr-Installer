@@ -402,6 +402,14 @@ def main(argv=None):
         items = fetch_tracks(slug, args.days)
     except RuntimeError as e:
         print(f'error: {e}', file=sys.stderr)
+        # Distinguish an IP-level block — Cloudflare HTTP 403, or a 429 rate
+        # limit — from every other failure with a dedicated exit code (3). When
+        # playlistsync runs inside the VPN, that block is on the shared exit IP,
+        # so sync.sh reacts to a 3 by asking gluetun to reconnect for a fresh IP
+        # and retrying. All other errors stay exit 1.
+        m = str(e)
+        if 'HTTP 403' in m or 'HTTP 429' in m or 'rate limited' in m:
+            return 3
         return 1
 
     rows = parse_rows(items, args.min_plays)
