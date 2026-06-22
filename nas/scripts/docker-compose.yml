@@ -512,6 +512,15 @@ services:
       # if you want PF working. Source: gluetun-wiki/setup/providers.
       - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING:-off}
       - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data="json={\"listen_port\":{{PORT}}}" "http://127.0.0.1:49156/api/v2/app/setPreferences" 2>/dev/null'
+      # gluetun v3.40+ makes the control server PRIVATE by default — every route
+      # 401s until an auth config exists. Open it for the stack's OWN in-namespace
+      # containers so playlistsync's vpn-reset.py can reconnect the tunnel for a
+      # fresh exit IP when xmplaylist Cloudflare-blocks the VPN IP (HTTP 403/429).
+      # The control server listens ONLY inside gluetun's namespace on
+      # 127.0.0.1:8000 and is NEVER published, so the only things that can reach
+      # it are qBittorrent / slskd / playlistsync — all trusted stack containers.
+      # Lock it down by deleting this line if you don't use Playlist Sync.
+      - 'HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE={"auth":"none"}'
     ports:
       - ${LAN_IP}:49156:49156
       # slskd WebUI, published ON gluetun because slskd shares this
