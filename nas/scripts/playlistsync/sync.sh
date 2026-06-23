@@ -297,10 +297,12 @@ run_pass() {
             _any=1
             _csv="/tmp/sxm-$(sanitize "$_slug").csv"
             _namef="/tmp/sxm-name-$(sanitize "$_slug").txt"
-            rm -f "$_namef"
+            _slugf="/tmp/sxm-slug-$(sanitize "$_slug").txt"
+            rm -f "$_namef" "$_slugf"
             log "[$_slug] polling xmplaylist ..."
             if poll_xmplaylist "$_slug" "$_csv" \
                     --name-out "$_namef" \
+                    --slug-out "$_slugf" \
                     ${PLAYLIST_SXM_DAYS:+--days "$PLAYLIST_SXM_DAYS"} \
                     ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
                 # Friendly channel name (xmplaylist channel.name, e.g. "SiriusXM
@@ -313,7 +315,13 @@ run_pass() {
                     _friendly="${_raw#SiriusXM }"
                     [ -n "$_friendly" ] || _friendly="$_raw"
                 fi
-                if process_source "$_friendly - SiriusXM" csv "$_csv" --art-sxm-slug "$_slug"; then
+                # The channel-logo poster is keyed on the canonical deeplink that
+                # poll-xmplaylist resolved (e.g. "turbo" -> "siriusxmturbo"); the
+                # raw input slug 404s on the logo CDN for most channels. Fall back
+                # to the input slug only if resolution wrote nothing.
+                _artslug="$_slug"
+                [ -s "$_slugf" ] && _artslug="$(cat "$_slugf")"
+                if process_source "$_friendly - SiriusXM" csv "$_csv" --art-sxm-slug "$_artslug"; then
                     _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
                 # Permanent monthly Top-50 archive — a SEPARATE dated playlist
                 # "<station> (YYYY-MM)" holding this calendar month's 50 most-
@@ -330,7 +338,7 @@ run_pass() {
                     if poll_xmplaylist "$_slug" "$_acsv" \
                             --days "$_dom" --limit 50 \
                             ${PLAYLIST_SXM_MIN_PLAYS:+--min-plays "$PLAYLIST_SXM_MIN_PLAYS"}; then
-                        if process_source "$_friendly - SiriusXM ($_ym)" csv "$_acsv" --art-sxm-slug "$_slug"; then
+                        if process_source "$_friendly - SiriusXM ($_ym)" csv "$_acsv" --art-sxm-slug "$_artslug"; then
                             _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
                     else
                         warn "[$_friendly - SiriusXM ($_ym)] archive poll failed — skipping (rolling playlist unaffected)"
@@ -341,7 +349,7 @@ run_pass() {
                 warn "[$_slug - SiriusXM] xmplaylist poll failed — skipping"
                 _fail=$((_fail+1))
             fi
-            rm -f "$_csv" "$_namef"
+            rm -f "$_csv" "$_namef" "$_slugf"
             IFS=','
         done
         IFS=$_OLDIFS

@@ -385,6 +385,15 @@ def main(argv=None):
                              "Turbo') to PATH for the caller to use as a playlist "
                              "title. Best-effort: nothing is written if the "
                              "lookup fails (caller should fall back to the slug).")
+    parser.add_argument('--slug-out', metavar='PATH', default=None,
+                        help="Write the RESOLVED canonical deeplink (what "
+                             "resolve_slug turned the input into, e.g. 'turbo' -> "
+                             "'siriusxmturbo') to PATH. The caller needs this for "
+                             "the channel-logo poster URL, which is keyed on the "
+                             "canonical deeplink: the raw input slug 404s on the "
+                             "logo CDN for every channel whose handle differs from "
+                             "its deeplink (the whole 'siriusxm*' family). No "
+                             "network cost — resolve_slug already computed it.")
     args = parser.parse_args(argv)
 
     if args.days < 1:
@@ -411,6 +420,18 @@ def main(argv=None):
         if 'HTTP 403' in m or 'HTTP 429' in m or 'rate limited' in m:
             return 3
         return 1
+
+    # Surface the resolved canonical deeplink so the caller can build the
+    # channel-logo poster URL (keyed on the deeplink, NOT the raw input slug —
+    # the latter 404s for most channels). No network call: `slug` is already the
+    # value resolve_slug returned above. Best-effort, like --name-out.
+    if args.slug_out:
+        try:
+            with open(args.slug_out, 'w', encoding='utf-8') as f:
+                f.write(slug)
+        except OSError as e:
+            print(f'note: could not write --slug-out {args.slug_out}: {e}',
+                  file=sys.stderr)
 
     rows = parse_rows(items, args.min_plays)
 

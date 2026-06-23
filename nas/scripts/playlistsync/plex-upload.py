@@ -296,19 +296,35 @@ def resolve_art_url(spotify_ref=None, sxm_slug=None):
 
 def set_poster(base, token, rating_key, art_url):
     """POST an image URL as the playlist's poster (Plex fetches it server-side).
-    A PLAYLIST lives under /playlists/<key>, so that is the correct posters
-    endpoint — /library/metadata/<key>/posters 404s for a playlist ratingKey
-    (that was the v0.16.19 bug: it failed silently and left the collage). Try
-    the playlist path first, then the library path as a version-quirk fallback.
+
+    A playlist's poster is uploaded to /library/metadata/<ratingKey>/posters —
+    the SAME endpoint Plex uses for every other metadata item. This is exactly
+    what python-plexapi does for a playlist (PlaylistMixins includes PosterMixin):
+
+        key = f'/library/metadata/{self.ratingKey}/posters?url={quote_plus(url)}'
+        self._server.query(key, method=POST)
+
+    An earlier build POSTed to /playlists/<key>/posters FIRST on the mistaken
+    belief that /library/metadata 404s for a playlist key. It does not — that
+    path is authoritative for playlists too — and worse, /playlists/<key>/posters
+    can return 2xx WITHOUT applying the art, so the upload "succeeded" in the log
+    while Plex kept its collage. (The original v0.16.19 "no poster" was actually a
+    Spotify-mosaic art URL that looked identical to the collage, not an endpoint
+    bug; the channel-logo art + this correct endpoint are the real fix.)
+
+    Try the library path first (authoritative), then the playlist path as a
+    harmless version-quirk fallback. Plex fetches the URL from its OWN network
+    (the bridge, not the VPN), so a publicly-reachable logo URL is never blocked.
     Best-effort throughout: a miss just keeps Plex's auto-generated collage."""
     if not (rating_key and art_url):
         return
     q = _qs({"url": art_url})
-    for path in ("/playlists/%s/posters?%s" % (rating_key, q),
-                 "/library/metadata/%s/posters?%s" % (rating_key, q)):
+    for path in ("/library/metadata/%s/posters?%s" % (rating_key, q),
+                 "/playlists/%s/posters?%s" % (rating_key, q)):
         try:
             api(base, path, token, method="POST")
-            err("set playlist poster from %s" % art_url)
+            err("set playlist poster from %s (via %s)"
+                % (art_url, path.split("?", 1)[0]))
             return
         except Exception as e:
             err("note: poster POST to %s failed (%s)" % (path.split("?", 1)[0], e))
