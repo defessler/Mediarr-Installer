@@ -48,12 +48,6 @@ export const envObject = z.object({
   // below gates its creds + a source requirement + the Plex requirement on an
   // explicit-true check. A missing key stays OFF everywhere.
   ENABLE_PLAYLIST_SYNC: optStr,
-  // OPT-IN (default off), mirroring ENABLE_PLAYLIST_SYNC. The superRefine block
-  // below gates a source requirement on an explicit-true check. Downloads curated
-  // YouTube music videos into a browsable Music Videos library. A missing key
-  // stays OFF everywhere.
-  ENABLE_MUSIC_VIDEOS: optStr,
-
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
   // common TRaSH choices: WEB-1080p for Sonarr, HD Bluray + WEB for
@@ -166,7 +160,7 @@ export const envObject = z.object({
     'must be a port number between 1 and 65535',
   ),
 
-  // Playlist Sync (SiriusXM + Spotify → Plex) — all optional at the schema
+  // Playlist Sync (SiriusXM → Plex) — all optional at the schema
   // level; the superRefine block escalates the creds + a source requirement +
   // the Plex requirement to required only when ENABLE_PLAYLIST_SYNC is
   // explicitly true. Standalone: it runs its OWN sockseek downloader (its own
@@ -174,21 +168,7 @@ export const envObject = z.object({
   PLAYLIST_SLSK_USER: optStr,
   PLAYLIST_SLSK_PASS: optStr,
   SIRIUSXM_CHANNELS: optStr,
-  SPOTIFY_PLAYLISTS: optStr,
-  SPOTIFY_CLIENT_ID: optStr,
-  SPOTIFY_CLIENT_SECRET: optStr,
-  // Captured by the wizard's "Connect Spotify" OAuth flow so the downloader can
-  // read PRIVATE playlists (sockseek --spotify-refresh). Optional.
-  SPOTIFY_REFRESH_TOKEN: optStr,
   PLAYLIST_SYNC_CRON: optStr.refine(
-    (v) => !v || /^\S+(\s+\S+){4}$/.test(v.trim()),
-    'must be a 5-field cron expression like "0 4 * * *"',
-  ),
-  // Music Videos sources — comma/newline list of "Artist | URL" or bare URL.
-  // Optional at the schema level; the superRefine block escalates it to
-  // required when ENABLE_MUSIC_VIDEOS is explicitly on.
-  MUSIC_VIDEO_SOURCES: optStr,
-  MUSIC_VIDEO_CRON: optStr.refine(
     (v) => !v || /^\S+(\s+\S+){4}$/.test(v.trim()),
     'must be a 5-field cron expression like "0 4 * * *"',
   ),
@@ -358,9 +338,8 @@ export const envSchema = envObject.superRefine((v, ctx) => {
 
   // Playlist Sync — OPT-IN, gate on explicit true (mirrors is_optin_enabled,
   // NOT flagOn). When on: a 2nd free Soulseek account is required, at least one
-  // source (SiriusXM channel or Spotify playlist) must be configured, the
-  // optional Spotify dev-app creds come as a pair, and Plex must be the media
-  // server (the playlist upload is Plex-specific).
+  // SiriusXM channel must be configured, and a media server (Plex or Jellyfin)
+  // must be enabled (the playlist upload targets it).
   const playlistOn = ['true', '1', 'yes', 'on']
     .includes((v.ENABLE_PLAYLIST_SYNC ?? '').trim().toLowerCase())
   if (playlistOn) {
@@ -383,26 +362,10 @@ export const envSchema = envObject.superRefine((v, ctx) => {
       ctx.addIssue({ code: 'custom', path: ['PLAYLIST_SLSK_PASS'],
         message: 'Soulseek password required when Playlist Sync is enabled' })
     }
-    const hasSource = (!!v.SIRIUSXM_CHANNELS && v.SIRIUSXM_CHANNELS.trim().length > 0)
-      || (!!v.SPOTIFY_PLAYLISTS && v.SPOTIFY_PLAYLISTS.trim().length > 0)
+    const hasSource = !!v.SIRIUSXM_CHANNELS && v.SIRIUSXM_CHANNELS.trim().length > 0
     if (!hasSource) {
       ctx.addIssue({ code: 'custom', path: ['SIRIUSXM_CHANNELS'],
-        message: 'Add at least one SiriusXM channel or Spotify playlist to sync' })
-    }
-    // sockseek requires your OWN Spotify Developer app (client id + secret) for
-    // ALL Spotify inputs — including PUBLIC playlists. So when Spotify playlists
-    // are configured, BOTH creds are required (not optional). SiriusXM is the
-    // fully-free path; Spotify needs the (free-to-create) dev app. The .env /
-    // wizard document sockseek's stated Premium-account caveat.
-    if (!!v.SPOTIFY_PLAYLISTS && v.SPOTIFY_PLAYLISTS.trim().length > 0) {
-      if (!v.SPOTIFY_CLIENT_ID) {
-        ctx.addIssue({ code: 'custom', path: ['SPOTIFY_CLIENT_ID'],
-          message: 'Spotify needs a free Spotify Developer app — Client ID required to sync Spotify playlists (SiriusXM needs no account)' })
-      }
-      if (!v.SPOTIFY_CLIENT_SECRET) {
-        ctx.addIssue({ code: 'custom', path: ['SPOTIFY_CLIENT_SECRET'],
-          message: 'Spotify Client Secret required to sync Spotify playlists (from your Spotify Developer app dashboard)' })
-      }
+        message: 'Add at least one SiriusXM channel to sync' })
     }
     // Needs a media server to upload playlists to. Works with EITHER: Plex
     // (auto-claimed token) or Jellyfin (an API key you create in the dashboard
@@ -411,17 +374,6 @@ export const envSchema = envObject.superRefine((v, ctx) => {
     if (v.MEDIA_SERVER !== 'jellyfin' && !flagOn(v.ENABLE_PLEX)) {
       ctx.addIssue({ code: 'custom', path: ['ENABLE_PLAYLIST_SYNC'],
         message: 'Playlist Sync needs a media server — enable Plex, or choose Jellyfin as your media server' })
-    }
-  }
-
-  // Music Videos — OPT-IN, gate on explicit true (mirrors is_optin_enabled,
-  // NOT flagOn). When on: at least one source entry must be configured.
-  const musicVideosOn = ['true', '1', 'yes', 'on']
-    .includes((v.ENABLE_MUSIC_VIDEOS ?? '').trim().toLowerCase())
-  if (musicVideosOn) {
-    if (!v.MUSIC_VIDEO_SOURCES || !v.MUSIC_VIDEO_SOURCES.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['MUSIC_VIDEO_SOURCES'],
-        message: 'Add at least one "Artist | URL" music-video source' })
     }
   }
 

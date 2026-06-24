@@ -18,8 +18,7 @@ Creating before pruning (and refusing to prune when the new playlist is empty)
 means a transient Jellyfin/scanner hiccup can never leave the user with no
 playlist — the exact safety invariant the Plex script keeps.
 
-Usage: jellyfin-upload.py <m3u-dir> <playlist-name> [--art-spotify URL_OR_ID]
-                          [--art-sxm-slug SLUG]
+Usage: jellyfin-upload.py <m3u-dir> <playlist-name> [--art-sxm-slug SLUG]
   <m3u-dir>        folder under /data/Music/Playlists/ holding exactly one .m3u
   <playlist-name>  desired Jellyfin playlist title (exact-match prune key)
 
@@ -395,32 +394,17 @@ def delete_playlist(base, key, pid):
         err("warning: could not delete playlist %s (%s)" % (pid, e))
 
 
-def _get_json(url):
-    """Plain GET + JSON from an EXTERNAL host (xmplaylist / Spotify oEmbed) — no
-    Jellyfin auth. Used only for best-effort poster-art lookup."""
-    req = urllib.request.Request(
-        url, headers={"Accept": "application/json", "User-Agent": "mediarr-playlistsync"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read() or b"{}")
-
-
-def resolve_art_url(spotify_ref=None, sxm_slug=None):
-    """Best-effort cover-image URL for the playlist poster — IDENTICAL logic to
-    plex-upload.py. SiriusXM: the channel's official LOGO, hosted by xmplaylist at
-    /img/station/<slug>-lg.png (far better than Spotify's auto-mosaic, and Jellyfin
-    fetches it server-side so it's not subject to the VPN exit-IP block). Spotify:
-    oEmbed the playlist URL -> its real cover. Returns None on ANY failure."""
+def resolve_art_url(sxm_slug=None):
+    """Best-effort cover-image URL for the playlist poster — mirrors plex-upload.py.
+    SiriusXM: the channel's official LOGO, hosted by xmplaylist at
+    /img/station/<slug>-lg.png (far better than an auto-generated collage, and
+    Jellyfin fetches it server-side so it's not subject to the VPN exit-IP block).
+    Returns None on ANY failure."""
     try:
-        if sxm_slug and not spotify_ref:
+        if sxm_slug:
             return ("https://xmplaylist.com/img/station/%s-lg.png"
                     % urllib.parse.quote(sxm_slug))
-        if not spotify_ref:
-            return None
-        ref = (spotify_ref if str(spotify_ref).startswith("http")
-               else "https://open.spotify.com/playlist/%s" % spotify_ref)
-        o = _get_json("https://open.spotify.com/oembed?url=%s"
-                      % urllib.parse.quote(ref, safe=":/"))
-        return o.get("thumbnail_url") or None
+        return None
     except Exception as e:
         err("note: couldn't resolve poster art (%s) — keeping Jellyfin's default" % e)
         return None
@@ -447,10 +431,8 @@ def main():
         description="Turn a downloaded .m3u into a Jellyfin playlist (+ optional poster).")
     ap.add_argument("m3u_dir", help="folder under /data/Music/Playlists/ holding one .m3u")
     ap.add_argument("name", help="Jellyfin playlist title (exact-match prune key)")
-    ap.add_argument("--art-spotify", default=None, metavar="URL_OR_ID",
-                    help="Spotify playlist URL/ID; its cover (oEmbed) becomes the poster")
     ap.add_argument("--art-sxm-slug", default=None, metavar="SLUG",
-                    help="SiriusXM xmplaylist slug; the channel's Spotify-playlist cover becomes the poster")
+                    help="SiriusXM xmplaylist slug; the channel logo becomes the playlist poster")
     args = ap.parse_args()
     m3u_dir, name = args.m3u_dir, args.name
 
@@ -530,7 +512,7 @@ def main():
 
         # 7) Cosmetic: best-effort poster. Swallows every failure.
         set_poster(base, key, new_id,
-                   resolve_art_url(spotify_ref=args.art_spotify, sxm_slug=args.art_sxm_slug))
+                   resolve_art_url(sxm_slug=args.art_sxm_slug))
     except (urllib.error.URLError, OSError) as e:
         # Jellyfin momentarily unreachable (connection refused / DNS / timeout).
         # Exit cleanly — sync.sh keeps the downloaded tracks and retries next run.

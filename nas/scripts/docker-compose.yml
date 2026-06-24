@@ -846,8 +846,8 @@ services:
     # .github/workflows/playlistsync-image.yml from nas/scripts/playlistsync/.
     image: ghcr.io/defessler/mediarr-playlistsync:latest
     container_name: playlistsync
-    # Opt-in, hands-off track-for-track mirror of SiriusXM channels + public
-    # Spotify playlists into the Music library, surfaced as Plex playlists.
+    # Opt-in, hands-off track-for-track mirror of SiriusXM channels into the
+    # Music library, surfaced as Plex/Jellyfin playlists.
     # Default OFF. setup.sh adds the "playlists" profile to COMPOSE_PROFILES
     # only when ENABLE_PLAYLIST_SYNC is explicitly true (is_optin_enabled).
     profiles: ["playlists"]
@@ -889,19 +889,8 @@ services:
       # needs its own login. 2-minute signup in the Soulseek desktop client.
       - PLAYLIST_SLSK_USER=${PLAYLIST_SLSK_USER}
       - PLAYLIST_SLSK_PASS=${PLAYLIST_SLSK_PASS}
-      # Comma lists of sources (either may be empty, but not both):
-      #   SIRIUSXM_CHANNELS — xmplaylist slugs, e.g. octane,altnation,siriusxmhits1
-      #   SPOTIFY_PLAYLISTS — public playlist URLs, optionally "Label|URL"
+      # SiriusXM channel slugs, e.g. octane,altnation,siriusxmhits1
       - SIRIUSXM_CHANNELS=${SIRIUSXM_CHANNELS:-}
-      - SPOTIFY_PLAYLISTS=${SPOTIFY_PLAYLISTS:-}
-      # Optional FREE Spotify Developer app (client id/secret) — NOT a paid
-      # subscription. When set, Spotify playlists are read via the official API
-      # (robust); when blank, sockseek uses the fragile unauthenticated path.
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
-      # OAuth refresh token (from the wizard's "Connect Spotify") — lets sockseek
-      # read the user's PRIVATE playlists non-interactively.
-      - SPOTIFY_REFRESH_TOKEN=${SPOTIFY_REFRESH_TOKEN:-}
       # Schedule (cron) + behaviour knobs. Defaults: daily 4am, FLAC-preferred,
       # one pass on container start so enabling it shows results immediately.
       - PLAYLIST_SYNC_CRON=${PLAYLIST_SYNC_CRON:-0 4 * * *}
@@ -1044,42 +1033,6 @@ services:
       start_period: 300s
     logging: *logging
     restart: unless-stopped
-
-  # ── Music Videos ──────────────────────────────────────────
-
-  musicvideos:
-    # CI-built image (ghcr.io/defessler/mediarr-musicvideos). Built+pushed by
-    # .github/workflows/musicvideos-image.yml from nas/scripts/musicvideos/.
-    image: ghcr.io/defessler/mediarr-musicvideos:latest
-    container_name: musicvideos
-    # Opt-in, cron-scheduled yt-dlp downloader that fills a dedicated Music
-    # Videos library on disk. Default OFF. setup.sh adds the "musicvideos"
-    # profile to COMPOSE_PROFILES only when ENABLE_MUSIC_VIDEOS is explicitly
-    # true (is_optin_enabled).
-    #
-    # BRIDGE network (NOT network_mode: container:gluetun): YouTube hard-blocks
-    # datacenter/VPN exit IPs ("confirm you're not a bot"), so this service
-    # MUST exit via the real NAS IP. Music videos are public content — no VPN
-    # needed. Same bridge pattern as AzuraCast.
-    profiles: ["musicvideos"]
-    networks: [media]
-    security_opt: *security
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - MUSIC_VIDEO_SOURCES=${MUSIC_VIDEO_SOURCES}
-      - MUSIC_VIDEO_CRON=${MUSIC_VIDEO_CRON:-0 4 * * *}
-      - MUSIC_VIDEO_RUN_ON_START=${MUSIC_VIDEO_RUN_ON_START:-true}
-    volumes:
-      # Music Videos library — Plex "Other Videos" or Jellyfin "Music Videos".
-      # Layout: /media/<Artist>/<Artist> - <Title>.mp4
-      - ${DATA_ROOT}/Media/Music Videos:/media
-      # Persistent config: yt-dlp download archive (dedup), crontab, lock file.
-      - ${INSTALL_DIR}/musicvideos/config:/config
-    # No ports — headless worker; writes files only, no API/UI.
-    logging: *logging
-    restart: on-failure:5
 
 networks:
   media:

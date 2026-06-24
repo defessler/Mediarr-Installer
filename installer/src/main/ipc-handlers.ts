@@ -10,7 +10,6 @@ import * as sshReal from './ssh-service.js'
 import * as sftpReal from './sftp-service.js'
 import { detectEnv as detectEnvReal } from './env-detector.js'
 import { fetchVpnKey as fetchVpnKeyReal } from './vpn-service.js'
-import { spotifyConnect } from './spotify-oauth.js'
 import * as mock from './mock-services.js'
 import * as profiles from './profile-store.js'
 import { saveTextToFile, openTextFromFile, chooseSavePath } from './dialog-service.js'
@@ -114,10 +113,6 @@ export function registerIpcHandlers() {
     detectEnv(args.sessionId, args.targetDir),
   )
   ipcMain.handle(IPC.vpnFetchKey, (_e, args: { token: string }) => fetchVpnKey(args.token))
-  // Spotify OAuth runs in the main process (loopback redirect + token exchange).
-  // Always the real flow — there's no useful mock for an interactive browser login.
-  ipcMain.handle(IPC.spotifyConnect,
-    (_e, args: { clientId: string; clientSecret: string }) => spotifyConnect(args))
 
   // ── Profiles ──────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.profileList, () => profiles.listProfiles())

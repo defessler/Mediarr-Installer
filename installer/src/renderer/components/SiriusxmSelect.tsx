@@ -56,7 +56,7 @@ export function SiriusxmSelect({ value, onChange }: Props) {
       : emit([...selected, slug])
   const remove = (slug: string) => emit(selected.filter((s) => s !== slug))
   // xmplaylist slugs are bare identifiers (e.g. "octane", "the-pulse"). Scrub
-  // the same way SpotifyConnect.serialize does its labels: drop the CSV/field
+  // them just like the container does: drop the CSV/field
   // separators (',' and '|') that would corrupt parseSlugs / the container's
   // sync.sh split, and strip ALL whitespace (a slug has none) — a stray space
   // or comma would otherwise silently write an invalid slug that only fails

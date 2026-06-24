@@ -536,10 +536,6 @@ fi
 # AzuraCast is NOT VPN-coupled: it must be LAN-reachable for listeners, so it
 # stays on the regular bridge and never pulls in the "vpn" sidecar.
 is_optin_enabled ENABLE_AZURACAST && PROFILES+=("radio")
-# Music Videos (cron-based yt-dlp downloader) is OPT-IN (default off) — NOT
-# VPN-coupled (YouTube blocks VPN IPs), so it joins the media bridge like
-# AzuraCast. Use is_optin_enabled so a missing key stays off.
-is_optin_enabled ENABLE_MUSIC_VIDEOS && PROFILES+=("musicvideos")
 
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
@@ -724,7 +720,6 @@ stop_disabled_services() {
         "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
         "azuracast:ENABLE_AZURACAST"
         "playlistsync:ENABLE_PLAYLIST_SYNC"
-        "musicvideos:ENABLE_MUSIC_VIDEOS"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -735,7 +730,7 @@ stop_disabled_services() {
         # / ENABLE_PLAYLIST_SYNC are OPT-IN, so use the explicit-true helper; the
         # default-on is_enabled would treat a missing key as "enabled" and never
         # reap slskd/soularr, azuracast, or playlistsync.
-        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_AZURACAST" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] || [ "$flag" = "ENABLE_MUSIC_VIDEOS" ]; then
+        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_AZURACAST" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue

@@ -161,7 +161,7 @@ const defaultConfig: Partial<EnvFormValues> = {
   // the Configure screen (it's a heavier service). Default web UI port 49157.
   ENABLE_AZURACAST: 'false',
   AZURACAST_HTTP_PORT: '49157',
-  // Playlist Sync (SiriusXM + Spotify → Plex) is OPT-IN too — default OFF,
+  // Playlist Sync (SiriusXM → Plex) is OPT-IN too — default OFF,
   // like Soulseek/AzuraCast. A fresh wizard run renders
   // ENABLE_PLAYLIST_SYNC=false; the user opts in on the Configure screen
   // (it needs Plex + its own 2nd free Soulseek account). Schedule/format

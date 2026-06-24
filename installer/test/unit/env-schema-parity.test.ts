@@ -38,11 +38,6 @@ const VARIANTS: EnvFormValues[] = [
     ENABLE_PLAYLIST_SYNC: 'true',
     CUSTOM_INDEXERS_JSON: '[]',
   },
-  {
-    ...BASE_ENV,
-    ENABLE_MUSIC_VIDEOS: 'true',
-    MUSIC_VIDEO_SOURCES: 'Metallica | https://www.youtube.com/watch?v=x',
-  },
   ...(['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom'] as const).map(
     (p): EnvFormValues => ({
       ...BASE_ENV,

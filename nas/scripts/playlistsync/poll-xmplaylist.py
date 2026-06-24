@@ -265,7 +265,7 @@ def fetch_channel_name(slug):
     TITLE, so a miss just falls back to the slug — it must never cost the CSV the
     downloader actually needs. A SEPARATE call because the most-heard endpoint
     carries no channel metadata (only `results`); /api/station/<slug> does, in a
-    `channel` object (the same one plex-upload reads spotifyPlaylist from)."""
+    `channel` object that carries the station's display name."""
     try:
         data = _http_get_json(f'{API_BASE}/station/{slug}')
     except RuntimeError:

@@ -140,7 +140,7 @@ export interface EnvFormValues {
    *  creates the admin account in AzuraCast's own web UI on first run. */
   AZURACAST_HTTP_PORT?: string
 
-  // ── Playlist Sync (SiriusXM + Spotify → Plex) — only used when
+  // ── Playlist Sync (SiriusXM → Plex) — only used when
   //    ENABLE_PLAYLIST_SYNC=true. OPT-IN like Soulseek (isOptInEnabled).
   /** Whether to install the Playlist Sync worker. A missing key counts as
    *  OFF; emitted via isOptInEnabled so a pre-feature .env never gains it. */
@@ -151,15 +151,6 @@ export interface EnvFormValues {
   PLAYLIST_SLSK_PASS?: string
   /** Comma list of xmplaylist channel slugs (e.g. octane,siriusxmhits1). */
   SIRIUSXM_CHANNELS?: string
-  /** Comma list of public Spotify playlist URLs, each optionally "Label|URL". */
-  SPOTIFY_PLAYLISTS?: string
-  /** Optional FREE Spotify Developer app (client id/secret) for robust,
-   *  official playlist reads. Blank → the fragile unauthenticated path. */
-  SPOTIFY_CLIENT_ID?: string
-  SPOTIFY_CLIENT_SECRET?: string
-  /** Spotify OAuth refresh token captured by the wizard's "Connect Spotify"
-   *  flow, so the downloader can read PRIVATE playlists non-interactively. */
-  SPOTIFY_REFRESH_TOKEN?: string
   /** Cron schedule (default 0 4 * * *). */
   PLAYLIST_SYNC_CRON?: string
   /** Preferred audio format (default flac). */
@@ -171,18 +162,6 @@ export interface EnvFormValues {
   PLAYLIST_SXM_MIN_PLAYS?: string
   /** Keep permanent monthly Top-50 archive playlists per SiriusXM station (default on). */
   PLAYLIST_MONTHLY_ARCHIVE?: string
-
-  // ── Music Videos (YouTube yt-dlp downloader → browsable library)
-  //    Only used when ENABLE_MUSIC_VIDEOS=true. OPT-IN like Playlist Sync
-  //    (isOptInEnabled). A missing key counts as OFF.
-  /** Whether to install the Music Videos worker. A missing key counts as OFF;
-   *  emitted via isOptInEnabled so a pre-feature .env never gains it. */
-  ENABLE_MUSIC_VIDEOS?: string
-  /** Comma/newline list of "Artist | URL" entries (channel, playlist, or single
-   *  video URL). Bare URL = artist derived from yt-dlp metadata per video. */
-  MUSIC_VIDEO_SOURCES?: string
-  /** Cron schedule for the music-videos downloader (default 0 4 * * *). */
-  MUSIC_VIDEO_CRON?: string
 
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
@@ -562,32 +541,20 @@ export function renderEnv(v: EnvFormValues): string {
     line('ENABLE_AZURACAST', isOptInEnabled(v.ENABLE_AZURACAST) ? 'true' : 'false'),
     line('AZURACAST_HTTP_PORT', v.AZURACAST_HTTP_PORT || '49157'),
     '',
-    '# Playlist Sync (SiriusXM + Spotify → Plex). OPT-IN; off by default.',
+    '# Playlist Sync (SiriusXM → Plex). OPT-IN; off by default.',
     '# A missing ENABLE_PLAYLIST_SYNC key counts as OFF (like ENABLE_SOULSEEK)',
-    '# — emitted via isOptInEnabled. Mirrors playlists into Plex; downloads',
-    '# Soulseek-first (its own 2nd account) with a yt-dlp fallback. Needs Plex.',
+    '# — emitted via isOptInEnabled. Mirrors SiriusXM playlists into Plex/Jellyfin;',
+    '# downloads Soulseek-first (its own 2nd account) with a yt-dlp fallback.',
     line('ENABLE_PLAYLIST_SYNC', isOptInEnabled(v.ENABLE_PLAYLIST_SYNC) ? 'true' : 'false'),
     line('PLAYLIST_SLSK_USER', v.PLAYLIST_SLSK_USER),
     line('PLAYLIST_SLSK_PASS', v.PLAYLIST_SLSK_PASS),
     line('SIRIUSXM_CHANNELS', v.SIRIUSXM_CHANNELS),
-    line('SPOTIFY_PLAYLISTS', v.SPOTIFY_PLAYLISTS),
-    line('SPOTIFY_CLIENT_ID', v.SPOTIFY_CLIENT_ID),
-    line('SPOTIFY_CLIENT_SECRET', v.SPOTIFY_CLIENT_SECRET),
-    line('SPOTIFY_REFRESH_TOKEN', v.SPOTIFY_REFRESH_TOKEN),
     line('PLAYLIST_SYNC_CRON', v.PLAYLIST_SYNC_CRON || '0 4 * * *'),
     line('PLAYLIST_PREF_FORMAT', v.PLAYLIST_PREF_FORMAT || 'flac'),
     line('PLAYLIST_RUN_ON_START', v.PLAYLIST_RUN_ON_START || 'true'),
     line('PLAYLIST_SXM_DAYS', v.PLAYLIST_SXM_DAYS),
     line('PLAYLIST_SXM_MIN_PLAYS', v.PLAYLIST_SXM_MIN_PLAYS),
     line('PLAYLIST_MONTHLY_ARCHIVE', v.PLAYLIST_MONTHLY_ARCHIVE || 'true'),
-    '',
-    '# Music Videos (yt-dlp → browsable library). OPT-IN; off by default.',
-    '# A missing ENABLE_MUSIC_VIDEOS key counts as OFF — emitted via isOptInEnabled',
-    '# so a pre-feature .env never silently gains it on upgrade.',
-    '# MUSIC_VIDEO_SOURCES: comma/newline list of "Artist | URL" or bare URL entries.',
-    line('ENABLE_MUSIC_VIDEOS', isOptInEnabled(v.ENABLE_MUSIC_VIDEOS) ? 'true' : 'false'),
-    line('MUSIC_VIDEO_SOURCES', v.MUSIC_VIDEO_SOURCES),
-    line('MUSIC_VIDEO_CRON', v.MUSIC_VIDEO_CRON || '0 4 * * *'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

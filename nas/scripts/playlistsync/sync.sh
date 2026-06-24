@@ -13,8 +13,7 @@
 #                      failing never aborts the others.
 #
 # Data flow per source:
-#   SiriusXM slug  --poll-xmplaylist.py-->  CSV(Artist,Title)  --\
-#   Spotify URL    ----------------------------------------------> sockseek
+#   SiriusXM slug  --poll-xmplaylist.py-->  CSV(Artist,Title)  --> sockseek
 #                                                                      |
 #                          /data/Music/Playlists/<label>/{tracks,.m3u} |
 #                                                                      v
@@ -49,14 +48,6 @@ trim() { printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
 # with them). Echoes the sanitised label.
 sanitize() {
     printf '%s' "$1" | sed 's#[/\\]#-#g; s/[[:cntrl:]]//g; s/^[[:space:]]*//; s/[[:space:]]*$//'
-}
-
-# Extract the playlist id from a Spotify URL for a deterministic fallback label.
-spotify_id() {
-    _id="${1##*/playlist/}"   # drop everything up to and incl. /playlist/
-    _id="${_id%%\?*}"          # drop ?si=... query
-    _id="${_id%%/*}"           # drop any trailing path
-    printf '%s' "$_id"
 }
 
 # Run poll-xmplaylist.py (args passed straight through). If it reports an
@@ -107,21 +98,8 @@ write_conf() {
         # emits a literal %(ext)s into the conf.
         printf 'yt-dlp-argument = "{id}" -f bestaudio/best -ci -o "{savepath-noext}.%%(ext)s" -x --audio-format mp3 --audio-quality 0\n'
         printf 'write-playlist = true\n'
-        # Optional FREE Spotify Developer app credentials. When present, sockseek
-        # reads Spotify playlists via the official API (robust); when absent it
-        # falls back to the unauthenticated public path (works for public
-        # playlists but is fragile — see the wiki).
-        if [ -n "${SPOTIFY_CLIENT_ID:-}" ] && [ -n "${SPOTIFY_CLIENT_SECRET:-}" ]; then
-            printf 'spotify-id = %s\n' "${SPOTIFY_CLIENT_ID}"
-            printf 'spotify-secret = %s\n' "${SPOTIFY_CLIENT_SECRET}"
-            # OAuth refresh token (from the wizard's "Connect Spotify") lets
-            # sockseek read the user's PRIVATE playlists, not just public ones.
-            if [ -n "${SPOTIFY_REFRESH_TOKEN:-}" ]; then
-                printf 'spotify-refresh = %s\n' "${SPOTIFY_REFRESH_TOKEN}"
-            fi
-        fi
     } > "$CONF"
-    log "wrote $CONF (pref-format=${PLAYLIST_PREF_FORMAT:-flac}, spotify-api=$( [ -n "${SPOTIFY_CLIENT_ID:-}" ] && echo yes || echo no ))"
+    log "wrote $CONF (pref-format=${PLAYLIST_PREF_FORMAT:-flac})"
 }
 
 # ── one source ──────────────────────────────────────────────────────────────
@@ -179,13 +157,13 @@ m3u_has_tracks() {
 
 # Download one source into its own playlist folder and push it to Plex.
 #   $1 = label (Plex playlist title + folder + .m3u basename)
-#   $2 = sockseek input-type (csv|spotify)
-#   $3 = sockseek input (CSV path or Spotify URL)
+#   $2 = sockseek input-type (csv)
+#   $3 = sockseek input (CSV path)
 process_source() {
     _label="$(sanitize "$1")"
     _type="$2"
     _input="$3"
-    _art_flag="${4:-}"   # optional --art-sxm-slug|--art-spotify passed to plex-upload
+    _art_flag="${4:-}"   # optional --art-sxm-slug passed to plex-upload
     _art_val="${5:-}"    #   ...and its value; captured now because `set --` below reuses $@
     [ -n "$_label" ] || { warn "empty label for input '$_input' — skipping"; return 1; }
     # Once Soulseek has rejected the login this run, every source fails the same
@@ -355,34 +333,8 @@ run_pass() {
         IFS=$_OLDIFS
     fi
 
-    # Spotify playlists: "Label|URL" (custom title) or bare "URL" (id-derived).
-    # sockseek needs your OWN Spotify Developer app for ALL Spotify inputs —
-    # even public playlists — so if the creds are missing, skip Spotify with a
-    # clear note (SiriusXM still runs). The installer validates this too, but
-    # guard here for hand-edited .env files.
-    if [ -n "${SPOTIFY_PLAYLISTS:-}" ] && { [ -z "${SPOTIFY_CLIENT_ID:-}" ] || [ -z "${SPOTIFY_CLIENT_SECRET:-}" ]; }; then
-        _any=1
-        warn "SPOTIFY_PLAYLISTS is set but SPOTIFY_CLIENT_ID/SECRET are missing — sockseek requires your own free Spotify Developer app for every Spotify input (even public playlists). Skipping Spotify this run; SiriusXM is unaffected."
-    elif [ -n "${SPOTIFY_PLAYLISTS:-}" ]; then
-        _OLDIFS=$IFS; IFS=','
-        for _entry in $SPOTIFY_PLAYLISTS; do
-            IFS=$_OLDIFS
-            _entry="$(trim "$_entry")"
-            [ -n "$_entry" ] || continue
-            _any=1
-            case "$_entry" in
-                *"|"*) _label="$(trim "${_entry%%|*}")"; _url="$(trim "${_entry#*|}")" ;;
-                *)     _url="$_entry"; _label="$(spotify_id "$_url") - Spotify" ;;
-            esac
-            if process_source "$_label" spotify "$_url" --art-spotify "$_url"; then
-                _ok=$((_ok+1)); else _fail=$((_fail+1)); fi
-            IFS=','
-        done
-        IFS=$_OLDIFS
-    fi
-
     if [ "$_any" -eq 0 ]; then
-        warn "no sources configured (SIRIUSXM_CHANNELS and SPOTIFY_PLAYLISTS both empty) — nothing to do"
+        warn "no sources configured (SIRIUSXM_CHANNELS is empty) — nothing to do"
         return 0
     fi
     log "pass complete: $_ok playlist(s) updated, $_fail failed."
@@ -472,8 +424,8 @@ die_slow() { log "ERROR: $*" >&2; sleep 60; exit 1; }
 validate() {
     [ -n "${PLAYLIST_SLSK_USER:-}" ] && [ -n "${PLAYLIST_SLSK_PASS:-}" ] \
         || die_slow "PLAYLIST_SLSK_USER / PLAYLIST_SLSK_PASS are required (a 2nd free Soulseek account — slskd holds the stack's one session). Set them in .env and re-run setup."
-    [ -n "${SIRIUSXM_CHANNELS:-}" ] || [ -n "${SPOTIFY_PLAYLISTS:-}" ] \
-        || die_slow "no sources configured: set SIRIUSXM_CHANNELS and/or SPOTIFY_PLAYLISTS in .env."
+    [ -n "${SIRIUSXM_CHANNELS:-}" ] \
+        || die_slow "no sources configured: set SIRIUSXM_CHANNELS in .env."
 }
 
 scheduler() {
