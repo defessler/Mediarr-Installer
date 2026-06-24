@@ -102,12 +102,12 @@ NEW_DATA="$(clean "$NEW_DATA")"
 RELOCATE_STATE="$SCRIPT_DIR/.relocate-state"
 
 # Per-service config dirs under INSTALL_DIR (the dirs docker bind-mounts as
-# ${INSTALL_DIR}/<svc>/config — azuracast has several subdirs under azuracast/).
-SERVICE_DIRS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr unpackerr homepage slskd soularr azuracast playlistsync"
+# ${INSTALL_DIR}/<svc>/config).
+SERVICE_DIRS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr unpackerr homepage slskd soularr playlistsync"
 
 # The stack's fixed container_names. gluetun LAST (its namespace-sharers must be
 # removed first, or Docker refuses to rm it).
-STACK_CONTAINERS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr recyclarr-trigger unpackerr flaresolverr homepage slskd soularr azuracast playlistsync gluetun"
+STACK_CONTAINERS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr recyclarr-trigger unpackerr flaresolverr homepage slskd soularr playlistsync gluetun"
 
 container_exists() { $RT inspect "$1" >/dev/null 2>&1; }
 mount_src() { $RT inspect -f "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Source}}{{end}}{{end}}" "$1" 2>/dev/null; }

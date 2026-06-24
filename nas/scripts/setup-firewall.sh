@@ -165,17 +165,6 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_SOULSEEK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5030 -j ACCEPT ;;
     esac
-    # AzuraCast broadcast radio — OPT-IN (explicit true only), same semantics
-    # as Soulseek above. Two openings: 49157 (web UI / admin) plus the
-    # 8000-8029 Icecast+Liquidsoap stream range so LAN listeners can tune in.
-    # NOT gluetun-namespaced — AzuraCast publishes on ${LAN_IP} directly so it
-    # stays LAN-reachable for players.
-    case "$(grep -m1 '^ENABLE_AZURACAST=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
-        true|1|yes|on)
-            iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT
-            iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8000:8029 -j ACCEPT
-            ;;
-    esac
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
@@ -232,11 +221,6 @@ remove_rules() {
 
     # Soulseek slskd WebUI (via Gluetun)
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5030 -j ACCEPT 2>/dev/null
-
-    # AzuraCast (web UI 49157 + 8000-8029 stream range). Unconditional -D
-    # mirrors add_rules' spec exactly so re-runs never leave a stale rule.
-    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT 2>/dev/null
-    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8000:8029 -j ACCEPT 2>/dev/null
 
     # Seerr
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT 2>/dev/null

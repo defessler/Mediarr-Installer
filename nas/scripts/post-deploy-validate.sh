@@ -53,9 +53,9 @@ is_enabled() {
 
 # Opt-IN semantics — the OPPOSITE default of is_enabled(): missing or empty
 # → DISABLED; only an explicit true/1/yes/on (any case) counts as enabled.
-# Used for opt-in services (AzuraCast) so a pre-feature .env with no key
-# isn't probed as if the service were deployed (which would HTTP-000 and
-# false-fail the post-deploy). Mirrors is_optin_enabled in setup.sh and
+# Used for opt-in services so a pre-feature .env with no key isn't probed as
+# if the service were deployed (which would HTTP-000 and false-fail the
+# post-deploy). Mirrors is_optin_enabled in setup.sh and
 # isOptInEnabled() in env-render.ts.
 is_optin_enabled() {
     local val
@@ -143,9 +143,6 @@ is_enabled ENABLE_SABNZBD     && CONTAINERS+=(sabnzbd)
 is_enabled ENABLE_HOMEPAGE    && CONTAINERS+=(homepage)
 is_enabled ENABLE_RECYCLARR   && CONTAINERS+=(recyclarr recyclarr-trigger)
 is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
-# AzuraCast (broadcast radio) is OPT-IN — explicit-true gate so a pre-
-# AzuraCast .env isn't expected to have the container.
-is_optin_enabled ENABLE_AZURACAST && CONTAINERS+=(azuracast)
 # Soulseek (opt-in music download) — slskd WebUI + the soularr bridge daemon.
 # Explicit-true gate so a pre-Soulseek .env isn't expected to have them.
 is_optin_enabled ENABLE_SOULSEEK && CONTAINERS+=(slskd soularr)
@@ -429,24 +426,16 @@ is_enabled ENABLE_FLARESOLVERR && check_url "Flaresolverr" "http://$LAN_IP:8191"
 # no-retry probe (--max-time 10), so on a slow/contended package mirror that
 # probe returns HTTP 000 and would HARD-fail a still-booting cosmetic tile —
 # reddening the whole install. Lenient check → a not-yet-serving trigger WARNS
-# (wait + re-run), exactly like Seerr/AzuraCast/slskd, which are the same kind
+# (wait + re-run), exactly like Seerr/slskd, which are the same kind
 # of non-critical late-binding tile.
 is_enabled ENABLE_RECYCLARR   && check_url_lenient "Recyclarr trigger" "http://$LAN_IP:8889" \
     "Recyclarr trigger apk-installs docker-cli at first boot — wait a minute and re-run."
-# AzuraCast (opt-in radio) is HEAVY: its bundled MariaDB initialises on first
-# boot, so the web UI can still be returning HTTP 000 at end-of-install even
-# though the container reports "running". Lenient check → a not-yet-serving
-# AzuraCast WARNS (wait + re-run) instead of red-failing the whole install,
-# exactly like Seerr. The "AzuraCast (http" line this prints is also what the
-# wizard's Done screen scrapes to light up its AzuraCast health tile.
-is_optin_enabled ENABLE_AZURACAST && check_url_lenient "AzuraCast" "http://$LAN_IP:49157" \
-    "AzuraCast is heavy — first boot can take a few minutes while it sets up its database. Wait, then re-run."
 # slskd (opt-in Soulseek client). Its WebUI is published on 5030 (by gluetun
 # when VPN is on, directly when off — works either way). Like qBittorrent it
 # shares gluetun's network namespace, so the WebUI can still read 000 right at
 # end-of-install while the VPN handshake settles — lenient check → warn not
 # fail. The "slskd (http" line is what the wizard's Done screen scrapes for its
-# health tile (mirrors the AzuraCast pattern above).
+# health tile.
 is_optin_enabled ENABLE_SOULSEEK && check_url_lenient "slskd" "http://$LAN_IP:5030" \
     "slskd shares the VPN's network — if VPN is on, give the tunnel a moment to settle, then re-run."
 
@@ -725,11 +714,6 @@ if is_enabled ENABLE_HOMEPAGE; then
             "ENABLE_QBITTORRENT:qBittorrent"
             "ENABLE_RECYCLARR:Recyclarr"
         )
-        # AzuraCast tile is opt-in — append it only when explicitly enabled.
-        # The loop below re-checks the flag with is_enabled (default-on), which
-        # is fine here: we only append when is_optin_enabled already proved the
-        # key is an explicit true, so both helpers agree.
-        is_optin_enabled ENABLE_AZURACAST && EXPECTED_TILES+=("ENABLE_AZURACAST:AzuraCast")
         is_optin_enabled ENABLE_SOULSEEK  && EXPECTED_TILES+=("ENABLE_SOULSEEK:slskd")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do

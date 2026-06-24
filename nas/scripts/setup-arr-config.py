@@ -4004,54 +4004,6 @@ def render_homepage_services(env, ip):
         out.extend(downloads)
         out.append("")
 
-    # Listen section — broadcast-radio services. AzuraCast is OPT-IN (like
-    # slskd) so it uses is_optin_enabled (explicit-true), NOT the default-on
-    # is_enabled — an upgraded pre-AzuraCast .env (no key) stays OFF. It's LAN-
-    # reachable (NOT in gluetun's namespace), so its WebUI is published on
-    # ${LAN_IP}:49157 and the default siteMonitor (the href) is correct.
-    listen = []
-    if is_optin_enabled(env, 'ENABLE_AZURACAST'):
-        # AzuraCast tile carries a LIVE now-playing widget. WHY a raw f-string
-        # instead of block(): block() can't attach a Homepage `widget:` sub-
-        # block. Homepage has no native AzuraCast widget, so this uses the
-        # generic `customapi` widget pointed at AzuraCast's UNAUTHENTICATED
-        # /api/nowplaying endpoint (no API key needed). Field paths are `0.*`
-        # — the FIRST station in the returned array — so it works no matter
-        # what the user names their station, AND that endpoint returns HTTP
-        # 200 with `[]` before any station exists, so the tile shows blank
-        # (never a red "API Error") until the user creates their first station.
-        # (Stations appear in this feed only while AzuraCast's per-station
-        # "Enable Public Pages" setting is on — the default; if a privacy-minded
-        # user turns it off, the unauthenticated array is empty and the tile
-        # simply blanks, still no error. Verified against AzuraCast source.)
-        # Homepage fetches this server-side from the homepage container, which
-        # reaches AzuraCast over the shared media bridge via the published LAN
-        # port — the same reachability the siteMonitor below already relies on.
-        listen.append(
-            f"    - AzuraCast:\n"
-            f"        href: http://{ip}:49157\n"
-            f"        description: Internet radio — your 24/7 stations\n"
-            f"        icon: azuracast.png\n"
-            f"        siteMonitor: http://{ip}:49157\n"
-            f"        widget:\n"
-            f"          type: customapi\n"
-            f"          url: http://{ip}:49157/api/nowplaying\n"
-            f"          refreshInterval: 30000\n"
-            f"          display: list\n"
-            f"          mappings:\n"
-            f"            - field: 0.now_playing.song.title\n"
-            f"              label: Now playing\n"
-            f"            - field: 0.now_playing.song.artist\n"
-            f"              label: Artist\n"
-            f"            - field: 0.listeners.current\n"
-            f"              label: Listeners\n"
-            f"              format: number"
-        )
-    if listen:
-        out.append("- Listen:")
-        out.extend(listen)
-        out.append("")
-
     # Maintenance section — services with no web UI (Recyclarr is a
     # CLI tool, so its tile points at the docs + the in-config last-
     # sync stamp, not at any port on the NAS). This is the section the
@@ -4145,14 +4097,6 @@ def render_homepage_settings(env):
         out.append("  Downloads:")
         out.append("    style: row")
         out.append("    columns: 2")
-    # Listen — only the AzuraCast tile lives here, and only when AzuraCast is
-    # on. OPT-IN gate (is_optin_enabled, like slskd's section), matching the
-    # services.yaml section in render_homepage_services so there's no layout
-    # key without a section (Homepage would warn).
-    if is_optin_enabled(env, 'ENABLE_AZURACAST'):
-        out.append("  Listen:")
-        out.append("    style: row")
-        out.append("    columns: 1")
     # Maintenance — only the Recyclarr tile lives here now (Update Images
     # was removed; see render_homepage_services for the reason). Skip the
     # section + its layout entry entirely when Recyclarr is off, otherwise

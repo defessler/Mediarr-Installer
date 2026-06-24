@@ -212,66 +212,6 @@ for dir in "${DATA_DIRS[@]}"; do
     apply_perms "$dir" "$created" "$PUID:$PGID" 775 664
 done
 
-# ── AzuraCast (opt-in) persistence dirs — chown 1000:1000, NOT PUID:PGID ──────
-#
-# AzuraCast (broadcast radio) is OPT-IN: only an explicit true/1/yes/on in
-# .env stands it up, so a pre-AzuraCast .env (no key) stays OFF. We can't
-# fold these into CONFIG_DIRS/DATA_DIRS above because those loops chown to
-# $PUID:$PGID — and AzuraCast is the one service that does NOT honor
-# PUID/PGID. The ghcr.io/azuracast/azuracast image runs its internal
-# services (MariaDB, Nginx, Liquidsoap, PHP-FPM) as its OWN baked-in user
-# UID/GID 1000, regardless of what we pass. Bind mounts owned by anyone
-# else (eg a wizard PUID of 1026 on Synology) leave MariaDB unable to write
-# /var/lib/mysql and the container crash-loops on first boot. So these four
-# dirs are deliberately chown'd to the fixed 1000:1000 the container expects.
-# (env_val / is_optin_enabled aren't defined this early in the script, so we
-# do the explicit-true .env read inline here — same true|1|yes|on opt-in
-# semantics as setup.sh's is_optin_enabled / the Soulseek firewall rule.)
-case "$(grep -m1 '^ENABLE_AZURACAST=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
-    true|1|yes|on)
-        echo ""
-        echo "Creating AzuraCast directories (owned 1000:1000 — its own UID, not PUID:PGID)..."
-        # Bind mounts (not anon volumes) so the Update flow can't wipe the
-        # station DB. Targets map to AzuraCast's official container paths:
-        #   station_data → /var/azuracast/stations   db_data → /var/lib/mysql
-        #   www_uploads  → /var/azuracast/storage/uploads (album art etc)
-        #   backups      → /var/azuracast/backups
-        #   acme         → /var/azuracast/storage/acme (self-signed TLS cert)
-        AZ_DIRS=(
-            "$INSTALL_DIR/azuracast/station_data"
-            "$INSTALL_DIR/azuracast/db_data"
-            "$INSTALL_DIR/azuracast/www_uploads"
-            "$INSTALL_DIR/azuracast/backups"
-            "$INSTALL_DIR/azuracast/acme"
-        )
-        for dir in "${AZ_DIRS[@]}"; do
-            if [ ! -d "$dir" ]; then
-                mkdir -p "$dir"
-                echo "  Created: $dir"
-                created=1
-            else
-                echo "  Exists:  $dir"
-                created=0
-            fi
-            # Fixed 1000:1000 — see the WHY note above. AzuraCast ignores
-            # PUID/PGID; chowning to the wizard's PUID/PGID would crash-loop it.
-            # Gated like CONFIG_DIRS/DATA_DIRS: only sweep the tree on a dir we
-            # just created (subtree empty + ours) or under MEDIARR_FIX_PERMS=1; a
-            # re-run touches only the node. We never `chmod -R` the FILES here —
-            # db_data is MariaDB's live /var/lib/mysql and it manages its own
-            # per-file modes (some 600/660 on keys); a flat file-mode rewrite
-            # would corrupt them. Only directory modes are normalised.
-            if [ "$created" -eq 1 ] || [ "$FIX_PERMS" -eq 1 ]; then
-                chown -R 1000:1000 "$dir"
-                find "$dir" -type d -exec chmod 755 {} +
-            else
-                chown 1000:1000 "$dir"
-                chmod 755 "$dir"
-            fi
-        done
-        ;;
-esac
-
 # ── Synology shared-folder ACL ────────────────────────────────────────────────
 #
 # /volume1/Data is a Synology Shared Folder. Shared folders have their

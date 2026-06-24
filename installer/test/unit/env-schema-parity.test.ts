@@ -34,7 +34,6 @@ const VARIANTS: EnvFormValues[] = [
   {
     ...BASE_ENV,
     ENABLE_SOULSEEK: 'true',
-    ENABLE_AZURACAST: 'true',
     ENABLE_PLAYLIST_SYNC: 'true',
     CUSTOM_INDEXERS_JSON: '[]',
   },

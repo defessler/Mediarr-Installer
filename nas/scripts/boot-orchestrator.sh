@@ -201,18 +201,6 @@ case "$(env_val ENABLE_PLAYLIST_SYNC | tr '[:upper:]' '[:lower:]')" in
         esac
         ;;
 esac
-# AzuraCast (broadcast radio) is OPT-IN (explicit true only — a missing key must
-# NOT enable it, so use the case-guard, NOT is_enabled). Without the "radio"
-# profile here, a reboot where the azuracast container no longer exists (removed
-# by a prior failed update/recreate or docker rm) would leave the station down
-# despite ENABLE_AZURACAST=true — the boot orchestrator exists to compose up the
-# user's opted-in services. AzuraCast is NOT VPN-coupled (it must stay
-# LAN-reachable for listeners), so no vpn-sidecar dup-guard is needed. Mirrors
-# setup.sh's PROFILES block.
-case "$(env_val ENABLE_AZURACAST | tr '[:upper:]' '[:lower:]')" in
-    true|1|yes|on) PROFILES+=("radio") ;;
-esac
-
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

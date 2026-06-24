@@ -531,12 +531,6 @@ if is_optin_enabled ENABLE_PLAYLIST_SYNC; then
         esac
     fi
 fi
-# AzuraCast (broadcast radio) is OPT-IN (default off) — use is_optin_enabled,
-# NOT is_enabled, so a pre-AzuraCast .env (no key) stays off. Unlike Soulseek,
-# AzuraCast is NOT VPN-coupled: it must be LAN-reachable for listeners, so it
-# stays on the regular bridge and never pulls in the "vpn" sidecar.
-is_optin_enabled ENABLE_AZURACAST && PROFILES+=("radio")
-
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
@@ -718,7 +712,6 @@ stop_disabled_services() {
         "unpackerr:ENABLE_UNPACKERR"
         "flaresolverr:ENABLE_FLARESOLVERR"
         "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
-        "azuracast:ENABLE_AZURACAST"
         "playlistsync:ENABLE_PLAYLIST_SYNC"
     )
     local pair container flag stopped=0
@@ -726,11 +719,11 @@ stop_disabled_services() {
         container="${pair%:*}"
         flag="${pair#*:}"
         # Service is enabled → leave the container alone, up -d will
-        # (re-)create or update it as needed. ENABLE_SOULSEEK / ENABLE_AZURACAST
-        # / ENABLE_PLAYLIST_SYNC are OPT-IN, so use the explicit-true helper; the
-        # default-on is_enabled would treat a missing key as "enabled" and never
-        # reap slskd/soularr, azuracast, or playlistsync.
-        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_AZURACAST" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ]; then
+        # (re-)create or update it as needed. ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC
+        # are OPT-IN, so use the explicit-true helper; the default-on is_enabled
+        # would treat a missing key as "enabled" and never reap slskd/soularr
+        # or playlistsync.
+        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -909,19 +902,6 @@ check_port_conflicts() {
             *)                pairs+=("slskd:5030") ;;
         esac
     fi
-    # AzuraCast (opt-in): pre-check its web UI port (AZURACAST_HTTP_PORT, default
-    # 49157, published bound to ${LAN_IP}) and the bottom of its Icecast stream
-    # range (8000 — the first port AzuraCast publishes for a station). Both are
-    # plain LAN binds (NOT VPN-namespaced), so a foreign holder would fail the
-    # compose-up bind late; surface it here. Only the lowest stream port is
-    # pre-checked — the rest of 8000-8029 is best-effort like 6881/50300.
-    if is_optin_enabled ENABLE_AZURACAST; then
-        local az_http
-        az_http="$(env_val AZURACAST_HTTP_PORT)"
-        case "$az_http" in (''|*[!0-9]*) az_http=49157 ;; esac
-        pairs+=("azuracast:$az_http" "azuracast:8000")
-    fi
-
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
     # separate package), so the old per-port `netstat -lnt 2>/dev/null`
@@ -946,11 +926,10 @@ check_port_conflicts() {
     # Snapshot the host ports OUR running containers publish, ONCE — used below
     # to exclude a port that IS bound but bound by US (compose will reuse the
     # container). `{{.Ports}}` lists BOTH single mappings (":49156->49156") and
-    # RANGE mappings: AzuraCast publishes its Icecast stream ports as one range,
-    # "<ip>:8000-8029->8000-8029". The old per-port ":$port->" grep matched the
-    # single form ONLY, so it never recognised our own AzuraCast already holding
-    # 8000 and false-flagged it as a foreign conflict — halting a re-install that
-    # had a prior AzuraCast still running. The range-aware test below fixes that.
+    # RANGE mappings ("<ip>:LO-HI->LO-HI"). The old per-port ":$port->" grep
+    # matched the single form ONLY, so it never recognised our own containers
+    # already holding a ranged port and false-flagged it as a foreign conflict.
+    # The range-aware test below fixes that.
     local published_snapshot
     published_snapshot="$($CONTAINER_RUNTIME ps --format '{{.Ports}}' 2>/dev/null)"
 
@@ -1052,9 +1031,6 @@ wait_for_services() {
     # qBittorrent — `.State.Status` is the only readiness signal. soularr
     # is a plain bridge service. Opt-in, so use the explicit-true helper.
     is_optin_enabled ENABLE_SOULSEEK && services="$services slskd soularr"
-    # AzuraCast is a plain bridge service (not VPN-namespaced); .State.Status
-    # is the readiness signal. Opt-in, so use the explicit-true helper.
-    is_optin_enabled ENABLE_AZURACAST && services="$services azuracast"
 
     echo ""
     echo "  Waiting for containers to become healthy..."
@@ -1573,24 +1549,6 @@ echo "  Pre-flight: checking Docker's image store has room + can reach the regis
 check_docker_dataroot_space
 check_registry_egress
 
-# AzuraCast RAM guardrail (opt-in service, ~2 GB hungry: MariaDB + PHP-FPM + nginx
-# + Redis + Liquidsoap). On a small NAS it gets OOM-killed and its now-playing API
-# then resets the dashboard widget (curl/ECONNRESET) — a phantom "bug" that's really
-# memory pressure. Warn (never block — it's their call) when the box looks too small.
-if is_optin_enabled ENABLE_AZURACAST && [ -r /proc/meminfo ]; then
-    _mem_tot_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)
-    if [ -n "$_mem_tot_kb" ] && [ "$_mem_tot_kb" -lt 4194304 ]; then
-        _mem_tot_gb=$(( (_mem_tot_kb + 524288) / 1048576 ))
-        echo ""
-        echo "  ⚠ AzuraCast is enabled, but this NAS has only ~${_mem_tot_gb} GB RAM."
-        echo "    AzuraCast needs ~2 GB on top of the rest of the stack; on a box this"
-        echo "    small the kernel can OOM-kill it — the dashboard's now-playing tile"
-        echo "    then shows connection-reset errors. If that happens, set"
-        echo "    ENABLE_AZURACAST=false and re-run; the rest of the stack is unaffected."
-    fi
-    unset _mem_tot_kb _mem_tot_gb
-fi
-
 # Bring the stack up. Split the pull out of `up -d` and wrap it in retry() so a
 # transient registry/network blip during the long first-run pull doesn't fail
 # the whole step — `up -d` afterwards is the authority on success and re-pulls
@@ -1600,8 +1558,35 @@ start_stack() {
     cd "$SCRIPT_DIR" || return 1
     retry 3 "Image pull" $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES pull \
         || echo "  ⚠ Some images didn't pull after retries — 'up -d' will try again."
-    $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d
-    local up_rc=$?
+    # Capture `up -d` (while still streaming it live via tee) so we can detect the
+    # gluetun-namespace recreate race: a service sharing gluetun's netns
+    # (qbittorrent / slskd / playlistsync) can wedge its OLD container in Docker's
+    # "Removal In Progress" state on recreate, so the NEW one fails to start with
+    # "container is marked for removal and cannot be started". That otherwise halts
+    # the whole step on a routine image bump. Auto-recover: force-remove the wedged
+    # container(s) and retry `up -d` once.
+    local up_log up_rc
+    up_log="$(mktemp 2>/dev/null || echo "/tmp/mediarr-up.$$")"
+    $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d 2>&1 | tee "$up_log"
+    up_rc=${PIPESTATUS[0]}
+    if [ "$up_rc" -ne 0 ] && grep -qi 'marked for removal' "$up_log" 2>/dev/null; then
+        echo "  ⚠ A container wedged in Docker's 'Removal In Progress' state (the"
+        echo "    gluetun-namespace recreate race) — clearing it and retrying once ..."
+        local wedged c
+        # The actually-stuck containers show up in removing/dead state; clear those
+        # precisely so healthy services aren't bounced unnecessarily.
+        wedged="$($CONTAINER_RUNTIME ps -a --filter status=removing --filter status=dead \
+                  --format '{{.Names}}' 2>/dev/null)"
+        # If the daemon lock isn't reflected as a listable container, fall back to
+        # the VPN-namespaced services — the only ones prone to this race.
+        [ -n "$wedged" ] || wedged="qbittorrent slskd playlistsync"
+        for c in $wedged; do
+            $CONTAINER_RUNTIME rm -f "$c" >/dev/null 2>&1 && echo "    cleared wedged container: $c"
+        done
+        $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES up -d 2>&1 | tee "$up_log"
+        up_rc=${PIPESTATUS[0]}
+    fi
+    rm -f "$up_log" 2>/dev/null || true
 
     # Post-up reconcile (VPN on): the pull above may have RECREATED gluetun
     # with a new container id. An already-running qBittorrent is welded to

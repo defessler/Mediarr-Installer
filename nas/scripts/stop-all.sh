@@ -99,11 +99,10 @@ esac
 # here for the same reason as every other profile: if it was ever enabled,
 # its containers are up, and omitting the profile leaves slskd/soularr
 # orphaned after `down` (compose only stops profiles it's told about).
-# "radio" (AzuraCast) and "playlists" (Playlist Sync) are opt-in for the
-# same reason — both are heavyweight LAN services that otherwise keep
-# running (holding RAM + bound ports) after a "stop all". Profile names
-# match setup.sh's COMPOSE_PROFILES builder (radio/playlists).
-PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn soulseek radio playlists homepage recyclarr unpackerr flaresolverr)
+# "playlists" (Playlist Sync) is opt-in for the same reason — a heavyweight
+# LAN service that otherwise keeps running (holding RAM + bound ports) after
+# a "stop all". Profile names match setup.sh's COMPOSE_PROFILES builder.
+PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn soulseek playlists homepage recyclarr unpackerr flaresolverr)
 
 # Pick the right compose files. When VPN was off at install time, the
 # no-vpn override is part of the active config; loading it on down
@@ -139,10 +138,10 @@ fi
 LEFTOVERS=""
 # slskd + soularr included so the soulseek profile's containers are part
 # of the leftover safety-check too (they're the ones the omitted profile
-# above used to strand silently). azuracast + playlistsync are here for
-# the same reason — the radio/playlists profiles' containers.
+# above used to strand silently). playlistsync is here for the same reason
+# — the playlists profile's container.
 for c in prowlarr flaresolverr plex jellyfin tautulli seerr sonarr radarr lidarr \
-         bazarr qbittorrent gluetun sabnzbd slskd soularr azuracast playlistsync \
+         bazarr qbittorrent gluetun sabnzbd slskd soularr playlistsync \
          homepage recyclarr unpackerr; do
     if $RT ps --format '{{.Names}}' | grep -qx "$c"; then
         LEFTOVERS="$LEFTOVERS $c"

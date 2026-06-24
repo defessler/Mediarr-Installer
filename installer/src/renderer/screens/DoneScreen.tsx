@@ -5,7 +5,7 @@ import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
-  Newspaper, Download, MessageSquare, BarChart3, Shield, Radio, Music2,
+  Newspaper, Download, MessageSquare, BarChart3, Shield, Music2,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -22,10 +22,9 @@ import { isEnabled, isOptInEnabled } from '../../shared/env-render.js'
 // blue TV icon" on Configure recognises it again here. Two new entries
 // for things that don't appear on Configure (Prowlarr always-on, Seerr
 // derived from Plex stack, Tautulli derived, Flaresolverr always-on).
-// AzuraCast and slskd (Soulseek) are opt-in: they're listed here for their
-// glyph + health wiring but filtered out of the rendered grid
-// (displayedServices) unless the user explicitly enabled each — so users who
-// didn't opt in never see a stray grey tile.
+// slskd (Soulseek) is opt-in: listed here for its glyph + health wiring
+// but filtered out of the rendered grid (displayedServices) unless the user
+// explicitly enabled it — so users who didn't opt in never see a stray grey tile.
 const SERVICES: {
   name: string
   port: string
@@ -45,7 +44,6 @@ const SERVICES: {
   { name: 'Seerr',        port: '5056',                          icon: MessageSquare,   iconColor: 'text-purple-400' },
   { name: 'Tautulli',     port: '8181',                          icon: BarChart3,       iconColor: 'text-cyan-400' },
   { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
-  { name: 'AzuraCast',    port: '49157',                         icon: Radio,           iconColor: 'text-rose-400' },
   { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
 ]
 
@@ -89,13 +87,13 @@ export function DoneScreen() {
     // Update per-service health by scanning each new complete line for the
     // patterns post-deploy-validate.sh emits:
     //   "  ✔ Homepage (http://...) — HTTP 200"                  → ok
-    //   "  ⚠ AzuraCast (http://...) — not serving HTTP yet. …"  → warn (still booting)
+    //   "  ⚠ Seerr (http://...) — not serving HTTP yet. …"      → warn (still booting)
     //   "  ✘ Sonarr (http://...) — HTTP 000 (not reachable)"    → fail
-    // The ⚠ case matters: heavy / lenient services (AzuraCast, Seerr, slskd,
-    // and qBit/Tautulli's slow-boot path) emit a WARN — not an ok — when their
+    // The ⚠ case matters: lenient services (Seerr, slskd, and
+    // qBit/Tautulli's slow-boot path) emit a WARN — not an ok — when their
     // WebUI isn't serving yet. Without a 'warn' bucket those tiles stayed
     // 'unknown' and silently dropped out of the footer's "All N reachable"
-    // count, so a still-booting AzuraCast read as a green all-clear.
+    // count, so a still-booting service read as a green all-clear.
     setHealth((cur) => {
       const next = { ...cur }
       for (const line of parts) {
@@ -197,8 +195,8 @@ export function DoneScreen() {
   const okCount = healthEntries.filter(([, h]) => h === 'ok').length
   const failCount = healthEntries.filter(([, h]) => h === 'fail').length
   // Services whose WebUI isn't serving HTTP yet — the validator emitted ⚠, not
-  // ✔/✘ (e.g. a still-booting AzuraCast, or Seerr awaiting its first-run
-  // wizard). Tracked so the footer can't claim "All N reachable" while one of
+  // ✔/✘ (e.g. Seerr awaiting its first-run wizard, or slskd still starting).
+  // Tracked so the footer can't claim "All N reachable" while one of
   // the user's services is still unproven.
   const warnCount = healthEntries.filter(([, h]) => h === 'warn').length
 
@@ -248,12 +246,9 @@ export function DoneScreen() {
       return mediaServer === 'jellyfin' ? [{ ...s, name: 'Jellyfin', port: '8096' }] : [s]
     }
     if (s.name === 'Tautulli' && mediaServer === 'jellyfin') return []
-    // AzuraCast is opt-in (heavy radio service) — only surface its tile when
-    // the user explicitly enabled it; otherwise it'd sit grey forever for
-    // everyone who didn't. isOptInEnabled = explicit-true only (missing → off).
-    if (s.name === 'AzuraCast' && !isOptInEnabled(config.ENABLE_AZURACAST)) return []
-    // slskd (Soulseek) is opt-in too — same treatment as AzuraCast: only show
-    // its tile when the user explicitly enabled Soulseek.
+    // slskd (Soulseek) is opt-in — only surface its tile when the user
+    // explicitly enabled Soulseek; otherwise it'd sit grey forever.
+    // isOptInEnabled = explicit-true only (missing → off).
     if (s.name === 'slskd' && !isOptInEnabled(config.ENABLE_SOULSEEK)) return []
     return [s]
   })
@@ -267,7 +262,7 @@ export function DoneScreen() {
   useEffect(() => {
     if (firedConfettiRef.current) return
     // Only celebrate a TRUE all-clear — not a clean exit that still has
-    // services warming up (Seerr awaiting its wizard, a slow AzuraCast).
+    // services warming up (Seerr awaiting its wizard, a slow slskd boot).
     // Firing confetti while the footer reads "{warnCount} not ready yet"
     // is the contradiction R5 fixes.
     if (!allClear) return
@@ -603,7 +598,7 @@ export function DoneScreen() {
             </span>
           ) : failCount === 0 ? (
             // No hard failures, but one or more services aren't serving HTTP yet
-            // (a still-booting AzuraCast, Seerr awaiting its wizard, etc.). Don't
+            // (Seerr awaiting its wizard, slskd still starting, etc.). Don't
             // claim "All reachable" — name the not-ready count honestly.
             <span className="text-amber-300 inline-flex items-center gap-1.5">
               <CheckCircle2 size={16} className="text-emerald-400" aria-hidden="true" />

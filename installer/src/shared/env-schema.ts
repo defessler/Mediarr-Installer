@@ -39,11 +39,6 @@ export const envObject = z.object({
   // gates its creds + Lidarr dependency on an explicit-true check, not
   // flagOn, so a missing key never triggers required-cred validation.
   ENABLE_SOULSEEK: optStr,
-  // OPT-IN (default off), mirroring ENABLE_SOULSEEK. No superRefine gate —
-  // AzuraCast collects no credentials at install (the user makes the admin
-  // account in its own web UI on first run), so there's nothing to make
-  // conditionally-required. A missing key stays OFF everywhere.
-  ENABLE_AZURACAST: optStr,
   // OPT-IN (default off), mirroring ENABLE_SOULSEEK. The superRefine block
   // below gates its creds + a source requirement + the Plex requirement on an
   // explicit-true check. A missing key stays OFF everywhere.
@@ -147,17 +142,6 @@ export const envObject = z.object({
   SOULARR_INTERVAL: optStr.refine(
     (v) => !v || /^\d+$/.test(v),
     'must be a positive integer (seconds)',
-  ),
-
-  // AzuraCast (broadcast radio) — host-published web UI port, optional.
-  // renderEnv emits it (default 49157), so it needs a schema entry to keep the
-  // .env round-trip invariant (every emitted key validates). The container
-  // listens on AzuraCast's native internal port 80; this var only remaps the
-  // host-published side in docker-compose.yml, so reject a non-numeric value.
-  // No creds collected.
-  AZURACAST_HTTP_PORT: optStr.refine(
-    (v) => !v || (/^\d+$/.test(v) && +v >= 1 && +v <= 65535),
-    'must be a port number between 1 and 65535',
   ),
 
   // Playlist Sync (SiriusXM → Plex) — all optional at the schema

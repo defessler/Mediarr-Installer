@@ -156,13 +156,8 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_SOULSEEK: 'false',
   // soularr scan-loop interval (seconds). Only used when Soulseek is on.
   SOULARR_INTERVAL: '300',
-  // AzuraCast (broadcast radio) is OPT-IN too — default OFF, like Soulseek.
-  // A fresh wizard run renders ENABLE_AZURACAST=false; the user opts in on
-  // the Configure screen (it's a heavier service). Default web UI port 49157.
-  ENABLE_AZURACAST: 'false',
-  AZURACAST_HTTP_PORT: '49157',
   // Playlist Sync (SiriusXM → Plex) is OPT-IN too — default OFF,
-  // like Soulseek/AzuraCast. A fresh wizard run renders
+  // like Soulseek. A fresh wizard run renders
   // ENABLE_PLAYLIST_SYNC=false; the user opts in on the Configure screen
   // (it needs Plex + its own 2nd free Soulseek account). Schedule/format
   // pre-seeded to their render defaults so the Optional fields show them.
