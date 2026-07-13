@@ -50,7 +50,8 @@ export const SETUP_STEPS: SetupStep[] = [
   { number: 7,  label: 'Configure all services',                  status: 'pending', rerun: 'python3 scripts/setup-arr-config.py' },
   { number: 8,  label: 'Add Prowlarr indexers',                   status: 'pending', rerun: 'python3 scripts/indexers/setup-indexers.py' },
   { number: 9,  label: 'Enable Bazarr subtitle providers',        status: 'pending', rerun: 'python3 scripts/indexers/setup-bazarr-providers.py' },
-  { number: 10, label: 'Verify stack health',                     status: 'pending', rerun: 'bash scripts/post-deploy-validate.sh' },
+  { number: 10, label: 'Configure Live TV (Dispatcharr)',         status: 'pending', rerun: 'python3 scripts/setup-dispatcharr.py' },
+  { number: 11, label: 'Verify stack health',                     status: 'pending', rerun: 'bash scripts/post-deploy-validate.sh' },
 ]
 
 interface Props {

@@ -5,7 +5,7 @@ import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
-  Newspaper, Download, MessageSquare, BarChart3, Shield, Music2,
+  Newspaper, Download, MessageSquare, BarChart3, Shield, Music2, Radio,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -45,6 +45,7 @@ const SERVICES: {
   { name: 'Tautulli',     port: '8181',                          icon: BarChart3,       iconColor: 'text-cyan-400' },
   { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
   { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
+  { name: 'Dispatcharr',  port: '9191',      note: 'Live TV',    icon: Radio,           iconColor: 'text-cyan-400' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
@@ -250,6 +251,8 @@ export function DoneScreen() {
     // explicitly enabled Soulseek; otherwise it'd sit grey forever.
     // isOptInEnabled = explicit-true only (missing → off).
     if (s.name === 'slskd' && !isOptInEnabled(config.ENABLE_SOULSEEK)) return []
+    // Dispatcharr (Live TV & DVR) is opt-in too — same treatment.
+    if (s.name === 'Dispatcharr' && !isOptInEnabled(config.ENABLE_DISPATCHARR)) return []
     return [s]
   })
 

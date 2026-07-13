@@ -544,6 +544,21 @@ if is_enabled ENABLE_QBITTORRENT; then
   P+=("torrenting")
   case "$VPN" in true|1|yes|on) P+=("vpn") ;; esac
 fi
+# Opt-in services (explicit-true, mirroring setup.sh's is_optin_enabled) —
+# without these the update pull/recreate silently skips their containers.
+is_optin() {
+  local v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in true|1|yes|on) return 0 ;; *) return 1 ;; esac
+}
+if is_optin ENABLE_SOULSEEK; then
+  P+=("soulseek")
+  case "$VPN" in true|1|yes|on) case " \${P[*]} " in *" vpn "*) ;; *) P+=("vpn") ;; esac ;; esac
+fi
+if is_optin ENABLE_PLAYLIST_SYNC; then
+  P+=("playlists")
+  case "$VPN" in true|1|yes|on) case " \${P[*]} " in *" vpn "*) ;; *) P+=("vpn") ;; esac ;; esac
+fi
+is_optin ENABLE_DISPATCHARR && P+=("livetv")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 
 echo "[wizard-update] compose files: $FILES"
@@ -685,7 +700,7 @@ exit $UP_RC`
     }
   }
 
-  /** Sync payload + run one of setup.sh's 10 step-rerun commands.
+  /** Sync payload + run one of setup.sh's 11 step-rerun commands.
    *  Auto-syncs first so the step exec'd is always the latest version
    *  from the bundled payload — important when the user is updating
    *  TO get a wizard-side fix (e.g., the forceSave indexer change). */
@@ -738,6 +753,22 @@ if is_enabled ENABLE_QBITTORRENT; then
   P+=("torrenting")
   case "$VPN" in true|1|yes|on) P+=("vpn") ;; esac
 fi
+# Opt-in services (explicit-true, mirroring setup.sh's is_optin_enabled) —
+# same block as pullAndRecreate's; without it a step-6 rerun would drop
+# the opted-in containers from the active profile set.
+is_optin() {
+  local v="$(env_val "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in true|1|yes|on) return 0 ;; *) return 1 ;; esac
+}
+if is_optin ENABLE_SOULSEEK; then
+  P+=("soulseek")
+  case "$VPN" in true|1|yes|on) case " \${P[*]} " in *" vpn "*) ;; *) P+=("vpn") ;; esac ;; esac
+fi
+if is_optin ENABLE_PLAYLIST_SYNC; then
+  P+=("playlists")
+  case "$VPN" in true|1|yes|on) case " \${P[*]} " in *" vpn "*) ;; *) P+=("vpn") ;; esac ;; esac
+fi
+is_optin ENABLE_DISPATCHARR && P+=("livetv")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never up -d`

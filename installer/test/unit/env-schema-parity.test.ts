@@ -35,6 +35,10 @@ const VARIANTS: EnvFormValues[] = [
     ...BASE_ENV,
     ENABLE_SOULSEEK: 'true',
     ENABLE_PLAYLIST_SYNC: 'true',
+    ENABLE_DISPATCHARR: 'true',
+    DISPATCHARR_ADMIN_USER: 'admin',
+    DISPATCHARR_ADMIN_PASS: 'pw',
+    LIVETV_CHANNEL_PACKS: 'pluto',
     CUSTOM_INDEXERS_JSON: '[]',
   },
   ...(['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom'] as const).map(

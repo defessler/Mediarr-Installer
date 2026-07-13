@@ -37,7 +37,7 @@ Anything not matching the conservative filter is logged and skipped
 so the operator can review in the WebUI. Idempotent — re-runs only
 touch what's still blocked at the time of the run.
 
-Wired into setup.sh as Step 12 and shipped as a standalone script
+Wired into setup.sh as Step 13 and shipped as a standalone script
 that can be re-run on demand or scheduled (e.g. Synology Task
 Scheduler → User-defined script weekly, see setup.sh summary).
 

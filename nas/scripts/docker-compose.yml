@@ -931,6 +931,71 @@ services:
     # up -d playlistsync).
     restart: on-failure:5
 
+  # ── Live TV & DVR ─────────────────────────────────────────
+
+  dispatcharr:
+    # Upstream publishes ONLY `latest` + per-commit SHA tags (no version tags,
+    # verified 2026-07-13), so `latest` it is — which matches the rest of the
+    # stack's tag convention anyway. Dispatcharr self-describes as beta; a
+    # breaking upgrade surfaces on the next `docker compose pull`, so if one
+    # ever bites, pin a commit-SHA tag from ghcr as a temporary hold.
+    image: ghcr.io/dispatcharr/dispatcharr:latest
+    container_name: dispatcharr
+    # Opt-in IPTV/live-TV manager + DVR (default OFF, same recipe as Soulseek).
+    # setup.sh adds the "livetv" profile to COMPOSE_PROFILES only when
+    # ENABLE_DISPATCHARR is explicitly true (is_optin_enabled, NOT is_enabled).
+    #
+    # HEAVY, all-in-one: this single container bundles its OWN PostgreSQL,
+    # Redis, Django (uWSGI), Celery, and FFmpeg — that's why it's opt-in
+    # rather than always-on like the arrs. First boot runs DB init +
+    # migrations, so the web UI can take a few minutes to serve (post-deploy
+    # checks it leniently, like Seerr).
+    #
+    # NOT VPN-namespaced (no network_mode: container:gluetun): Plex/Jellyfin
+    # discover it as a (virtual) HDHomeRun network tuner, so it must be
+    # LAN-reachable on the media bridge like a real tuner would be. (It CAN
+    # be VPN-coupled for geo-blocked IPTV providers, but the free FAST packs
+    # the installer seeds don't need it — and VPN exit IPs often make FAST
+    # CDNs geo-block MORE, not less.)
+    #
+    # Honors PUID/PGID properly (its docker/init scripts chown /data and run
+    # the app as that user — defaults 1000:1000 upstream, overridden here).
+    profiles: ["livetv"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      # All-in-one mode: the bundled Redis/Postgres/Celery inside this one
+      # container (upstream's recommended deployment; their compose sample
+      # docker-compose.aio.yml uses exactly these three values).
+      - DISPATCHARR_ENV=aio
+      - REDIS_HOST=localhost
+      - CELERY_BROKER_URL=redis://localhost:6379/0
+      - DISPATCHARR_LOG_LEVEL=info
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    ports:
+      # Web UI + every tuner-facing output (HDHR discovery, M3U, XMLTV EPG,
+      # stream proxy) share this one port. Bound to the LAN IP only.
+      - ${LAN_IP}:9191:9191
+    volumes:
+      # App data (its bundled Postgres DB, logos, uploaded playlists…). A bind
+      # mount (not an anon volume) so the wizard's Update flow can't wipe the
+      # channel/DVR config on a recreate.
+      - ${INSTALL_DIR}/dispatcharr/data:/data
+      # DVR library. Dispatcharr's recording root is FIXED at /data/recordings
+      # inside the container (apps/channels/tasks.py), so overlay-mount the
+      # media tree's Recordings folder there — recordings then land where
+      # Plex/Jellyfin index them as ordinary library files. Longest-path-wins
+      # mount ordering makes this nest cleanly inside the /data mount above.
+      - ${DATA_ROOT}/Media/Recordings:/data/recordings
+    # No healthcheck on purpose: the image ships none upstream and guessing a
+    # probe binary (curl vs python3 PATH) risks a permanently-"unhealthy"
+    # badge. wait_for_services keys off .State.Status for bridge services and
+    # post-deploy-validate does the real (lenient) HTTP check on :9191.
+    logging: *logging
+    restart: unless-stopped
+
 networks:
   media:
     driver: bridge

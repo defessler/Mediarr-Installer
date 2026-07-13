@@ -147,6 +147,24 @@ export interface EnvFormValues {
   /** Keep permanent monthly Top-50 archive playlists per SiriusXM station (default on). */
   PLAYLIST_MONTHLY_ARCHIVE?: string
 
+  // ── Live TV & DVR (Dispatcharr) — only used when ENABLE_DISPATCHARR=true.
+  //    OPT-IN like Soulseek (isOptInEnabled).
+  /** Whether to install Dispatcharr: an IPTV/live-TV manager that shows up to
+   *  Plex/Jellyfin as an HDHomeRun tuner and records with its OWN DVR into
+   *  Media/Recordings (so recording works even without a Plex Pass). A missing
+   *  key counts as OFF; emitted via isOptInEnabled so a pre-feature .env never
+   *  gains this heavy (Django+Postgres+Redis all-in-one) service on upgrade. */
+  ENABLE_DISPATCHARR?: string
+  /** Dispatcharr web-UI admin login. setup-dispatcharr.py creates this account
+   *  on first boot via the one-time /api/accounts/initialize-superuser/ call,
+   *  then authenticates with it to pre-seed channel packs + EPG. */
+  DISPATCHARR_ADMIN_USER?: string
+  DISPATCHARR_ADMIN_PASS?: string
+  /** Comma list of LIVETV_PACKS ids to pre-seed (free ad-supported FAST
+   *  services). Empty = seed nothing; the user adds their own sources in the
+   *  Dispatcharr UI instead. */
+  LIVETV_CHANNEL_PACKS?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -532,6 +550,15 @@ export function renderEnv(v: EnvFormValues): string {
     line('PLAYLIST_SXM_MIN_PLAYS', v.PLAYLIST_SXM_MIN_PLAYS),
     line('PLAYLIST_MONTHLY_ARCHIVE', v.PLAYLIST_MONTHLY_ARCHIVE || 'true'),
     '',
+    '# Live TV & DVR (Dispatcharr). OPT-IN; off by default. A missing',
+    '# ENABLE_DISPATCHARR key counts as OFF (like ENABLE_SOULSEEK) — emitted via',
+    '# isOptInEnabled. Web UI + HDHomeRun tuner on ${LAN_IP}:9191; its built-in',
+    '# DVR records into Data/Media/Recordings (works without a Plex Pass).',
+    line('ENABLE_DISPATCHARR', isOptInEnabled(v.ENABLE_DISPATCHARR) ? 'true' : 'false'),
+    line('DISPATCHARR_ADMIN_USER', v.DISPATCHARR_ADMIN_USER || 'admin'),
+    line('DISPATCHARR_ADMIN_PASS', v.DISPATCHARR_ADMIN_PASS),
+    line('LIVETV_CHANNEL_PACKS', v.LIVETV_CHANNEL_PACKS),
+    '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),
     line('USENET_PORT', v.USENET_PORT || '563'),
@@ -638,6 +665,20 @@ export type IndexerTag =
   | 'free-signup'    // free account, anyone can register
   | 'invite-only'    // need an existing member to invite you
   | 'application'    // open application / interview gates entry
+
+/** Free ad-supported (FAST) channel packs Live TV can pre-seed into
+ *  Dispatcharr. Single source of truth for the Configure-screen checkboxes and
+ *  env-schema's LIVETV_CHANNEL_PACKS token validation; setup-dispatcharr.py
+ *  mirrors these ids (its PACKS dict) with the actual playlist/EPG URLs — keep
+ *  the id sets in lock-step. Channel counts are approximate (verified
+ *  2026-07-13) and shown only as UI hints. */
+export const LIVETV_PACKS = [
+  { id: 'pluto',         name: 'Pluto TV',        channels: '~425 channels' },
+  { id: 'samsungtvplus', name: 'Samsung TV Plus', channels: '~578 channels' },
+  { id: 'plextv',        name: 'Plex Live TV',    channels: '~694 channels' },
+  { id: 'roku',          name: 'Roku Channel',    channels: '~353 channels' },
+  { id: 'tubi',          name: 'Tubi',            channels: '~180 channels' },
+] as const
 
 export interface IndexerDef {
   /** Form key */

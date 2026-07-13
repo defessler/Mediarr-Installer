@@ -37,21 +37,21 @@ const STEP_START_RE = /Step\s+(\d+):/
 const STEP_OK_RE    = /✔\s*Step\s+(\d+)\s+complete/
 const STEP_FAIL_RE  = /✘\s*Step\s+(\d+)\s+failed/
 
-// WHY: setup.sh emits run_step markers for steps 1..12 (TOTAL_STEPS=12 in
-// nas/scripts/setup.sh — steps 11 "Import any download backlog" and 12
+// WHY: setup.sh emits run_step markers for steps 1..13 (TOTAL_STEPS=13 in
+// nas/scripts/setup.sh — steps 12 "Import any download backlog" and 13
 // "Auto-confirm manual imports" were added after the shared SETUP_STEPS
-// table was last synced). The imported SETUP_STEPS only covers 1..10, so
-// the Step 11/12 markers parsed by applyStepMarkers fell outside the steps
-// array bounds (idx 10/11 >= length 10) and were silently dropped — the
-// last two steps never lit up. We reconcile to the full 12 here by spreading
-// the shared 10-step table and appending the two missing entries (labels
-// copied verbatim from setup.sh's run_step calls; rerun commands follow the
-// established scripts/ style). We build a NEW array rather than mutating the
-// imported SETUP_STEPS so other consumers (UpdateRunScreen) are unaffected.
+// table was last synced). The imported SETUP_STEPS only covers 1..11, so
+// the Step 12/13 markers parsed by applyStepMarkers fell outside the steps
+// array bounds and were silently dropped — the last two steps never lit up.
+// We reconcile to the full 13 here by spreading the shared 11-step table and
+// appending the two missing entries (labels copied verbatim from setup.sh's
+// run_step calls; rerun commands follow the established scripts/ style). We
+// build a NEW array rather than mutating the imported SETUP_STEPS so other
+// consumers (UpdateRunScreen) are unaffected.
 const RUN_SCREEN_STEPS: SetupStep[] = [
   ...SETUP_STEPS,
-  { number: 11, label: 'Import any download backlog',   status: 'pending', rerun: 'bash scripts/fix-imports.sh' },
-  { number: 12, label: 'Auto-confirm manual imports',   status: 'pending', rerun: 'python3 scripts/auto-manual-import.py' },
+  { number: 12, label: 'Import any download backlog',   status: 'pending', rerun: 'bash scripts/fix-imports.sh' },
+  { number: 13, label: 'Auto-confirm manual imports',   status: 'pending', rerun: 'python3 scripts/auto-manual-import.py' },
 ]
 
 export function RunScreen() {
@@ -68,8 +68,8 @@ export function RunScreen() {
   const [elapsedMs, setElapsedMs] = useState<number>(0)
   const linesRef = useRef<string[]>([])
   const [steps, setSteps] = useState<SetupStep[]>(() =>
-    // RUN_SCREEN_STEPS = the full 1..12 setup.sh step list (SETUP_STEPS only
-    // ships 1..10; see the WHY comment on RUN_SCREEN_STEPS above).
+    // RUN_SCREEN_STEPS = the full 1..13 setup.sh step list (SETUP_STEPS only
+    // ships 1..11; see the WHY comment on RUN_SCREEN_STEPS above).
     RUN_SCREEN_STEPS.map((s) => ({ ...s })),
   )
   // Mirror `steps` into a ref so the stream-close handler can read the
@@ -204,8 +204,8 @@ export function RunScreen() {
   useEffect(() => () => setBusy(false), [setBusy])
 
   function resetSteps() {
-    // Reset to the full 1..12 list (see RUN_SCREEN_STEPS WHY comment) so a
-    // Retry re-arms steps 11 and 12 too, not just the 10 in SETUP_STEPS.
+    // Reset to the full 1..13 list (see RUN_SCREEN_STEPS WHY comment) so a
+    // Retry re-arms steps 12 and 13 too, not just the 11 in SETUP_STEPS.
     setSteps(RUN_SCREEN_STEPS.map((s) => ({ ...s })))
   }
 

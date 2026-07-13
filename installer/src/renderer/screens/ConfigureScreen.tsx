@@ -19,6 +19,7 @@ import {
   PUBLIC_TRACKERS,
   PRIVATE_TRACKERS,
   BAZARR_PROVIDERS,
+  LIVETV_PACKS,
   isEnabled,
   isOptInEnabled,
 } from '../../shared/env-render.js'
@@ -170,6 +171,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
   { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
   { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM playlists → Plex or Jellyfin (auto-download)', icon: Music2, iconColor: 'text-green-400' },
+  { key: 'ENABLE_DISPATCHARR', label: 'Live TV & DVR', hint: 'Dispatcharr — free live channels + a DVR tuner for Plex/Jellyfin', icon: Tv, iconColor: 'text-cyan-400' },
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
@@ -183,7 +185,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR'])
 
 function ServicesSection({
   config, update,
@@ -193,10 +195,10 @@ function ServicesSection({
 }) {
   // Imported from env-render so the renderer, setup.sh, and setup-arr-
   // config.py all agree on what counts as disabled (0/no/off/false).
-  // ENABLE_SOULSEEK and ENABLE_PLAYLIST_SYNC are the OPT-IN services: a
-  // missing/empty value means OFF, so they use isOptInEnabled instead of
-  // the default-on isEnabled. Without this, an older profile loaded
-  // without the key would show their toggle ON.
+  // ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC / ENABLE_DISPATCHARR are the
+  // OPT-IN services: a missing/empty value means OFF, so they use
+  // isOptInEnabled instead of the default-on isEnabled. Without this, an
+  // older profile loaded without the key would show their toggle ON.
   const isOn = (k: keyof EnvFormValues) =>
     OPT_IN_SERVICES.has(k)
       ? isOptInEnabled(config[k] as string | undefined)
@@ -742,6 +744,10 @@ const FIELD_LABELS: Record<string, string> = {
   PLAYLIST_SLSK_PASS: 'Soulseek password (Playlist Sync)',
   SIRIUSXM_CHANNELS: 'SiriusXM channels',
   PLAYLIST_SYNC_CRON: 'Playlist Sync schedule',
+  ENABLE_DISPATCHARR: 'Live TV & DVR',
+  DISPATCHARR_ADMIN_USER: 'Live TV admin username',
+  DISPATCHARR_ADMIN_PASS: 'Live TV admin password',
+  LIVETV_CHANNEL_PACKS: 'Live TV channel packs',
   USENET_USER: 'Usenet username',
   USENET_PASS: 'Usenet password',
   VPN_PROVIDER: 'VPN provider',
@@ -1462,6 +1468,116 @@ export function ConfigureScreen() {
           )}
         </div>
 
+      </CollapsibleGroup>
+
+      {/* ── Group: Live TV & DVR ───────────────────────────────── */}
+      <CollapsibleGroup
+        id="livetv"
+        title="Live TV & DVR"
+        icon={<Tv size={20} className="text-cyan-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="free live channels + a DVR tuner (Dispatcharr)"
+        open={!!openGroups.livetv}
+        onToggle={() => toggleGroup('livetv')}
+      >
+        {isOptInEnabled(config.ENABLE_DISPATCHARR as string | undefined) ? (
+          <section className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Dispatcharr manages live-TV channels and shows up to{' '}
+              <span className="font-medium text-slate-300">Plex and Jellyfin as an HDHomeRun tuner</span>.
+              Its built-in DVR records shows into{' '}
+              <code className="font-mono text-slate-300">Media/Recordings</code>, where your media
+              server indexes them like any other files — so recording works even{' '}
+              <span className="font-medium text-slate-300">without a Plex Pass</span>{' '}
+              (live tuning inside Plex itself needs Plex Pass; Jellyfin does live TV
+              free; Dispatcharr&apos;s own web UI plays live TV for everyone).
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Admin username" k="DISPATCHARR_ADMIN_USER" placeholder="admin" />
+              <Field label="Admin password" k="DISPATCHARR_ADMIN_PASS" type="password" />
+            </div>
+            <p className="text-xs text-slate-500">
+              The installer creates this login on Dispatcharr&apos;s first boot and uses
+              it to set up the channels below — it&apos;s also how you sign in at{' '}
+              <code className="font-mono">http://&lt;NAS&gt;:9191</code>.
+            </p>
+            <div className="space-y-1.5">
+              <div className="text-sm font-medium text-slate-300">Free channel packs</div>
+              <p className="text-xs text-slate-500">
+                Free, ad-supported streaming channels (the providers&apos; own public
+                streams, ads intact) with a full programme guide — pre-configured
+                automatically. Untick anything you don&apos;t want; you can also add
+                your own IPTV sources later in Dispatcharr itself.
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {LIVETV_PACKS.map((p) => {
+                  const selected = new Set(
+                    ((config.LIVETV_CHANNEL_PACKS as string | undefined) ?? '')
+                      .split(',').map((t) => t.trim().toLowerCase()).filter(Boolean),
+                  )
+                  const on = selected.has(p.id)
+                  return (
+                    <label
+                      key={p.id}
+                      className="flex items-center gap-2.5 rounded-md border border-slate-800 bg-slate-900/40 px-3 py-2 cursor-pointer hover:border-slate-700 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-emerald-500"
+                        checked={on}
+                        onChange={() => {
+                          if (on) selected.delete(p.id); else selected.add(p.id)
+                          // Keep the canonical pack order, not click order.
+                          const next = LIVETV_PACKS.filter((x) => selected.has(x.id))
+                            .map((x) => x.id).join(',')
+                          update('LIVETV_CHANNEL_PACKS', next)
+                        }}
+                      />
+                      <span className="text-sm text-slate-200">{p.name}</span>
+                      <span className="text-xs text-slate-500 ml-auto">{p.channels}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              To turn this off, untick <span className="font-medium">Live TV &amp; DVR</span> in
+              the Services group above.
+            </p>
+          </section>
+        ) : (
+          <div className="rounded-md border border-cyan-700/30 bg-cyan-900/10 p-4 flex items-start gap-3">
+            <div className="shrink-0 w-9 h-9 rounded-md bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center">
+              <Tv size={20} className="text-cyan-300" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+            <div className="space-y-3 min-w-0">
+              <div>
+                <div className="font-medium text-cyan-100">Add live TV &amp; a DVR</div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Dispatcharr bundles 2,000+ free ad-supported channels (Pluto TV,
+                  Samsung TV Plus, Plex Live TV, Roku, Tubi) with a programme guide,
+                  appears to Plex/Jellyfin as an HDHomeRun tuner, and records shows
+                  into your media library with its own DVR — no Plex Pass needed for
+                  recording, and Jellyfin gets live TV free.
+                </p>
+              </div>
+              <BigButton
+                size="md"
+                variant="primary"
+                icon={<Tv size={16} />}
+                onClick={() => {
+                  update('ENABLE_DISPATCHARR', 'true')
+                  // An older imported profile has no pack key — seed the default
+                  // all-packs selection so enabling gives a full guide.
+                  if (config.LIVETV_CHANNEL_PACKS === undefined) {
+                    update('LIVETV_CHANNEL_PACKS', LIVETV_PACKS.map((p) => p.id).join(','))
+                  }
+                }}
+              >
+                Enable Live TV &amp; DVR
+              </BigButton>
+            </div>
+          </div>
+        )}
       </CollapsibleGroup>
 
       {/* ── Group 4: Locations & Identity ──────────────────────── */}

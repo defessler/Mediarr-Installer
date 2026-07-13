@@ -186,14 +186,21 @@ const SETUP_TRANSCRIPT: { delayMs: number; line: string }[] = [
   // Step 10
   { delayMs: 200, line: '' },
   { delayMs: 0,   line: '┌─────────────────────────────────────────────' },
-  { delayMs: 0,   line: '│ Step 10: Verify stack health' },
+  { delayMs: 0,   line: '│ Step 10: Configure Live TV (Dispatcharr)' },
+  { delayMs: 0,   line: '└─────────────────────────────────────────────' },
+  { delayMs: 200, line: '  ℹ Live TV not enabled — skipping' },
+  { delayMs: 200, line: '  [32m✔ Step 10 complete.[0m' },
+  // Step 11
+  { delayMs: 200, line: '' },
+  { delayMs: 0,   line: '┌─────────────────────────────────────────────' },
+  { delayMs: 0,   line: '│ Step 11: Verify stack health' },
   { delayMs: 0,   line: '└─────────────────────────────────────────────' },
   { delayMs: 250, line: '  [32m✔[0m All containers healthy' },
-  { delayMs: 200, line: '  [32m✔ Step 10 complete.[0m' },
+  { delayMs: 200, line: '  [32m✔ Step 11 complete.[0m' },
   // Summary
   { delayMs: 250, line: '' },
   { delayMs: 0,   line: '=============================================' },
-  { delayMs: 0,   line: '  Results: 10 passed, 0 failed' },
+  { delayMs: 0,   line: '  Results: 11 passed, 0 failed' },
   { delayMs: 0,   line: '=============================================' },
   { delayMs: 100, line: '  [32m✔ Setup complete![0m' },
 ]
@@ -267,7 +274,8 @@ const RERUN_TRANSCRIPT_FOR_CMD: Record<string, { step: number; label: string; li
   'python3 setup-arr-config.py':                  { step: 7,  label: 'Configure all services',         lines: ['Configuring Sonarr...', '  [32m✔[0m Sonarr configured'] },
   'python3 indexers/setup-indexers.py':           { step: 8,  label: 'Add Prowlarr indexers',          lines: ['Adding indexers...', '  [32m✔[0m 5 indexers added'] },
   'python3 indexers/setup-bazarr-providers.py':   { step: 9,  label: 'Enable Bazarr providers',        lines: ['Enabling providers...', '  [32m✔[0m 4 providers enabled'] },
-  'bash post-deploy-validate.sh':                 { step: 10, label: 'Verify stack health',            lines: ['  [32m✔[0m All services healthy'] },
+  'python3 setup-dispatcharr.py':                 { step: 10, label: 'Configure Live TV (Dispatcharr)', lines: ['  [90mℹ[0m Live TV not enabled — skipping'] },
+  'bash post-deploy-validate.sh':                 { step: 11, label: 'Verify stack health',            lines: ['  [32m✔[0m All services healthy'] },
 }
 
 function buildRerunTranscript(rerunDef: typeof RERUN_TRANSCRIPT_FOR_CMD[string]) {

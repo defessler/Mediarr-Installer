@@ -165,6 +165,14 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_SOULSEEK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5030 -j ACCEPT ;;
     esac
+    # Dispatcharr Live TV (9191) — OPT-IN (explicit true only), same semantics
+    # as Soulseek above. One port carries the web UI + every tuner output
+    # (HDHR discovery, M3U, EPG, stream proxy), so Plex/Jellyfin and LAN
+    # players all need this opening. NOT gluetun-namespaced — it publishes on
+    # ${LAN_IP} directly so it stays LAN-reachable as a (virtual) tuner.
+    case "$(grep -m1 '^ENABLE_DISPATCHARR=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 9191 -j ACCEPT ;;
+    esac
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
@@ -221,6 +229,10 @@ remove_rules() {
 
     # Soulseek slskd WebUI (via Gluetun)
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5030 -j ACCEPT 2>/dev/null
+
+    # Dispatcharr Live TV (web UI + tuner outputs). Unconditional -D mirrors
+    # add_rules' spec exactly so re-runs never leave a stale rule.
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 9191 -j ACCEPT 2>/dev/null
 
     # Seerr
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT 2>/dev/null

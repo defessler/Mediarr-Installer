@@ -108,6 +108,11 @@ CONFIG_DIRS=(
     # Playlist Sync (opt-in). Holds the generated sockseek.conf + per-playlist
     # skip indexes. Not a linuxserver image; created up front like slskd's.
     "$INSTALL_DIR/playlistsync/config"
+    # Live TV (opt-in). Dispatcharr's whole /data tree (its bundled Postgres DB,
+    # channel logos, uploaded playlists). Its init scripts chown it to PUID:PGID
+    # themselves, but pre-creating it PUID:PGID-owned means the bind mount never
+    # starts out root-owned on a box where docker creates missing bind sources.
+    "$INSTALL_DIR/dispatcharr/data"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -123,6 +128,10 @@ DATA_DIRS=(
     # Playlist Sync downloads + per-playlist .m3u live here (one subfolder per
     # mirrored playlist). Same Music tree Plex scans, so the .m3u paths resolve.
     "$DATA_ROOT/Media/Music/Playlists"
+    # Live TV DVR library (opt-in). docker-compose overlay-mounts this at
+    # Dispatcharr's fixed recording root (/data/recordings), so recordings land
+    # in the media tree where Plex/Jellyfin index them as ordinary files.
+    "$DATA_ROOT/Media/Recordings"
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"

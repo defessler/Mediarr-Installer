@@ -231,7 +231,7 @@ These are all things bash does well: invoke system tools, check exit codes, exit
 
 Why Python here instead of bash + curl + jq? Because every arr API is JSON-in / JSON-out, requires multi-step state (read current settings → diff → POST update), and we need real error handling. Bash + curl + jq quickly becomes more fragile + more code than Python's `urllib.request` + `json`.
 
-### 5.2 setup.sh — the 10-step orchestrator
+### 5.2 setup.sh — the 13-step orchestrator
 
 ```
 Step 1   Set file permissions             setup-chmod.sh
@@ -243,7 +243,10 @@ Step 6   Start the stack                   docker compose up -d
 Step 7   Configure all services            setup-arr-config.py
 Step 8   Add Prowlarr indexers             indexers/setup-indexers.py
 Step 9   Enable Bazarr subtitle providers  indexers/setup-bazarr-providers.py
-Step 10  Verify stack health               post-deploy-validate.sh
+Step 10  Configure Live TV (Dispatcharr)   setup-dispatcharr.py
+Step 11  Verify stack health               post-deploy-validate.sh
+Step 12  Import any download backlog       fix-imports.sh
+Step 13  Auto-confirm manual imports       auto-manual-import.py
 ```
 
 Each step is a separate script, callable individually. setup.sh prints a numbered banner before each (`│ Step 7: Configure all services`) and `✔` / `✘` after. The installer's StepperRail parses those exact markers from the streaming log to drive the visual progress.

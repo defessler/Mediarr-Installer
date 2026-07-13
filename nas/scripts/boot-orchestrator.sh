@@ -201,6 +201,17 @@ case "$(env_val ENABLE_PLAYLIST_SYNC | tr '[:upper:]' '[:lower:]')" in
         esac
         ;;
 esac
+# Live TV (Dispatcharr) is OPT-IN (explicit true only — a missing key must NOT
+# enable it, so use the case-guard, NOT is_enabled). Without the "livetv"
+# profile here, a reboot where the dispatcharr container no longer exists
+# (removed by a prior failed update/recreate or docker rm) would leave live TV
+# down despite ENABLE_DISPATCHARR=true — the boot orchestrator exists to
+# compose up the user's opted-in services. NOT VPN-coupled (it must stay
+# LAN-reachable as a tuner), so no vpn-sidecar dup-guard is needed. Mirrors
+# setup.sh's PROFILES block.
+case "$(env_val ENABLE_DISPATCHARR | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("livetv") ;;
+esac
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

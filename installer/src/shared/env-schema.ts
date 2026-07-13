@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ENABLE_DISABLED_VALUES } from './env-render.js'
+import { ENABLE_DISABLED_VALUES, LIVETV_PACKS } from './env-render.js'
 
 const numericString = z.string().regex(/^\d+$/, 'must be a positive integer')
 const ipv4 = z
@@ -43,6 +43,10 @@ export const envObject = z.object({
   // below gates its creds + a source requirement + the Plex requirement on an
   // explicit-true check. A missing key stays OFF everywhere.
   ENABLE_PLAYLIST_SYNC: optStr,
+  // OPT-IN (default off), mirroring ENABLE_SOULSEEK. The superRefine block
+  // below escalates the Dispatcharr admin credentials to required on an
+  // explicit-true check. A missing key stays OFF everywhere.
+  ENABLE_DISPATCHARR: optStr,
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
   // common TRaSH choices: WEB-1080p for Sonarr, HD Bluray + WEB for
@@ -167,6 +171,21 @@ export const envObject = z.object({
     'must be a non-negative integer',
   ),
   PLAYLIST_MONTHLY_ARCHIVE: optStr,
+
+  // Live TV & DVR (Dispatcharr) — all optional at the schema level; the
+  // superRefine block escalates the admin creds to required only when
+  // ENABLE_DISPATCHARR is explicitly true. LIVETV_CHANNEL_PACKS may be empty
+  // (the user brings their own IPTV sources), but any token present must be a
+  // known pack id — derived from LIVETV_PACKS (env-render.ts, the wizard's
+  // checkbox list) so the two can't drift; setup-dispatcharr.py's PACKS dict
+  // mirrors the same ids on the python side.
+  DISPATCHARR_ADMIN_USER: optStr,
+  DISPATCHARR_ADMIN_PASS: optStr,
+  LIVETV_CHANNEL_PACKS: optStr.refine(
+    (v) => !v || v.split(',').filter((t) => t.trim()).every((t) =>
+      LIVETV_PACKS.some((p) => p.id === t.trim().toLowerCase())),
+    `must be a comma list of: ${LIVETV_PACKS.map((p) => p.id).join(', ')}`,
+  ),
 
   // SABnzbd usenet provider (all optional — host gates the rest)
   USENET_HOST: optStr,
@@ -358,6 +377,26 @@ export const envSchema = envObject.superRefine((v, ctx) => {
     if (v.MEDIA_SERVER !== 'jellyfin' && !flagOn(v.ENABLE_PLEX)) {
       ctx.addIssue({ code: 'custom', path: ['ENABLE_PLAYLIST_SYNC'],
         message: 'Playlist Sync needs a media server — enable Plex, or choose Jellyfin as your media server' })
+    }
+  }
+
+  // Live TV & DVR (Dispatcharr) — OPT-IN, gate on explicit true (mirrors
+  // is_optin_enabled, NOT flagOn). When on: the admin login is required —
+  // setup-dispatcharr.py creates that account on Dispatcharr's first boot and
+  // authenticates with it to pre-seed channel packs, so a blank credential
+  // means the whole feature deploys unconfigured. No media-server requirement:
+  // Dispatcharr's own web UI plays live TV and its own DVR records, with or
+  // without Plex/Jellyfin (Plex live tuning additionally needs Plex Pass).
+  const dispatcharrOn = ['true', '1', 'yes', 'on']
+    .includes((v.ENABLE_DISPATCHARR ?? '').trim().toLowerCase())
+  if (dispatcharrOn) {
+    if (!v.DISPATCHARR_ADMIN_USER || v.DISPATCHARR_ADMIN_USER.trim().length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['DISPATCHARR_ADMIN_USER'],
+        message: 'Admin username required when Live TV is enabled (the installer creates this Dispatcharr login)' })
+    }
+    if (!v.DISPATCHARR_ADMIN_PASS || v.DISPATCHARR_ADMIN_PASS.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['DISPATCHARR_ADMIN_PASS'],
+        message: 'Admin password required when Live TV is enabled' })
     }
   }
 

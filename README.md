@@ -91,6 +91,7 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 | **Recyclarr** | Syncs TRaSH Guide quality profiles into Sonarr/Radarr |
 | **Unpackerr** | Watches completed downloads and unpacks archives for import |
 | **Playlist Sync** | Opt-in — mirrors SiriusXM channels into Plex/Jellyfin playlists (Soulseek-first, yt-dlp fallback) |
+| **Dispatcharr** | Opt-in — live TV & DVR: free ad-supported channel packs + your own IPTV sources, presented to Plex/Jellyfin as an HDHomeRun tuner; records into `Media/Recordings` (no Plex Pass needed for recording) |
 
 ### Key concepts
 

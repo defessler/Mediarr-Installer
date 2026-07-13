@@ -42,9 +42,9 @@ const STACK_CONTAINERS = new Set([
   'plex', 'jellyfin', 'tautulli', 'seerr', 'homepage', 'prowlarr', 'flaresolverr',
   'sonarr', 'radarr', 'bazarr', 'lidarr', 'gluetun', 'qbittorrent',
   'sabnzbd', 'recyclarr', 'recyclarr-trigger', 'unpackerr',
-  // always-on recyclarr-trigger + the opt-in music services, so a
+  // always-on recyclarr-trigger + the opt-in music/live-TV services, so a
   // re-install over any of them is recognized as ours (not a foreign Docker setup).
-  'slskd', 'soularr',
+  'slskd', 'soularr', 'dispatcharr',
 ])
 
 async function run(sessionId: string, cmd: string): Promise<{ ok: boolean; out: string }> {

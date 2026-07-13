@@ -146,6 +146,8 @@ is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 # Soulseek (opt-in music download) — slskd WebUI + the soularr bridge daemon.
 # Explicit-true gate so a pre-Soulseek .env isn't expected to have them.
 is_optin_enabled ENABLE_SOULSEEK && CONTAINERS+=(slskd soularr)
+# Live TV (opt-in) — Dispatcharr. Explicit-true gate, same reason.
+is_optin_enabled ENABLE_DISPATCHARR && CONTAINERS+=(dispatcharr)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -438,6 +440,14 @@ is_enabled ENABLE_RECYCLARR   && check_url_lenient "Recyclarr trigger" "http://$
 # health tile.
 is_optin_enabled ENABLE_SOULSEEK && check_url_lenient "slskd" "http://$LAN_IP:5030" \
     "slskd shares the VPN's network — if VPN is on, give the tunnel a moment to settle, then re-run."
+# Dispatcharr (opt-in Live TV) is HEAVY: its bundled PostgreSQL initialises and
+# Django runs migrations on first boot, so the web UI can still be HTTP 000 at
+# end-of-install even though the container is "running". Lenient check → a
+# not-yet-serving Dispatcharr WARNS (wait + re-run) instead of red-failing the
+# whole install, exactly like Seerr. The "Dispatcharr (http" line is also what
+# the wizard's Done screen scrapes to light its Live TV health tile.
+is_optin_enabled ENABLE_DISPATCHARR && check_url_lenient "Dispatcharr" "http://$LAN_IP:9191" \
+    "Dispatcharr's first boot runs database setup — give it a few minutes, then re-run."
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
@@ -715,6 +725,10 @@ if is_enabled ENABLE_HOMEPAGE; then
             "ENABLE_RECYCLARR:Recyclarr"
         )
         is_optin_enabled ENABLE_SOULSEEK  && EXPECTED_TILES+=("ENABLE_SOULSEEK:slskd")
+        # Dispatcharr tile is opt-in — append only when explicitly enabled. The
+        # loop below re-checks with is_enabled (default-on), which is fine: we
+        # only append when is_optin_enabled already proved an explicit true.
+        is_optin_enabled ENABLE_DISPATCHARR && EXPECTED_TILES+=("ENABLE_DISPATCHARR:Dispatcharr")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

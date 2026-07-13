@@ -4004,6 +4004,22 @@ def render_homepage_services(env, ip):
         out.extend(downloads)
         out.append("")
 
+    # Live TV section — Dispatcharr (opt-in, like slskd → is_optin_enabled so
+    # an upgraded pre-Dispatcharr .env with no key stays OFF). LAN-reachable
+    # (NOT in gluetun's namespace): web UI + tuner outputs on ${LAN_IP}:9191,
+    # so the default siteMonitor (the href) is correct. Icon is an mdi- glyph
+    # rather than a dashboard-icons png — dispatcharr is young enough that its
+    # icon isn't guaranteed in every homepage icon-pack release, and a missing
+    # png renders as a broken image while mdi- glyphs are bundled.
+    livetv = []
+    if is_optin_enabled(env, 'ENABLE_DISPATCHARR'):
+        livetv.append(block("Dispatcharr", f"http://{ip}:9191",
+                            "Live TV channels + DVR", "mdi-television-classic"))
+    if livetv:
+        out.append("- Live TV:")
+        out.extend(livetv)
+        out.append("")
+
     # Maintenance section — services with no web UI (Recyclarr is a
     # CLI tool, so its tile points at the docs + the in-config last-
     # sync stamp, not at any port on the NAS). This is the section the
@@ -4097,6 +4113,14 @@ def render_homepage_settings(env):
         out.append("  Downloads:")
         out.append("    style: row")
         out.append("    columns: 2")
+    # Live TV — only the Dispatcharr tile lives here, and only when it's on.
+    # OPT-IN gate (is_optin_enabled, like slskd's section), matching the
+    # services.yaml section in render_homepage_services so there's no layout
+    # key without a section (Homepage would warn).
+    if is_optin_enabled(env, 'ENABLE_DISPATCHARR'):
+        out.append("  Live TV:")
+        out.append("    style: row")
+        out.append("    columns: 1")
     # Maintenance — only the Recyclarr tile lives here now (Update Images
     # was removed; see render_homepage_services for the reason). Skip the
     # section + its layout entry entirely when Recyclarr is off, otherwise

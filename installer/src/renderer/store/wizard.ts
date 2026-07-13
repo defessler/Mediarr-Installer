@@ -164,6 +164,14 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_PLAYLIST_SYNC: 'false',
   PLAYLIST_SYNC_CRON: '0 4 * * *',
   PLAYLIST_PREF_FORMAT: 'flac',
+  // Live TV & DVR (Dispatcharr) is OPT-IN too — default OFF, like Soulseek.
+  // The pack list pre-selects every free FAST pack so enabling the feature
+  // gives a full guide out of the box; the Configure card lets the user trim
+  // it. Admin username defaults to 'admin'; the password is deliberately NOT
+  // defaulted (validation requires the user to pick one when enabling).
+  ENABLE_DISPATCHARR: 'false',
+  DISPATCHARR_ADMIN_USER: 'admin',
+  LIVETV_CHANNEL_PACKS: 'pluto,samsungtvplus,plextv,roku,tubi',
 
   PUID: '1026',
   PGID: '100',

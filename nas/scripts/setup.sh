@@ -531,6 +531,12 @@ if is_optin_enabled ENABLE_PLAYLIST_SYNC; then
         esac
     fi
 fi
+# Live TV & DVR (Dispatcharr) is OPT-IN (default off) — use is_optin_enabled,
+# NOT is_enabled, so a pre-Dispatcharr .env (no key) stays off. Unlike
+# Soulseek/Playlist Sync it is NOT VPN-coupled: Plex/Jellyfin must reach it on
+# the LAN as a (virtual) HDHomeRun tuner, so it stays on the media bridge and
+# never pulls in the "vpn" sidecar.
+is_optin_enabled ENABLE_DISPATCHARR && PROFILES+=("livetv")
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
@@ -713,6 +719,7 @@ stop_disabled_services() {
         "flaresolverr:ENABLE_FLARESOLVERR"
         "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
         "playlistsync:ENABLE_PLAYLIST_SYNC"
+        "dispatcharr:ENABLE_DISPATCHARR"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -720,10 +727,10 @@ stop_disabled_services() {
         flag="${pair#*:}"
         # Service is enabled → leave the container alone, up -d will
         # (re-)create or update it as needed. ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC
-        # are OPT-IN, so use the explicit-true helper; the default-on is_enabled
-        # would treat a missing key as "enabled" and never reap slskd/soularr
-        # or playlistsync.
-        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ]; then
+        # / ENABLE_DISPATCHARR are OPT-IN, so use the explicit-true helper; the
+        # default-on is_enabled would treat a missing key as "enabled" and never
+        # reap slskd/soularr, playlistsync, or dispatcharr.
+        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] || [ "$flag" = "ENABLE_DISPATCHARR" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -902,6 +909,10 @@ check_port_conflicts() {
             *)                pairs+=("slskd:5030") ;;
         esac
     fi
+    # Dispatcharr (opt-in Live TV): its web UI + tuner outputs share one plain
+    # LAN bind on 9191, so a foreign holder would fail the compose-up bind
+    # late — surface it here instead.
+    is_optin_enabled ENABLE_DISPATCHARR && pairs+=("dispatcharr:9191")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
     # separate package), so the old per-port `netstat -lnt 2>/dev/null`
@@ -1031,6 +1042,10 @@ wait_for_services() {
     # qBittorrent — `.State.Status` is the only readiness signal. soularr
     # is a plain bridge service. Opt-in, so use the explicit-true helper.
     is_optin_enabled ENABLE_SOULSEEK && services="$services slskd soularr"
+    # Dispatcharr is a plain bridge service; .State.Status is the readiness
+    # signal (its Django first boot serves HTTP minutes later — post-deploy's
+    # lenient URL check covers that, this wait must not stall on it). Opt-in.
+    is_optin_enabled ENABLE_DISPATCHARR && services="$services dispatcharr"
 
     echo ""
     echo "  Waiting for containers to become healthy..."
@@ -1226,7 +1241,7 @@ ENV_HASH="$(compute_env_hash)"
 # run_step skip (step < START_STEP is always true), do NOTHING, and still
 # print "✔ Setup complete!" — a silent no-op that looks like success. Reject
 # an out-of-range value loudly instead. Keep this in sync if steps are added.
-TOTAL_STEPS=12
+TOTAL_STEPS=13
 START_STEP=1
 if [ "$FROM_STEP" -gt 0 ]; then
     if [ "$FROM_STEP" -gt "$TOTAL_STEPS" ]; then
@@ -1549,6 +1564,25 @@ echo "  Pre-flight: checking Docker's image store has room + can reach the regis
 check_docker_dataroot_space
 check_registry_egress
 
+# Dispatcharr RAM guardrail (opt-in service, hungry: bundled PostgreSQL +
+# Redis + Django/uWSGI + Celery + FFmpeg in one AIO container). On a small NAS
+# it risks the OOM killer, which reads as random channel drops / a dead web UI
+# rather than "not enough RAM". Warn (never block — it's their call) when the
+# box looks too small. Same recipe as the old AzuraCast guardrail.
+if is_optin_enabled ENABLE_DISPATCHARR && [ -r /proc/meminfo ]; then
+    _mem_tot_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)
+    if [ -n "$_mem_tot_kb" ] && [ "$_mem_tot_kb" -lt 4194304 ]; then
+        _mem_tot_gb=$(( (_mem_tot_kb + 524288) / 1048576 ))
+        echo ""
+        echo "  ⚠ Live TV (Dispatcharr) is enabled, but this NAS has only ~${_mem_tot_gb} GB RAM."
+        echo "    Dispatcharr bundles its own database + stream engine on top of the rest"
+        echo "    of the stack; on a box this small the kernel can OOM-kill it — streams"
+        echo "    then drop or the web UI dies. If that happens, set ENABLE_DISPATCHARR=false"
+        echo "    and re-run; the rest of the stack is unaffected."
+    fi
+    unset _mem_tot_kb _mem_tot_gb
+fi
+
 # Bring the stack up. Split the pull out of `up -d` and wrap it in retry() so a
 # transient registry/network blip during the long first-run pull doesn't fail
 # the whole step — `up -d` afterwards is the authority on success and re-pulls
@@ -1679,14 +1713,28 @@ echo "        (OpenSubtitles, Addic7ed) configured in .env"
 run_step 9 "Enable Bazarr subtitle providers" \
     run_python "$SCRIPT_DIR/indexers/setup-bazarr-providers.py"
 
+# Step 10: seed Live TV (Dispatcharr) — opt-in; the script exits 0 immediately
+# when ENABLE_DISPATCHARR is off, so the step reads "complete" for everyone
+# else. When on: waits out Dispatcharr's slow Django first boot, creates the
+# admin account (one-time initialize API), signs in, pre-seeds the selected
+# free channel packs (M3U + EPG sources, auto-channel-sync), and — on
+# MEDIA_SERVER=jellyfin with an API key present — registers the tuner + guide
+# in Jellyfin. Idempotent: re-runs skip whatever already exists, and every
+# non-stack-breaking miss is a ⚠ warning, not a failure.
+echo ""
+echo "  Note: configuring Live TV (Dispatcharr) — admin account, free channel"
+echo "        packs + programme guide, DVR library, media-server tuner"
+run_step 10 "Configure Live TV (Dispatcharr)" \
+    run_python "$SCRIPT_DIR/setup-dispatcharr.py"
+
 # ── Post-deploy validation ────────────────────────────────────────────────────
 
 echo ""
 echo "  Note: running post-deploy health checks on all services"
-run_step 10 "Verify stack health" \
+run_step 11 "Verify stack health" \
     bash "$SCRIPT_DIR/post-deploy-validate.sh"
 
-# Step 11: nudge the arrs to scan their completed-download folders.
+# Step 12: nudge the arrs to scan their completed-download folders.
 #
 # Even when everything's wired correctly, the arr ↔ download-client
 # polling loop can be slow to notice files that completed BEFORE the
@@ -1705,12 +1753,12 @@ run_step 10 "Verify stack health" \
 echo ""
 echo "  Note: nudging the arrs to scan completed-downloads folders"
 echo "        (catches any backlog from previous runs or pre-existing files)"
-run_step 11 "Import any download backlog" \
+run_step 12 "Import any download backlog" \
     bash -c "bash '$SCRIPT_DIR/fix-imports.sh' || true"
 
-# Step 12: drain "Manual import required" queue items.
+# Step 13: drain "Manual import required" queue items.
 #
-# Step 11 above tells the arrs to RE-SCAN — that fixes downloads where
+# Step 12 above tells the arrs to RE-SCAN — that fixes downloads where
 # the arr never noticed the file at all. But some downloads land in a
 # different stuck state: the arr DID see the file, DID identify the
 # target media via grab history, but refused to auto-import because the
@@ -1730,7 +1778,7 @@ echo ""
 echo "  Note: auto-resolving 'Manual Import Required' queue items"
 echo "        (Sonarr/Radarr/Lidarr items where grab history identified"
 echo "        the target media but the parser couldn't auto-confirm)"
-run_step 12 "Auto-confirm manual imports" \
+run_step 13 "Auto-confirm manual imports" \
     run_python_besteffort "$SCRIPT_DIR/auto-manual-import.py"
 
 # ── Boot + self-heal resilience (best-effort, unnumbered) ─────────────────────
