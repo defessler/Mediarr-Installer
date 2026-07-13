@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 """
-setup-bazarr-providers.py — Add subtitle providers to Bazarr
+setup-bazarr-providers.py — Set up Bazarr subtitles end to end
 
-Enables a curated set of subtitle providers. Free providers that need no
-account are added automatically. Providers that need credentials are added
-only if the relevant keys are set in .env.
+Two jobs, both idempotent and safe to re-run on every install/update:
 
-Safe to re-run — skips providers that are already enabled.
+  1. Enable a curated set of subtitle providers. Free providers that need no
+     account are added automatically; credential-based ones only when the
+     relevant keys are set in .env.
+
+  2. Make English subtitles actually work out of the box — enable the English
+     language, create an "English" language profile, set it as the default
+     profile for new Sonarr series + Radarr movies (only when the user hasn't
+     already chosen their own default), and backfill that profile onto any
+     existing series/movies that don't have one yet.
+
+Everything is written through Bazarr's FORM-ENCODED settings API (see
+POST_FORM). An earlier version POSTed JSON, which Bazarr silently ignored
+(its settings endpoint reads request.form, so a JSON body saved nothing).
+
+Safe to re-run — skips providers/profiles that are already in place.
 
 Usage:
     python3 /volume1/docker/media/indexers/setup-bazarr-providers.py
@@ -27,6 +39,7 @@ import sys
 import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 
 # ── Terminal colours ──────────────────────────────────────────────────────────
 
@@ -115,8 +128,42 @@ def _headers(key):
 def GET(base, key, path):
     return _request(f"{base}{path}", _headers(key))
 
-def POST(base, key, path, data):
-    return _request(f"{base}{path}", _headers(key), 'POST', data)
+def _form_headers(key):
+    return {'X-API-KEY': key,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'setup-bazarr-providers/1.0'}
+
+def POST_FORM(base, key, path, fields):
+    """POST application/x-www-form-urlencoded to Bazarr.
+
+    `fields` is a list of (name, value) tuples. Repeat a name to send a
+    multi-value field the way Bazarr's own web UI does — e.g. the
+    enabled_providers "array key" arrives as several
+    `settings-general-enabled_providers=<id>` pairs, and each series id in a
+    backfill as a repeated `seriesid=<n>`. This is the ONLY shape Bazarr's
+    settings/series/movies endpoints accept: they read request.form (and
+    reqparse request.values), so a JSON body would be ignored entirely.
+
+    Returns {} on any 2xx (Bazarr answers settings saves with an empty 204),
+    or None on an HTTP/network error."""
+    body = urlencode(fields).encode()
+    req = Request(f"{base}{path}", data=body,
+                  headers=_form_headers(key), method='POST')
+    try:
+        with urlopen(req, timeout=15) as resp:
+            content = resp.read()
+            if not content:
+                return {}
+            try:
+                return json.loads(content)
+            except ValueError:
+                return {}          # 2xx with a non-JSON body still means OK
+    except HTTPError as e:
+        body_text = e.read().decode(errors='replace')
+        print(f"    HTTP {e.code}: {body_text[:200]}")
+        return None
+    except (URLError, OSError):
+        return None
 
 # ── Wait for Bazarr ───────────────────────────────────────────────────────────
 
@@ -132,38 +179,25 @@ def wait_ready(base, key, retries=24, interval=5):
 
 # ── Provider helpers ──────────────────────────────────────────────────────────
 
-def _apply_one(settings, display, provider_id, provider_settings):
-    """Mutate a settings dict to enable a single provider (+ its creds).
-    Returns the mutated settings. Shared by the batch and one-at-a-time
-    paths so both build the payload identically."""
-    general = settings.get('general', {})
-    enabled = set(general.get('enabled_providers') or [])
-    enabled.add(provider_id)
-    general['enabled_providers'] = sorted(enabled)
-    settings['general'] = general
-    # Merge any provider-specific credentials into settings
-    if provider_settings:
-        section_data = settings.get(provider_id, {})
-        section_data.update(provider_settings)
-        settings[provider_id] = section_data
-    return settings
-
-
 def enable_providers(base, key, to_add):
     """Enable a list of (display_name, provider_id, optional_settings_dict) in Bazarr.
 
-    Fetches settings once, applies all changes, then saves in a single POST.
-    If that batch POST fails, falls back to enabling providers ONE AT A
-    TIME so a single bad provider can't drop the whole batch.
+    Read-modify-write against the FORM-ENCODED settings API. We fetch the
+    current enabled_providers, add any that are missing, and POST the whole
+    set back as repeated `settings-general-enabled_providers` form fields —
+    the exact shape Bazarr's web UI uses (enabled_providers is one of Bazarr's
+    "array keys"). Credentials for account providers go out as
+    `settings-<provider>-<field>` fields.
 
-    Why the fallback: Bazarr validates the entire settings payload on
-    the save POST. One unknown/renamed provider_id (Subscene-style
-    upstream removals happen regularly) makes Bazarr 500 the single
-    all-providers POST, which silently undoes EVERY enable in the batch —
-    the user ends up with no new providers even though most were valid.
-    Saving each pending provider on its own (re-fetching fresh settings
-    each time so already-saved ones are preserved) isolates the bad apple:
-    it alone reports failure, the rest stick."""
+    This replaced an older JSON POST that Bazarr silently dropped: its settings
+    endpoint reads request.form, so an application/json body left the form
+    empty and save_settings() wrote nothing — providers were never actually
+    enabled. save_settings() only touches the keys we send, so posting just the
+    provider fields is a safe partial update that won't disturb other settings.
+    Because save_settings() doesn't validate provider ids (the general.enabled_providers
+    validator only checks that it's a list), an unknown/renamed id no longer
+    500s the save — so the old one-at-a-time "isolate the bad apple" fallback
+    is gone."""
     settings = GET(base, key, "/api/system/settings")
     if settings is None:
         fail("Cannot reach Bazarr API"); return
@@ -180,37 +214,204 @@ def enable_providers(base, key, to_add):
     if not pending:
         return
 
-    # Batch attempt: apply every pending provider onto one settings dict
-    # and save in a single POST (the fast common path).
-    for display, provider_id, provider_settings in pending:
-        _apply_one(settings, display, provider_id, provider_settings)
+    # enabled_providers is an "array key": send the full union as repeated
+    # fields. Add each pending provider's credentials as settings-<id>-<field>.
+    union  = sorted(enabled | {pid for _d, pid, _ps in pending})
+    fields = [('settings-general-enabled_providers', pid) for pid in union]
+    for _display, provider_id, provider_settings in pending:
+        for field, value in (provider_settings or {}).items():
+            fields.append((f'settings-{provider_id}-{field}', value))
 
-    if POST(base, key, "/api/system/settings", settings) is not None:
+    if POST_FORM(base, key, "/api/system/settings", fields) is not None:
         for display, _pid, _ps in pending:
             ok(f"{display}")
         ok("Settings saved")
+    else:
+        for display, _pid, _ps in pending:
+            fail(f"{display}: Bazarr rejected the settings save")
+
+
+# ── English subtitle profile ──────────────────────────────────────────────────
+
+ENGLISH_CODE         = "en"
+ENGLISH_PROFILE_NAME = "English"
+
+
+def _is_unset(v):
+    """A Bazarr default-profile setting / a series-or-movie profileId counts as
+    'unset' when it's blank, None, or 0 — real profile ids start at 1."""
+    return v in (None, '', 0, '0')
+
+
+def _resolve_profile_id(existing, fallback):
+    """The user's own configured profile id if they have one, else `fallback`
+    (our English profile). Used to decide what backfill assigns."""
+    if _is_unset(existing):
+        return fallback
+    try:
+        return int(existing)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _english_profile_item(item_id=1):
+    """One profile item selecting plain English. The 'True'/'False' strings
+    match Bazarr's PythonBoolean convention for profile-item flags."""
+    return {
+        "id": item_id,
+        "language": ENGLISH_CODE,
+        "audio_exclude": "False",
+        "audio_only_include": "False",
+        "hi": "False",
+        "forced": "False",
+    }
+
+
+def _as_list(payload):
+    """Bazarr list endpoints return either a bare list or {'data': [...]}."""
+    if isinstance(payload, dict):
+        return payload.get('data') or []
+    return payload or []
+
+
+def setup_english_subtitles(base, key):
+    """Enable English, ensure an 'English' language profile exists, and — only
+    when the user hasn't already chosen their own default — make it the default
+    profile for new Sonarr series and Radarr movies.
+
+    Read-modify-write, because Bazarr's settings endpoint treats
+    `languages-enabled` and `languages-profiles` as AUTHORITATIVE FULL LISTS:
+    it resets every language-enabled flag then re-enables exactly what we send,
+    and it DELETES any profile we don't resubmit. So we always fetch the current
+    state and add English to it — never replace it.
+
+    Everything non-fatal here is a warn(), not a fail(): subtitles are a
+    convenience and must never mark the install step failed.
+
+    Returns a dict (english_id, series_profile, movie_profile, use_sonarr,
+    use_radarr) for the backfill step, or None if Bazarr was unreachable."""
+    settings = GET(base, key, "/api/system/settings")
+    if settings is None:
+        warn("Skipping English profile — Bazarr settings API unreachable")
+        return None
+    general = settings.get('general', {})
+
+    # 1. Enabled languages — add English to whatever's already enabled.
+    #    A failed GET must NOT be read as "nothing enabled": the settings POST
+    #    resets every enabled flag then re-enables only what we send, so acting
+    #    on an empty-from-error list would DISABLE the user's other languages.
+    langs = GET(base, key, "/api/system/languages")
+    if langs is None:
+        warn("Skipping English profile — couldn't read Bazarr languages")
+        return None
+    langs = _as_list(langs)
+    enabled_codes  = {l.get('code2') for l in langs if l.get('enabled')}
+    enabled_codes.discard(None)
+    add_english_lang = ENGLISH_CODE not in enabled_codes
+
+    # 2. Language profile — reuse an existing "English" profile if present.
+    #    Same guard, and it matters even more here: `languages-profiles` is an
+    #    authoritative full list, so submitting one built from an error-empty
+    #    fetch would DELETE every existing profile.
+    profiles = GET(base, key, "/api/system/languages/profiles")
+    if profiles is None:
+        warn("Skipping English profile — couldn't read Bazarr language profiles")
+        return None
+    profiles = _as_list(profiles)
+    english  = next((p for p in profiles
+                     if str(p.get('name', '')).strip().lower() == ENGLISH_PROFILE_NAME.lower()),
+                    None)
+    create_profile = english is None
+    if create_profile:
+        english_id = max((int(p.get('profileId', 0)) for p in profiles), default=0) + 1
+        english = {
+            "profileId": english_id,
+            "name": ENGLISH_PROFILE_NAME,
+            "cutoff": None,
+            "items": [_english_profile_item()],
+            "mustContain": [],
+            "mustNotContain": [],
+            "originalFormat": None,
+            "tag": None,
+        }
+        profiles_full = profiles + [english]
+    else:
+        english_id = int(english.get('profileId', 0))
+
+    # 3. Defaults — non-destructive: only fill a default that isn't already set.
+    set_series_default = bool(general.get('use_sonarr')) and _is_unset(general.get('serie_default_profile'))
+    set_movie_default  = bool(general.get('use_radarr')) and _is_unset(general.get('movie_default_profile'))
+
+    # One combined form POST. Order inside Bazarr's handler is
+    # languages-enabled → languages-profiles → save_settings(defaults), so the
+    # profile exists before we point the defaults at its id.
+    fields = []
+    if add_english_lang:
+        for code in sorted(enabled_codes | {ENGLISH_CODE}):
+            fields.append(('languages-enabled', code))
+    if create_profile:
+        fields.append(('languages-profiles', json.dumps(profiles_full)))
+    if set_series_default:
+        fields.append(('settings-general-serie_default_enabled', 'True'))
+        fields.append(('settings-general-serie_default_profile', str(english_id)))
+    if set_movie_default:
+        fields.append(('settings-general-movie_default_enabled', 'True'))
+        fields.append(('settings-general-movie_default_profile', str(english_id)))
+
+    if fields and POST_FORM(base, key, "/api/system/settings", fields) is None:
+        warn("Bazarr rejected the English language/profile save")
+        return None
+
+    if create_profile:   ok(f"Created the '{ENGLISH_PROFILE_NAME}' language profile")
+    else:                skip(f"'{ENGLISH_PROFILE_NAME}' language profile (already exists)")
+    if add_english_lang: ok("Enabled English (en)")
+    else:                skip("English (en) already enabled")
+    if set_series_default:            ok("Set English as the default profile for TV series")
+    elif general.get('use_sonarr'):   skip("Series default profile (already set — left as-is)")
+    if set_movie_default:             ok("Set English as the default profile for movies")
+    elif general.get('use_radarr'):   skip("Movie default profile (already set — left as-is)")
+
+    return {
+        "english_id":     english_id,
+        "series_profile": _resolve_profile_id(general.get('serie_default_profile'), english_id),
+        "movie_profile":  _resolve_profile_id(general.get('movie_default_profile'), english_id),
+        "use_sonarr":     bool(general.get('use_sonarr')),
+        "use_radarr":     bool(general.get('use_radarr')),
+    }
+
+
+def backfill_profiles(base, key, kind, list_path, id_field, param, profile_id):
+    """Assign `profile_id` to every synced series/movie that has NO profile yet.
+
+    Non-destructive: items the user already assigned a profile are never
+    touched. Best-effort — a fresh install where Bazarr hasn't synced Sonarr/
+    Radarr yet simply has nothing to do, and a rejected update warns rather
+    than fails. The endpoint pairs equal-length seriesid/profileid (or
+    radarrid/profileid) arrays, so we emit one profileid per id and chunk to
+    keep the request body small on large libraries."""
+    raw = GET(base, key, list_path)
+    if raw is None:
+        warn(f"Skipping {kind} backfill — couldn't reach Bazarr")
+        return
+    items = _as_list(raw)
+    if not items:
+        skip(f"No {kind} synced yet — nothing to backfill")
+        return
+    orphans = [it[id_field] for it in items if _is_unset(it.get('profileId'))]
+    if not orphans:
+        skip(f"All {kind} already have a profile")
         return
 
-    # Batch failed — most likely one invalid provider_id poisoned the
-    # whole payload. Retry each pending provider individually so the
-    # valid ones still get saved. Re-fetch fresh settings each iteration
-    # so we build on the last successful save, never on the rejected
-    # batch body.
-    warn("Batch save failed — enabling providers one at a time to isolate the bad one")
-    saved_any = False
-    for display, provider_id, provider_settings in pending:
-        fresh = GET(base, key, "/api/system/settings")
-        if fresh is None:
-            fail(f"{display}: cannot reach Bazarr API to save")
-            continue
-        _apply_one(fresh, display, provider_id, provider_settings)
-        if POST(base, key, "/api/system/settings", fresh) is not None:
-            ok(f"{display}")
-            saved_any = True
-        else:
-            fail(f"{display}: rejected by Bazarr (likely an invalid/renamed provider id) — skipped")
-    if saved_any:
-        ok("Settings saved")
+    done = 0
+    for i in range(0, len(orphans), 100):
+        chunk  = orphans[i:i + 100]
+        fields = [(param, str(x)) for x in chunk] + \
+                 [('profileid', str(profile_id)) for _ in chunk]
+        if POST_FORM(base, key, list_path, fields) is None:
+            warn(f"Backfill of some {kind} was rejected by Bazarr")
+            return
+        done += len(chunk)
+    ok(f"Applied a subtitle profile to {done} existing {kind} that had none")
 
 # ── Read config ───────────────────────────────────────────────────────────────
 
@@ -360,25 +561,37 @@ def main():
         if missing:
             skip(f"{display} (add {', '.join(missing)} to .env to enable)")
             continue
-        # IMPORTANT: pass `creds` directly (the field dict), NOT
-        # `{settings_key: creds}`. enable_providers() merges
-        # provider_settings INTO settings[provider_id]; if we wrap creds
-        # in a {settings_key: ...} dict it gets nested one level too
-        # deep — settings[provider_id][provider_id] = creds instead of
-        # settings[provider_id] = creds. Bazarr's validator then
-        # rejects the malformed structure with HTTP 500 "Internal
-        # Server Error" on the POST that saves all-providers-at-once,
-        # silently undoing every account-provider enable in the batch.
-        # Real install log (commit ae33d38-era): all 3 account
-        # providers reported ✔ then "Failed to save settings" 500.
+        # IMPORTANT: pass `creds` directly (the flat {field: value} dict),
+        # NOT `{settings_key: creds}`. enable_providers() turns each entry
+        # into a `settings-<provider_id>-<field>` form field, so creds must be
+        # the field map itself — wrapping it a level deeper would emit a bogus
+        # `settings-<provider_id>-<settings_key>` field whose value is the
+        # stringified creds dict, which Bazarr can't store as a credential.
         #
-        # In our current data model settings_key always equals
-        # provider_id, so the parameter is redundant — keep it for
-        # future-flexibility but ignore it here.
+        # In our current data model settings_key always equals provider_id, so
+        # the parameter is redundant — keep it for future-flexibility but ignore
+        # it here.
         to_add.append((display, provider_id, creds))
 
     if to_add:
         enable_providers(BAZARR, BAZARR_KEY, to_add)
+
+    # ── English subtitle profile ────────────────────────────────────────────────
+
+    section("English Subtitle Profile")
+    resolved = setup_english_subtitles(BAZARR, BAZARR_KEY)
+    if resolved:
+        # Backfill existing series/movies that have no profile yet. On a fresh
+        # install Bazarr usually hasn't synced Sonarr/Radarr, so these no-op
+        # cleanly; on an update they catch up the existing library.
+        if resolved['use_sonarr']:
+            backfill_profiles(BAZARR, BAZARR_KEY, "TV series",
+                              "/api/series", "sonarrSeriesId", "seriesid",
+                              resolved['series_profile'])
+        if resolved['use_radarr']:
+            backfill_profiles(BAZARR, BAZARR_KEY, "movies",
+                              "/api/movies", "radarrId", "radarrid",
+                              resolved['movie_profile'])
 
     # ── Summary ───────────────────────────────────────────────────────────────
 
@@ -388,9 +601,10 @@ def main():
     else:
         print(f"{RED}{BOLD}  Done with {errors} error(s) — review output above.{RESET}")
     print(f"""
-  Still needs manual setup in Bazarr:
-  • Languages    Settings → Languages → add your preferred languages
-  • Wanted       Bazarr → Wanted → trigger a search once providers are set
+  Subtitle setup:
+  • English is enabled + set as the default language profile automatically.
+  • More languages   Settings → Languages → Profiles  (optional)
+  • Wanted           Bazarr → Wanted → trigger a search to fetch subs now
 {'═' * 52}
 """)
     sys.exit(0 if errors == 0 else 1)
