@@ -791,13 +791,31 @@ export function RunScreen() {
           // one of the immediate child paths doesn't match. find -mount
           // confines to the same filesystem (avoids descending into
           // bind-mounted /data inside the container's config etc).
+          //
+          // EXCLUDE boot-orchestrator's own lock/log from the mismatch scan:
+          // the boot task runs as ROOT and re-creates .boot-orchestrator.lock
+          // (+ .log) owned 0:0 on every reboot, so a perfectly normal
+          // post-reboot state (e.g. right after a DSM update) would otherwise
+          // always read as "mismatch" and kick off a full-tree recursive
+          // chown for nothing. They're just flock/log targets — ownership is
+          // irrelevant — so a root-owned lock must NOT trigger the recurse.
           `chown "$OWNER_UID:$OWNER_GID" ${tq}; ` +
           `chmod u+rwX,g+rwX ${tq}; ` +
-          `MISMATCH=$(find ${tq} -mindepth 1 -maxdepth 2 -mount \\( ! -uid "$OWNER_UID" -o ! -gid "$OWNER_GID" \\) -print -quit 2>/dev/null); ` +
+          `MISMATCH=$(find ${tq} -mindepth 1 -maxdepth 2 -mount ! -name '.boot-orchestrator.lock' ! -name '.boot-orchestrator.log' \\( ! -uid "$OWNER_UID" -o ! -gid "$OWNER_GID" \\) -print -quit 2>/dev/null); ` +
           `if [ -n "$MISMATCH" ]; then ` +
           `  echo "[prep] some entries need re-chowning (first mismatch: $MISMATCH) — running recursive chown..."; ` +
-          `  chown -R "$OWNER_UID:$OWNER_GID" ${tq}; ` +
-          `  chmod -R u+rwX,g+rwX ${tq}; ` +
+          // Best-effort (|| true): a running container's SQLite write-ahead
+          // files (tautulli.db-wal / *.db-shm, and Plex/arr DBs) are transient
+          // — the container can checkpoint+unlink one BETWEEN find listing the
+          // dir and chown/chmod reaching it, so the walk hits "No such file"
+          // and exits non-zero. Under `set -e` that aborted the whole prep and
+          // failed the install with a confusing exit 1. The recursive pass is
+          // only best-effort normalization; the su-touch write-test below is
+          // the AUTHORITATIVE permission gate (a genuine ownership problem
+          // still fails there with exit 13), so swallowing the transient-race
+          // error here is safe.
+          `  chown -R "$OWNER_UID:$OWNER_GID" ${tq} || true; ` +
+          `  chmod -R u+rwX,g+rwX ${tq} || true; ` +
           `else ` +
           `  echo "[prep] ownership already correct on all children — skipping recursive chown"; ` +
           `fi; ` +
