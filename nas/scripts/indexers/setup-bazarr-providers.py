@@ -2,17 +2,28 @@
 """
 setup-bazarr-providers.py — Set up Bazarr subtitles end to end
 
-Two jobs, both idempotent and safe to re-run on every install/update:
+Three jobs, all idempotent and safe to re-run on every install/update, run in
+this deliberate order:
 
-  1. Enable a curated set of subtitle providers. Free providers that need no
-     account are added automatically; credential-based ones only when the
-     relevant keys are set in .env.
+  1. Enable the curated FREE providers (no account needed) in one batch.
 
   2. Make English subtitles actually work out of the box — enable the English
      language, create an "English" language profile, set it as the default
      profile for new Sonarr series + Radarr movies (only when the user hasn't
      already chosen their own default), and backfill that profile onto any
      existing series/movies that don't have one yet.
+
+  3. Enable the credential-based ACCOUNT providers (OpenSubtitles.com/.org,
+     Addic7ed) — only those whose keys are set in .env, and each saved on its
+     OWN request so one bad credential can't fail the others.
+
+Order matters: Bazarr validates account credentials on save and can throw a
+500 (and briefly drop its API) on a bad/rate-limited login. Saving accounts
+LAST — after the local, dependency-free English profile — means such a wobble
+can't cascade onto the setup that actually matters. And every save here is a
+convenience: a rejected provider/credential save is a warn(), never a fail(),
+so it can't redden the whole install step. Only an unreachable Bazarr (caught
+by wait_ready) is a hard failure.
 
 Everything is written through Bazarr's FORM-ENCODED settings API (see
 POST_FORM). An earlier version POSTed JSON, which Bazarr silently ignored
@@ -50,10 +61,13 @@ BOLD   = "\033[1m"
 RESET  = "\033[0m"
 
 errors = 0
+warnings = 0
 
 def ok(msg):   print(f"  {GREEN}✔{RESET}  {msg}")
 def skip(msg): print(f"  –  {msg}")
-def warn(msg): print(f"  {YELLOW}!{RESET}  {msg}")
+def warn(msg):
+    global warnings; warnings += 1
+    print(f"  {YELLOW}!{RESET}  {msg}")
 def fail(msg):
     global errors; errors += 1
     print(f"  {RED}✘{RESET}  {msg}")
@@ -194,13 +208,18 @@ def enable_providers(base, key, to_add):
     empty and save_settings() wrote nothing — providers were never actually
     enabled. save_settings() only touches the keys we send, so posting just the
     provider fields is a safe partial update that won't disturb other settings.
-    Because save_settings() doesn't validate provider ids (the general.enabled_providers
-    validator only checks that it's a list), an unknown/renamed id no longer
-    500s the save — so the old one-at-a-time "isolate the bad apple" fallback
-    is gone."""
+
+    Returns True when the batch saved (or there was nothing to add), False when
+    Bazarr rejected the save. A rejected save is a warn(), never a fail():
+    subtitle providers are a convenience and must not redden the install step —
+    the caller loops the credential-based account providers one at a time so a
+    single bad login can't fail the rest, and re-checks readiness between them
+    (a 500 on save can briefly drop Bazarr's API). Only an unreachable Bazarr
+    (caught by wait_ready) is a hard failure."""
     settings = GET(base, key, "/api/system/settings")
     if settings is None:
-        fail("Cannot reach Bazarr API"); return
+        warn("Bazarr settings API didn't respond — skipping these providers")
+        return False
 
     enabled  = set(settings.get('general', {}).get('enabled_providers') or [])
     pending  = []   # (display, provider_id, provider_settings) not yet enabled
@@ -212,7 +231,7 @@ def enable_providers(base, key, to_add):
         pending.append((display, provider_id, provider_settings))
 
     if not pending:
-        return
+        return True
 
     # enabled_providers is an "array key": send the full union as repeated
     # fields. Add each pending provider's credentials as settings-<id>-<field>.
@@ -225,10 +244,20 @@ def enable_providers(base, key, to_add):
     if POST_FORM(base, key, "/api/system/settings", fields) is not None:
         for display, _pid, _ps in pending:
             ok(f"{display}")
-        ok("Settings saved")
-    else:
-        for display, _pid, _ps in pending:
-            fail(f"{display}: Bazarr rejected the settings save")
+        if len(pending) > 1:
+            ok("Settings saved")
+        return True
+
+    # A rejected save — warn (never fail). Mention credentials only when this
+    # batch actually carried some, so the free-provider case stays accurate.
+    has_creds = any(ps for _d, _pid, ps in pending)
+    for display, _pid, _ps in pending:
+        if has_creds:
+            warn(f"{display}: Bazarr rejected the save — check its credentials "
+                 f"in Settings → Providers")
+        else:
+            warn(f"{display}: Bazarr rejected the save")
+    return False
 
 
 # ── English subtitle profile ──────────────────────────────────────────────────
@@ -544,15 +573,42 @@ def main():
         sys.exit(1)
 
     # ── Free providers ────────────────────────────────────────────────────────
+    # No credentials, no external login on save — the safe, always-works batch.
 
     section("Free Providers (no account needed)")
     enable_providers(BAZARR, BAZARR_KEY,
                      [(name, pid, {}) for name, pid in FREE_PROVIDERS])
 
+    # ── English subtitle profile ────────────────────────────────────────────────
+    # Runs BEFORE the account providers: it's the piece that actually makes
+    # subtitles work, it's local (no external dependency), and doing it here
+    # means a flaky account-credential save (which can 500 and briefly drop
+    # Bazarr's API) can't cascade onto it.
+
+    section("English Subtitle Profile")
+    resolved = setup_english_subtitles(BAZARR, BAZARR_KEY)
+    if resolved:
+        # Backfill existing series/movies that have no profile yet. On a fresh
+        # install Bazarr usually hasn't synced Sonarr/Radarr, so these no-op
+        # cleanly; on an update they catch up the existing library.
+        if resolved['use_sonarr']:
+            backfill_profiles(BAZARR, BAZARR_KEY, "TV series",
+                              "/api/series", "sonarrSeriesId", "seriesid",
+                              resolved['series_profile'])
+        if resolved['use_radarr']:
+            backfill_profiles(BAZARR, BAZARR_KEY, "movies",
+                              "/api/movies", "radarrId", "radarrid",
+                              resolved['movie_profile'])
+
     # ── Account providers ─────────────────────────────────────────────────────
+    # Saved LAST and ONE AT A TIME. Bazarr validates these credentials on save
+    # (a real login to OpenSubtitles/Addic7ed), so a wrong/rate-limited one can
+    # 500 the request and briefly knock the API offline. Isolating each save
+    # keeps one bad credential from failing the others, and a readiness
+    # re-check between them stops a transient wobble from skipping a good one.
 
     section("Account Providers")
-    to_add = []
+    account_to_add = []
     for display, provider_id, settings_key, field_map in ACCOUNT_PROVIDERS:
         creds = {field: env.get(env_var, '')
                  for field, env_var in field_map.items()}
@@ -571,35 +627,25 @@ def main():
         # In our current data model settings_key always equals provider_id, so
         # the parameter is redundant — keep it for future-flexibility but ignore
         # it here.
-        to_add.append((display, provider_id, creds))
+        account_to_add.append((display, provider_id, creds))
 
-    if to_add:
-        enable_providers(BAZARR, BAZARR_KEY, to_add)
-
-    # ── English subtitle profile ────────────────────────────────────────────────
-
-    section("English Subtitle Profile")
-    resolved = setup_english_subtitles(BAZARR, BAZARR_KEY)
-    if resolved:
-        # Backfill existing series/movies that have no profile yet. On a fresh
-        # install Bazarr usually hasn't synced Sonarr/Radarr, so these no-op
-        # cleanly; on an update they catch up the existing library.
-        if resolved['use_sonarr']:
-            backfill_profiles(BAZARR, BAZARR_KEY, "TV series",
-                              "/api/series", "sonarrSeriesId", "seriesid",
-                              resolved['series_profile'])
-        if resolved['use_radarr']:
-            backfill_profiles(BAZARR, BAZARR_KEY, "movies",
-                              "/api/movies", "radarrId", "radarrid",
-                              resolved['movie_profile'])
+    for i, (display, provider_id, creds) in enumerate(account_to_add):
+        saved = enable_providers(BAZARR, BAZARR_KEY, [(display, provider_id, creds)])
+        # A rejected save can leave Bazarr's API briefly unreachable; make sure
+        # it's back before the next provider so a good credential isn't skipped.
+        if not saved and i + 1 < len(account_to_add):
+            wait_ready(BAZARR, BAZARR_KEY, retries=6)
 
     # ── Summary ───────────────────────────────────────────────────────────────
 
     print(f"\n{'═' * 52}")
-    if errors == 0:
-        print(f"{GREEN}{BOLD}  All done — no errors.{RESET}")
-    else:
+    if errors:
         print(f"{RED}{BOLD}  Done with {errors} error(s) — review output above.{RESET}")
+    elif warnings:
+        print(f"{YELLOW}{BOLD}  Done with {warnings} warning(s) — review above. "
+              f"Subtitle setup is best-effort and never fails the install.{RESET}")
+    else:
+        print(f"{GREEN}{BOLD}  All done — no errors.{RESET}")
     print(f"""
   Subtitle setup:
   • English is enabled + set as the default language profile automatically.
