@@ -42,6 +42,27 @@
     })
   }
 
+  // ── Ko-fi glitch burst ─────────────────────────────────────────────
+  // The cadence is random rather than a fixed CSS loop. A burst that
+  // arrives on the beat reads as decoration, one that arrives when you
+  // are not expecting it reads as a fault in the signal, which is the
+  // effect. Nothing fires while the tab is in the background, or for
+  // anyone who has asked for reduced motion.
+  const chips = document.querySelectorAll('.social-kofi')
+  const stillness = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)')
+  if (chips.length && !(stillness && stillness.matches)) {
+    chips.forEach((chip) => {
+      const burst = () => {
+        if (document.hidden) return
+        chip.classList.add('glitch')
+        window.setTimeout(() => chip.classList.remove('glitch'), 600)
+      }
+      const schedule = () => window.setTimeout(
+        () => { burst(); schedule() }, 14000 + Math.random() * 20000)
+      window.setTimeout(() => { burst(); schedule() }, 2000 + Math.random() * 2500)
+    })
+  }
+
   // ── Sidebar on small screens ───────────────────────────────────────
   // Below the 900px breakpoint the sidebar stacks above the article,
   // where a full guide list is a wall the reader has to scroll past to

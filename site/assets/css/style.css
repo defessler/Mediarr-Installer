@@ -63,10 +63,9 @@
      part of the heading, so it takes the heading's colour. */
   --color-heading-mark: var(--mk-green);
 
-  /* Hover / press steps for the solid Ko-fi button, mirroring Window
-     Layout Manager's accent / accent-hover / accent-press ramp. */
-  --kofi-hover:         #FF4D8D;
-  --kofi-press:         #D91A5B;
+  /* Hover step for the solid Ko-fi chip, lifted from Window Layout
+     Manager's landing page along with the rest of its treatment. */
+  --kofi-hover:         #8ce8fa;
 
   --font:        'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   --radius:      3px;
@@ -74,7 +73,9 @@
   --shadow-md:   0 4px 16px rgba(0,0,0,0.5);
 
   --nav-height:  56px;
-  --content-max: 1000px;
+  /* Matched to #site-nav and to the docs grid, so the landing page, the
+     guides and the header bar all share one left and right edge. */
+  --content-max: 1400px;
 
   /* Chromatic-aberration offsets, reused wherever text glows */
   --ca-pink: rgba(249, 38, 114, 0.35);
@@ -222,43 +223,96 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   text-decoration: none;
 }
 
-/* Ko-fi, given the same treatment as Window Layout Manager's primary
-   button: a SOLID fill rather than an outline that only fills on hover.
-   Accent background, background-coloured text, transparent border,
-   weight 600, and the same 0.12s ease transition. The one difference is
-   the accent itself — pink here, because cyan is already carrying links
-   on this site and the ask should not look like one more link.
+/* Ko-fi, wearing the chip treatment from Window Layout Manager's landing
+   page: solid cyan fill, near-black label, and the same glitch burst.
+   Cyan does carry links elsewhere here, but a filled block with dark text
+   never reads as one more link, which is the whole job of the fill. An
+   outlined control among other outlined controls is just another nav
+   item. A filled one is the thing to press.
 
-   Solid matters. An outlined control among other outlined controls reads
-   as another nav item; a filled one reads as the thing to press. */
+   display:inline-block matters. overflow:hidden does not clip an inline
+   element, so the glitch artifacts would spill across the nav. */
 .social-kofi {
-  background: var(--mk-pink);
-  color: var(--mk-bg);
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--mk-cyan);
+  color: #08222b;
   border-color: transparent;
-  font-weight: 600;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.12s, box-shadow 0.12s;
 }
-.social-kofi::before { content: '☕ '; }
 .social-kofi:hover {
   background: var(--kofi-hover);
-  color: var(--mk-bg);
+  color: #08222b;
   border-color: transparent;
   text-decoration: none;
+  box-shadow: 0 2px 10px rgba(102, 217, 239, 0.35);
 }
-.social-kofi:active { background: var(--kofi-press); }
 
-.footer-kofi {
-  display: inline-block;
-  background: var(--mk-pink);
-  color: var(--mk-bg) !important;
-  border-radius: var(--radius);
-  padding: 0.2rem 0.55rem;
-  font-weight: 600;
-  transition: background 0.12s ease;
+/* Two opaque copies of the label, one pink and one green, sliced by
+   clip-path and thrown sideways so the chip looks like a badly-tracking
+   signal. Both stay fully transparent outside their own keyframes, so
+   nothing shows between bursts even if the trigger class lingers.
+   The copies come from data-label, so the markup carries the string
+   twice and CSS never has to know what it says. */
+.social-kofi::before,
+.social-kofi::after {
+  content: attr(data-label);
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  background: inherit;
+  pointer-events: none;
+  opacity: 0;
 }
-.footer-kofi::before { content: '☕ '; }
-.footer-kofi:hover { background: var(--kofi-hover); text-decoration: none; }
-.footer-kofi:active { background: var(--kofi-press); }
+.social-kofi::before { color: var(--mk-pink); }
+.social-kofi::after  { color: var(--mk-green); }
+.social-kofi.glitch::before { animation: glitch-pink 0.55s steps(2, end); }
+.social-kofi.glitch::after  { animation: glitch-green 0.55s steps(2, end); }
+.social-kofi.glitch         { animation: glitch-jitter 0.55s steps(2, end); }
+
+/* Offsets in em so the same keyframes work at any chip size. More stops
+   than the displacement needs, because the point is that consecutive
+   frames disagree wildly, which is what sells a fault. */
+@keyframes glitch-pink {
+  0%   { opacity: 1; clip-path: inset(0 0 82% 0);   transform: translate(-0.55em, -0.09em) scaleY(1.10); }
+  12%  { opacity: 1; clip-path: inset(28% 0 52% 0); transform: translate(0.72em,   0.07em) scaleY(0.92); }
+  24%  { opacity: 1; clip-path: inset(62% 0 14% 0); transform: translate(-0.85em,  0.11em) scaleY(1.14); }
+  36%  { opacity: 1; clip-path: inset(8% 0 74% 0);  transform: translate(0.52em,  -0.10em) scaleY(0.88); }
+  48%  { opacity: 1; clip-path: inset(44% 0 30% 0); transform: translate(-0.68em,  0.05em) scaleY(1.06); }
+  60%  { opacity: 1; clip-path: inset(84% 0 4% 0);  transform: translate(0.78em,   0.09em) scaleY(1.18); }
+  72%  { opacity: 1; clip-path: inset(18% 0 66% 0); transform: translate(-0.46em, -0.07em) scaleY(0.95); }
+  86%  { opacity: 1; clip-path: inset(56% 0 24% 0); transform: translate(0.62em,   0.06em) scaleY(1.09); }
+  100% { opacity: 0; clip-path: inset(0 0 100% 0);  transform: none; }
+}
+@keyframes glitch-green {
+  0%   { opacity: 1; clip-path: inset(66% 0 16% 0); transform: translate(0.62em,   0.08em) scaleY(0.90); }
+  12%  { opacity: 1; clip-path: inset(6% 0 78% 0);  transform: translate(-0.75em, -0.09em) scaleY(1.16); }
+  24%  { opacity: 1; clip-path: inset(38% 0 42% 0); transform: translate(0.88em,   0.04em) scaleY(0.94); }
+  36%  { opacity: 1; clip-path: inset(74% 0 8% 0);  transform: translate(-0.55em,  0.10em) scaleY(1.12); }
+  48%  { opacity: 1; clip-path: inset(20% 0 62% 0); transform: translate(0.70em,  -0.06em) scaleY(0.89); }
+  60%  { opacity: 1; clip-path: inset(50% 0 28% 0); transform: translate(-0.80em,  0.07em) scaleY(1.15); }
+  72%  { opacity: 1; clip-path: inset(2% 0 90% 0);  transform: translate(0.48em,   0.09em) scaleY(0.96); }
+  86%  { opacity: 1; clip-path: inset(80% 0 6% 0);  transform: translate(-0.64em, -0.05em) scaleY(1.08); }
+  100% { opacity: 0; clip-path: inset(0 0 100% 0);  transform: none; }
+}
+@keyframes glitch-jitter {
+  0%, 100% { transform: none; }
+  10% { transform: translate(3px, -2px) skewX(-14deg); }
+  25% { transform: translate(-4px, 2px) skewX(12deg) scaleY(1.07); }
+  40% { transform: translate(4px, -1px) skewX(-9deg) scaleY(0.94); }
+  55% { transform: translate(-3px, 2px) skewX(14deg); }
+  70% { transform: translate(3px, 1px)  skewX(-11deg) scaleY(1.05); }
+  85% { transform: translate(-2px, -2px) skewX(7deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .social-kofi.glitch,
+  .social-kofi.glitch::before,
+  .social-kofi.glitch::after { animation: none; }
+}
 
 .nav-toggle {
   display: none;
@@ -313,7 +367,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 
 .hero-lede {
   margin-top: 1.25rem;
-  max-width: 68ch;
+  max-width: 88ch;
   color: var(--mk-fg);
   opacity: 0.85;
   font-size: 0.925rem;
@@ -346,10 +400,15 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 .home-section > h2::before { content: '/* '; color: var(--color-heading-mark); }
 .home-section > h2::after  { content: ' */'; color: var(--color-heading-mark); }
 
-/* Service / feature card grid, borrowing the cycling left border */
+/* Service / feature card grid, borrowing the cycling left border.
+   The 380px minimum is doing layout work, not just setting a floor. At
+   the old 260px a 1400px section fits five columns, which breaks the
+   six-card set into a five and a lonely one. 380px holds it at three
+   across, so six cards stay two clean rows and the extra width goes into
+   the cards themselves. */
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   gap: 0.85rem;
 }
 
