@@ -1,0 +1,862 @@
+/* ============================================================
+   Mediarr docs — Monokai theme
+   ------------------------------------------------------------
+   Design tokens, decorations and behaviour are carried over from
+   dougfessler.com so the two sites read as one hand. The portfolio
+   never needed long-form prose styling, so everything from
+   "Doc layout" down is new work in the same idiom: terminal
+   furniture, code-comment framing, monospace throughout.
+   ============================================================ */
+:root {
+  /* Monokai palette */
+  --mk-bg:      #1e1e1e;
+  --mk-surface: #2d2d2d;
+  --mk-gutter:  #141414;
+  --mk-fg:      #F8F8F2;
+  --mk-comment: #75715E;
+  --mk-pink:    #F92672;
+  --mk-orange:  #FD971F;
+  --mk-yellow:  #E6DB74;
+  --mk-green:   #A6E22E;
+  --mk-cyan:    #66D9EF;
+  --mk-purple:  #AE81FF;
+  --mk-border:  #49483E;
+
+  /* Site variable mapping */
+  --color-bg:           var(--mk-bg);
+  --color-surface:      var(--mk-surface);
+  --color-header:       var(--mk-gutter);
+  --color-accent:       var(--mk-green);
+  --color-text:         var(--mk-fg);
+  --color-text-muted:   var(--mk-comment);
+  --color-border:       var(--mk-border);
+
+  --font:        'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  --radius:      3px;
+  --shadow:      0 2px 8px rgba(0,0,0,0.4);
+  --shadow-md:   0 4px 16px rgba(0,0,0,0.5);
+
+  --nav-height:  56px;
+  --content-max: 1000px;
+
+  /* Chromatic-aberration offsets, reused wherever text glows */
+  --ca-pink: rgba(249, 38, 114, 0.35);
+  --ca-cyan: rgba(102, 217, 239, 0.35);
+}
+
+/* ============================================================
+   Reset & Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Scanline overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.06) 3px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+a { color: var(--mk-orange); text-decoration: none; }
+a:hover { color: var(--mk-yellow); text-decoration: underline; }
+
+::selection { background: rgba(166, 226, 46, 0.25); color: var(--mk-fg); }
+
+/* Chromatic aberration utility */
+.ca {
+  text-shadow: 0.03em 0 0 var(--ca-pink), -0.03em 0 0 var(--ca-cyan);
+}
+
+/* Skip link — keyboard users land past the nav */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--mk-gutter);
+  color: var(--mk-green);
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--mk-green);
+  border-radius: var(--radius);
+  z-index: 200;
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+
+:focus-visible {
+  outline: 2px solid var(--mk-cyan);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Header / Nav
+   ============================================================ */
+#site-header {
+  background: var(--color-header);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 1px solid var(--mk-border);
+}
+
+#site-nav {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  height: var(--nav-height);
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.nav-brand {
+  color: var(--mk-green);
+  font-weight: 700;
+  font-size: 1rem;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-shadow: 0.03em 0 0 var(--ca-pink), -0.03em 0 0 var(--ca-cyan);
+}
+.nav-brand::before { content: '> '; color: var(--mk-comment); }
+.nav-brand:hover { text-decoration: none; color: var(--mk-green); }
+
+#nav-links {
+  display: flex;
+  list-style: none;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+#nav-links a {
+  color: var(--mk-comment);
+  text-decoration: none;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color 0.1s, background 0.1s;
+  display: block;
+}
+#nav-links a:hover { color: var(--mk-fg); background: rgba(255,255,255,0.05); text-decoration: none; }
+#nav-links a.active {
+  color: var(--mk-pink);
+  text-shadow: 0.02em 0 0 rgba(249, 38, 114, 0.4), -0.02em 0 0 rgba(102, 217, 239, 0.4);
+}
+#nav-links a.active::before { content: '# '; }
+
+#nav-social { display: flex; align-items: center; gap: 0.75rem; }
+.social-link {
+  color: var(--mk-comment);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--mk-border);
+  border-radius: var(--radius);
+}
+.social-link:hover { color: var(--mk-cyan); border-color: var(--mk-cyan); text-decoration: none; }
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  min-height: 44px;
+  min-width: 44px;
+  align-items: center;
+  justify-content: center;
+}
+.nav-toggle span { display: block; width: 20px; height: 2px; background: var(--mk-comment); border-radius: 1px; }
+
+/* ============================================================
+   Landing page
+   ============================================================ */
+.home {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+
+.hero h1 {
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: var(--mk-green);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-shadow: 0.04em 0 0 rgba(249, 38, 114, 0.45), -0.04em 0 0 rgba(102, 217, 239, 0.45);
+}
+.hero h1::after {
+  content: '_';
+  color: var(--mk-green);
+  animation: blink 1.1s step-end infinite;
+  margin-left: 2px;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+.hero .headline {
+  color: var(--mk-cyan);
+  font-size: 0.95rem;
+  margin-top: 0.4rem;
+  text-shadow: 0.03em 0 0 rgba(249, 38, 114, 0.3), -0.03em 0 0 rgba(102, 217, 239, 0.3);
+}
+.hero .headline::before { content: '// '; color: var(--mk-comment); }
+
+.hero-lede {
+  margin-top: 1.25rem;
+  max-width: 68ch;
+  color: var(--mk-fg);
+  opacity: 0.85;
+  font-size: 0.925rem;
+}
+
+.hero-cta { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.75rem; }
+.btn-cta {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--mk-border);
+  border-radius: var(--radius);
+  color: var(--mk-comment);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.btn-cta::before { content: '$ '; color: var(--mk-comment); }
+.btn-cta-primary { color: var(--mk-green); border-color: var(--mk-green); }
+.btn-cta-primary:hover { background: var(--mk-green); color: var(--mk-bg); text-decoration: none; }
+.btn-cta-primary:hover::before { color: var(--mk-bg); }
+.btn-cta:not(.btn-cta-primary):hover { color: var(--mk-cyan); border-color: var(--mk-cyan); text-decoration: none; }
+
+.home-section { margin-top: 3.25rem; }
+.home-section > h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--mk-green);
+  margin-bottom: 1rem;
+}
+.home-section > h2::before { content: '/* '; color: var(--mk-comment); }
+.home-section > h2::after  { content: ' */'; color: var(--mk-comment); }
+
+/* Service / feature card grid, borrowing the cycling left border */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.card {
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  transition: background 0.12s;
+}
+.card:hover { background: #363636; }
+.card h3 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--mk-fg);
+  margin-bottom: 0.3rem;
+}
+.card p { font-size: 0.8rem; color: var(--mk-fg); opacity: 0.75; line-height: 1.5; }
+.card .card-meta { font-size: 0.72rem; color: var(--mk-yellow); margin-bottom: 0.3rem; }
+
+.card-grid > .card:nth-child(6n+1) { border-left-color: var(--mk-pink);   }
+.card-grid > .card:nth-child(6n+2) { border-left-color: var(--mk-orange); }
+.card-grid > .card:nth-child(6n+3) { border-left-color: var(--mk-yellow); }
+.card-grid > .card:nth-child(6n+4) { border-left-color: var(--mk-green);  }
+.card-grid > .card:nth-child(6n+5) { border-left-color: var(--mk-cyan);   }
+.card-grid > .card:nth-child(6n+6) { border-left-color: var(--mk-purple); }
+
+.tag {
+  display: inline-block;
+  background: var(--mk-gutter);
+  color: var(--mk-cyan);
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--mk-border);
+}
+.tag-optin { color: var(--mk-yellow); border-color: var(--mk-yellow); opacity: 0.8; }
+
+/* ============================================================
+   Doc layout — sidebar + article + TOC
+   ============================================================ */
+.docs {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 200px;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.docs-sidebar {
+  position: sticky;
+  top: calc(var(--nav-height) + 1.5rem);
+  padding: 2rem 0;
+  font-size: 0.8rem;
+  max-height: calc(100vh - var(--nav-height) - 2rem);
+  overflow-y: auto;
+}
+
+.docs-sidebar .side-group { margin-bottom: 1.25rem; }
+.docs-sidebar .side-title {
+  color: var(--mk-comment);
+  font-size: 0.72rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.03em;
+}
+.docs-sidebar .side-title::before { content: '/* '; }
+.docs-sidebar .side-title::after  { content: ' */'; }
+
+.docs-sidebar ul { list-style: none; }
+.docs-sidebar li a {
+  display: block;
+  color: var(--mk-comment);
+  padding: 0.22rem 0.5rem 0.22rem 0.85rem;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.docs-sidebar li a:hover {
+  color: var(--mk-fg);
+  background: rgba(255,255,255,0.04);
+  border-left-color: var(--mk-comment);
+  text-decoration: none;
+}
+.docs-sidebar li a.active {
+  color: var(--mk-pink);
+  border-left-color: var(--mk-pink);
+  background: rgba(249, 38, 114, 0.06);
+}
+
+/* Right-hand table of contents */
+.docs-toc {
+  position: sticky;
+  top: calc(var(--nav-height) + 1.5rem);
+  padding: 2rem 0;
+  font-size: 0.75rem;
+  max-height: calc(100vh - var(--nav-height) - 2rem);
+  overflow-y: auto;
+}
+.docs-toc .side-title {
+  color: var(--mk-comment);
+  font-size: 0.72rem;
+  margin-bottom: 0.4rem;
+}
+.docs-toc .side-title::before { content: '/* '; }
+.docs-toc .side-title::after  { content: ' */'; }
+.docs-toc ul { list-style: none; }
+.docs-toc li a {
+  display: block;
+  color: var(--mk-comment);
+  padding: 0.18rem 0 0.18rem 0.6rem;
+  border-left: 2px solid transparent;
+  line-height: 1.4;
+}
+.docs-toc li a:hover { color: var(--mk-fg); text-decoration: none; border-left-color: var(--mk-comment); }
+.docs-toc li a.active { color: var(--mk-cyan); border-left-color: var(--mk-cyan); }
+.docs-toc li.toc-h3 a { padding-left: 1.3rem; font-size: 0.72rem; opacity: 0.85; }
+
+/* ============================================================
+   Doc content — long-form prose
+   ============================================================ */
+/* The article itself is unconstrained so that figures, code and tables
+   can use the full column. Readable line length is enforced on the text
+   elements instead — a 100-character line of prose is hard to read, but
+   a diagram squeezed to 80ch is unreadable, and one max-width can't
+   serve both. */
+.doc-content {
+  padding: 2.25rem 0 5rem;
+  min-width: 0;
+}
+
+.doc-content > p,
+.doc-content > ul,
+.doc-content > ol,
+.doc-content > h2,
+.doc-content > h3,
+.doc-content > h4,
+.doc-content > blockquote,
+.doc-content > .callout,
+.doc-lede {
+  max-width: 78ch;
+}
+
+.doc-content > h1 {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--mk-green);
+  line-height: 1.25;
+  margin-bottom: 0.35rem;
+  text-shadow: 0.03em 0 0 rgba(249, 38, 114, 0.4), -0.03em 0 0 rgba(102, 217, 239, 0.4);
+}
+
+.doc-lede {
+  color: var(--mk-cyan);
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--mk-border);
+}
+.doc-lede::before { content: '// '; color: var(--mk-comment); }
+
+.doc-content h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--mk-green);
+  margin: 2.75rem 0 0.9rem;
+  scroll-margin-top: calc(var(--nav-height) + 1rem);
+}
+.doc-content h2::before { content: '/* '; color: var(--mk-comment); }
+.doc-content h2::after  { content: ' */'; color: var(--mk-comment); }
+
+.doc-content h3 {
+  font-size: 0.925rem;
+  font-weight: 700;
+  color: var(--mk-cyan);
+  margin: 1.9rem 0 0.6rem;
+  scroll-margin-top: calc(var(--nav-height) + 1rem);
+}
+.doc-content h3::before { content: '// '; color: var(--mk-comment); font-weight: 400; }
+
+.doc-content h4 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--mk-yellow);
+  margin: 1.5rem 0 0.5rem;
+}
+
+.doc-content p {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+  color: var(--mk-fg);
+  opacity: 0.88;
+}
+
+.doc-content ul, .doc-content ol {
+  margin: 0 0 1.1rem 0;
+  padding-left: 1.35rem;
+}
+.doc-content li {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  margin-bottom: 0.4rem;
+  color: var(--mk-fg);
+  opacity: 0.88;
+}
+.doc-content ul > li::marker { color: var(--mk-green); }
+.doc-content ol > li::marker { color: var(--mk-green); }
+.doc-content li > ul, .doc-content li > ol { margin-top: 0.4rem; margin-bottom: 0.3rem; }
+
+.doc-content strong { color: var(--mk-fg); opacity: 1; font-weight: 700; }
+.doc-content em { color: var(--mk-yellow); font-style: normal; }
+
+.doc-content hr {
+  border: none;
+  border-top: 1px solid var(--mk-border);
+  margin: 2.5rem 0;
+}
+
+.doc-content a { color: var(--mk-orange); }
+.doc-content a:hover { color: var(--mk-yellow); }
+
+/* Inline code */
+.doc-content code {
+  font-family: var(--font);
+  background: var(--mk-gutter);
+  color: var(--mk-yellow);
+  font-size: 0.82em;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--mk-border);
+}
+
+/* Fenced blocks */
+.doc-content pre {
+  background: var(--mk-gutter);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-green);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  margin-bottom: 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+.doc-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--mk-fg);
+  font-size: inherit;
+}
+
+/* Blockquote as a terminal callout */
+.doc-content blockquote {
+  background: rgba(102, 217, 239, 0.05);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-cyan);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  margin: 0 0 1.25rem;
+}
+.doc-content blockquote p { margin-bottom: 0.5rem; }
+.doc-content blockquote p:last-child { margin-bottom: 0; }
+
+/* IMPORTANT: / Note: callouts, detected at build time */
+.callout {
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  border: 1px solid var(--mk-border);
+}
+.callout-label { font-weight: 700; letter-spacing: 0.02em; }
+.callout p { margin-bottom: 0.4rem; font-size: 0.85rem; }
+.callout p:last-child { margin-bottom: 0; }
+
+.callout-important {
+  background: rgba(249, 38, 114, 0.07);
+  border-left: 3px solid var(--mk-pink);
+}
+.callout-important .callout-label { color: var(--mk-pink); }
+
+.callout-note {
+  background: rgba(230, 219, 116, 0.06);
+  border-left: 3px solid var(--mk-yellow);
+}
+.callout-note .callout-label { color: var(--mk-yellow); }
+
+/* Tables — the scroll container is a wrapper, not the table itself.
+   Putting display:block/overflow on <table> collapses its own layout
+   algorithm and the columns stop lining up. */
+.table-wrap {
+  overflow-x: auto;
+  margin-bottom: 1.35rem;
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-cyan);
+  border-radius: var(--radius);
+  background: var(--mk-gutter);
+}
+.doc-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 0;
+}
+.doc-content thead th {
+  text-align: left;
+  color: var(--mk-comment);
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--mk-border);
+  white-space: nowrap;
+}
+.doc-content tbody td {
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--mk-border);
+  color: var(--mk-fg);
+  opacity: 0.88;
+  vertical-align: top;
+}
+.doc-content tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+.doc-content tbody tr:last-child td { border-bottom: none; }
+
+.doc-content img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--mk-border);
+  border-radius: var(--radius);
+  display: block;
+  margin: 0 0 1.25rem;
+}
+
+/* ============================================================
+   Syntax highlighting — Monokai token colours
+   ------------------------------------------------------------
+   Applied at build time by highlight.js, so blocks are coloured
+   in the served HTML with no client script and no unstyled flash.
+   ============================================================ */
+.hljs-comment,
+.hljs-quote              { color: var(--mk-comment); font-style: italic; }
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal:not(.hljs-number),
+.hljs-name,
+.hljs-tag,
+.hljs-deletion           { color: var(--mk-pink); }
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string  { color: var(--mk-yellow); }
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link               { color: var(--mk-purple); }
+
+.hljs-title,
+.hljs-section,
+.hljs-title.function_,
+.hljs-selector-id        { color: var(--mk-green); }
+
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-class .hljs-title,
+.hljs-type,
+.hljs-selector-attr,
+.hljs-selector-pseudo    { color: var(--mk-cyan); }
+
+.hljs-built_in,
+.hljs-doctag,
+.hljs-params             { color: var(--mk-orange); }
+
+.hljs-meta,
+.hljs-subst              { color: var(--mk-comment); }
+
+.hljs-emphasis           { font-style: italic; }
+.hljs-strong             { font-weight: 700; }
+
+/* ============================================================
+   Mermaid diagrams
+   ============================================================ */
+.mermaid-wrap {
+  background: var(--mk-gutter);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-purple);
+  border-radius: var(--radius);
+  padding: 1.25rem 1rem;
+  margin-bottom: 0.6rem;
+  overflow-x: auto;
+}
+/* .mermaid is a <pre>, so the code-block rule above would give every
+   diagram a second background, border and left rule inside the wrap.
+   Strip all of it back off. */
+.doc-content pre.mermaid {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+}
+.mermaid { text-align: center; }
+.mermaid svg { max-width: 100%; height: auto; }
+/* Until mermaid renders, don't flash raw graph source at the reader */
+.mermaid:not([data-processed]) { visibility: hidden; }
+
+.figure-caption {
+  font-size: 0.75rem;
+  color: var(--mk-comment);
+  margin: 0 0 1.75rem;
+  padding-left: 0.15rem;
+}
+.figure-caption::before { content: '// '; }
+
+/* ============================================================
+   Prev / next pager
+   ============================================================ */
+.doc-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 3.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--mk-border);
+  font-size: 0.8rem;
+}
+.doc-pager a { color: var(--mk-orange); }
+.doc-pager .pager-prev::before { content: '← '; color: var(--mk-comment); }
+.doc-pager .pager-next::after  { content: ' →'; color: var(--mk-comment); }
+.doc-pager .pager-spacer { flex: 1; }
+
+/* ============================================================
+   Footer
+   ============================================================ */
+#site-footer {
+  border-top: 1px solid var(--mk-border);
+  background: var(--mk-gutter);
+  padding: 1.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--mk-comment);
+}
+#site-footer a { color: var(--mk-comment); }
+#site-footer a:hover { color: var(--mk-cyan); text-decoration: none; }
+.footer-note::before { content: '// '; }
+.footer-sep { color: var(--mk-border); margin: 0 0.5rem; }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 1200px) {
+  .docs { grid-template-columns: 200px minmax(0, 1fr); gap: 2rem; }
+  .docs-toc { display: none; }
+}
+
+@keyframes nav-crt-open {
+  from { clip-path: inset(0 0 100% 0); }
+  to   { clip-path: inset(0 0 0% 0); }
+}
+@keyframes nav-crt-close {
+  from { clip-path: inset(0 0 0% 0); }
+  to   { clip-path: inset(0 0 100% 0); }
+}
+
+@media (max-width: 900px) {
+  .nav-toggle { display: flex; }
+  #nav-links, #nav-social { display: none; }
+
+  #site-nav { flex-wrap: wrap; height: auto; padding: 0 1.25rem; gap: 0; min-height: var(--nav-height); }
+  .nav-brand { flex: 1; }
+
+  #site-nav.nav-open .nav-toggle span { display: none; }
+  #site-nav.nav-open .nav-toggle::after {
+    content: '✕';
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--mk-fg);
+    font-family: inherit;
+  }
+
+  #site-nav.nav-open #nav-links,
+  #site-nav.nav-open #nav-social {
+    display: flex;
+    width: 100%;
+    animation: nav-crt-open 0.2s steps(6, end) forwards;
+  }
+  #site-nav.nav-closing #nav-links,
+  #site-nav.nav-closing #nav-social {
+    display: flex;
+    width: 100%;
+    animation: nav-crt-close 0.15s steps(4, end) forwards;
+  }
+
+  #site-nav.nav-open #nav-links,
+  #site-nav.nav-closing #nav-links {
+    flex-direction: column;
+    border-top: 1px solid var(--mk-border);
+    padding: 0.4rem 0;
+    gap: 0;
+  }
+
+  #nav-links a {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 0.25rem;
+    font-size: 0.95rem;
+    border-radius: 0;
+    min-height: 44px;
+    border-left: 2px solid transparent;
+    color: var(--mk-comment);
+  }
+  #nav-links a:hover {
+    color: var(--mk-fg);
+    background: rgba(255,255,255,0.03);
+    border-left-color: var(--mk-comment);
+  }
+  #nav-links a.active { color: var(--mk-pink); border-left-color: var(--mk-pink); }
+  #nav-links a.active::before { content: none; }
+
+  #site-nav.nav-open #nav-social,
+  #site-nav.nav-closing #nav-social {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    border-top: 1px solid var(--mk-border);
+    padding: 0.6rem 0.25rem;
+  }
+
+  /* Sidebar becomes a collapsible block above the article */
+  .docs { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .docs-sidebar {
+    position: static;
+    max-height: none;
+    padding: 1.25rem 0 0;
+    border-bottom: 1px solid var(--mk-border);
+  }
+  .docs-sidebar details { margin-bottom: 1rem; }
+  .doc-content { padding-top: 1.75rem; max-width: none; }
+}
+
+@media (max-width: 640px) {
+  html { font-size: 14px; }
+  .home { padding: 2rem 1.25rem 3rem; }
+  .hero h1 { font-size: 1.6rem; }
+  .card-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ============================================================
+   Print — clean white, Monokai hierarchy preserved
+   ============================================================ */
+@media print {
+  @page { margin: 1.25cm 1.5cm; }
+  :root {
+    --mk-bg:      #ffffff;
+    --mk-surface: #ffffff;
+    --mk-gutter:  #f4f4f4;
+    --mk-fg:      #111111;
+    --mk-comment: #888888;
+    --mk-green:   #1a6b1a;
+    --mk-cyan:    #005f70;
+    --mk-orange:  #8a4b00;
+    --mk-yellow:  #6b5d00;
+    --mk-pink:    #b8003a;
+    --mk-border:  #cccccc;
+  }
+  body::after { display: none; }
+  #site-header, #site-footer, .docs-sidebar, .docs-toc, .doc-pager, .nav-toggle { display: none !important; }
+  .docs { display: block; max-width: none; padding: 0; }
+  .doc-content { padding: 0; max-width: none; }
+  .doc-content pre, .mermaid-wrap { break-inside: avoid; }
+  .doc-content h2, .doc-content h3 { break-after: avoid; }
+  a { color: inherit; text-decoration: underline; }
+  .hero h1::after { content: none; }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "mediarr-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static docs site for the Mediarr Installer, built from markdown.",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node build.mjs && node --run serve:only",
+    "serve:only": "npx --yes serve _site"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7"
+  }
+}

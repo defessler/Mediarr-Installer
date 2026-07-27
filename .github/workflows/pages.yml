@@ -1,0 +1,79 @@
+name: Docs Site
+
+# Builds site/ and publishes it to GitHub Pages.
+#
+# Source is set to "GitHub Actions" rather than a branch or the /docs
+# folder, deliberately. docs/ in this repo holds development notes,
+# audits and design specs that have no business being a public website,
+# and a gh-pages branch would mean the site's source and the code that
+# it documents drift apart in separate histories. This way the content
+# lives next to the thing it describes and ships from the same commit.
+#
+# Deploys only from master. A pull request gets the build (so a broken
+# link or a missing frontmatter title fails review) without publishing.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # build.mjs exits non-zero on an unresolved internal link or a page
+      # missing its frontmatter title, so link rot fails CI here instead
+      # of shipping a 404 nobody notices.
+      - name: Build
+        run: npm run build
+
+      - name: Upload artifact
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/_site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

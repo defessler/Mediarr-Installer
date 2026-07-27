@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+  <meta name="description" content="{{DESCRIPTION}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ROOT}}assets/css/style.css">
+  <link rel="icon" href="{{ROOT}}assets/favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="{{TITLE}}">
+  <meta property="og:description" content="{{DESCRIPTION}}">
+  <meta property="og:type" content="website">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header id="site-header">
+  <nav id="site-nav">
+    <a href="{{ROOT}}" class="nav-brand">mediarr</a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <ul id="nav-links">
+{{NAVLINKS}}
+    </ul>
+    <div id="nav-social">
+      <a class="social-link" href="https://github.com/defessler/Mediarr-Installer">GitHub</a>
+      <a class="social-link" href="https://github.com/defessler/Mediarr-Installer/releases/latest">Download</a>
+    </div>
+  </nav>
+</header>
+
+{{BODY}}
+
+<footer id="site-footer">
+  <span class="footer-note">Mediarr Installer</span>
+  <span class="footer-sep">·</span>
+  <a href="https://github.com/defessler/Mediarr-Installer">Source</a>
+  <span class="footer-sep">·</span>
+  <a href="https://github.com/defessler/Mediarr-Installer/releases/latest">Releases</a>
+  <span class="footer-sep">·</span>
+  <a href="https://github.com/defessler/Mediarr-Installer/issues">Issues</a>
+</footer>
+
+<script src="{{ROOT}}assets/js/site.js" defer></script>
+{{MERMAID}}
+</body>
+</html>
