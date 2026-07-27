@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 176" width="760" height="176" role="img" aria-label="The four steps in order: accept the invite by email, open Plex on the TV, sign in with a short code, then press play">
+  <defs>
+    <marker id="step-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#75715E"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: 'JetBrains Mono','Fira Code','Courier New',monospace; }
+    .num  { fill: #66D9EF; font-size: 13px; font-weight: 700; text-anchor: middle; }
+    .lab  { fill: #F8F8F2; font-size: 12px; text-anchor: middle; }
+    .box  { fill: #2d2d2d; stroke: #49483E; }
+    .ink  { stroke: #A6E22E; stroke-width: 2; fill: none; }
+  </style>
+
+  <rect width="760" height="176" fill="#141414"/>
+
+  <!-- 1: envelope -->
+  <rect x="42" y="34" width="122" height="76" rx="5" class="box"/>
+  <rect x="72" y="56" width="62" height="40" rx="3" fill="#141414" stroke="#A6E22E" stroke-width="2"/>
+  <path d="M72 58 L103 82 L134 58" class="ink"/>
+  <text x="103" y="132" class="num">1</text>
+  <text x="103" y="152" class="lab">accept</text>
+
+  <!-- 2: TV -->
+  <rect x="222" y="34" width="122" height="76" rx="5" class="box"/>
+  <rect x="252" y="52" width="62" height="42" rx="3" fill="#141414" stroke="#A6E22E" stroke-width="2"/>
+  <text x="283" y="80" text-anchor="middle" fill="#A6E22E" font-size="13" font-weight="700">plex</text>
+  <rect x="272" y="96" width="22" height="4" fill="#A6E22E"/>
+  <text x="283" y="132" class="num">2</text>
+  <text x="283" y="152" class="lab">open it</text>
+
+  <!-- 3: code -->
+  <rect x="402" y="34" width="122" height="76" rx="5" class="box"/>
+  <rect x="428" y="56" width="70" height="34" rx="3" fill="#141414" stroke="#A6E22E" stroke-width="2"/>
+  <text x="463" y="80" text-anchor="middle" fill="#A6E22E" font-size="16" font-weight="700" letter-spacing="2">H4KP</text>
+  <text x="463" y="132" class="num">3</text>
+  <text x="463" y="152" class="lab">sign in</text>
+
+  <!-- 4: play -->
+  <rect x="582" y="34" width="122" height="76" rx="5" class="box"/>
+  <circle cx="643" cy="72" r="24" fill="#141414" stroke="#A6E22E" stroke-width="2"/>
+  <path d="M636 61 L659 72 L636 83 Z" fill="#A6E22E"/>
+  <text x="643" y="132" class="num">4</text>
+  <text x="643" y="152" class="lab">press play</text>
+
+  <line x1="174" y1="72" x2="210" y2="72" stroke="#75715E" stroke-width="1.5" marker-end="url(#step-arrow)"/>
+  <line x1="354" y1="72" x2="390" y2="72" stroke="#75715E" stroke-width="1.5" marker-end="url(#step-arrow)"/>
+  <line x1="534" y1="72" x2="570" y2="72" stroke="#75715E" stroke-width="1.5" marker-end="url(#step-arrow)"/>
+</svg>

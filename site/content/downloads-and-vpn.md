@@ -5,12 +5,12 @@ lede: "qBittorrent, SABnzbd, and the kill-switch that has no race to lose."
 group: "Using your stack"
 order: 6
 ---
-This guide explains how downloading actually works in the stack — and what the VPN
+This guide explains how downloading actually works in the stack, and what the VPN
 is doing. You normally never need to touch any of this directly, but it's good to
 understand when something looks stuck.
 
-> **In one sentence:** Sonarr and Radarr send download jobs here automatically;
-> when the VPN is enabled, all torrent traffic travels through it — you just watch
+> **In one sentence:** Sonarr and Radarr send download jobs here automatically, and
+> when the VPN is enabled, all torrent traffic travels through it. You just watch
 > the queue.
 
 > New to the stack? Requests flow in from [Requesting Movies & TV](Requesting-Movies-and-TV).
@@ -26,16 +26,16 @@ the stack is running, downloads happen silently in the background. The only
 reasons to open these UIs are to check a stuck queue or confirm something is
 downloading.
 
-## qBittorrent — torrents (port :49156)
+## qBittorrent: torrents (port :49156)
 
 qBittorrent is the torrent client. Open it from its tile on your
 [Homepage dashboard](Dashboard) or at **`http://<NAS-IP>:49156`**.
 
 When the VPN is enabled, **qBittorrent runs entirely inside the Gluetun VPN
 container.** Every byte of torrent traffic goes through your VPN. If the VPN
-drops, the kill-switch fires and downloads stop — they do not leak your real IP.
+drops, the kill-switch fires and downloads stop. They do not leak your real IP.
 This also means qBittorrent has no internet connection unless Gluetun is
-connected first. The VPN is opt-in (`VPN_ENABLED=false` by default); without it
+connected first. The VPN is opt-in (`VPN_ENABLED=false` by default). Without it
 qBittorrent runs on the regular network and your real IP is visible to peers.
 
 When an import finishes, the original download stays in
@@ -43,18 +43,18 @@ When an import finishes, the original download stays in
 hardlink the file into `/data/Media/...` so you're seeding from the same copy
 without using extra disk space.
 
-## SABnzbd — usenet (port :49155)
+## SABnzbd: usenet (port :49155)
 
 SABnzbd is the usenet client. Open it from your [Homepage dashboard](Dashboard)
 or at **`http://<NAS-IP>:49155`**. Usenet is used when you have a usenet provider
 and usenet indexers configured in [Prowlarr](Indexers).
 
-Usenet is fast and **does not need the VPN** — it runs outside Gluetun. To add a
+Usenet is fast and **does not need the VPN**, so it runs outside Gluetun. To add a
 provider, enter it during the wizard's Configure screen or go directly to
 SABnzbd's **Config → Servers**. Completed files land in `/data/Downloads/Usenet/complete`
 and the arrs import them the same way as torrents.
 
-## Gluetun — the VPN container
+## Gluetun: the VPN container
 
 Gluetun is the VPN container that wraps qBittorrent (and Soulseek, if you have
 it enabled). You configure your VPN provider and credentials once in the
@@ -62,9 +62,9 @@ installer wizard. Gluetun supports most major providers.
 
 One thing worth knowing: **NordVPN does not support port forwarding through
 Gluetun.** Port forwarding lets peers connect back to you, which improves seeding
-and torrent health. If you want better seeding, use a provider that supports it —
+and torrent health. If you want better seeding, use a provider that supports it,
 **ProtonVPN**, **PIA**, or **PrivateVPN** are the common picks. This is purely
-optional; downloading still works fine without port forwarding.
+optional, and downloading still works fine without port forwarding.
 
 ## Where files go
 
@@ -82,7 +82,7 @@ and Media costs no extra disk space.
 ## Tips
 
 - **All torrents stalled?** The most common cause is Gluetun not being connected.
-  Check the Gluetun tile on your [Homepage dashboard](Dashboard) — it should show
+  Check the Gluetun tile on your [Homepage dashboard](Dashboard). It should show
   a connected status and your VPN IP. You can also run `docker logs gluetun` to
   see what it's doing.
 - **Restart order matters.** If you restart qBittorrent by itself it loses the
@@ -90,7 +90,7 @@ and Media costs no extra disk space.
   `docker compose down && docker compose up -d` (not `docker compose restart`,
   which brings containers up simultaneously and breaks the dependency order).
 - **Queue looks healthy but nothing imports?** Check the arrs' **Activity →
-  Queue** screens — Sonarr (:49152) and Radarr (:49151) show import errors there.
+  Queue** screens. Sonarr (:49152) and Radarr (:49151) show import errors there.
   A [quality profile](Quality-Profiles) mismatch or a missing [indexer](Indexers)
   are the usual causes.
 - **SABnzbd not downloading?** Confirm you have at least one usenet provider

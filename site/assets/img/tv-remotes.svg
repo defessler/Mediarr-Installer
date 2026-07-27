@@ -29,7 +29,7 @@
   <rect x="90" y="216" width="26" height="11" rx="5.5" class="btn"/>
   <text x="84" y="278" class="btnlabel">Home</text>
 
-  <!-- ── Fire TV: Home below the ring, centre ── -->
+  <!-- ── Fire TV: Home below the ring, center ── -->
   <text x="232" y="40" class="brand">Fire TV</text>
   <rect x="178" y="54" width="108" height="200" rx="16" class="body"/>
   <circle cx="232" cy="78" r="8" class="btn"/>
@@ -42,7 +42,7 @@
   <rect x="206" y="222" width="52" height="11" rx="5.5" class="btn"/>
   <text x="232" y="278" class="btnlabel">Home</text>
 
-  <!-- ── Samsung: Home below the ring, centre ── -->
+  <!-- ── Samsung: Home below the ring, center ── -->
   <text x="380" y="40" class="brand">Samsung</text>
   <rect x="326" y="54" width="108" height="200" rx="16" class="body"/>
   <circle cx="352" cy="78" r="8" class="btn"/>

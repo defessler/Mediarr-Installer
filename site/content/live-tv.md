@@ -7,7 +7,7 @@ order: 9
 ---
 Dispatcharr manages live TV channels and presents itself to Plex or Jellyfin as an HDHomeRun tuner. It also records on its own, which is the part worth understanding, because it means DVR works without a Plex Pass.
 
-> **In one sentence:** turn on Live TV in the installer, pick some free channel packs, and you get a programme guide and a DVR without buying anything.
+> **In one sentence:** turn on Live TV in the installer, pick some free channel packs, and you get a program guide and a DVR without buying anything.
 
 It's opt-in and off by default. Added in v0.19.0.
 
@@ -21,7 +21,7 @@ Around 2,300 channels, if you seed all five packs, from free ad-supported servic
 - **Roku**
 - **Tubi**
 
-These are the same free streaming channels those services offer publicly. They come with a full programme guide, so the result behaves like a channel lineup rather than a list of streams.
+These are the same free streaming channels those services offer publicly. They come with a full program guide, so the result behaves like a channel lineup rather than a list of streams.
 
 You can also bring your own IPTV or Xtream sources instead of, or alongside, the free packs. Dispatcharr doesn't care where a channel comes from.
 

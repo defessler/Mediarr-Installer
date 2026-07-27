@@ -1,7 +1,7 @@
 /* ============================================================
    Mediarr docs — Monokai theme
    ------------------------------------------------------------
-   Design tokens, decorations and behaviour are carried over from
+   Design tokens, decorations and behavior are carried over from
    dougfessler.com so the two sites read as one hand. The portfolio
    never needed long-form prose styling, so everything from
    "Doc layout" down is new work in the same idiom: terminal
@@ -32,7 +32,7 @@
   --color-border:       var(--mk-border);
 
   /* Navigation and UI text.
-     --mk-comment is Monokai's colour for code that has been commented
+     --mk-comment is Monokai's color for code that has been commented
      OUT. It is meant to recede, which is wrong for anything you expect
      someone to read and click. Navigation, sidebar entries and captions
      use --color-nav instead, which clears WCAG AA on the page
@@ -43,7 +43,7 @@
      The comment marks framing a heading are green instead, see
      --color-heading-mark below.
 
-     Colour roles, kept apart on purpose:
+     Color roles, kept apart on purpose:
        green  headings, brand, primary action
        cyan   links, list markers, contents entries
        pink   current page
@@ -60,7 +60,7 @@
      the lede line under a page title. Green rather than --mk-comment: at
      heading weight the olive read like text someone had switched off,
      sitting right next to a heading that was very much on. The mark is
-     part of the heading, so it takes the heading's colour. */
+     part of the heading, so it takes the heading's color. */
   --color-heading-mark: var(--mk-green);
 
   /* Hover step for the solid Ko-fi chip, lifted from Window Layout
@@ -86,7 +86,11 @@
    Reset & Base
    ============================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 15px; scroll-behavior: smooth; }
+/* 19px root, up from 15. Everything on the site is sized in rem off this
+   one number, so the whole page scales together and the measures stay
+   proportional. Body copy lands near 17px, which also pulls the doc
+   column back from about 130 characters a line to about 105. */
+html { font-size: 19px; scroll-behavior: smooth; }
 
 body {
   font-family: var(--font);
@@ -698,7 +702,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   color: var(--mk-fg);
   opacity: 0.88;
 }
-/* Markers in cyan, not green. Green is the heading colour, and using it
+/* Markers in cyan, not green. Green is the heading color, and using it
    for bullets too made every list read as a run of small headings. */
 .doc-content ul > li::marker { color: var(--mk-cyan); }
 .doc-content ol > li::marker { color: var(--mk-cyan); font-weight: 700; }
@@ -832,7 +836,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 }
 
 /* A diagram plus its caption, kept together. The caption stays in the
-   receding grey rather than the heading green, because it annotates the
+   receding gray rather than the heading green, because it annotates the
    picture instead of announcing it. */
 .doc-content figure {
   margin: 1.5rem 0 1.75rem;
@@ -845,9 +849,9 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 }
 
 /* ============================================================
-   Syntax highlighting — Monokai token colours
+   Syntax highlighting — Monokai token colors
    ------------------------------------------------------------
-   Applied at build time by highlight.js, so blocks are coloured
+   Applied at build time by highlight.js, so blocks are colored
    in the served HTML with no client script and no unstyled flash.
    ============================================================ */
 .hljs-comment,
@@ -1056,7 +1060,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 }
 
 @media (max-width: 640px) {
-  html { font-size: 14px; }
+  html { font-size: 18px; }
   .home { padding: 2rem 1.25rem 3rem; }
   .hero h1 { font-size: 1.6rem; }
   .card-grid { grid-template-columns: 1fr; }

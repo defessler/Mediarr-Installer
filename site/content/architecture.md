@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How the Mediarr stack fits together — containers, the VPN namespace, hardlinks, the request pipeline, and what the installer actually does.
+description: How the Mediarr stack fits together, from containers and the VPN namespace to hardlinks, the request pipeline, and what the installer actually does.
 lede: What the wizard builds, why it's shaped this way, and where to look when something misbehaves.
 group: Understanding it
 order: 1

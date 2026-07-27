@@ -6,12 +6,12 @@ group: "Music"
 order: 2
 ---
 This guide explains how to set up and use the **music download** feature in
-Mediarr — **Soulseek**, wired into Lidarr so your wanted albums get found and
+Mediarr: **Soulseek**, wired into Lidarr so your wanted albums get found and
 downloaded automatically.
 
 > **In one sentence:** turn on Soulseek in the installer, give it a free
 > Soulseek account, and `soularr` will watch Lidarr's wanted list and pull
-> matching music off the Soulseek network — through your VPN — for Lidarr to
+> matching music off the Soulseek network (through your VPN) for Lidarr to
 > import.
 
 > Want to **play** your music as stations/playlists? See
@@ -23,14 +23,14 @@ downloaded automatically.
 
 Two small containers, added only when you opt in:
 
-- **slskd** — the Soulseek client/daemon. It connects to the Soulseek network,
+- **slskd** - the Soulseek client/daemon. It connects to the Soulseek network,
   searches, and downloads. It runs **inside your VPN** (the same way
   qBittorrent does), and has a web UI at **`http://<NAS-IP>:5030`**.
-- **soularr** — the bridge. Every few minutes it reads Lidarr's *wanted* list,
+- **soularr** - the bridge. Every few minutes it reads Lidarr's *wanted* list,
   asks slskd to search Soulseek for each missing album, downloads the best
   match, and hands it to Lidarr to import.
 
-Everything is **off by default** — nothing changes for existing installs unless
+Everything is **off by default**, so nothing changes for existing installs unless
 you explicitly enable it.
 
 ---
@@ -57,7 +57,7 @@ On the **Configure** screen:
 
 1. Open the **Services** group and check **Lidarr** (if it isn't already) and
    **Soulseek**. Soulseek shows a small "needs Lidarr" hint if Lidarr is off.
-2. Open the **Music** group and enter the **one** thing it needs — your free
+2. Open the **Music** group and enter the **one** thing it needs, your free
    Soulseek account:
 
    | Field | What to put |
@@ -68,14 +68,14 @@ On the **Configure** screen:
    That's it. Everything else (the scan interval and the internal API key) is
    under **"Optional settings — you can skip these"** with sensible defaults.
 
-3. Finish the wizard and install as normal. The install is idempotent — if you
+3. Finish the wizard and install as normal. The install is idempotent, so if you
    already installed without Soulseek, just re-run **Install** with Soulseek
-   checked; your existing data and settings are preserved.
+   checked. Your existing data and settings are preserved.
 
-### The "slskd API key" — you can ignore it
+### The "slskd API key": you can ignore it
 
 You may notice an *slskd API key* field under Optional settings. **Leave it
-blank.** It is **not** a Soulseek login — it's just an internal secret the two
+blank.** It is **not** a Soulseek login. It's just an internal secret the two
 Soulseek containers use to talk to each other, and **the installer generates one
 for you** automatically on first run. The only reason to ever set it yourself is
 if you want to pin a specific value.
@@ -99,7 +99,7 @@ if you want to pin a specific value.
 ```
 
 - **soularr** runs a loop every `SOULARR_INTERVAL` seconds (default 300 = 5
-  minutes). It is *not* a cron job — it's a self-contained loop inside the
+  minutes). It is *not* a cron job. It's a self-contained loop inside the
   container, so there's nothing to schedule.
 - **slskd** downloads completed files into a shared folder that Lidarr also
   sees, so Lidarr can **hardlink/import** them with no copying.
@@ -119,9 +119,9 @@ if you want to pin a specific value.
 
 ## After install: check it's working
 
-1. **Open the slskd web UI** at `http://<NAS-IP>:5030` — it's also a tile in the
+1. **Open the slskd web UI** at `http://<NAS-IP>:5030`. It's also a tile in the
    **Downloads** section of your Homepage dashboard. **Log in with the slskd
-   dashboard default — username `slskd`, password `slskd`.** This is the
+   dashboard default, username `slskd` and password `slskd`.** This is the
    *dashboard* login, **not** your Soulseek account. Once inside, the dashboard
    should show **"Connected"** to the Soulseek network using the username/
    password you entered in the installer (give it a minute on first boot). To
@@ -148,9 +148,9 @@ slskd egresses through the same VPN container as qBittorrent. One thing to know:
 
 - **If your VPN provider has no port forwarding** (e.g. **NordVPN**), Soulseek
   runs **outbound-only**. Downloads still work, but **search results and the
-  ability to browse some users are reduced** — this is a documented Soulseek
-  behaviour, not a bug. For the best Soulseek experience, use a
-  port-forwarding-capable provider (Proton, PIA, AirVPN) — the same advice that
+  ability to browse some users are reduced**. This is a documented Soulseek
+  behavior, not a bug. For the best Soulseek experience, use a
+  port-forwarding-capable provider (Proton, PIA, AirVPN), the same advice that
   applies to torrent seeding.
 
 ---
@@ -158,14 +158,14 @@ slskd egresses through the same VPN container as qBittorrent. One thing to know:
 ## Troubleshooting
 
 **The slskd web UI won't load at `:5030`.**
-Make sure you're on **v0.7.3 or newer** — earlier builds shipped slskd on the
+Make sure you're on **v0.7.3 or newer**. Earlier builds shipped slskd on the
 wrong port and the UI was unreachable. Update the installer, re-run **Update**
 (or **Install**), and try again. Also confirm the VPN container (`gluetun`) is
-healthy — slskd lives inside its network, so if the VPN is down, so is slskd.
+healthy, because slskd lives inside its network, so if the VPN is down, so is slskd.
 
 **I can't log in to the slskd dashboard at `:5030`.**
-The dashboard login is slskd's own default — username `slskd`, password `slskd`
-— **not** your Soulseek account. (Your Soulseek account goes in a field *inside*
+The dashboard login is slskd's own default, username `slskd` and password `slskd`,
+**not** your Soulseek account. (Your Soulseek account goes in a field *inside*
 the dashboard, and the installer already filled it in for you.) To change the
 dashboard login, edit the `web.authentication` section of
 `${INSTALL_DIR}/slskd/config/slskd.yml`, then run `docker restart slskd`.
@@ -173,12 +173,12 @@ dashboard login, edit the `web.authentication` section of
 **slskd says it can't log in to Soulseek.**
 Double-check `SLSKD_USER`/`SLSKD_PASS` match a real Soulseek account. You can
 create/verify the account directly in the slskd web UI. (Tip: a password
-containing `#` is fine — v0.7.4+ no longer truncates credentials at `#`.)
+containing `#` is fine, since v0.7.4+ no longer truncates credentials at `#`.)
 
 **soularr runs but never downloads anything.**
 - Confirm Lidarr actually has albums on its **wanted** list (Monitored +
   searched).
-- Check `docker logs soularr` — if it can't reach slskd, confirm the web UI
+- Check `docker logs soularr` - if it can't reach slskd, confirm the web UI
   loads at `http://<NAS-IP>:5030`.
 - Soulseek is a real P2P network: niche or brand-new releases may simply have no
   seeders. Popular albums in common formats (FLAC, MP3-320) find matches most
@@ -199,7 +199,7 @@ needs it to drive slskd.
 ## Turning it off
 
 Uncheck **Soulseek** in the Configure screen and re-run **Install** (or
-**Update**). The `slskd` and `soularr` containers are stopped and removed; your
+**Update**). The `slskd` and `soularr` containers are stopped and removed. Your
 already-downloaded and imported music is untouched. Your Lidarr setup keeps
 working with your other download clients (qBittorrent / SABnzbd).
 

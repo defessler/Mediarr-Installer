@@ -12,7 +12,7 @@ navOrder: 1
     Point the wizard at your NAS, pick what you want, and it builds the lot over SSH.
     Plex or Jellyfin, the arr apps, download clients behind a VPN kill-switch,
     subtitles, quality profiles, and a dashboard tying it together. You request a
-    movie, show, or album. The stack finds it, downloads it, organises it, and
+    movie, show, or album. The stack finds it, downloads it, organizes it, and
     streams it to anything on your network.
   </p>
   <div class="hero-cta">
@@ -109,7 +109,7 @@ navOrder: 1
   <div class="card">
     <div class="card-meta">send this to friends</div>
     <h3>Watch on your TV</h3>
-    <p>The page you hand to whoever you invited. Accept the share, install Plex on any TV brand, and press play. <a href="watch-on-your-tv/">open the guide</a></p>
+    <p>The page you hand to whoever you invited. Accept the share, find Plex on any TV brand, and press play. <a href="watch-on-your-tv/">open the guide</a></p>
   </div>
 </div>
 </div>

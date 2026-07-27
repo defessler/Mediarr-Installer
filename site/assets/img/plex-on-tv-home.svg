@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" role="img" aria-label="A TV home screen with a row of app tiles along the bottom, one of them the Plex app, marked in green">
+  <defs>
+    <marker id="app-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A6E22E"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: 'JetBrains Mono','Fira Code','Courier New',monospace; }
+    .tile { fill: #2d2d2d; stroke: #3a3a32; }
+    .app  { fill: #75715E; font-size: 10px; text-anchor: middle; }
+    .hint { fill: #A6E22E; font-size: 12px; text-anchor: middle; }
+  </style>
+
+  <rect width="760" height="300" fill="#141414"/>
+
+  <!-- TV -->
+  <rect x="86" y="22" width="588" height="222" rx="7" fill="#2d2d2d" stroke="#49483E"/>
+  <rect x="98" y="34" width="564" height="198" rx="3" fill="#1e1e1e"/>
+
+  <!-- Feature banner across the top of the home screen -->
+  <rect x="114" y="50" width="532" height="72" rx="3" class="tile"/>
+  <rect x="130" y="66" width="150" height="10" rx="2" fill="#3a3a32"/>
+  <rect x="130" y="86" width="96" height="8" rx="2" fill="#3a3a32"/>
+
+  <!-- App row -->
+  <text x="130" y="142" fill="#75715E" font-size="11" text-anchor="start">Your apps</text>
+  <rect x="114" y="152" width="88" height="58" rx="4" class="tile"/>
+  <text x="158" y="226" class="app">app</text>
+  <rect x="216" y="152" width="88" height="58" rx="4" class="tile"/>
+  <text x="260" y="226" class="app">app</text>
+
+  <!-- The one that matters -->
+  <rect x="318" y="146" width="100" height="70" rx="4" fill="#141414" stroke="#A6E22E" stroke-width="2"/>
+  <text x="368" y="188" text-anchor="middle" fill="#A6E22E" font-size="20" font-weight="700">plex</text>
+  <text x="368" y="232" text-anchor="middle" fill="#A6E22E" font-size="11" font-weight="700">Plex</text>
+
+  <rect x="432" y="152" width="88" height="58" rx="4" class="tile"/>
+  <text x="476" y="226" class="app">app</text>
+  <rect x="534" y="152" width="88" height="58" rx="4" class="tile"/>
+  <text x="578" y="226" class="app">app</text>
+
+  <!-- Stand -->
+  <rect x="355" y="244" width="50" height="10" fill="#49483E"/>
+  <rect x="320" y="254" width="120" height="7" rx="3.5" fill="#49483E"/>
+
+  <line x1="368" y1="288" x2="368" y2="268" stroke="#A6E22E" stroke-width="1.5" marker-end="url(#app-green)"/>
+  <text x="368" y="296" class="hint">this is the one</text>
+</svg>

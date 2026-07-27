@@ -220,7 +220,7 @@ function renderToc(toc) {
  *  Implemented with hidden radio inputs and sibling selectors rather
  *  than JavaScript, so the tabs work with scripting blocked. Without
  *  CSS, both panels simply render in sequence, which is the old
- *  behaviour and still perfectly usable. */
+ *  behavior and still perfectly usable. */
 function renderSidebar(pages, current, rootPrefix, toc) {
   const groups = new Map()
   for (const p of pages) {

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" role="img" aria-label="An email from Plex saying someone wants to share their library, with a green Accept button in the middle, and a note that it sometimes lands in the spam folder">
+  <defs>
+    <marker id="pt-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A6E22E"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: 'JetBrains Mono','Fira Code','Courier New',monospace; }
+    .meta { fill: #75715E; font-size: 11px; }
+    .body { fill: #F8F8F2; font-size: 12px; }
+    .hint { fill: #A6E22E; font-size: 12px; }
+  </style>
+
+  <rect width="760" height="300" fill="#141414"/>
+
+  <!-- Mail window -->
+  <rect x="90" y="26" width="580" height="216" rx="6" fill="#2d2d2d" stroke="#49483E"/>
+  <rect x="90" y="26" width="580" height="34" rx="6" fill="#1e1e1e"/>
+  <rect x="90" y="52" width="580" height="8" fill="#1e1e1e"/>
+  <circle cx="110" cy="43" r="5" fill="#F92672"/>
+  <circle cx="126" cy="43" r="5" fill="#E6DB74"/>
+  <circle cx="142" cy="43" r="5" fill="#A6E22E"/>
+  <text x="163" y="47" class="meta">Inbox</text>
+
+  <text x="114" y="86" class="meta">From</text>
+  <text x="176" y="86" fill="#66D9EF" font-size="12">Plex</text>
+  <text x="114" y="108" class="meta">Subject</text>
+  <text x="176" y="108" class="body">A library has been shared with you</text>
+  <line x1="114" y1="124" x2="646" y2="124" stroke="#49483E"/>
+
+  <text x="114" y="150" class="body">Someone wants to share their Plex library</text>
+  <text x="114" y="170" class="body">with you. Press the button to accept.</text>
+
+  <rect x="114" y="188" width="188" height="38" rx="4" fill="#A6E22E"/>
+  <text x="208" y="212" text-anchor="middle" fill="#1e1e1e" font-size="13" font-weight="700">Accept the invite</text>
+
+  <line x1="208" y1="272" x2="208" y2="234" stroke="#A6E22E" stroke-width="1.5" marker-end="url(#pt-green)"/>
+  <text x="208" y="290" text-anchor="middle" class="hint">press this</text>
+
+  <text x="452" y="200" class="meta">Not in your inbox?</text>
+  <text x="452" y="220" class="meta">Check the spam folder.</text>
+</svg>
