@@ -53,6 +53,14 @@ Then finish the run. Step 10 of the install does the rest: it waits out Dispatch
 
 Note: Dispatcharr's first boot is genuinely slow. It runs database migrations before it serves anything, so a "not serving HTTP yet" warning at the end of an install is expected rather than a problem. Give it a few minutes and re-run the health check.
 
+### What It Costs You
+
+Dispatcharr is the heaviest thing in the stack by some margin, and it's worth knowing that before you turn it on. It's the only service that bundles PostgreSQL, Redis, Celery and FFmpeg into one container, which is why it's opt-in rather than always-on.
+
+Budget roughly 2 GB of RAM for it, more if you record and stream at the same time, since FFmpeg does the work for both.
+
+IMPORTANT: on a NAS that's already tight on memory, the usual symptom is not a helpful error. The container gets killed part-way through its first-boot migrations, Docker restarts it, and it loops forever showing "restarting" and never answering on 9191. If that happens, check `docker inspect -f '{{.State.OOMKilled}}' dispatcharr`. A `true` there means memory, not configuration, and no amount of re-running the installer will fix it.
+
 ## Finding It
 
 The web UI is on port 9191, and there's a tile for it on your [dashboard](dashboard). Everything about the channel lineup, the guide, and recording schedules lives in that UI.

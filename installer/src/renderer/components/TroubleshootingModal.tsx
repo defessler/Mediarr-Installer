@@ -132,6 +132,25 @@ const ITEMS: TItem[] = [
   },
   {
     category: 'Install failed or timed out',
+    symptom: 'A container keeps restarting and never becomes reachable',
+    cause:
+      'A container stuck in "restarting" is crash-looping: it starts, hits a fatal error, exits, and Docker starts it again. The install step waiting for it eventually gives up and the URL check fails, but neither of those is the actual problem — the reason is in the container\'s own log. The usual causes are running out of memory, a config directory whose ownership the app rejects, and a bad or half-pulled image.',
+    fix:
+      'Recent builds print the exit code, restart count, OOM flag and the last 25 log lines inline whenever a container is not running, so the cause should be in the install log directly under the failure. On an older build, or to see more, use the commands below. Read the FIRST error in the log rather than the last: a crash-loop repeats the same failure, so the tail is usually just the newest copy of it. Dispatcharr is the most likely service to hit this — it is the only one bundling PostgreSQL, Redis, Celery and FFmpeg into a single container, and it wants roughly 2 GB of RAM to get through its first-boot database migrations. If "oom=true", or the log stops part-way through a migration, that is your answer, and the fix is freeing memory rather than re-running the installer.',
+    command: (c) =>
+      `# The actual reason, from the container itself:\n`
+      + `docker logs --tail 50 <container>\n\n`
+      + `# Was it killed for memory, and how many times has it looped?\n`
+      + `docker inspect -f 'exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' <container>\n\n`
+      + `# How much memory is actually free right now:\n`
+      + `free -h\n\n`
+      + `# Ownership of the config dirs (should be ${c.puid}:${c.pgid}):\n`
+      + `ls -ln ${c.installDir} | head -30\n\n`
+      + `# Re-pull in case the image is half-fetched, then bring it back up:\n`
+      + `cd ${c.scriptsDir} && docker compose pull <container> && docker compose up -d <container>`,
+  },
+  {
+    category: 'Install failed or timed out',
     symptom: '"Path does not exist" on Sonarr/Radarr root folders',
     family: ['synology'],
     cause:
