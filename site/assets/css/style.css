@@ -52,6 +52,11 @@
   --color-link:         var(--mk-cyan);
   --color-link-hover:   #A8E9F7;
 
+  /* Hover / press steps for the solid Ko-fi button, mirroring Window
+     Layout Manager's accent / accent-hover / accent-press ramp. */
+  --kofi-hover:         #FF4D8D;
+  --kofi-press:         #D91A5B;
+
   --font:        'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   --radius:      3px;
   --shadow:      0 2px 8px rgba(0,0,0,0.4);
@@ -206,22 +211,43 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   text-decoration: none;
 }
 
-/* Ko-fi. Warm pink rather than the palette's orange, so it reads as the
-   one "spend money" affordance without landing next to green text. */
+/* Ko-fi, given the same treatment as Window Layout Manager's primary
+   button: a SOLID fill rather than an outline that only fills on hover.
+   Accent background, background-coloured text, transparent border,
+   weight 600, and the same 0.12s ease transition. The one difference is
+   the accent itself — pink here, because cyan is already carrying links
+   on this site and the ask should not look like one more link.
+
+   Solid matters. An outlined control among other outlined controls reads
+   as another nav item; a filled one reads as the thing to press. */
 .social-kofi {
-  color: var(--mk-pink);
-  border-color: var(--mk-pink);
+  background: var(--mk-pink);
+  color: var(--mk-bg);
+  border-color: transparent;
+  font-weight: 600;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 .social-kofi::before { content: '☕ '; }
 .social-kofi:hover {
-  background: var(--mk-pink);
+  background: var(--kofi-hover);
   color: var(--mk-bg);
-  border-color: var(--mk-pink);
+  border-color: transparent;
   text-decoration: none;
 }
-.footer-kofi { color: var(--mk-pink) !important; }
+.social-kofi:active { background: var(--kofi-press); }
+
+.footer-kofi {
+  display: inline-block;
+  background: var(--mk-pink);
+  color: var(--mk-bg) !important;
+  border-radius: var(--radius);
+  padding: 0.2rem 0.55rem;
+  font-weight: 600;
+  transition: background 0.12s ease;
+}
 .footer-kofi::before { content: '☕ '; }
-.footer-kofi:hover { color: #FF6FA3 !important; text-decoration: none; }
+.footer-kofi:hover { background: var(--kofi-hover); text-decoration: none; }
+.footer-kofi:active { background: var(--kofi-press); }
 
 .nav-toggle {
   display: none;
