@@ -369,9 +369,13 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 }
 .hero .headline::before { content: '// '; color: var(--color-heading-mark); }
 
+/* No measure of its own. Content inside <main> follows <main>, and the
+   only thing that decides how wide a line runs is the width of the
+   element it sits in. A separate ch-based cap here made the lede a
+   narrow column inside a wide page, which read as a mistake rather than
+   as typography. */
 .hero-lede {
   margin-top: 1.25rem;
-  max-width: 88ch;
   color: var(--mk-fg);
   opacity: 0.85;
   font-size: 0.925rem;
