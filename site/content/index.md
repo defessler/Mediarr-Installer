@@ -106,6 +106,11 @@ navOrder: 1
     <h3>Architecture</h3>
     <p>The finished thing taken apart. Containers, the VPN namespace, hardlinks, and what the installer actually does. <a href="architecture/">open the breakdown</a></p>
   </div>
+  <div class="card">
+    <div class="card-meta">send this to friends</div>
+    <h3>Watch on your TV</h3>
+    <p>The page you hand to whoever you invited. Accept the share, install Plex on any TV brand, and press play. <a href="watch-on-your-tv/">open the guide</a></p>
+  </div>
 </div>
 </div>
 
