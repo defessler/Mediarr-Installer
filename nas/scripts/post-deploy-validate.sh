@@ -159,6 +159,28 @@ for container in "${CONTAINERS[@]}"; do
         fail "$container does not exist"
     else
         fail "$container is not running (status: $STATUS)"
+        # A container that is restarting or exited has already printed WHY
+        # to its own log, and telling someone to go and run `docker logs`
+        # themselves just costs a round trip — especially through the
+        # wizard, where the log pane is the only output they can see.
+        # Show the tail here so the actual cause travels with the failure.
+        EXIT_CODE=$($RT inspect -f '{{.State.ExitCode}}' "$container" 2>/dev/null || echo '?')
+        RESTARTS=$($RT inspect -f '{{.RestartCount}}' "$container" 2>/dev/null || echo '?')
+        OOM=$($RT inspect -f '{{.State.OOMKilled}}' "$container" 2>/dev/null || echo 'false')
+        echo "     last exit code: $EXIT_CODE   restarts: $RESTARTS"
+        if [ "$OOM" = "true" ]; then
+            echo "     OOM-KILLED — the container ran out of memory. Dispatcharr in"
+            echo "     particular bundles Postgres + Redis + Celery and wants ~2GB."
+        fi
+        LOG_TAIL=$($RT logs --tail 25 "$container" 2>&1 | tail -25)
+        if [ -n "$LOG_TAIL" ]; then
+            echo "     ── last 25 log lines from $container ──"
+            printf '%s\n' "$LOG_TAIL" | sed 's/^/     /'
+            echo "     ── end of $container log ──"
+        else
+            echo "     (no log output — the container may be failing before its"
+            echo "      entrypoint runs, e.g. a bad mount or image pull)"
+        fi
     fi
 done
 
