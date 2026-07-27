@@ -1442,7 +1442,7 @@ def build_report(top_n=25, quality_detail=True):
         key = (env.get(spec['env_key']) or '').strip()
         if not key:
             report['warnings'].append(
-                f'{spec["label"]}: no {spec["env_key"]} in .env — skipped.')
+                f'{spec["label"]}: no {spec["env_key"]} in .env, so it was skipped.')
             continue
 
         base, err = discover_base(spec, key, lan_ip)
@@ -1568,7 +1568,7 @@ def build_report(top_n=25, quality_detail=True):
     OUTLIER_RATIO = 2.5
     for f in report['files']:
         f['is_outlier'] = bool(f.get('ratio') and f['ratio'] >= OUTLIER_RATIO)
-        f['label'] = (f"{f['item']} — {f['name']}"
+        f['label'] = (f"{f['item']} - {f['name']}"
                       if f.get('item') and f['kind'] == 'episode' else f.get('item') or f['name'])
 
     files_by_size = sorted(report['files'], key=lambda f: f['size'], reverse=True)
@@ -1636,7 +1636,7 @@ def render_text(report):
     add = out.append
 
     add('')
-    add('  Mediarr Librarian — storage report')
+    add('  Mediarr Librarian · storage report')
     add(f'  generated {report["generated"]}  ({report["elapsed"]}s)')
     f = report.get('filtered')
     if f:
@@ -1755,115 +1755,307 @@ def render_text(report):
 # .format template) so the CSS needs no brace-doubling.
 
 CSS = """
-* { box-sizing: border-box; }
+/* Monokai, matching the docs site at dougfessler.com/Mediarr-Installer
+   and the portfolio it takes its cues from. The two sidecar pages and
+   the dashboard share this so the whole stack reads as one hand rather
+   than three separate tools that happen to be installed together.
+
+   Class names are unchanged from the slate/emerald version this
+   replaces — this is a restyle, not a re-layout. */
+:root {
+  --mk-bg:      #1e1e1e;
+  --mk-surface: #2d2d2d;
+  --mk-gutter:  #141414;
+  --mk-fg:      #F8F8F2;
+  --mk-comment: #75715E;
+  --mk-pink:    #F92672;
+  --mk-orange:  #FD971F;
+  --mk-yellow:  #E6DB74;
+  --mk-green:   #A6E22E;
+  --mk-cyan:    #66D9EF;
+  --mk-purple:  #AE81FF;
+  --mk-border:  #49483E;
+
+  /* --mk-comment is the colour of commented-OUT code. It is built to
+     recede, which is wrong for anything meant to be read. Body text and
+     labels use --dim instead; --mk-comment is kept for the decorative
+     comment marks only. */
+  --dim:        #BFBBAA;
+  --radius:     3px;
+  --font: 'JetBrains Mono', 'Fira Code', 'Cascadia Mono', Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  background: #0f172a; color: #e2e8f0;
-  padding: 2rem 1rem; max-width: 1100px; margin: 0 auto;
+  font-family: var(--font);
+  background: var(--mk-bg);
+  color: var(--mk-fg);
+  line-height: 1.6;
+  font-size: 15px;
+  padding: 2rem 1rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  word-break: break-word;
 }
-h1 { font-weight: 600; color: #34d399; margin: 0 0 0.25rem 0; }
-h2 { font-size: 1rem; font-weight: 600; margin: 0 0 0.75rem 0; }
-.muted { color: #94a3b8; font-size: 0.875rem; }
+
+/* Scanlines, same as the docs site. Subtle enough to read through. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+h1 {
+  font-weight: 700;
+  font-size: 1.6rem;
+  color: var(--mk-green);
+  margin-bottom: 0.25rem;
+  text-shadow: 0.03em 0 0 rgba(249,38,114,0.4), -0.03em 0 0 rgba(102,217,239,0.4);
+}
+h1::before { content: '> '; color: var(--mk-comment); }
+
+h2 { font-size: 1rem; font-weight: 700; color: var(--mk-green); margin-bottom: 0.6rem; }
+
+.muted { color: var(--dim); font-size: 0.875rem; }
+.dim   { color: var(--dim); }
+
+a { color: var(--mk-cyan); text-decoration: none; }
+a:hover { color: #A8E9F7; text-decoration: underline; }
+
+::selection { background: rgba(166,226,46,0.25); color: var(--mk-fg); }
+:focus-visible { outline: 2px solid var(--mk-cyan); outline-offset: 2px; }
+
+/* ── Cards ───────────────────────────────────────────────────────── */
 .card {
-  background: #1e293b; border: 1px solid #334155;
-  border-radius: 0.5rem; padding: 1rem; margin: 1rem 0;
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin: 1rem 0;
 }
+/* Cycling accent down the page, the same device the docs site uses on
+   its card grid. Purely rhythmic — no card means anything by its
+   colour, so nothing is lost if you cannot tell them apart. */
+.card:nth-of-type(6n+1) { border-left-color: var(--mk-pink);   }
+.card:nth-of-type(6n+2) { border-left-color: var(--mk-orange); }
+.card:nth-of-type(6n+3) { border-left-color: var(--mk-yellow); }
+.card:nth-of-type(6n+4) { border-left-color: var(--mk-green);  }
+.card:nth-of-type(6n+5) { border-left-color: var(--mk-cyan);   }
+.card:nth-of-type(6n+6) { border-left-color: var(--mk-purple); }
+
 .label {
-  color: #64748b; font-size: 0.7rem; text-transform: uppercase;
-  letter-spacing: 0.05em; margin-bottom: 0.75rem;
+  color: var(--mk-green);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  font-weight: 700;
 }
-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-th {
-  text-align: left; color: #64748b; font-weight: 500;
-  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
-  padding: 0 0.5rem 0.5rem 0; border-bottom: 1px solid #334155;
+.label::before { content: '/* '; color: var(--mk-comment); font-weight: 400; }
+.label::after  { content: ' */'; color: var(--mk-comment); font-weight: 400; }
+
+.row {
+  display: flex; justify-content: space-between; gap: 1rem;
+  padding: 0.3rem 0; align-items: center;
 }
-td { padding: 0.45rem 0.5rem 0.45rem 0; border-bottom: 1px solid #263449; }
-tr:last-child td { border-bottom: none; }
-td.num, th.num { text-align: right; }
-.dim { color: #94a3b8; }
-.meter {
-  height: 0.4rem; background: #0b1220; border-radius: 999px;
-  overflow: hidden; margin-top: 0.35rem;
+.row strong { font-weight: 600; color: var(--mk-fg); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.stat { font-size: 1.45rem; font-weight: 700; color: var(--mk-fg); }
+
+/* ── Forms ───────────────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; }
+.field label { font-size: 0.8rem; color: var(--dim); }
+
+select, input[type="search"], input[type="text"] {
+  background: var(--mk-gutter);
+  color: var(--mk-fg);
+  border: 1px solid var(--mk-border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  font-size: 0.875rem;
 }
-.meter > span { display: block; height: 100%; background: #10b981; }
-.meter.warn > span { background: #f59e0b; }
-.meter.hot  > span { background: #ef4444; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
-.stat { font-size: 1.5rem; font-weight: 600; }
-.banner {
-  border-radius: 0.375rem; padding: 0.75rem 1rem;
-  margin: 1rem 0; font-size: 0.9rem;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d;
-}
+select:focus, input:focus { outline: 2px solid var(--mk-cyan); outline-offset: 1px; }
+
+.actions { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
+
+/* Solid fills, the treatment Window Layout Manager uses for its primary
+   action. An outline among outlines reads as another label; a fill reads
+   as the thing to press. */
 button {
-  background: #10b981; color: white; border: none;
-  padding: 0.7rem 1.4rem; font-size: 0.95rem; font-weight: 600;
-  border-radius: 0.375rem; cursor: pointer;
+  background: var(--mk-green);
+  color: var(--mk-bg);
+  border: 1px solid transparent;
+  padding: 0.6rem 1.2rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
-button:hover { background: #059669; }
+button::before { content: '$ '; opacity: 0.55; }
+button:hover  { background: #B9EE4F; }
+button:active { background: #8FC423; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+button.secondary { background: var(--mk-surface); color: var(--dim); border-color: var(--mk-border); }
+button.secondary:hover { background: #3a3a30; color: var(--mk-fg); }
+
+button.danger { background: var(--mk-pink); color: var(--mk-bg); }
+button.danger:hover  { background: #FF4D8D; }
+button.danger:active { background: #D91A5B; }
+
+/* ── Code ────────────────────────────────────────────────────────── */
+pre {
+  background: var(--mk-gutter);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-green);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  overflow: auto;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 60vh;
+  color: var(--mk-fg);
+}
 code {
-  background: #0b1220; padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem; font-size: 0.875em;
+  background: var(--mk-gutter);
+  color: var(--mk-yellow);
+  border: 1px solid var(--mk-border);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius);
+  font-size: 0.875em;
 }
-.hint { font-size: 0.8rem; color: #64748b; margin-top: 1.5rem; line-height: 1.6; }
+
+/* ── Banners ─────────────────────────────────────────────────────── */
+.banner {
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  border: 1px solid var(--mk-border);
+}
+.banner.ok   { background: rgba(166,226,46,0.10);  border-left: 3px solid var(--mk-green);  color: var(--mk-green); }
+.banner.warn { background: rgba(230,219,116,0.10); border-left: 3px solid var(--mk-yellow); color: var(--mk-yellow); }
+.banner.err  { background: rgba(249,38,114,0.10);  border-left: 3px solid var(--mk-pink);   color: #FF7FAE; }
+
+/* ── Tables ──────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th {
+  text-align: left;
+  color: var(--mk-comment);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--mk-border);
+  white-space: nowrap;
+}
+td {
+  padding: 0.45rem 0.6rem 0.45rem 0;
+  border-bottom: 1px solid #322f28;
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+td.num, th.num { text-align: right; }
+
+/* ── Meters ──────────────────────────────────────────────────────── */
+.meter {
+  height: 0.4rem;
+  background: var(--mk-gutter);
+  border: 1px solid var(--mk-border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.35rem;
+}
+.meter > span { display: block; height: 100%; background: var(--mk-green); }
+.meter.warn > span { background: var(--mk-yellow); }
+.meter.hot  > span { background: var(--mk-pink); }
+
+/* ── Tags ────────────────────────────────────────────────────────── */
+.tag {
+  display: inline-block;
+  background: var(--mk-gutter);
+  color: var(--mk-cyan);
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--mk-border);
+}
 
 /* ── Search / filter ─────────────────────────────────────────────── */
-.filters {
-  display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;
-  margin-bottom: 0.9rem;
-}
-.filters input[type="search"], .filters select {
-  background: #0b1220; color: #e2e8f0;
-  border: 1px solid #334155; border-radius: 0.375rem;
-  padding: 0.5rem 0.65rem; font: inherit; font-size: 0.875rem;
-}
+.filters { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.9rem; }
 .filters input[type="search"] { flex: 1; min-width: 200px; }
-.filters input[type="search"]:focus, .filters select:focus {
-  outline: 2px solid #34d399; outline-offset: 1px;
-}
-.filters label { font-size: 0.8rem; color: #94a3b8; display: flex;
-                 align-items: center; gap: 0.35rem; }
-.filter-count { font-size: 0.8rem; color: #64748b; }
+.filters label { font-size: 0.8rem; color: var(--dim); display: flex; align-items: center; gap: 0.35rem; }
+.filter-count { font-size: 0.8rem; color: var(--mk-comment); }
 tr.hidden-row { display: none; }
-.ratio-hot { color: #fca5a5; font-weight: 600; }
-.no-matches { color: #94a3b8; font-size: 0.875rem; padding: 0.75rem 0; }
+.no-matches { color: var(--dim); font-size: 0.875rem; padding: 0.75rem 0; }
+.ratio-hot { color: var(--mk-pink); font-weight: 700; }
 
-/* ── Selection + actions ─────────────────────────────────────────── */
+/* ── Selection + action bars ─────────────────────────────────────── */
 td.sel, th.sel { width: 1.75rem; padding-right: 0.35rem; }
+input[type="checkbox"] { accent-color: var(--mk-green); }
+
 .action-bar {
   position: sticky; bottom: 0; z-index: 5;
-  background: #1e293b; border: 1px solid #334155;
-  border-radius: 0.5rem; padding: 0.75rem 1rem; margin-top: 1rem;
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-cyan);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem; margin-top: 1rem;
   display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
-  box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.5);
 }
 .action-bar[hidden] { display: none; }
-.action-bar .sel-count { font-weight: 600; color: #e2e8f0; font-size: 0.875rem; }
-.action-bar select { background: #0b1220; color: #e2e8f0;
-  border: 1px solid #334155; border-radius: 0.375rem;
-  padding: 0.45rem 0.6rem; font: inherit; font-size: 0.85rem; }
-button.danger { background: #b91c1c; }
-button.danger:hover { background: #dc2626; }
-button.secondary { background: #334155; }
-button.secondary:hover { background: #475569; }
+.action-bar .sel-count { font-weight: 700; color: var(--mk-fg); font-size: 0.875rem; }
 
-/* ── Plan / confirm page ─────────────────────────────────────────── */
-.plan-steps { margin: 0.5rem 0 1rem 1.1rem; }
+/* ── Plan / confirm ──────────────────────────────────────────────── */
+.plan-steps { margin: 0.5rem 0 1rem 1.2rem; }
 .plan-steps li { font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.4rem; }
+.plan-steps li::marker { color: var(--mk-cyan); font-weight: 700; }
 .plan-warn {
-  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239,68,68,0.35);
-  color: #fca5a5; border-radius: 0.375rem; padding: 0.85rem 1rem;
-  margin: 1rem 0; font-size: 0.9rem; line-height: 1.6;
+  background: rgba(249,38,114,0.10);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-pink);
+  color: #FF9EC4;
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
-.tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
-.tabs a {
-  color: #94a3b8; text-decoration: none; font-size: 0.8rem;
-  padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid #334155;
+
+/* ── Footer note ─────────────────────────────────────────────────── */
+.hint {
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin-top: 1.75rem;
+  line-height: 1.65;
+  border-top: 1px solid var(--mk-border);
+  padding-top: 1rem;
 }
-.tabs a:hover { color: #e2e8f0; border-color: #475569; }
-@media (max-width: 640px) { body { padding: 1rem 0.5rem; } }
+.hint::before { content: '// '; color: var(--mk-comment); }
+
+@media (max-width: 640px) {
+  body { padding: 1.25rem 0.75rem; font-size: 14px; }
+  .grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.001ms !important; }
+}
 """
 
 
@@ -2211,15 +2403,16 @@ def render_html(report, env=None):
     if report['unaccounted']:
         add(f'<p class="muted" style="margin-top:0.75rem">'
             f'<strong>{html.escape(human_bytes(report["unaccounted"]))}</strong> on disk '
-            'is not accounted for by any arr — downloads in progress, extras, other '
-            'shares on the same volume, or files the arrs no longer track.</p>')
+            'is not accounted for by any arr. That covers downloads in progress, '
+            'extras, other shares on the same volume, and anything the arrs no '
+            'longer track. It is a pointer, not an accusation.</p>')
     add('</div>')
 
     # Upgrade backlog
     if report['cutoff']:
         add('<div class="card"><div class="label">Upgrade backlog</div>'
             '<p class="muted" style="margin-top:0">Items each arr already considers '
-            'below its quality cutoff — it will replace these on the next search.</p>'
+            'below its quality cutoff. It replaces these on the next search.</p>'
             '<table><tbody>')
         for label, count in report['cutoff'].items():
             add(f'<tr><td>{html.escape(label)}</td>'
@@ -2247,7 +2440,7 @@ def render_html(report, env=None):
         for n in (report.get('connections') or {}) if n in ARRS)
     add('<div class="card"><div class="label">Find something</div>'
         '<div class="filters">'
-        '<input type="search" id="q" placeholder="Fuzzy search title, quality, codec… (press / to focus)" '
+        '<input type="search" id="q" placeholder="Search title, quality, codec. Press / to focus" '
         'autocomplete="off" spellcheck="false">'
         f'<select id="f-arr"><option value="">All apps</option>{arr_opts}</select>'
         '<select id="f-min">'
@@ -2269,7 +2462,7 @@ def render_html(report, env=None):
     add('<div class="card"><div class="label">Biggest items</div>'
         + _item_table_html(report['top_by_size'], report['watch_source'], can_act) + '</div>')
 
-    add('<div class="card"><div class="label">Most bloated — bytes per hour</div>'
+    add('<div class="card"><div class="label">Most bloated, by bytes per hour</div>'
         '<p class="muted" style="margin-top:0">A high rate on a short runtime is '
         'usually a remux. Sorting by raw size only ever finds long shows.</p>'
         + _item_table_html(report['top_by_rate'], report['watch_source'], can_act) + '</div>')
@@ -2349,12 +2542,12 @@ def render_html(report, env=None):
     add(f'<p class="hint">{hint} Same report on the command line: '
         '<code>python3 librarian.py --report</code>, or '
         '<code>--json</code> for the raw numbers. '
-        '<a href="/api/report.json" style="color:#34d399">JSON endpoint</a>.</p>')
+        '<a href="/api/report.json">JSON endpoint</a>.</p>')
 
     return (
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>Librarian — storage report</title>'
+        '<title>Librarian · storage report</title>'
         f'<style>{CSS}</style></head><body>' + ''.join(parts) +
         f'<script>{SCRIPT}</script></body></html>')
 
@@ -2422,7 +2615,7 @@ def render_plan_html(plan, token):
         f'<input type="hidden" name="token" value="{html.escape(token)}">'
         f'<button type="submit" class="{"danger" if plan["deletes_files"] else ""}">'
         f'Yes, {verb.lower()} {len(entries)} {noun}(s)</button> '
-        '<a href="/" style="margin-left:0.75rem;color:#94a3b8">Cancel</a>'
+        '<a href="/" style="margin-left:0.75rem">Cancel</a>'
         '</form></div>')
 
 
@@ -2447,7 +2640,7 @@ def render_result_html(plan, results):
         body.append('<div class="card"><div class="label">Notes</div><pre>'
                     + html.escape('\n'.join(results['notes'])) + '</pre></div>')
     body.append('<p class="hint">Searches run in the background, so give the arr '
-                'a few minutes. <a href="/" style="color:#34d399">Back to the report</a>.</p>')
+                'a few minutes. <a href="/">Back to the report</a>.</p>')
     return _page(''.join(body))
 
 
@@ -2517,15 +2710,15 @@ class Handler(BaseHTTPRequestHandler):
                     '<!DOCTYPE html><html><head><meta charset="utf-8">'
                     '<meta http-equiv="refresh" content="4">'
                     f'<title>Librarian</title><style>{CSS}</style></head><body>'
-                    '<h1>Librarian</h1><p class="muted">First scan running — '
-                    'this page refreshes itself.</p></body></html>', code=503)
+                    '<h1>Librarian</h1><p class="muted">First scan running. '
+                    'This page refreshes itself.</p></body></html>', code=503)
                 return
             html_body = render_html(report, read_env())
             if busy:
                 html_body = html_body.replace(
                     '<h1>Librarian</h1>',
-                    '<h1>Librarian</h1><div class="banner">A scan is already '
-                    'running — showing the previous result.</div>', 1)
+                    '<h1>Librarian</h1><div class="banner warn">A scan is already '
+                    'running, so this is the previous result.</div>', 1)
             self._send(html_body)
             return
 
@@ -2555,7 +2748,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(_page(
             '<h1>Librarian</h1>'
             f'<div class="banner err">{html.escape(message)}</div>'
-            '<p class="hint"><a href="/" style="color:#34d399">Back to the report</a></p>'),
+            '<p class="hint"><a href="/">Back to the report</a></p>'),
             code=code)
 
     def do_POST(self):

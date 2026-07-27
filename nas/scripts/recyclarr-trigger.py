@@ -135,76 +135,316 @@ PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Recyclarr — TRaSH Sync</title>
+<title>Recyclarr · TRaSH sync</title>
 <style>
-* {{ box-sizing: border-box; }}
+/* Monokai, matching the docs site at dougfessler.com/Mediarr-Installer
+   and the portfolio it takes its cues from. The two sidecar pages and
+   the dashboard share this so the whole stack reads as one hand rather
+   than three separate tools that happen to be installed together.
+
+   Class names are unchanged from the slate/emerald version this
+   replaces — this is a restyle, not a re-layout. */
+:root {{
+  --mk-bg:      #1e1e1e;
+  --mk-surface: #2d2d2d;
+  --mk-gutter:  #141414;
+  --mk-fg:      #F8F8F2;
+  --mk-comment: #75715E;
+  --mk-pink:    #F92672;
+  --mk-orange:  #FD971F;
+  --mk-yellow:  #E6DB74;
+  --mk-green:   #A6E22E;
+  --mk-cyan:    #66D9EF;
+  --mk-purple:  #AE81FF;
+  --mk-border:  #49483E;
+
+  /* --mk-comment is the colour of commented-OUT code. It is built to
+     recede, which is wrong for anything meant to be read. Body text and
+     labels use --dim instead; --mk-comment is kept for the decorative
+     comment marks only. */
+  --dim:        #BFBBAA;
+  --radius:     3px;
+  --font: 'JetBrains Mono', 'Fira Code', 'Cascadia Mono', Consolas, monospace;
+}}
+
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
 body {{
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  background: #0f172a; color: #e2e8f0;
-  padding: 2rem 1rem; max-width: 800px; margin: 0 auto;
+  font-family: var(--font);
+  background: var(--mk-bg);
+  color: var(--mk-fg);
+  line-height: 1.6;
+  font-size: 15px;
+  padding: 2rem 1rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  word-break: break-word;
 }}
-h1 {{ font-weight: 600; color: #34d399; margin: 0 0 0.5rem 0; }}
-.muted {{ color: #94a3b8; font-size: 0.875rem; }}
+
+/* Scanlines, same as the docs site. Subtle enough to read through. */
+body::after {{
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}}
+
+h1 {{
+  font-weight: 700;
+  font-size: 1.6rem;
+  color: var(--mk-green);
+  margin-bottom: 0.25rem;
+  text-shadow: 0.03em 0 0 rgba(249,38,114,0.4), -0.03em 0 0 rgba(102,217,239,0.4);
+}}
+h1::before {{ content: '> '; color: var(--mk-comment); }}
+
+h2 {{ font-size: 1rem; font-weight: 700; color: var(--mk-green); margin-bottom: 0.6rem; }}
+
+.muted {{ color: var(--dim); font-size: 0.875rem; }}
+.dim   {{ color: var(--dim); }}
+
+a {{ color: var(--mk-cyan); text-decoration: none; }}
+a:hover {{ color: #A8E9F7; text-decoration: underline; }}
+
+::selection {{ background: rgba(166,226,46,0.25); color: var(--mk-fg); }}
+:focus-visible {{ outline: 2px solid var(--mk-cyan); outline-offset: 2px; }}
+
+/* ── Cards ───────────────────────────────────────────────────────── */
 .card {{
-  background: #1e293b; border: 1px solid #334155;
-  border-radius: 0.5rem; padding: 1rem; margin: 1rem 0;
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin: 1rem 0;
 }}
+/* Cycling accent down the page, the same device the docs site uses on
+   its card grid. Purely rhythmic — no card means anything by its
+   colour, so nothing is lost if you cannot tell them apart. */
+.card:nth-of-type(6n+1) {{ border-left-color: var(--mk-pink);   }}
+.card:nth-of-type(6n+2) {{ border-left-color: var(--mk-orange); }}
+.card:nth-of-type(6n+3) {{ border-left-color: var(--mk-yellow); }}
+.card:nth-of-type(6n+4) {{ border-left-color: var(--mk-green);  }}
+.card:nth-of-type(6n+5) {{ border-left-color: var(--mk-cyan);   }}
+.card:nth-of-type(6n+6) {{ border-left-color: var(--mk-purple); }}
+
 .label {{
-  color: #64748b; font-size: 0.7rem; text-transform: uppercase;
-  letter-spacing: 0.05em; margin-bottom: 0.5rem;
+  color: var(--mk-green);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  font-weight: 700;
 }}
-.row {{ display: flex; justify-content: space-between; gap: 1rem;
-        padding: 0.25rem 0; align-items: center; }}
-.row strong {{ font-weight: 500; }}
-.field {{ display: flex; flex-direction: column; gap: 0.35rem;
-          margin: 0.75rem 0; }}
-.field label {{ font-size: 0.8rem; color: #94a3b8; }}
-select {{
-  background: #0b1220; color: #e2e8f0;
-  border: 1px solid #334155; border-radius: 0.375rem;
-  padding: 0.5rem 0.6rem; font: inherit; font-size: 0.9rem;
+.label::before {{ content: '/* '; color: var(--mk-comment); font-weight: 400; }}
+.label::after  {{ content: ' */'; color: var(--mk-comment); font-weight: 400; }}
+
+.row {{
+  display: flex; justify-content: space-between; gap: 1rem;
+  padding: 0.3rem 0; align-items: center;
 }}
-select:focus {{ outline: 2px solid #34d399; outline-offset: 1px; }}
-.actions {{ display: flex; gap: 0.75rem; flex-wrap: wrap;
-            align-items: center; margin-top: 0.5rem; }}
+.row strong {{ font-weight: 600; color: var(--mk-fg); }}
+
+.grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }}
+.stat {{ font-size: 1.45rem; font-weight: 700; color: var(--mk-fg); }}
+
+/* ── Forms ───────────────────────────────────────────────────────── */
+.field {{ display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; }}
+.field label {{ font-size: 0.8rem; color: var(--dim); }}
+
+select, input[type="search"], input[type="text"] {{
+  background: var(--mk-gutter);
+  color: var(--mk-fg);
+  border: 1px solid var(--mk-border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  font-size: 0.875rem;
+}}
+select:focus, input:focus {{ outline: 2px solid var(--mk-cyan); outline-offset: 1px; }}
+
+.actions {{ display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }}
+
+/* Solid fills, the treatment Window Layout Manager uses for its primary
+   action. An outline among outlines reads as another label; a fill reads
+   as the thing to press. */
 button {{
-  background: #10b981; color: white; border: none;
-  padding: 0.875rem 1.75rem; font-size: 1rem; font-weight: 600;
-  border-radius: 0.375rem; cursor: pointer;
-  transition: background 0.15s ease;
+  background: var(--mk-green);
+  color: var(--mk-bg);
+  border: 1px solid transparent;
+  padding: 0.6rem 1.2rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s ease;
 }}
-button.secondary {{ background: #334155; }}
-button:hover  {{ background: #059669; }}
-button.secondary:hover {{ background: #475569; }}
-button:active {{ background: #047857; }}
-button.secondary:active {{ background: #1e293b; }}
-button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+button::before {{ content: '$ '; opacity: 0.55; }}
+button:hover  {{ background: #B9EE4F; }}
+button:active {{ background: #8FC423; }}
+button:disabled {{ opacity: 0.4; cursor: not-allowed; }}
+
+button.secondary {{ background: var(--mk-surface); color: var(--dim); border-color: var(--mk-border); }}
+button.secondary:hover {{ background: #3a3a30; color: var(--mk-fg); }}
+
+button.danger {{ background: var(--mk-pink); color: var(--mk-bg); }}
+button.danger:hover  {{ background: #FF4D8D; }}
+button.danger:active {{ background: #D91A5B; }}
+
+/* ── Code ────────────────────────────────────────────────────────── */
 pre {{
-  background: #0b1220; padding: 1rem; border-radius: 0.375rem;
-  overflow: auto; font-size: 0.8125rem; line-height: 1.45;
-  white-space: pre-wrap; word-wrap: break-word; max-height: 60vh;
+  background: var(--mk-gutter);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-green);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  overflow: auto;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 60vh;
+  color: var(--mk-fg);
 }}
 code {{
-  background: #0b1220; padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem; font-size: 0.875em;
+  background: var(--mk-gutter);
+  color: var(--mk-yellow);
+  border: 1px solid var(--mk-border);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius);
+  font-size: 0.875em;
 }}
+
+/* ── Banners ─────────────────────────────────────────────────────── */
 .banner {{
-  border-radius: 0.375rem; padding: 0.75rem 1rem;
-  margin: 1rem 0; font-size: 0.9rem;
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  border: 1px solid var(--mk-border);
 }}
-.banner.ok {{ background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #6ee7b7; }}
-.banner.warn {{ background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d; }}
-.banner.err {{ background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }}
-.hint {{ font-size: 0.8rem; color: #64748b; margin-top: 1.5rem;
-         line-height: 1.6; }}
-.grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
-@media (max-width: 600px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+.banner.ok   {{ background: rgba(166,226,46,0.10);  border-left: 3px solid var(--mk-green);  color: var(--mk-green); }}
+.banner.warn {{ background: rgba(230,219,116,0.10); border-left: 3px solid var(--mk-yellow); color: var(--mk-yellow); }}
+.banner.err  {{ background: rgba(249,38,114,0.10);  border-left: 3px solid var(--mk-pink);   color: #FF7FAE; }}
+
+/* ── Tables ──────────────────────────────────────────────────────── */
+table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
+th {{
+  text-align: left;
+  color: var(--mk-comment);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--mk-border);
+  white-space: nowrap;
+}}
+td {{
+  padding: 0.45rem 0.6rem 0.45rem 0;
+  border-bottom: 1px solid #322f28;
+  vertical-align: top;
+}}
+tr:last-child td {{ border-bottom: none; }}
+tbody tr:nth-child(even) {{ background: rgba(255,255,255,0.015); }}
+td.num, th.num {{ text-align: right; }}
+
+/* ── Meters ──────────────────────────────────────────────────────── */
+.meter {{
+  height: 0.4rem;
+  background: var(--mk-gutter);
+  border: 1px solid var(--mk-border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.35rem;
+}}
+.meter > span {{ display: block; height: 100%; background: var(--mk-green); }}
+.meter.warn > span {{ background: var(--mk-yellow); }}
+.meter.hot  > span {{ background: var(--mk-pink); }}
+
+/* ── Tags ────────────────────────────────────────────────────────── */
+.tag {{
+  display: inline-block;
+  background: var(--mk-gutter);
+  color: var(--mk-cyan);
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--mk-border);
+}}
+
+/* ── Search / filter ─────────────────────────────────────────────── */
+.filters {{ display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.9rem; }}
+.filters input[type="search"] {{ flex: 1; min-width: 200px; }}
+.filters label {{ font-size: 0.8rem; color: var(--dim); display: flex; align-items: center; gap: 0.35rem; }}
+.filter-count {{ font-size: 0.8rem; color: var(--mk-comment); }}
+tr.hidden-row {{ display: none; }}
+.no-matches {{ color: var(--dim); font-size: 0.875rem; padding: 0.75rem 0; }}
+.ratio-hot {{ color: var(--mk-pink); font-weight: 700; }}
+
+/* ── Selection + action bars ─────────────────────────────────────── */
+td.sel, th.sel {{ width: 1.75rem; padding-right: 0.35rem; }}
+input[type="checkbox"] {{ accent-color: var(--mk-green); }}
+
+.action-bar {{
+  position: sticky; bottom: 0; z-index: 5;
+  background: var(--mk-surface);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-cyan);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem; margin-top: 1rem;
+  display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.5);
+}}
+.action-bar[hidden] {{ display: none; }}
+.action-bar .sel-count {{ font-weight: 700; color: var(--mk-fg); font-size: 0.875rem; }}
+
+/* ── Plan / confirm ──────────────────────────────────────────────── */
+.plan-steps {{ margin: 0.5rem 0 1rem 1.2rem; }}
+.plan-steps li {{ font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.4rem; }}
+.plan-steps li::marker {{ color: var(--mk-cyan); font-weight: 700; }}
+.plan-warn {{
+  background: rgba(249,38,114,0.10);
+  border: 1px solid var(--mk-border);
+  border-left: 3px solid var(--mk-pink);
+  color: #FF9EC4;
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}}
+
+/* ── Footer note ─────────────────────────────────────────────────── */
+.hint {{
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin-top: 1.75rem;
+  line-height: 1.65;
+  border-top: 1px solid var(--mk-border);
+  padding-top: 1rem;
+}}
+.hint::before {{ content: '// '; color: var(--mk-comment); }}
+
+@media (max-width: 640px) {{
+  body {{ padding: 1.25rem 0.75rem; font-size: 14px; }}
+  .grid {{ grid-template-columns: 1fr; }}
+}}
+@media (prefers-reduced-motion: reduce) {{
+  *, *::before, *::after {{ transition-duration: 0.001ms !important; }}
+}}
 </style>
 </head>
 <body>
 <h1>Recyclarr</h1>
 <p class="muted">
-  Syncs TRaSH Guide quality profiles + custom-format scoring into Sonarr + Radarr.
+  Keeps TRaSH Guide quality profiles and custom-format scoring in step with
+  Sonarr and Radarr.
 </p>
 
 {banner}
@@ -221,7 +461,7 @@ code {{
   <form method="POST" action="/sync">
     <div class="actions">
       <button type="submit">Sync Now</button>
-      <span class="muted">Runs <code>recyclarr sync</code> against Sonarr + Radarr.</span>
+      <span class="muted">Runs <code>recyclarr sync</code> against Sonarr and Radarr.</span>
     </div>
   </form>
 </div>
@@ -230,7 +470,7 @@ code {{
   <div class="label">Change profile</div>
   <p class="muted" style="margin: 0 0 0.75rem 0">
     Picks the TRaSH Guide quality bundle Recyclarr applies. Saving rewrites
-    <code>recyclarr.yml</code> and runs a sync in one go — no need to edit
+    <code>recyclarr.yml</code> and syncs in one go, so you don't need to edit
     <code>.env</code> or re-run the installer.
   </p>
   <form method="POST" action="/profile">
@@ -258,12 +498,13 @@ code {{
 {output_section}
 
 <p class="hint">
-  Equivalent CLI: <code>docker exec recyclarr recyclarr sync</code> or
-  <code>bash recyclarr-sync.sh</code> for sync; for profile changes the
-  Configure screen in the installer also writes <code>.env</code> and
-  runs <code>python3 setup-arr-config.py --recyclarr-only</code> on
-  save. Schedule weekly sync via Synology Task Scheduler — see the
-  in-app Help → Recyclarr.
+  The same thing from a shell: <code>docker exec recyclarr recyclarr sync</code>,
+  or <code>bash recyclarr-sync.sh</code> if you want it logged. Changing the
+  profile in the installer's Configure screen does the same work, writing
+  <code>.env</code> and running
+  <code>python3 setup-arr-config.py --recyclarr-only</code> on save.
+  TRaSH publishes updates roughly weekly, so a scheduled sync is worth setting
+  up. See Help then Recyclarr in the installer for how, on your NAS.
 </p>
 
 </body>
@@ -554,7 +795,7 @@ def run_sync():
                 'and Sonarr/Radarr API reachability.', '')
     out = (r.stdout or '') + (r.stderr or '')
     if r.returncode == 0:
-        return ('ok', 'Sync completed — refresh Sonarr/Radarr Settings → Profiles to see updates.', out)
+        return ('ok', 'Sync completed. Refresh Settings then Profiles in Sonarr or Radarr to see it.', out)
     return ('err', f'Sync failed (exit {r.returncode}). See output below.', out)
 
 
@@ -586,7 +827,7 @@ def run_profile_change(sonarr, radarr):
     if sync_kind == 'ok':
         return ('ok',
                 f'Saved profiles (Sonarr={sonarr}, Radarr={radarr}) and synced. '
-                'Refresh Sonarr/Radarr Settings → Profiles to see updates.',
+                'Refresh Settings then Profiles in Sonarr or Radarr to see it.',
                 combined)
     return (sync_kind,
             f'Saved profiles but sync reported a problem: {sync_msg}',
@@ -656,7 +897,7 @@ class Handler(BaseHTTPRequestHandler):
             if not SYNC_LOCK.acquire(blocking=False):
                 self._send_html(render(
                     banner_kind='warn',
-                    banner_text='Another sync is already in progress — try again in a moment.',
+                    banner_text='Another sync is already running. Try again in a moment.',
                 ), code=409)
                 return
             try:
@@ -671,7 +912,7 @@ class Handler(BaseHTTPRequestHandler):
             if not SYNC_LOCK.acquire(blocking=False):
                 self._send_html(render(
                     banner_kind='warn',
-                    banner_text='Another sync is in progress — wait for it before changing the profile.',
+                    banner_text='Another sync is running. Wait for it to finish before changing the profile.',
                 ), code=409)
                 return
             try:
