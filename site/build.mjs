@@ -201,10 +201,15 @@ function renderToc(toc) {
   const items = toc.map((h) =>
     `<li class="toc-h${h.depth}"><a href="#${h.id}">${h.text}</a></li>`,
   ).join('\n')
-  return `<aside class="docs-toc"><div class="side-title">on this page</div><ul>\n${items}\n</ul></aside>`
+  return `<div class="side-group docs-toc"><div class="side-title">on this page</div><ol>\n${items}\n</ol></div>`
 }
 
-function renderSidebar(pages, current, rootPrefix) {
+/** Page navigation and the current page's contents, in one rail.
+ *
+ *  Both used to be rendered, one down each edge of the screen, which put
+ *  navigation on both sides of the reader at once. They're the same kind
+ *  of thing, so they belong in the same column. */
+function renderSidebar(pages, current, rootPrefix, toc) {
   const groups = new Map()
   for (const p of pages) {
     if (!p.meta.group) continue
@@ -228,7 +233,11 @@ function renderSidebar(pages, current, rootPrefix) {
     return `<div class="side-group"><div class="side-title">${escapeHtml(g)}</div><ul>\n${items}\n</ul></div>`
   }).join('\n')
 
-  return `<nav class="docs-sidebar" aria-label="Documentation">\n${blocks}\n</nav>`
+  // Contents first: it's about the page already open, so it's what the
+  // reader reaches for most. The full guide list sits under it.
+  const tocBlock = renderToc(toc)
+  const guides = `<div class="side-group-wrap">${blocks}</div>`
+  return `<nav class="docs-sidebar" aria-label="Documentation">\n${tocBlock}\n${guides}\n</nav>`
 }
 
 function renderNav(pages, current, rootPrefix) {
@@ -279,25 +288,30 @@ function mermaidScript() {
       darkMode: true,
       background: '#141414',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      fontSize: '14px',
+      // Diagram labels are read at a glance, unlike prose, so they run
+      // larger than body text rather than smaller.
+      fontSize: '15px',
 
-      primaryColor: '#2d2d2d',
-      primaryTextColor: '#F8F8F2',
-      primaryBorderColor: '#49483E',
-      secondaryColor: '#1e1e1e',
-      secondaryTextColor: '#F8F8F2',
-      secondaryBorderColor: '#49483E',
-      tertiaryColor: '#1e1e1e',
-      tertiaryTextColor: '#F8F8F2',
-      tertiaryBorderColor: '#49483E',
+      // Nodes sit lighter than the panel they're on, with a cyan border
+      // rather than the muted brown one. On a dark diagram a low-contrast
+      // border makes the boxes dissolve into the background.
+      primaryColor: '#39392f',
+      primaryTextColor: '#FFFFFF',
+      primaryBorderColor: '#66D9EF',
+      secondaryColor: '#2d2d2d',
+      secondaryTextColor: '#FFFFFF',
+      secondaryBorderColor: '#66D9EF',
+      tertiaryColor: '#2d2d2d',
+      tertiaryTextColor: '#FFFFFF',
+      tertiaryBorderColor: '#66D9EF',
 
-      lineColor: '#75715E',
-      textColor: '#F8F8F2',
-      mainBkg: '#2d2d2d',
-      nodeBorder: '#49483E',
-      nodeTextColor: '#F8F8F2',
-      clusterBkg: 'rgba(166, 226, 46, 0.05)',
-      clusterBorder: '#49483E',
+      lineColor: '#BFBBAA',
+      textColor: '#FFFFFF',
+      mainBkg: '#39392f',
+      nodeBorder: '#66D9EF',
+      nodeTextColor: '#FFFFFF',
+      clusterBkg: 'rgba(166, 226, 46, 0.10)',
+      clusterBorder: '#A6E22E',
       titleColor: '#A6E22E',
       edgeLabelBackground: '#141414',
 
@@ -320,9 +334,19 @@ function mermaidScript() {
     },
     // htmlLabels off: securityLevel 'strict' sanitizes embedded HTML
     // anyway, and plain SVG text labels inherit the page font cleanly.
+    // useMaxWidth on: Mermaid scales the SVG to fit the column. That
+    // shrinks label text along with it, so the real fix for legibility
+    // is keeping each diagram NARROW enough that the scale factor stays
+    // near 1 — vertical layouts, short labels, few nodes per rank —
+    // rather than turning scaling off and trading unreadable text for a
+    // horizontal scrollbar.
     flowchart: {
       curve: 'basis', useMaxWidth: true, htmlLabels: false,
-      padding: 12, nodeSpacing: 45, rankSpacing: 55,
+      padding: 16, nodeSpacing: 50, rankSpacing: 65,
+      // A subgraph title that wraps to two lines otherwise overlaps the
+      // first node inside it. Mermaid reserves no room for the second
+      // line without this.
+      subGraphTitleMargin: { top: 6, bottom: 18 },
     },
     // showSequenceNumbers must stay on: the prose refers to steps by
     // number ("if step 8 never happens"), and this setting overrides the
@@ -422,12 +446,11 @@ async function main() {
         ? `<p class="doc-lede">${escapeHtml(page.meta.lede)}</p>`
         : ''
       body = '<div class="docs">\n' +
-        renderSidebar(pages, page.slug, rootPrefix) + '\n' +
+        renderSidebar(pages, page.slug, rootPrefix, toc) + '\n' +
         `<main id="main" class="doc-content">\n` +
         `<h1>${escapeHtml(page.meta.title)}</h1>\n${lede}\n${html}\n` +
         renderPager(pages, page.slug, rootPrefix) +
-        `</main>\n` +
-        renderToc(toc) + '\n</div>'
+        `</main>\n</div>`
     }
 
     // Mermaid is only pulled in on pages that actually draw something,

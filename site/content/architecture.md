@@ -22,15 +22,15 @@ flowchart TB
 
   subgraph media["docker network: media"]
     direction TB
-    front["Seerr :5056 · Homepage :3000 · Plex :32400"]
-    arrs["Sonarr :49152 · Radarr :49151 · Lidarr :49154"]
-    prowlarr["Prowlarr :49150 - indexer manager"]
-    sab["SABnzbd :49155 - usenet"]
+    front["Seerr · Homepage · Plex"]
+    arrs["Sonarr · Radarr · Lidarr"]
+    prowlarr["Prowlarr — indexers"]
+    sab["SABnzbd — usenet"]
 
-    subgraph gluetun["gluetun - VPN network namespace"]
-      direction LR
-      qbit["qBittorrent :49156"]
-      slskd["slskd :5030"]
+    subgraph gluetun["gluetun — VPN namespace"]
+      direction TB
+      qbit["qBittorrent"]
+      slskd["slskd"]
       psync["Playlist Sync"]
     end
   end
@@ -40,12 +40,13 @@ flowchart TB
   browser --> front
   front --> arrs
   arrs --> prowlarr
-  arrs --> qbit
   arrs --> sab
-  arrs --> slskd
+  arrs --> qbit
+  qbit -.- slskd
+  slskd -.- psync
+  arrs --> disk
   qbit --> disk
   sab --> disk
-  arrs --> disk
   front --> disk
 ```
 
@@ -63,7 +64,7 @@ Instead, qBittorrent has no network interface at all. Compose gives it `network_
 flowchart LR
   subgraph ns["one shared network namespace"]
     direction TB
-    g["gluetun - wireguard tunnel"]
+    g["gluetun<br/>wireguard tunnel"]
     q["qBittorrent"]
     s["slskd"]
     p["Playlist Sync"]
@@ -74,7 +75,7 @@ flowchart LR
   p --- g
   g ==> vpn(["VPN provider"])
   vpn ==> net(["internet"])
-  g -.-> x["tunnel down: no route exists"]
+  g -.-> x["tunnel down:<br/>no route exists"]
 ```
 
 So when the tunnel drops there's nothing to react to. The route those containers would need simply isn't there. They lose connectivity and wait. Your real IP was never something they could fall back to, because they never had an interface that knew it.
@@ -95,11 +96,11 @@ That looks like a detail. It's the difference between your library holding one c
 
 ```mermaid
 flowchart TB
-  subgraph vol["DATA_ROOT mounted at /data - ONE filesystem"]
+  subgraph vol["DATA_ROOT at /data — ONE filesystem"]
     direction TB
-    t["/data/Downloads/Torrents/complete/Movie.2024.mkv"]
-    m["/data/Media/Movies/Movie (2024)/Movie.2024.mkv"]
-    inode[("one inode - 8 GB on disk")]
+    t["/data/Downloads/Torrents/<br/>complete/Movie.2024.mkv"]
+    m["/data/Media/Movies/<br/>Movie (2024)/Movie.2024.mkv"]
+    inode[("one inode<br/>8 GB on disk")]
   end
 
   t --> inode
@@ -151,27 +152,27 @@ The wizard is an Electron app on your PC. It installs nothing on your PC beyond 
 
 ```mermaid
 flowchart TB
-  subgraph pc["Your PC - Electron wizard"]
+  subgraph pc["Your PC — Electron wizard"]
     direction TB
-    w1["Welcome"] --> w2["Connect - SSH credentials"]
-    w2 --> w3["Detect - probe the NAS"]
-    w3 --> w4["Configure - services, VPN, quality"]
+    w1["Welcome"] --> w2["Connect<br/>SSH credentials"]
+    w2 --> w3["Detect<br/>probe the NAS"]
+    w3 --> w4["Configure<br/>services, VPN, quality"]
     w4 --> w5["Run"]
-    w5 --> w6["Done - health tiles"]
+    w5 --> w6["Done<br/>health tiles"]
   end
 
-  w4 --> envf[".env written by env-render.ts"]
-  envf --> payload["scripts/ + docker-compose.yml uploaded by SFTP"]
+  w4 --> envf[".env<br/>written by env-render.ts"]
+  envf --> payload["scripts/ + compose<br/>uploaded by SFTP"]
   payload --> steps
 
-  subgraph steps["setup.sh - 13 steps, on the NAS"]
+  subgraph steps["setup.sh — 13 steps, on the NAS"]
     direction TB
-    s1["1-2 permissions, directories"]
-    s3["3-5 firewall, VPN key, validate"]
-    s6["6 docker compose up -d"]
-    s7["7-10 configure every service via its HTTP API"]
-    s11["11 post-deploy health checks"]
-    s12["12-13 import any backlog"]
+    s1["1-2<br/>permissions, directories"]
+    s3["3-5<br/>firewall, VPN key, validate"]
+    s6["6<br/>docker compose up -d"]
+    s7["7-10<br/>configure every service<br/>via its HTTP API"]
+    s11["11<br/>post-deploy health checks"]
+    s12["12-13<br/>import any backlog"]
     s1 --> s3 --> s6 --> s7 --> s11 --> s12
   end
 
@@ -188,13 +189,13 @@ One file decides what your stack is, and that's `.env` on the NAS. What makes it
 
 ```mermaid
 flowchart TB
-  ui["Configure screen - React"]
-  schema["env-schema.ts - validates"]
-  render["env-render.ts - writes"]
+  ui["Configure screen<br/>React"]
+  schema["env-schema.ts<br/>validates"]
+  render["env-render.ts<br/>writes"]
   envf[".env on the NAS"]
-  bash["setup.sh - bash - is_enabled"]
-  py["setup-arr-config.py - python - read_env"]
-  compose["docker-compose.yml - COMPOSE_PROFILES"]
+  bash["setup.sh<br/>bash · is_enabled"]
+  py["setup-arr-config.py<br/>python · read_env"]
+  compose["docker-compose.yml<br/>COMPOSE_PROFILES"]
   tests["cross-language tests"]
 
   ui --> schema --> render --> envf
@@ -225,8 +226,8 @@ Opt-in services - a missing key counts as OFF. Upgrading never quietly installs 
 ```mermaid
 flowchart LR
   env[".env flags"]
-  env --> d1["ENABLE_SONARR - missing = ON"]
-  env --> d2["ENABLE_LIBRARIAN - missing = OFF"]
+  env --> d1["ENABLE_SONARR<br/>missing = ON"]
+  env --> d2["ENABLE_LIBRARIAN<br/>missing = OFF"]
   d1 --> p["COMPOSE_PROFILES"]
   d2 --> p
   p --> up["docker compose up -d"]

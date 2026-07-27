@@ -31,6 +31,27 @@
   --color-text-muted:   var(--mk-comment);
   --color-border:       var(--mk-border);
 
+  /* Navigation and UI text.
+     --mk-comment is Monokai's colour for code that has been commented
+     OUT. It is meant to recede, which is wrong for anything you expect
+     someone to read and click. Navigation, sidebar entries and captions
+     use --color-nav instead, which clears WCAG AA on the page
+     background. --mk-comment is kept strictly for the decorative
+     comment marks that frame headings.
+
+     Colour roles, kept apart on purpose:
+       green  headings, brand, primary action
+       cyan   links, list markers, contents entries
+       pink   current page
+       yellow inline code, emphasis
+     Orange is deliberately absent from body copy. Next to the olive of
+     --mk-comment it reads muddy, so it survives only on the card
+     borders, where it never touches green text. */
+  --color-nav:          #BFBBAA;
+  --color-nav-hover:    var(--mk-fg);
+  --color-link:         var(--mk-cyan);
+  --color-link-hover:   #A8E9F7;
+
   --font:        'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   --radius:      3px;
   --shadow:      0 2px 8px rgba(0,0,0,0.4);
@@ -77,8 +98,8 @@ body::after {
   z-index: 9999;
 }
 
-a { color: var(--mk-orange); text-decoration: none; }
-a:hover { color: var(--mk-yellow); text-decoration: underline; }
+a { color: var(--color-link); text-decoration: none; }
+a:hover { color: var(--color-link-hover); text-decoration: underline; }
 
 ::selection { background: rgba(166, 226, 46, 0.25); color: var(--mk-fg); }
 
@@ -147,31 +168,60 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
 }
 
 #nav-links a {
-  color: var(--mk-comment);
+  color: var(--color-nav);
   text-decoration: none;
   padding: 0.35rem 0.7rem;
   border-radius: var(--radius);
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   font-weight: 500;
   transition: color 0.1s, background 0.1s;
   display: block;
 }
-#nav-links a:hover { color: var(--mk-fg); background: rgba(255,255,255,0.05); text-decoration: none; }
+#nav-links a:hover {
+  color: var(--color-nav-hover);
+  background: rgba(255,255,255,0.07);
+  text-decoration: none;
+}
 #nav-links a.active {
   color: var(--mk-pink);
+  font-weight: 700;
+  background: rgba(249, 38, 114, 0.10);
   text-shadow: 0.02em 0 0 rgba(249, 38, 114, 0.4), -0.02em 0 0 rgba(102, 217, 239, 0.4);
 }
 #nav-links a.active::before { content: '# '; }
 
-#nav-social { display: flex; align-items: center; gap: 0.75rem; }
+#nav-social { display: flex; align-items: center; gap: 0.5rem; }
 .social-link {
-  color: var(--mk-comment);
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--mk-border);
+  color: var(--color-nav);
+  font-size: 0.78rem;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid #5f5d52;
   border-radius: var(--radius);
+  white-space: nowrap;
 }
-.social-link:hover { color: var(--mk-cyan); border-color: var(--mk-cyan); text-decoration: none; }
+.social-link:hover {
+  color: var(--mk-cyan);
+  border-color: var(--mk-cyan);
+  background: rgba(102, 217, 239, 0.08);
+  text-decoration: none;
+}
+
+/* Ko-fi. Warm pink rather than the palette's orange, so it reads as the
+   one "spend money" affordance without landing next to green text. */
+.social-kofi {
+  color: var(--mk-pink);
+  border-color: var(--mk-pink);
+}
+.social-kofi::before { content: '☕ '; }
+.social-kofi:hover {
+  background: var(--mk-pink);
+  color: var(--mk-bg);
+  border-color: var(--mk-pink);
+  text-decoration: none;
+}
+.footer-kofi { color: var(--mk-pink) !important; }
+.footer-kofi::before { content: '☕ '; }
+.footer-kofi:hover { color: #FF6FA3 !important; text-decoration: none; }
 
 .nav-toggle {
   display: none;
@@ -306,30 +356,35 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
 /* ============================================================
    Doc layout — sidebar + article + TOC
    ============================================================ */
+/* One rail, on the left. The contents list used to run down the right
+   edge, which meant navigation on both sides of whatever you were
+   reading. Both are navigation, so they share a column now. */
 .docs {
-  max-width: 1400px;
+  max-width: 1220px;
   margin: 0 auto;
   padding: 0 1.5rem;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 200px;
-  gap: 2.5rem;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 3rem;
   align-items: start;
 }
 
 .docs-sidebar {
   position: sticky;
-  top: calc(var(--nav-height) + 1.5rem);
+  top: calc(var(--nav-height) + 1.25rem);
   padding: 2rem 0;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   max-height: calc(100vh - var(--nav-height) - 2rem);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #5f5d52 transparent;
 }
 
-.docs-sidebar .side-group { margin-bottom: 1.25rem; }
+.docs-sidebar .side-group { margin-bottom: 1.35rem; }
 .docs-sidebar .side-title {
   color: var(--mk-comment);
-  font-size: 0.72rem;
-  margin-bottom: 0.4rem;
+  font-size: 0.74rem;
+  margin-bottom: 0.45rem;
   letter-spacing: 0.03em;
 }
 .docs-sidebar .side-title::before { content: '/* '; }
@@ -338,74 +393,77 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
 .docs-sidebar ul { list-style: none; }
 .docs-sidebar li a {
   display: block;
-  color: var(--mk-comment);
-  padding: 0.22rem 0.5rem 0.22rem 0.85rem;
-  border-left: 2px solid transparent;
+  color: var(--color-nav);
+  padding: 0.26rem 0.5rem 0.26rem 0.85rem;
+  border-left: 2px solid #3f3e36;
   border-radius: 0 var(--radius) var(--radius) 0;
 }
 .docs-sidebar li a:hover {
-  color: var(--mk-fg);
-  background: rgba(255,255,255,0.04);
-  border-left-color: var(--mk-comment);
+  color: var(--color-nav-hover);
+  background: rgba(255,255,255,0.06);
+  border-left-color: var(--mk-cyan);
   text-decoration: none;
 }
 .docs-sidebar li a.active {
   color: var(--mk-pink);
+  font-weight: 700;
   border-left-color: var(--mk-pink);
-  background: rgba(249, 38, 114, 0.06);
+  background: rgba(249, 38, 114, 0.10);
 }
 
-/* Right-hand table of contents */
+/* Contents list, now the top block of the same rail. Numbered, because
+   a reader referring back to "section 4" wants to find section 4. */
 .docs-toc {
-  position: sticky;
-  top: calc(var(--nav-height) + 1.5rem);
-  padding: 2rem 0;
-  font-size: 0.75rem;
-  max-height: calc(100vh - var(--nav-height) - 2rem);
-  overflow-y: auto;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--mk-border);
 }
-.docs-toc .side-title {
-  color: var(--mk-comment);
-  font-size: 0.72rem;
-  margin-bottom: 0.4rem;
+.docs-toc ol {
+  list-style: none;
+  counter-reset: toc;
 }
-.docs-toc .side-title::before { content: '/* '; }
-.docs-toc .side-title::after  { content: ' */'; }
-.docs-toc ul { list-style: none; }
+.docs-toc li { counter-increment: toc; }
 .docs-toc li a {
   display: block;
-  color: var(--mk-comment);
-  padding: 0.18rem 0 0.18rem 0.6rem;
-  border-left: 2px solid transparent;
-  line-height: 1.4;
+  color: var(--color-nav);
+  padding: 0.2rem 0.4rem 0.2rem 0;
+  border-left: none;
+  line-height: 1.45;
+  font-size: 0.78rem;
 }
-.docs-toc li a:hover { color: var(--mk-fg); text-decoration: none; border-left-color: var(--mk-comment); }
-.docs-toc li a.active { color: var(--mk-cyan); border-left-color: var(--mk-cyan); }
-.docs-toc li.toc-h3 a { padding-left: 1.3rem; font-size: 0.72rem; opacity: 0.85; }
+.docs-toc li a::before {
+  content: counter(toc) '. ';
+  color: var(--mk-cyan);
+  font-weight: 700;
+}
+.docs-toc li a:hover { color: var(--color-nav-hover); text-decoration: none; }
+.docs-toc li a.active { color: var(--mk-cyan); font-weight: 700; }
+
+/* Sub-headings continue the same counter but sit indented and marked
+   with a bullet rather than a number, so the numbering stays a flat
+   1..n that matches how people actually refer to sections. */
+.docs-toc li.toc-h3 { counter-increment: none; }
+.docs-toc li.toc-h3 a {
+  padding-left: 1.1rem;
+  font-size: 0.74rem;
+  opacity: 0.9;
+}
+.docs-toc li.toc-h3 a::before {
+  content: '• ';
+  color: var(--mk-cyan);
+}
 
 /* ============================================================
    Doc content — long-form prose
    ============================================================ */
-/* The article itself is unconstrained so that figures, code and tables
-   can use the full column. Readable line length is enforced on the text
-   elements instead — a 100-character line of prose is hard to read, but
-   a diagram squeezed to 80ch is unreadable, and one max-width can't
-   serve both. */
+/* One measure for everything. Prose used to be capped narrower than the
+   tables and figures beside it, which left every table visibly
+   overhanging the paragraph above it. Text, tables, code and diagrams
+   now share the column width, so the left and right edges line up all
+   the way down the page. */
 .doc-content {
   padding: 2.25rem 0 5rem;
   min-width: 0;
-}
-
-.doc-content > p,
-.doc-content > ul,
-.doc-content > ol,
-.doc-content > h2,
-.doc-content > h3,
-.doc-content > h4,
-.doc-content > blockquote,
-.doc-content > .callout,
-.doc-lede {
-  max-width: 78ch;
+  max-width: 860px;
 }
 
 .doc-content > h1 {
@@ -471,8 +529,10 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
   color: var(--mk-fg);
   opacity: 0.88;
 }
-.doc-content ul > li::marker { color: var(--mk-green); }
-.doc-content ol > li::marker { color: var(--mk-green); }
+/* Markers in cyan, not green. Green is the heading colour, and using it
+   for bullets too made every list read as a run of small headings. */
+.doc-content ul > li::marker { color: var(--mk-cyan); }
+.doc-content ol > li::marker { color: var(--mk-cyan); font-weight: 700; }
 .doc-content li > ul, .doc-content li > ol { margin-top: 0.4rem; margin-bottom: 0.3rem; }
 
 .doc-content strong { color: var(--mk-fg); opacity: 1; font-weight: 700; }
@@ -484,8 +544,8 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
   margin: 2.5rem 0;
 }
 
-.doc-content a { color: var(--mk-orange); }
-.doc-content a:hover { color: var(--mk-yellow); }
+.doc-content a { color: var(--color-link); }
+.doc-content a:hover { color: var(--color-link-hover); }
 
 /* Inline code */
 .doc-content code {
@@ -700,7 +760,7 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
   border-top: 1px solid var(--mk-border);
   font-size: 0.8rem;
 }
-.doc-pager a { color: var(--mk-orange); }
+.doc-pager a { color: var(--color-link); }
 .doc-pager .pager-prev::before { content: '← '; color: var(--mk-comment); }
 .doc-pager .pager-next::after  { content: ' →'; color: var(--mk-comment); }
 .doc-pager .pager-spacer { flex: 1; }
@@ -724,9 +784,8 @@ a:hover { color: var(--mk-yellow); text-decoration: underline; }
 /* ============================================================
    Responsive
    ============================================================ */
-@media (max-width: 1200px) {
-  .docs { grid-template-columns: 200px minmax(0, 1fr); gap: 2rem; }
-  .docs-toc { display: none; }
+@media (max-width: 1100px) {
+  .docs { grid-template-columns: 220px minmax(0, 1fr); gap: 2rem; }
 }
 
 @keyframes nav-crt-open {
