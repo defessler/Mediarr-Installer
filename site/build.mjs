@@ -66,11 +66,25 @@ function makeSlugger() {
   const seen = new Map()
   return (text) => {
     const base = String(text)
-      .toLowerCase()
       .replace(/<[^>]+>/g, '')
+      // Decode first. The text arrives as rendered HTML, so an apostrophe
+      // is "&#39;" — slugging that directly leaves the digits behind and
+      // "What you'll learn" anchors as #what-you39ll-learn.
+      .replace(/&#(\d+);/g, (_m, d) => String.fromCharCode(Number(d)))
+      .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+      .toLowerCase()
       .replace(/[^\w\s-]/g, '')
       .trim()
-      .replace(/\s+/g, '-') || 'section'
+      // One hyphen per whitespace CHARACTER, not per run, and no
+      // collapsing afterwards. This mirrors GitHub's slugger exactly.
+      // "Chapter 0 — Prerequisites" loses the dash to the strip above,
+      // leaving two spaces, so GitHub anchors it #chapter-0--prerequisites
+      // with the double hyphen. Pages ported from the wiki carry
+      // hand-written tables of contents with those anchors baked in, so
+      // tidying the slug here silently breaks every one of them.
+      .replace(/\s/g, '-') || 'section'
     const n = (seen.get(base) ?? 0) + 1
     seen.set(base, n)
     return n === 1 ? base : `${base}-${n}`
@@ -181,8 +195,11 @@ function rewriteLinks(html, pagesBySlug, rootPrefix, broken, sourceName) {
 
 function renderToc(toc) {
   if (toc.length < 3) return ''
+  // h.text is captured from marked's already-rendered inline HTML with
+  // tags stripped, so its entities are escaped once already. Escaping
+  // again here turns an apostrophe into a literal "&#39;" on the page.
   const items = toc.map((h) =>
-    `<li class="toc-h${h.depth}"><a href="#${h.id}">${escapeHtml(h.text)}</a></li>`,
+    `<li class="toc-h${h.depth}"><a href="#${h.id}">${h.text}</a></li>`,
   ).join('\n')
   return `<aside class="docs-toc"><div class="side-title">on this page</div><ul>\n${items}\n</ul></aside>`
 }
@@ -381,6 +398,7 @@ async function main() {
   await mkdir(OUT, { recursive: true })
 
   const broken = []
+  const badAnchors = []
   let count = 0
   for (const page of pages) {
     const isHome = page.slug === 'index'
@@ -431,6 +449,16 @@ async function main() {
       .replaceAll('{{BODY}}', body)
       .replaceAll('{{MERMAID}}', mermaid)
 
+    // In-page anchors, checked against the finished HTML so it covers
+    // hand-written tables of contents in the markdown as well as the
+    // generated TOC. Ported pages carry GitHub-flavoured anchors baked
+    // into their own contents lists, and a slugger that disagrees with
+    // GitHub by one character breaks all of them at once, silently.
+    const ids = new Set([...out.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]))
+    for (const m of out.matchAll(/href="#([^"]+)"/g)) {
+      if (!ids.has(m[1])) badAnchors.push(`${page.source} -> #${m[1]}`)
+    }
+
     const dest = isHome ? join(OUT, 'index.html') : join(OUT, page.slug, 'index.html')
     await mkdir(dirname(dest), { recursive: true })
     await writeFile(dest, out, 'utf8')
@@ -441,6 +469,14 @@ async function main() {
   // Tells GitHub Pages to serve the directory as-is instead of running it
   // through Jekyll, which would otherwise skip files beginning with _.
   await writeFile(join(OUT, '.nojekyll'), '', 'utf8')
+
+  if (badAnchors.length) {
+    console.error(`\n${badAnchors.length} in-page anchor(s) point at no heading:`)
+    for (const a of [...new Set(badAnchors)]) console.error(`  ${a}`)
+    console.error('\nUsually a heading was renamed, or the slug rules drifted ' +
+      "from GitHub's (which is what ported contents lists assume).")
+    process.exit(1)
+  }
 
   if (broken.length) {
     console.error(`\n${broken.length} unresolved internal link(s):`)
