@@ -30,6 +30,12 @@ const OPT_IN_FLAGS: { key: keyof EnvFormValues; profile: string }[] = [
   { key: 'ENABLE_PLAYLIST_SYNC', profile: 'playlists' },
   { key: 'ENABLE_DISPATCHARR', profile: 'livetv' },
   { key: 'ENABLE_LIBRARIAN', profile: 'librarian' },
+  // Not an ENABLE_ flag and not a compose profile, but it carries the
+  // same explicit-true semantics and the same failure mode: render it
+  // as absent and the capability silently never switches on, with the
+  // user having ticked the box. It gates deleting media, so a silent
+  // disagreement here is worth pinning too.
+  { key: 'LIBRARIAN_ALLOW_ACTIONS', profile: '' },
 ]
 
 /** Render a full .env with `key` set to `value`, then read the emitted line. */

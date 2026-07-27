@@ -751,6 +751,8 @@ const FIELD_LABELS: Record<string, string> = {
   DISPATCHARR_ADMIN_PASS: 'Live TV admin password',
   LIVETV_CHANNEL_PACKS: 'Live TV channel packs',
   ENABLE_LIBRARIAN: 'Librarian',
+  LIBRARIAN_ALLOW_ACTIONS: 'Librarian re-grab actions',
+  LIBRARIAN_MAX_BATCH: 'Librarian batch cap',
   USENET_USER: 'Usenet username',
   USENET_PASS: 'Usenet password',
   VPN_PROVIDER: 'VPN provider',
@@ -1471,6 +1473,64 @@ export function ConfigureScreen() {
           )}
         </div>
 
+      </CollapsibleGroup>
+
+      {/* ── Group: Storage report ──────────────────────────────── */}
+      <CollapsibleGroup
+        id="librarian"
+        title="Storage report"
+        icon={<HardDrive size={20} className="text-lime-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="what's eating your disk, and re-grabbing at another quality"
+        open={!!openGroups.librarian}
+        onToggle={() => toggleGroup('librarian')}
+      >
+        {isOptInEnabled(config.ENABLE_LIBRARIAN as string | undefined) ? (
+          <section className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Librarian reads size and quality straight out of Sonarr, Radarr and
+              Lidarr and serves one page on{' '}
+              <code className="font-mono text-slate-300">http://&lt;NAS&gt;:8890</code>.
+              It ranks your library by <span className="font-medium text-slate-300">bytes per hour</span>,
+              which finds bloated remuxes where raw size only finds long shows, and
+              flags what you have never played.
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-emerald-500"
+                  checked={isOptInEnabled(config.LIBRARIAN_ALLOW_ACTIONS as string | undefined)}
+                  onChange={(e) => update('LIBRARIAN_ALLOW_ACTIONS', e.target.checked ? 'true' : 'false')}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-slate-200">
+                    Allow re-grab actions (upgrade &amp; shrink)
+                  </span>
+                  <span className="block text-xs text-slate-400 mt-0.5">
+                    Off by default. Leave it off and the page is read-only: it issues
+                    nothing but GETs and cannot change or delete anything.
+                  </span>
+                </span>
+              </label>
+              {isOptInEnabled(config.LIBRARIAN_ALLOW_ACTIONS as string | undefined) && (
+                <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2 leading-relaxed">
+                  Librarian has no login, so anyone who can reach that port on your
+                  network can use these. Upgrades only ever add a better file.
+                  &ldquo;Shrink&rdquo; deletes the current files through the arr, and
+                  refuses to run unless the arr has a Recycle Bin configured, so
+                  deletions stay recoverable. Every action shows you the exact plan
+                  and waits for a second confirmation.
+                </p>
+              )}
+            </div>
+          </section>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Storage report is off. Enable{' '}
+            <span className="font-medium text-slate-300">Librarian</span> in the
+            Services group above to configure it.
+          </p>
+        )}
       </CollapsibleGroup>
 
       {/* ── Group: Live TV & DVR ───────────────────────────────── */}

@@ -175,6 +175,10 @@ const defaultConfig: Partial<EnvFormValues> = {
   // Storage analysis (Librarian) is OPT-IN too — default OFF. Read-only and
   // credential-free, so there is nothing else to pre-seed.
   ENABLE_LIBRARIAN: 'false',
+  // Actions stay off even when the report is on. Enabling them is a
+  // separate, deliberate choice on the Configure screen.
+  LIBRARIAN_ALLOW_ACTIONS: 'false',
+  LIBRARIAN_MAX_BATCH: '25',
 
   PUID: '1026',
   PGID: '100',

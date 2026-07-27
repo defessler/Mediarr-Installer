@@ -48,10 +48,26 @@ What it reports
                     only view that really matters: big AND never
                     watched. Degrades silently to size-only.
 
-Read-only, always. This script issues nothing but GETs — it never
-edits a profile, never triggers a search, never deletes a file. The
-re-grab actions are deliberately a separate, later change so this one
-can be pointed at a live library without a second thought.
+Read-only by default. Left alone this script issues nothing but GETs,
+so it cannot edit a profile, trigger a search, or delete a file, and you
+can point it at a live library without a second thought.
+
+Set LIBRARIAN_ALLOW_ACTIONS=true and it additionally offers re-grab:
+
+  Upgrade  set a higher quality profile on the selected items, then
+           search. Nothing is deleted. Each existing file stays until a
+           better release actually imports.
+  Shrink   set a LOWER profile FIRST, then delete the current files
+           through the arr, then search. The order is the whole point:
+           search before the profile change and you re-grab the release
+           you were trying to replace.
+
+Actions are gated separately from ENABLE_LIBRARIAN because this page has
+no authentication — turning on a report must not hand everyone who can
+reach the port a delete button. On top of that, a delete refuses unless
+the arr has a Recycle Bin configured, every action is planned and then
+confirmed against a single-use token, runs are capped, and what was done
+(including deleted paths) is appended to an audit log.
 """
 
 import argparse
@@ -60,6 +76,7 @@ import html
 import json
 import os
 import re
+import secrets
 import sys
 import threading
 import time
@@ -303,6 +320,130 @@ def bytes_per_hour(size, minutes):
     return size / (minutes / 60.0)
 
 
+def fuzzy_score(query, text):
+    """Score `text` against `query`. Returns (matched, score).
+
+    A plain subsequence match on its own ranks terribly: searching "bat"
+    would score "Batman" and "The Great British Bake Off" alike, because
+    both contain b, a and t in order. So matches are weighted by how
+    contiguous and how word-aligned they are, which is what makes a
+    short query feel like it found the obvious thing.
+
+    A multi-word query is AND across terms, each scored separately, so
+    "remux 2160" finds Remux-2160p without caring about the order or
+    what sits between them.
+
+    Mirrored by fuzzyScore() in the page's JavaScript. Change one and
+    change the other, or the same search ranks differently depending on
+    whether you typed it into the CLI or the browser.
+    """
+    if not query:
+        return True, 0
+    text_l = str(text).lower()
+    total = 0
+    for term in str(query).lower().split():
+        ok, s = _fuzzy_term(term, text_l)
+        if not ok:
+            return False, 0
+        total += s
+    return True, total
+
+
+def _fuzzy_term(term, text_l):
+    """One whitespace-free term against pre-lowercased text."""
+    if not term:
+        return True, 0
+
+    # Contiguous substring is always the better match, and a hit at a
+    # word boundary is better still: "man" should prefer "Man of Steel"
+    # over "Batman".
+    idx = text_l.find(term)
+    if idx != -1:
+        score = 1000 - min(idx, 100) * 2
+        if idx == 0 or not text_l[idx - 1].isalnum():
+            score += 60
+        return True, score
+
+    # Scattered subsequence. Reward consecutive characters and hits that
+    # start a word, and penalise long gaps.
+    pos = 0
+    score = 0
+    prev = -2
+    for ch in term:
+        found = text_l.find(ch, pos)
+        if found == -1:
+            return False, 0
+        if found == prev + 1:
+            score += 10
+        if found == 0 or not text_l[found - 1].isalnum():
+            score += 8
+        score += max(0, 12 - (found - pos))
+        prev = found
+        pos = found + 1
+    return True, score
+
+
+def item_haystack(it):
+    """The text a search runs against. Title carries most of the intent,
+    but folding in quality, codec and the arr name means "sonarr remux"
+    or "x265" work without a separate syntax for them."""
+    return ' '.join(str(x) for x in (
+        it.get('title', ''),
+        it.get('year') or '',
+        it.get('quality', ''),
+        it.get('codec', ''),
+        it.get('arr', ''),
+        it.get('kind', ''),
+    ) if x)
+
+
+def filter_items(items, query='', min_size=0, quality='', unplayed=False, arr=''):
+    """Apply every filter, then sort by relevance when a query is given
+    and by size when one isn't. Filters are AND, which is what people
+    expect from a row of controls."""
+    out = []
+    for it in items:
+        if min_size and (it.get('size') or 0) < min_size:
+            continue
+        if quality and quality.lower() not in (it.get('quality') or '').lower():
+            continue
+        if arr and it.get('arr') != arr:
+            continue
+        if unplayed and (it.get('plays') or 0) > 0:
+            continue
+        if query:
+            ok, score = fuzzy_score(query, item_haystack(it))
+            if not ok:
+                continue
+            out.append((score, it))
+        else:
+            out.append((0, it))
+    if query:
+        # Relevance first, size as the tie-break, so equally-good matches
+        # still lead with the one worth acting on.
+        out.sort(key=lambda p: (p[0], p[1].get('size') or 0), reverse=True)
+    else:
+        out.sort(key=lambda p: p[1].get('size') or 0, reverse=True)
+    return [it for _, it in out]
+
+
+def parse_size(text):
+    """'500MB', '4.5 GB', '1t' -> bytes. Returns 0 on anything
+    unparseable, so a typo widens the search rather than silently
+    hiding everything."""
+    if not text:
+        return 0
+    m = re.match(r'^\s*([\d.]+)\s*([kmgt]?)b?\s*$', str(text).lower())
+    if not m:
+        return 0
+    try:
+        n = float(m.group(1))
+    except ValueError:
+        return 0
+    return int(n * {'': 1, 'k': 1024, 'm': 1024**2,
+                    'g': 1024**3, 't': 1024**4}[m.group(2)])
+
+
 def norm_title(s):
     """Loose title key for cross-app joins. Lowercase, drop everything
     that isn't alphanumeric or space, collapse runs of space. Plex,
@@ -350,6 +491,12 @@ def _epoch_date(value):
 #   path      library path (used for the watch-data join)
 #   added     ISO date the item entered the library
 #   monitored bool
+#   arr       'radarr' | 'sonarr' | 'lidarr' — which app owns it
+#   id        that app's own id for the item
+#   profile   its current quality-profile id
+#
+# `arr`, `id` and `profile` exist so an action can address the item
+# later. The report alone never needs them.
 
 def collect_radarr(base, key, api):
     """Radarr gives us everything in one call: /movie carries sizeOnDisk,
@@ -379,6 +526,10 @@ def collect_radarr(base, key, api):
             'path': mf.get('path') or m.get('path') or '',
             'added': _iso_date(m.get('added')),
             'monitored': bool(m.get('monitored')),
+            'arr': 'radarr',
+            'id': m.get('id'),
+            'profile': m.get('qualityProfileId'),
+            'fileId': mf.get('id'),
         })
     return items, {}, None
 
@@ -416,6 +567,10 @@ def collect_sonarr(base, key, api, want_quality_detail=True):
             'path': s.get('path') or '',
             'added': _iso_date(s.get('added')),
             'monitored': bool(s.get('monitored')),
+            'arr': 'sonarr',
+            'id': s.get('id'),
+            'profile': s.get('qualityProfileId'),
+            'fileId': None,   # series own many files; resolved at action time
         })
         id_by_index.append(s.get('id'))
 
@@ -497,6 +652,10 @@ def collect_lidarr(base, key, api):
             'path': a.get('path') or '',
             'added': _iso_date(a.get('added')),
             'monitored': bool(a.get('monitored')),
+            'arr': 'lidarr',
+            'id': a.get('id'),
+            'profile': a.get('qualityProfileId'),
+            'fileId': None,
         })
     return items, {}, None
 
@@ -545,6 +704,316 @@ def collect_cutoff_unmet(base, key, api):
     if isinstance(data, dict):
         return data.get('totalRecords') or 0
     return 0
+
+
+# ── Re-grab actions ──────────────────────────────────────────────────
+#
+# Everything above this line reads. Everything below can change your
+# library, so the guard rails matter more than the features.
+#
+# Why actions are OFF by default, separately from ENABLE_LIBRARIAN:
+# this web UI has no authentication. Anyone who can reach the port can
+# use it, which is fine for a report and emphatically not fine for a
+# delete button. Turning the report on must not hand the whole LAN the
+# ability to remove media, so the capability has its own explicit flag.
+#
+# On top of that, in order:
+#   * a delete refuses outright unless the arr has a Recycle Bin path
+#     configured, so anything removed is recoverable
+#   * every action is planned first and applied second, against a
+#     single-use token, so nothing happens without someone seeing the
+#     exact list
+#   * a per-run cap bounds the blast radius of one mistake
+#   * every applied action is appended to an audit log with the paths
+#     that were deleted, which is what makes a restore possible
+
+ACTION_TOKENS = {}
+ACTION_TOKEN_TTL = 600
+_ACTION_LOCK = threading.Lock()
+
+DEFAULT_MAX_BATCH = 25
+
+
+def actions_enabled(env):
+    """Explicit-true only. A missing key means off, matching the opt-in
+    convention the rest of the stack uses for anything consequential."""
+    return (env.get('LIBRARIAN_ALLOW_ACTIONS') or '').strip().lower() in (
+        '1', 'true', 'yes', 'on')
+
+
+def max_batch(env):
+    try:
+        n = int((env.get('LIBRARIAN_MAX_BATCH') or '').strip())
+        return n if n > 0 else DEFAULT_MAX_BATCH
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_BATCH
+
+
+def state_dir():
+    """Somewhere writable for the audit log. The install dir is mounted
+    read-only on purpose, so compose supplies a narrow writable mount at
+    /state; on the host we fall back to <install>/librarian."""
+    if os.path.isdir('/state'):
+        return '/state'
+    d = os.path.join(install_dir(), 'librarian')
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return ''
+    return d
+
+
+def audit(entry):
+    """Append one JSON line to the audit log. Best effort: failing to
+    write the log must not abort an action that already half-happened,
+    but it is reported so a silent loss of the record is visible."""
+    d = state_dir()
+    if not d:
+        return 'no writable state directory — action not logged'
+    try:
+        with open(os.path.join(d, 'actions.log'), 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, default=str) + '\n')
+        return ''
+    except OSError as e:
+        return f'could not write audit log: {e}'
+
+
+def arr_request(base, key, path, method='GET', data=None, timeout=60):
+    """A write-capable sibling of http_json. Separate so every mutating
+    call is visibly a different function from the read path."""
+    body = json.dumps(data).encode() if data is not None else None
+    headers = dict(arr_headers(key))
+    req = urllib.request.Request(f'{base}{path}', data=body,
+                                 headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            if not raw:
+                return {}
+            try:
+                return json.loads(raw)
+            except ValueError:
+                return {}
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors='replace')[:200]
+        raise LibrarianSourceError(f'HTTP {e.code} on {method} {path}: {detail}')
+    except (urllib.error.URLError, OSError) as e:
+        raise LibrarianSourceError(f'{method} {path} failed: {e}')
+
+
+def collect_quality_profiles(base, key, api):
+    """[{id, name}] for the profile pickers."""
+    data = http_json(f'{base}/api/{api}/qualityprofile', arr_headers(key), timeout=30)
+    return [{'id': p.get('id'), 'name': p.get('name')}
+            for p in (data or []) if isinstance(p, dict) and p.get('id') is not None]
+
+
+def recycle_bin_path(base, key, api):
+    """The arr's configured Recycle Bin, or '' when it has none.
+
+    This is the difference between a delete you can undo and one you
+    cannot. Deleting through the arr's API moves the file here rather
+    than unlinking it, but only if it's set."""
+    data = http_json(f'{base}/api/{api}/config/mediamanagement',
+                     arr_headers(key), timeout=30)
+    if isinstance(data, dict):
+        return (data.get('recycleBin') or '').strip()
+    return ''
+
+
+# Per-arr action wiring. Kept as data so the plan/apply code doesn't
+# grow a branch per app.
+ACTION_SPEC = {
+    'radarr': {
+        'editor': '/movie/editor', 'ids_field': 'movieIds',
+        'search_cmd': 'MoviesSearch', 'search_ids': 'movieIds',
+        'search_one': None,
+        'files': lambda i: f'/moviefile?movieId={i}',
+        'delete_file': lambda f: f'/moviefile/{f}',
+        'can_shrink': True,
+    },
+    'sonarr': {
+        'editor': '/series/editor', 'ids_field': 'seriesIds',
+        'search_cmd': 'SeriesSearch', 'search_ids': None,  # one call per series
+        'search_one': 'seriesId',
+        'files': lambda i: f'/episodefile?seriesId={i}',
+        'delete_file': lambda f: f'/episodefile/{f}',
+        'can_shrink': True,
+    },
+    'lidarr': {
+        'editor': '/artist/editor', 'ids_field': 'artistIds',
+        'search_cmd': 'ArtistSearch', 'search_ids': None,
+        'search_one': 'artistId',
+        'files': lambda i: f'/trackfile?artistId={i}',
+        'delete_file': lambda f: f'/trackfile/{f}',
+        # Shrinking an artist means deleting every track file they own,
+        # which is a far blunter action than shrinking one film. Upgrade
+        # works; shrink is refused rather than made easy to fire.
+        'can_shrink': False,
+    },
+}
+
+
+def build_plan(report, env, mode, arr_name, profile_id, item_ids):
+    """Work out exactly what an action would do, without doing any of it.
+
+    Returns a plan dict. Raises LibrarianSourceError with a plain-English
+    reason when the action isn't allowed, which the UI shows verbatim.
+    """
+    if mode not in ('upgrade', 'shrink'):
+        raise LibrarianSourceError(f'unknown action "{mode}"')
+    if not actions_enabled(env):
+        raise LibrarianSourceError(
+            'Actions are disabled. Set LIBRARIAN_ALLOW_ACTIONS=true in .env '
+            'and re-run the installer to enable them.')
+
+    spec = ACTION_SPEC.get(arr_name)
+    conn = (report.get('connections') or {}).get(arr_name)
+    if not spec or not conn:
+        raise LibrarianSourceError(f'{arr_name} is not reachable right now')
+    if mode == 'shrink' and not spec['can_shrink']:
+        raise LibrarianSourceError(
+            f'Shrinking is not offered for {arr_name}: it would mean deleting '
+            'every file the item owns, which is too blunt to put behind one '
+            'button. Change the profile in the app if you really want it.')
+
+    cap = max_batch(env)
+    wanted = set(item_ids)
+    items = [i for i in report['items']
+             if i.get('arr') == arr_name and i.get('id') in wanted]
+    if not items:
+        raise LibrarianSourceError('None of the selected items were found in the current scan')
+    if len(items) > cap:
+        raise LibrarianSourceError(
+            f'{len(items)} items selected but the per-run cap is {cap}. '
+            'Do it in smaller batches, or raise LIBRARIAN_MAX_BATCH.')
+
+    profiles = conn.get('profiles') or []
+    target = next((p for p in profiles if p['id'] == profile_id), None)
+    if not target:
+        raise LibrarianSourceError('That quality profile no longer exists')
+
+    plan = {
+        'mode': mode,
+        'arr': arr_name,
+        'label': ARRS[arr_name]['label'],
+        'profile_id': profile_id,
+        'profile_name': target['name'],
+        'items': [{'id': i['id'], 'title': i['title'], 'year': i.get('year'),
+                   'size': i.get('size') or 0, 'quality': i.get('quality') or '',
+                   'path': i.get('path') or ''} for i in items],
+        'total_size': sum(i.get('size') or 0 for i in items),
+        'deletes_files': mode == 'shrink',
+        'recycle_bin': '',
+        'steps': [],
+    }
+
+    if mode == 'upgrade':
+        plan['steps'] = [
+            f'Set the quality profile of {len(items)} item(s) to "{target["name"]}".',
+            'Trigger a search for each one.',
+            'Nothing is deleted. Each existing file stays until a better '
+            'release actually imports, so nothing goes missing in the meantime.',
+        ]
+    else:
+        bin_path = recycle_bin_path(conn['base'], conn['key'], conn['api'])
+        plan['recycle_bin'] = bin_path
+        if not bin_path:
+            raise LibrarianSourceError(
+                'Refusing to delete: this app has no Recycle Bin configured, so '
+                'the files would be gone for good. Set one in Settings → Media '
+                'Management → Recycle Bin, then try again.')
+        plan['steps'] = [
+            f'Set the quality profile of {len(items)} item(s) to "{target["name"]}" FIRST.',
+            f'Delete their current files, which the Recycle Bin at {bin_path} will catch.',
+            'Trigger a search under the new profile.',
+            'Order matters: profile first, or the search re-grabs the same '
+            'release you are replacing. Each item is unavailable between the '
+            'delete and the new release importing.',
+        ]
+    return plan
+
+
+def execute_plan(report, env, plan):
+    """Apply a plan that was already built and confirmed. Returns a
+    result dict. Each item is handled independently, so one failure
+    doesn't strand the rest half-done."""
+    arr_name = plan['arr']
+    spec = ACTION_SPEC[arr_name]
+    conn = report['connections'][arr_name]
+    base, key, api = conn['base'], conn['key'], conn['api']
+    pre = f'/api/{api}'
+    ids = [i['id'] for i in plan['items']]
+    results = {'ok': [], 'failed': [], 'deleted_files': 0, 'notes': []}
+
+    # 1. Profile first, always. On a shrink this is what stops the
+    #    search that follows re-grabbing the release being replaced.
+    try:
+        arr_request(base, key, f'{pre}{spec["editor"]}', 'PUT',
+                    {spec['ids_field']: ids, 'qualityProfileId': plan['profile_id']})
+    except LibrarianSourceError as e:
+        results['failed'].append(f'Could not set the quality profile: {e}')
+        return results
+
+    # 2. Delete, on a shrink only, and only through the arr so the
+    #    Recycle Bin applies.
+    if plan['deletes_files']:
+        for item in plan['items']:
+            try:
+                files = http_json(f'{base}{pre}{spec["files"](item["id"])}',
+                                  arr_headers(key), timeout=60) or []
+                paths = [f.get('path') for f in files if isinstance(f, dict)]
+                for f in files:
+                    if not isinstance(f, dict) or f.get('id') is None:
+                        continue
+                    arr_request(base, key, f'{pre}{spec["delete_file"](f["id"])}', 'DELETE')
+                    results['deleted_files'] += 1
+                note = audit({
+                    'at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                    'action': 'shrink-delete',
+                    'arr': arr_name,
+                    'item': item['title'],
+                    'item_id': item['id'],
+                    'new_profile': plan['profile_name'],
+                    'recycle_bin': plan['recycle_bin'],
+                    'deleted_paths': paths,
+                })
+                if note:
+                    results['notes'].append(note)
+            except LibrarianSourceError as e:
+                results['failed'].append(f'{item["title"]}: {e}')
+                continue
+
+    # 3. Search last.
+    for item in plan['items']:
+        try:
+            if spec['search_ids']:
+                continue  # this arr takes every id in one call, done below
+            arr_request(base, key, f'{pre}/command', 'POST',
+                        {'name': spec['search_cmd'], spec['search_one']: item['id']})
+            results['ok'].append(item['title'])
+        except LibrarianSourceError as e:
+            results['failed'].append(f'search for {item["title"]}: {e}')
+    if spec['search_ids']:
+        try:
+            arr_request(base, key, f'{pre}/command', 'POST',
+                        {'name': spec['search_cmd'], spec['search_ids']: ids})
+            results['ok'].extend(i['title'] for i in plan['items'])
+        except LibrarianSourceError as e:
+            results['failed'].append(f'search: {e}')
+
+    note = audit({
+        'at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        'action': plan['mode'],
+        'arr': arr_name,
+        'profile': plan['profile_name'],
+        'items': [i['title'] for i in plan['items']],
+        'ok': len(results['ok']),
+        'failed': len(results['failed']),
+    })
+    if note:
+        results['notes'].append(note)
+    return results
 
 
 # ── Watch data (optional) ────────────────────────────────────────────
@@ -741,6 +1210,12 @@ def build_report(top_n=25, quality_detail=True):
         'warnings': [],
         'watch_source': None,
         'root_paths': [],
+        # Per-arr base URL, API key, api version and quality profiles.
+        # Actions need them. NOTHING may serialise this: see
+        # public_report(), which strips it before anything leaves the
+        # process. An API key in /api/report.json would be a credential
+        # leak to anyone who can reach the port.
+        'connections': {},
     }
 
     collectors = {
@@ -796,6 +1271,16 @@ def build_report(top_n=25, quality_detail=True):
                 report['disks'] = collect_diskspace(base, key, spec['api'])
             except LibrarianSourceError as e:
                 report['warnings'].append(f'Disk space: {e}')
+
+        # Keep the connection so an action can reach this arr later, and
+        # fetch its quality profiles for the pickers.
+        try:
+            profiles = collect_quality_profiles(base, key, spec['api'])
+        except LibrarianSourceError:
+            profiles = []
+        report['connections'][name] = {
+            'base': base, 'key': key, 'api': spec['api'], 'profiles': profiles,
+        }
 
         # Root folders from EVERY arr, though — movies, TV and music can
         # legitimately sit on different volumes.
@@ -872,6 +1357,24 @@ def build_report(top_n=25, quality_detail=True):
     return report
 
 
+def public_report(report):
+    """The report minus anything secret, for JSON output.
+
+    `connections` holds each arr's API key so actions can authenticate.
+    Serialising the report verbatim would publish those keys to anyone
+    who can GET /api/report.json, which on a LAN-bound service with no
+    auth is everyone on the network. Profiles are kept because the UI
+    needs them and they are not sensitive."""
+    if not report:
+        return {}
+    safe = dict(report)
+    safe['connections'] = {
+        name: {'profiles': c.get('profiles') or []}
+        for name, c in (report.get('connections') or {}).items()
+    }
+    return safe
+
+
 # ── Text rendering (CLI) ─────────────────────────────────────────────
 
 def _row(cells, widths):
@@ -885,6 +1388,15 @@ def render_text(report):
     add('')
     add('  Mediarr Librarian — storage report')
     add(f'  generated {report["generated"]}  ({report["elapsed"]}s)')
+    f = report.get('filtered')
+    if f:
+        bits = []
+        if f['query']:    bits.append(f'match "{f["query"]}"')
+        if f['min_size']: bits.append(f'≥ {f["min_size"]}')
+        if f['quality']:  bits.append(f'quality ~ {f["quality"]}')
+        if f['arr']:      bits.append(f['arr'])
+        if f['unplayed']: bits.append('never played')
+        add(f'  filtered: {", ".join(bits)}  →  {f["matched"]} of {f["of"]} items')
     add('  ' + '─' * 74)
 
     if report['disks']:
@@ -1022,6 +1534,54 @@ code {
   border-radius: 0.25rem; font-size: 0.875em;
 }
 .hint { font-size: 0.8rem; color: #64748b; margin-top: 1.5rem; line-height: 1.6; }
+
+/* ── Search / filter ─────────────────────────────────────────────── */
+.filters {
+  display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;
+  margin-bottom: 0.9rem;
+}
+.filters input[type="search"], .filters select {
+  background: #0b1220; color: #e2e8f0;
+  border: 1px solid #334155; border-radius: 0.375rem;
+  padding: 0.5rem 0.65rem; font: inherit; font-size: 0.875rem;
+}
+.filters input[type="search"] { flex: 1; min-width: 200px; }
+.filters input[type="search"]:focus, .filters select:focus {
+  outline: 2px solid #34d399; outline-offset: 1px;
+}
+.filters label { font-size: 0.8rem; color: #94a3b8; display: flex;
+                 align-items: center; gap: 0.35rem; }
+.filter-count { font-size: 0.8rem; color: #64748b; }
+tr.hidden-row { display: none; }
+.no-matches { color: #94a3b8; font-size: 0.875rem; padding: 0.75rem 0; }
+
+/* ── Selection + actions ─────────────────────────────────────────── */
+td.sel, th.sel { width: 1.75rem; padding-right: 0.35rem; }
+.action-bar {
+  position: sticky; bottom: 0; z-index: 5;
+  background: #1e293b; border: 1px solid #334155;
+  border-radius: 0.5rem; padding: 0.75rem 1rem; margin-top: 1rem;
+  display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+}
+.action-bar[hidden] { display: none; }
+.action-bar .sel-count { font-weight: 600; color: #e2e8f0; font-size: 0.875rem; }
+.action-bar select { background: #0b1220; color: #e2e8f0;
+  border: 1px solid #334155; border-radius: 0.375rem;
+  padding: 0.45rem 0.6rem; font: inherit; font-size: 0.85rem; }
+button.danger { background: #b91c1c; }
+button.danger:hover { background: #dc2626; }
+button.secondary { background: #334155; }
+button.secondary:hover { background: #475569; }
+
+/* ── Plan / confirm page ─────────────────────────────────────────── */
+.plan-steps { margin: 0.5rem 0 1rem 1.1rem; }
+.plan-steps li { font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.4rem; }
+.plan-warn {
+  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239,68,68,0.35);
+  color: #fca5a5; border-radius: 0.375rem; padding: 0.85rem 1rem;
+  margin: 1rem 0; font-size: 0.9rem; line-height: 1.6;
+}
 .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .tabs a {
   color: #94a3b8; text-decoration: none; font-size: 0.8rem;
@@ -1037,7 +1597,183 @@ def _meter(used_pct):
     return (f'<div class="{cls}"><span style="width:{min(used_pct, 100):.1f}%"></span></div>')
 
 
-def _item_table_html(items, watch_source):
+# Client-side filtering and selection. Deliberately plain: the page has
+# to work from a NAS with no internet, so there is no framework and no
+# CDN. fuzzyScore mirrors fuzzy_score() in this same file — keep the two
+# in step or the CLI and the browser rank the same search differently.
+SCRIPT = r"""
+function fuzzyTerm(term, text) {
+  if (!term) return [true, 0];
+  var idx = text.indexOf(term);
+  if (idx !== -1) {
+    var s = 1000 - Math.min(idx, 100) * 2;
+    if (idx === 0 || !/[a-z0-9]/.test(text[idx - 1])) s += 60;
+    return [true, s];
+  }
+  var pos = 0, score = 0, prev = -2;
+  for (var i = 0; i < term.length; i++) {
+    var found = text.indexOf(term[i], pos);
+    if (found === -1) return [false, 0];
+    if (found === prev + 1) score += 10;
+    if (found === 0 || !/[a-z0-9]/.test(text[found - 1])) score += 8;
+    score += Math.max(0, 12 - (found - pos));
+    prev = found; pos = found + 1;
+  }
+  return [true, score];
+}
+
+function fuzzyScore(query, text) {
+  if (!query) return [true, 0];
+  var terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  var total = 0;
+  for (var i = 0; i < terms.length; i++) {
+    var r = fuzzyTerm(terms[i], text);
+    if (!r[0]) return [false, 0];
+    total += r[1];
+  }
+  return [true, total];
+}
+
+(function () {
+  var q = document.getElementById('q');
+  var arrSel = document.getElementById('f-arr');
+  var minSel = document.getElementById('f-min');
+  var unplayed = document.getElementById('f-unplayed');
+  var countEl = document.getElementById('filter-count');
+  if (!q) return;
+
+  var tables = Array.prototype.slice.call(document.querySelectorAll('table'));
+
+  function apply() {
+    var query = q.value.trim().toLowerCase();
+    var arr = arrSel ? arrSel.value : '';
+    var min = minSel ? parseInt(minSel.value, 10) || 0 : 0;
+    var onlyUnplayed = unplayed && unplayed.checked;
+    var shown = 0, total = 0;
+
+    tables.forEach(function (table) {
+      var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+      var scored = [];
+      rows.forEach(function (row) {
+        if (!row.dataset.search) return;
+        total++;
+        var ok = true;
+        if (arr && row.dataset.arr !== arr) ok = false;
+        if (ok && min && parseInt(row.dataset.size, 10) < min) ok = false;
+        if (ok && onlyUnplayed && parseInt(row.dataset.plays, 10) > 0) ok = false;
+        var score = 0;
+        if (ok && query) {
+          var r = fuzzyScore(query, row.dataset.search);
+          ok = r[0]; score = r[1];
+        }
+        row.classList.toggle('hidden-row', !ok);
+        // A row hidden by a filter must not stay silently selected, or
+        // an action would run against something the user can't see.
+        if (!ok) {
+          var box = row.querySelector('.pick');
+          if (box && box.checked) { box.checked = false; }
+        }
+        if (ok) { shown++; scored.push([score, row]); }
+      });
+      // Re-order by relevance while a query is active, then restore
+      // the original size ordering when it's cleared.
+      var body = table.querySelector('tbody');
+      if (query && body) {
+        scored.sort(function (a, b) { return b[0] - a[0]; });
+        scored.forEach(function (p) { body.appendChild(p[1]); });
+      }
+      var empty = table.parentNode.querySelector('.no-matches');
+      if (empty) empty.hidden = scored.length > 0;
+    });
+
+    if (countEl) {
+      countEl.textContent = (query || arr || min || onlyUnplayed)
+        ? shown + ' of ' + total + ' shown' : '';
+    }
+    syncSelection();
+  }
+
+  var bar = document.getElementById('action-bar');
+  var selCount = document.getElementById('sel-count');
+  var profileSel = document.getElementById('profile');
+  var actionArr = document.getElementById('action-arr');
+  var warn = document.getElementById('sel-warn');
+
+  function selected() {
+    return Array.prototype.slice.call(document.querySelectorAll('.pick:checked'))
+      .filter(function (b) { return !b.closest('tr').classList.contains('hidden-row'); });
+  }
+
+  function syncSelection() {
+    if (!bar) return;
+    var picks = selected();
+    // The same item appears in more than one table (biggest, most
+    // bloated, never played), so count distinct items rather than
+    // distinct checkboxes.
+    var seen = {};
+    picks.forEach(function (b) { seen[b.dataset.arr + ':' + b.dataset.id] = b.dataset.arr; });
+    var keys = Object.keys(seen);
+    var arrs = {};
+    keys.forEach(function (k) { arrs[seen[k]] = 1; });
+    var arrList = Object.keys(arrs);
+
+    bar.hidden = keys.length === 0;
+    if (selCount) selCount.textContent = keys.length + ' selected';
+
+    // An action targets one app. Spanning apps would need separate
+    // profile ids and separate calls, so it's refused rather than
+    // half-supported.
+    var single = arrList.length === 1;
+    if (warn) {
+      warn.hidden = single || keys.length === 0;
+      warn.textContent = single ? '' : 'Select items from one app at a time.';
+    }
+    if (actionArr) actionArr.value = single ? arrList[0] : '';
+    if (profileSel) {
+      Array.prototype.slice.call(profileSel.options).forEach(function (o) {
+        o.hidden = !single || (o.dataset.arr !== arrList[0]);
+      });
+      var cur = profileSel.selectedOptions[0];
+      if (!cur || cur.hidden) {
+        var first = Array.prototype.slice.call(profileSel.options)
+          .filter(function (o) { return !o.hidden; })[0];
+        if (first) profileSel.value = first.value;
+      }
+    }
+    Array.prototype.slice.call(bar.querySelectorAll('button')).forEach(function (b) {
+      b.disabled = !single || keys.length === 0;
+    });
+
+    var hidden = document.getElementById('ids');
+    if (hidden) hidden.value = keys.map(function (k) { return k.split(':')[1]; }).join(',');
+  }
+
+  q.addEventListener('input', apply);
+  [arrSel, minSel, unplayed].forEach(function (el) {
+    if (el) el.addEventListener('change', apply);
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.classList.contains('pick')) syncSelection();
+  });
+
+  // "/" focuses the search, the one keyboard nicety worth having on a
+  // page whose whole job is finding something.
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+    if (e.key === 'Escape' && document.activeElement === q) { q.value = ''; apply(); }
+  });
+
+  apply();
+})();
+"""
+
+
+def _item_table_html(items, watch_source, selectable=False):
+    """One item table.
+
+    Every row carries its searchable text in data-search and its identity
+    in data-arr/data-id, so the client-side filter and the selection both
+    work off the DOM without a second copy of the data."""
     if not items:
         return '<p class="muted">Nothing to show yet.</p>'
     rows = []
@@ -1045,23 +1781,40 @@ def _item_table_html(items, watch_source):
         year = f' <span class="dim">({it["year"]})</span>' if it.get('year') else ''
         rate = (human_bytes(it['per_hour']) + '/h') if it.get('per_hour') else '—'
         played = it.get('last_played') or ('never' if watch_source else '—')
+        hay = html.escape(item_haystack(it))
+        sel = ''
+        if selectable and it.get('id') is not None:
+            sel = (f'<td class="sel"><input type="checkbox" class="pick" '
+                   f'data-arr="{html.escape(str(it.get("arr", "")))}" '
+                   f'data-id="{int(it["id"])}" '
+                   f'data-title="{html.escape(it["title"])}" '
+                   f'aria-label="Select {html.escape(it["title"])}"></td>')
+        elif selectable:
+            sel = '<td class="sel"></td>'
         rows.append(
-            '<tr>'
-            f'<td>{html.escape(it["title"])}{year}</td>'
+            f'<tr data-search="{hay}" data-size="{int(it.get("size") or 0)}" '
+            f'data-plays="{int(it.get("plays") or 0)}" '
+            f'data-arr="{html.escape(str(it.get("arr", "")))}">'
+            + sel
+            + f'<td>{html.escape(it["title"])}{year}</td>'
             f'<td class="num">{html.escape(human_bytes(it["size"]))}</td>'
             f'<td class="dim">{html.escape(it["quality"] or "—")}</td>'
             f'<td class="dim">{html.escape(it["codec"] or "—")}</td>'
             f'<td class="num dim">{html.escape(rate)}</td>'
             f'<td class="dim">{html.escape(played)}</td>'
             '</tr>')
+    head_sel = '<th class="sel"></th>' if selectable else ''
     return (
-        '<table><thead><tr>'
+        '<table><thead><tr>' + head_sel +
         '<th>Title</th><th class="num">Size</th><th>Quality</th>'
         '<th>Codec</th><th class="num">Per hour</th><th>Last played</th>'
-        '</tr></thead><tbody>' + ''.join(rows) + '</tbody></table>')
+        '</tr></thead><tbody>' + ''.join(rows) + '</tbody>'
+        '</table><p class="no-matches" hidden>Nothing matches that search.</p>')
 
 
-def render_html(report):
+def render_html(report, env=None):
+    env = env if env is not None else {}
+    can_act = actions_enabled(env)
     parts = []
     add = parts.append
 
@@ -1134,27 +1887,80 @@ def render_html(report):
                 '</tr>')
         add('</tbody></table></div>')
 
+    # Search / filter. One control set drives every table below it.
+    arr_opts = ''.join(
+        f'<option value="{html.escape(n)}">{html.escape(ARRS[n]["label"])}</option>'
+        for n in (report.get('connections') or {}) if n in ARRS)
+    add('<div class="card"><div class="label">Find something</div>'
+        '<div class="filters">'
+        '<input type="search" id="q" placeholder="Fuzzy search title, quality, codec… (press / to focus)" '
+        'autocomplete="off" spellcheck="false">'
+        f'<select id="f-arr"><option value="">All apps</option>{arr_opts}</select>'
+        '<select id="f-min">'
+        '<option value="0">Any size</option>'
+        '<option value="1073741824">Over 1 GB</option>'
+        '<option value="5368709120">Over 5 GB</option>'
+        '<option value="10737418240">Over 10 GB</option>'
+        '<option value="21474836480">Over 20 GB</option>'
+        '<option value="53687091200">Over 50 GB</option>'
+        '</select>'
+        '<label><input type="checkbox" id="f-unplayed"> Never played</label>'
+        '<span class="filter-count" id="filter-count"></span>'
+        '</div>'
+        '<p class="muted" style="margin:0">Matching is fuzzy, so <code>rmx 216</code> '
+        'finds Remux-2160p. Several words all have to match.</p>'
+        '</div>')
+
     # Item tables
     add('<div class="card"><div class="label">Biggest items</div>'
-        + _item_table_html(report['top_by_size'], report['watch_source']) + '</div>')
+        + _item_table_html(report['top_by_size'], report['watch_source'], can_act) + '</div>')
 
     add('<div class="card"><div class="label">Most bloated — bytes per hour</div>'
         '<p class="muted" style="margin-top:0">A high rate on a short runtime is '
         'usually a remux. Sorting by raw size only ever finds long shows.</p>'
-        + _item_table_html(report['top_by_rate'], report['watch_source']) + '</div>')
+        + _item_table_html(report['top_by_rate'], report['watch_source'], can_act) + '</div>')
 
     if report['big_unwatched']:
         add('<div class="card">'
             f'<div class="label">Big and never played · via {html.escape(report["watch_source"])}</div>'
-            + _item_table_html(report['big_unwatched'], report['watch_source']) + '</div>')
+            + _item_table_html(report['big_unwatched'], report['watch_source'], can_act) + '</div>')
+
+    if can_act:
+        prof_opts = []
+        for name, conn in (report.get('connections') or {}).items():
+            for prof in conn.get('profiles') or []:
+                prof_opts.append(
+                    f'<option value="{int(prof["id"])}" data-arr="{html.escape(name)}">'
+                    f'{html.escape(str(prof["name"]))}</option>')
+        add('<form method="POST" action="/plan">'
+            '<div class="action-bar" id="action-bar" hidden>'
+            '<span class="sel-count" id="sel-count">0 selected</span>'
+            '<input type="hidden" name="ids" id="ids">'
+            '<input type="hidden" name="arr" id="action-arr">'
+            '<label class="muted">Target profile '
+            f'<select name="profile" id="profile">{"".join(prof_opts)}</select></label>'
+            '<button type="submit" name="mode" value="upgrade">Upgrade</button>'
+            '<button type="submit" name="mode" value="shrink" class="danger">Shrink</button>'
+            '<span class="muted" id="sel-warn" hidden></span>'
+            '</div></form>')
 
     add('<div class="card"><form method="POST" action="/rescan">'
         '<button type="submit">Rescan now</button> '
         f'<span class="muted">Results are cached for {CACHE_TTL_SECONDS // 60} minutes.</span>'
         '</form></div>')
 
-    add('<p class="hint">This page is read-only — it never edits a profile, '
-        'triggers a search, or deletes a file. Same report on the command line: '
+    if can_act:
+        hint = ('Actions are enabled (LIBRARIAN_ALLOW_ACTIONS). Upgrades never '
+                'delete anything. Shrink deletes the current files through the '
+                'arr, so they land in its Recycle Bin, and refuses to run at '
+                'all if no Recycle Bin is configured. Every action shows you '
+                'the exact plan before it does anything.')
+    else:
+        hint = ('This page is read-only. It issues nothing but GETs, so it '
+                'cannot edit a profile, trigger a search, or delete a file. '
+                'Set LIBRARIAN_ALLOW_ACTIONS=true in .env to turn on re-grab '
+                'actions.')
+    add(f'<p class="hint">{hint} Same report on the command line: '
         '<code>python3 librarian.py --report</code>, or '
         '<code>--json</code> for the raw numbers. '
         '<a href="/api/report.json" style="color:#34d399">JSON endpoint</a>.</p>')
@@ -1163,7 +1969,87 @@ def render_html(report):
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Librarian — storage report</title>'
-        f'<style>{CSS}</style></head><body>' + ''.join(parts) + '</body></html>')
+        f'<style>{CSS}</style></head><body>' + ''.join(parts) +
+        f'<script>{SCRIPT}</script></body></html>')
+
+
+def _page(body, code_note=''):
+    return ('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>Librarian</title>'
+            f'<style>{CSS}</style></head><body>{body}</body></html>')
+
+
+def render_plan_html(plan, token):
+    """The confirmation page. Deliberately verbose about the destructive
+    case: this is the last screen before files move."""
+    rows = ''.join(
+        '<tr>'
+        f'<td>{html.escape(i["title"])}'
+        + (f' <span class="dim">({i["year"]})</span>' if i.get('year') else '')
+        + '</td>'
+        f'<td class="num">{html.escape(human_bytes(i["size"]))}</td>'
+        f'<td class="dim">{html.escape(i["quality"] or "—")}</td>'
+        '</tr>'
+        for i in plan['items'])
+
+    steps = ''.join(f'<li>{html.escape(x)}</li>' for x in plan['steps'])
+    verb = 'Shrink' if plan['deletes_files'] else 'Upgrade'
+
+    warn = ''
+    if plan['deletes_files']:
+        warn = (
+            '<div class="plan-warn"><strong>This deletes files.</strong> '
+            f'{len(plan["items"])} item(s), '
+            f'{html.escape(human_bytes(plan["total_size"]))} on disk, will have '
+            'their current files removed through the arr and replaced by a fresh '
+            f'search at "{html.escape(plan["profile_name"])}".<br><br>'
+            f'They go to the Recycle Bin at <code>{html.escape(plan["recycle_bin"])}</code>, '
+            'so they are recoverable until you empty it. Each item is unavailable '
+            'between the delete and a new release importing, and for something '
+            'obscure that could be a while.</div>')
+
+    return _page(
+        '<h1>Librarian</h1>'
+        f'<p class="muted">Confirm: {verb.lower()} {len(plan["items"])} item(s) '
+        f'in {html.escape(plan["label"])}</p>'
+        + warn +
+        '<div class="card"><div class="label">What will happen</div>'
+        f'<ol class="plan-steps">{steps}</ol></div>'
+        '<div class="card"><div class="label">Items</div>'
+        '<table><thead><tr><th>Title</th><th class="num">Size</th>'
+        '<th>Current quality</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        '<div class="card"><form method="POST" action="/apply">'
+        f'<input type="hidden" name="token" value="{html.escape(token)}">'
+        f'<button type="submit" class="{"danger" if plan["deletes_files"] else ""}">'
+        f'Yes, {verb.lower()} {len(plan["items"])} item(s)</button> '
+        '<a href="/" style="margin-left:0.75rem;color:#94a3b8">Cancel</a>'
+        '</form></div>')
+
+
+def render_result_html(plan, results):
+    ok = len(results['ok'])
+    bad = results['failed']
+    body = ['<h1>Librarian</h1>']
+    if bad:
+        body.append('<div class="banner err">Finished with problems.</div>')
+    else:
+        body.append('<div class="banner ok">Done.</div>')
+    body.append(
+        '<div class="card"><div class="label">Result</div>'
+        f'<div class="row"><span>Items actioned</span><strong>{ok}</strong></div>'
+        f'<div class="row"><span>Files deleted</span><strong>{results["deleted_files"]}</strong></div>'
+        f'<div class="row"><span>New profile</span><strong>{html.escape(plan["profile_name"])}</strong></div>'
+        '</div>')
+    if bad:
+        body.append('<div class="card"><div class="label">Problems</div><pre>'
+                    + html.escape('\n'.join(bad)) + '</pre></div>')
+    if results['notes']:
+        body.append('<div class="card"><div class="label">Notes</div><pre>'
+                    + html.escape('\n'.join(results['notes'])) + '</pre></div>')
+    body.append('<p class="hint">Searches run in the background, so give the arr '
+                'a few minutes. <a href="/" style="color:#34d399">Back to the report</a>.</p>')
+    return _page(''.join(body))
 
 
 # ── Server ───────────────────────────────────────────────────────────
@@ -1235,7 +2121,7 @@ class Handler(BaseHTTPRequestHandler):
                     '<h1>Librarian</h1><p class="muted">First scan running — '
                     'this page refreshes itself.</p></body></html>', code=503)
                 return
-            html_body = render_html(report)
+            html_body = render_html(report, read_env())
             if busy:
                 html_body = html_body.replace(
                     '<h1>Librarian</h1>',
@@ -1246,7 +2132,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path in ('/api/report.json', '/report.json'):
             report, _ = cached_report()
-            self._send(json.dumps(report or {}, indent=2, default=str),
+            self._send(json.dumps(public_report(report), indent=2, default=str),
                        'application/json; charset=utf-8',
                        200 if report else 503)
             return
@@ -1257,10 +2143,27 @@ class Handler(BaseHTTPRequestHandler):
 
         self.send_error(404)
 
+    def _read_form(self):
+        """Parse a urlencoded POST body. Capped small: every form here is
+        a handful of fields, so a large body is a mistake or an abuse."""
+        length = int(self.headers.get('Content-Length', '0') or '0')
+        if length <= 0 or length > 64_000:
+            return {}
+        raw = self.rfile.read(length).decode('utf-8', errors='replace')
+        return {k: v[0] for k, v in urllib.parse.parse_qs(raw).items() if v}
+
+    def _error_page(self, message, code=400):
+        self._send(_page(
+            '<h1>Librarian</h1>'
+            f'<div class="banner err">{html.escape(message)}</div>'
+            '<p class="hint"><a href="/" style="color:#34d399">Back to the report</a></p>'),
+            code=code)
+
     def do_POST(self):
         if not self._check_csrf():
             self.send_error(403, 'Cross-origin POST rejected (CSRF protection)')
             return
+
         if self.path == '/rescan':
             cached_report(force=True)
             self.send_response(303)
@@ -1268,13 +2171,94 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '0')
             self.end_headers()
             return
+
+        # ── Plan: works out what would happen, changes nothing ────────
+        if self.path == '/plan':
+            report, _ = cached_report()
+            if report is None:
+                self._error_page('No scan yet — let the first one finish.', 503)
+                return
+            form = self._read_form()
+            env = read_env()
+            try:
+                ids = [int(x) for x in (form.get('ids') or '').split(',') if x.strip()]
+            except ValueError:
+                self._error_page('Malformed selection.')
+                return
+            if not ids:
+                self._error_page('Nothing was selected.')
+                return
+            try:
+                profile_id = int(form.get('profile') or 0)
+            except ValueError:
+                self._error_page('Malformed profile.')
+                return
+            try:
+                plan = build_plan(report, env, (form.get('mode') or '').strip(),
+                                  (form.get('arr') or '').strip(), profile_id, ids)
+            except LibrarianSourceError as e:
+                self._error_page(str(e))
+                return
+
+            # Single-use token. Applying requires having been shown this
+            # exact plan, so a bare POST to /apply can't do anything.
+            token = secrets.token_urlsafe(24)
+            with _ACTION_LOCK:
+                now = time.time()
+                for t, (_, ts) in list(ACTION_TOKENS.items()):
+                    if now - ts > ACTION_TOKEN_TTL:
+                        ACTION_TOKENS.pop(t, None)
+                ACTION_TOKENS[token] = (plan, now)
+            self._send(render_plan_html(plan, token))
+            return
+
+        # ── Apply: only ever runs a plan that was already shown ───────
+        if self.path == '/apply':
+            form = self._read_form()
+            token = (form.get('token') or '').strip()
+            with _ACTION_LOCK:
+                entry = ACTION_TOKENS.pop(token, None)   # single use
+            if not entry:
+                self._error_page(
+                    'That confirmation has expired or was already used. '
+                    'Make the selection again.', 409)
+                return
+            plan, _ts = entry
+
+            report, _ = cached_report()
+            env = read_env()
+            # Re-check on the way in. The flag could have been turned off,
+            # or the scan replaced, between planning and confirming.
+            if not actions_enabled(env):
+                self._error_page('Actions are disabled.', 403)
+                return
+            if report is None or plan['arr'] not in (report.get('connections') or {}):
+                self._error_page(f'{plan["arr"]} is not reachable right now.', 503)
+                return
+            if not _SCAN_LOCK.acquire(blocking=False):
+                self._error_page('A scan is running — try again in a moment.', 409)
+                return
+            try:
+                results = execute_plan(report, env, plan)
+            except LibrarianSourceError as e:
+                self._error_page(str(e), 502)
+                return
+            finally:
+                _SCAN_LOCK.release()
+            # Sizes and profiles just changed, so the cached scan is stale.
+            _CACHE['at'] = 0.0
+            self._send(render_result_html(plan, results))
+            return
+
         self.send_error(404)
 
 
 def serve(port):
     addr = ('0.0.0.0', port)
+    acting = 'ON' if actions_enabled(read_env()) else 'off (read-only)'
     print(f'Librarian listening on http://{addr[0]}:{port}/ '
-          f'(GET / · GET /api/report.json · POST /rescan)', flush=True)
+          f'(GET / · GET /api/report.json · POST /rescan · POST /plan · POST /apply)\n'
+          f'  re-grab actions: {acting}', flush=True)
     # Warm the cache in the background so the first visitor doesn't
     # stare at the "first scan running" holding page.
     threading.Thread(target=lambda: cached_report(force=True), daemon=True).start()
@@ -1300,12 +2284,46 @@ def main():
     ap.add_argument('--fast', action='store_true',
                     help='skip the per-series quality breakdown (much faster '
                          'on a large TV library)')
+    ap.add_argument('--filter', '-f', default='', metavar='QUERY',
+                    help='fuzzy-match items by title, quality, codec or app. '
+                         'Several words must all match, e.g. -f "sonarr remux"')
+    ap.add_argument('--min-size', default='', metavar='SIZE',
+                    help='only items at least this big, e.g. 20GB')
+    ap.add_argument('--quality', default='', metavar='NAME',
+                    help='only items whose quality contains NAME, e.g. remux')
+    ap.add_argument('--arr', default='', choices=['', 'radarr', 'sonarr', 'lidarr'],
+                    help='restrict to one app')
+    ap.add_argument('--unplayed', action='store_true',
+                    help='only items that have never been played (needs Tautulli '
+                         'or Jellyfin)')
     args = ap.parse_args()
 
     if args.report or args.json:
         report = build_report(top_n=args.top, quality_detail=not args.fast)
+
+        # Any narrowing option rebuilds the item tables from the filtered
+        # set, so the report answers the question you actually asked
+        # rather than showing the global top-N with holes in it.
+        if args.filter or args.min_size or args.quality or args.arr or args.unplayed:
+            picked = filter_items(
+                report['items'], query=args.filter,
+                min_size=parse_size(args.min_size), quality=args.quality,
+                unplayed=args.unplayed, arr=args.arr)
+            report['filtered'] = {
+                'query': args.filter, 'min_size': args.min_size,
+                'quality': args.quality, 'arr': args.arr,
+                'unplayed': args.unplayed, 'matched': len(picked),
+                'of': len(report['items']),
+            }
+            report['top_by_size'] = picked[:args.top]
+            report['top_by_rate'] = sorted(
+                [i for i in picked if i.get('per_hour')],
+                key=lambda i: i['per_hour'], reverse=True)[:args.top]
+            report['big_unwatched'] = (
+                [i for i in picked if i['kind'] == 'movie' and not i.get('plays')][:args.top]
+                if report['watch_source'] else [])
         if args.json:
-            print(json.dumps(report, indent=2, default=str))
+            print(json.dumps(public_report(report), indent=2, default=str))
         else:
             print(render_text(report))
         # Exit 0 even with warnings: a partial report is a successful

@@ -52,6 +52,12 @@ export const envObject = z.object({
   // arr API keys already in .env — so there is nothing to escalate to
   // required. A missing key stays OFF everywhere.
   ENABLE_LIBRARIAN: optStr,
+  // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
+  // separately from ENABLE_LIBRARIAN on purpose: Librarian has no auth,
+  // so turning the report on must not also hand everyone on the LAN a
+  // delete button. No superRefine entry — there is nothing to require.
+  LIBRARIAN_ALLOW_ACTIONS: optStr,
+  LIBRARIAN_MAX_BATCH: optStr,
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
   // common TRaSH choices: WEB-1080p for Sonarr, HD Bluray + WEB for

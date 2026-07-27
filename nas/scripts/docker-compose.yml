@@ -809,8 +809,15 @@ services:
       # with a wizard re-run rather than an image rebuild.
       - ${INSTALL_DIR}/scripts/librarian.py:/app/librarian.py:ro
       # Read-only view of the install dir: .env for the arr API keys,
-      # tautulli/config/config.ini for the Tautulli key.
+      # tautulli/config/config.ini for the Tautulli key. Stays :ro even
+      # with actions enabled — Librarian changes your library through the
+      # arrs' APIs, never by editing files on this mount.
       - ${INSTALL_DIR}:/install-dir:ro
+      # The one writable path: an append-only audit log of every action
+      # applied, including the paths of files deleted, which is what makes
+      # a Recycle Bin restore possible after the fact. Narrow on purpose
+      # rather than making the whole install dir writable.
+      - ${INSTALL_DIR}/librarian:/state:rw
     environment:
       - TZ=${TZ}
     command: ["python3", "/app/librarian.py"]

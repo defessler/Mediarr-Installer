@@ -95,7 +95,7 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 | **Unpackerr** | Watches completed downloads and unpacks archives for import |
 | **Playlist Sync** | Opt-in — mirrors SiriusXM channels into Plex/Jellyfin playlists (Soulseek-first, yt-dlp fallback) |
 | **Dispatcharr** | Opt-in — live TV & DVR: free ad-supported channel packs + your own IPTV sources, presented to Plex/Jellyfin as an HDHomeRun tuner; records into `Media/Recordings` (no Plex Pass needed for recording) |
-| **Librarian** | Opt-in — read-only storage report on `:8890`. Reads size and quality out of Sonarr/Radarr/Lidarr, ranks your biggest items by bytes-per-hour (which finds bloated remuxes, where raw size only finds long shows), shows space by quality tier, and flags what is large and never played when Tautulli or Jellyfin can tell it |
+| **Librarian** | Opt-in — storage report on `:8890`, read-only unless you enable actions. Reads size and quality out of Sonarr/Radarr/Lidarr, ranks your biggest items by bytes-per-hour (which finds bloated remuxes, where raw size only finds long shows), shows space by quality tier, and flags what is large and never played when Tautulli or Jellyfin can tell it. With `LIBRARIAN_ALLOW_ACTIONS=true` it can also re-grab items at a different quality, with deletes gated behind a configured Recycle Bin |
 
 ### Key concepts
 
