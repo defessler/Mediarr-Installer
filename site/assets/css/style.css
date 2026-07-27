@@ -385,8 +385,12 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 /* One rail, on the left. The contents list used to run down the right
    edge, which meant navigation on both sides of whatever you were
    reading. Both are navigation, so they share a column now. */
+/* Matched to #site-nav's 1400px so the rail's left edge lines up with
+   the brand mark in the header. At 1220px the whole doc layout sat
+   visibly inset from the bar above it, and the grid, not .doc-content's
+   own cap, was what actually decided the measure. */
 .docs {
-  max-width: 1220px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 0 1.5rem;
   display: grid;
@@ -549,11 +553,16 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
    tables and figures beside it, which left every table visibly
    overhanging the paragraph above it. Text, tables, code and diagrams
    now share the column width, so the left and right edges line up all
-   the way down the page. */
+   the way down the page.
+
+   The cap still has to be here rather than left to the grid, or a wide
+   monitor would run prose the full width of the screen. 1040px sits
+   just inside what the 1400px grid leaves for this column, so this
+   number is the one deciding the measure. */
 .doc-content {
   padding: 2.25rem 0 5rem;
   min-width: 0;
-  max-width: 860px;
+  max-width: 1040px;
 }
 
 .doc-content > h1 {
