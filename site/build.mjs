@@ -421,6 +421,12 @@ async function main() {
         isHome ? page.meta.title : `${page.meta.title} · Mediarr`))
       .replaceAll('{{DESCRIPTION}}', escapeHtml(page.meta.description ?? page.meta.lede ?? ''))
       .replaceAll('{{ROOT}}', rootPrefix)
+      // Every path on the site is relative, so it works unchanged whether
+      // it's served from a domain root or from a project subpath like
+      // /Mediarr-Installer/. On the home page rootPrefix is empty, and a
+      // bare href="" is a same-page link rather than a link home, so use
+      // an explicit "./" there.
+      .replaceAll('{{HOME}}', rootPrefix || './')
       .replaceAll('{{NAVLINKS}}', renderNav(pages, page.slug, rootPrefix))
       .replaceAll('{{BODY}}', body)
       .replaceAll('{{MERMAID}}', mermaid)

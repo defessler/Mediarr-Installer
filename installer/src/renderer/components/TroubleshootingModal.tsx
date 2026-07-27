@@ -116,9 +116,9 @@ const ITEMS: TItem[] = [
     category: 'New to this? Start here',
     symptom: 'I\'ve never installed Docker / SSH\'d into a NAS / used the command line',
     cause:
-      'You don\'t need to — the wizard handles all of that. There\'s a full beginner\'s walkthrough on the project wiki that covers everything from enabling SSH on your NAS through adding your first show in Sonarr/Radarr.',
+      'You don\'t need to — the wizard handles all of that. There\'s a full beginner\'s walkthrough on the documentation site that covers everything from enabling SSH on your NAS through adding your first show in Sonarr/Radarr.',
     fix:
-      'Open https://github.com/defessler/Mediarr-Installer/wiki/Installation in your browser. It walks through the whole install with ASCII mockups of each wizard screen, what to type in each field, and what to do once each service is running.',
+      'Open https://dougfessler.com/Mediarr-Installer/installation/ in your browser. It walks through the whole install with ASCII mockups of each wizard screen, what to type in each field, and what to do once each service is running. The same site has an architecture page with diagrams if you want to understand what the wizard actually built.',
   },
 
   // ── Install failures ────────────────────────────────────────────────
@@ -918,12 +918,12 @@ export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pg
             </span>
             <a
               className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2 inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded"
-              href="https://github.com/defessler/Mediarr-Installer/wiki/Installation"
+              href="https://dougfessler.com/Mediarr-Installer/installation/"
               target="_blank"
               rel="noreferrer"
-              aria-label="Open the beginner's Installation walkthrough on the project wiki in a new tab"
+              aria-label="Open the beginner's Installation walkthrough on the documentation site in a new tab"
             >
-              Installation guide (wiki)
+              Installation guide
               <ExternalLink size={13} aria-hidden="true" />
             </a>
             <span className="text-slate-400">
