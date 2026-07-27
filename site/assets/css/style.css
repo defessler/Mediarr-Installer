@@ -68,6 +68,12 @@
      comment is one color in any editor, so it is one color here. */
   --color-comment-style: var(--mk-green);
 
+  /* A heading that wears no comment mark is not a comment, so it does
+     not take the comment color. Page and hero titles are cyan. Green is
+     left to mean one thing on the page: this line is written in the
+     comment idiom. */
+  --color-heading: var(--mk-cyan);
+
   /* Hover step for the solid Ko-fi chip, lifted from Window Layout
      Manager's landing page along with the rest of its treatment. */
   --kofi-hover:         #8ce8fa;
@@ -363,14 +369,14 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 .hero h1 {
   font-size: 2.1rem;
   font-weight: 700;
-  color: var(--mk-green);
+  color: var(--color-heading);
   letter-spacing: -0.01em;
   line-height: 1.25;
   text-shadow: 0.04em 0 0 rgba(249, 38, 114, 0.45), -0.04em 0 0 rgba(102, 217, 239, 0.45);
 }
 .hero h1::after {
   content: '_';
-  color: var(--mk-green);
+  color: var(--color-heading);
   animation: blink 1.1s step-end infinite;
   margin-left: 2px;
 }
@@ -490,15 +496,20 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   margin: 0 auto;
   padding: 0 1.5rem;
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 3rem;
   align-items: start;
 }
 
+/* No padding on top. The rail is its own scroll container, and a sticky
+   child with top:0 parks below the container's padding rather than over
+   it, which left a 2rem band above the tab strip that contents entries
+   scrolled up through in plain view. That breathing room now lives on
+   .rail-tabs, where it belongs to something opaque. */
 .docs-sidebar {
   position: sticky;
   top: calc(var(--nav-height) + 1.25rem);
-  padding: 2rem 0;
+  padding: 0 0 2rem;
   font-size: 0.82rem;
   max-height: calc(100vh - var(--nav-height) - 2rem);
   overflow-y: auto;
@@ -531,13 +542,28 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   top: 0;
   z-index: 1;
   background: var(--mk-bg);
+  /* The rail's top breathing room, moved here off .docs-sidebar so it is
+     part of the opaque sticky strip. Anything scrolling up now goes
+     behind it instead of into the gap above it. */
+  padding-top: 2rem;
 }
+/* A page with no contents list has no strip to carry that padding. */
+.docs-sidebar-single { padding-top: 2rem; }
+/* nowrap is the guarantee, the rail width is what makes it affordable.
+   "On this page" is twelve monospace characters, and at the old 250px
+   rail it landed a couple of pixels over half the strip once the panel
+   grew tall enough to raise a scrollbar. So it wrapped only when
+   selected, which is exactly when the tab is longest-lived on screen.
+   The rail is wider now and the gutter is reserved, so the width no
+   longer moves under the label. */
 .rail-tabs label {
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
   text-align: center;
   font-size: 0.74rem;
   color: var(--color-nav);
-  padding: 0.35rem 0.4rem;
+  padding: 0.35rem 0.3rem;
   border: 1px solid transparent;
   border-radius: var(--radius);
   cursor: pointer;
@@ -664,7 +690,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 .doc-content > h1 {
   font-size: 1.7rem;
   font-weight: 700;
-  color: var(--mk-green);
+  color: var(--color-heading);
   line-height: 1.25;
   margin-bottom: 0.35rem;
   text-shadow: 0.03em 0 0 rgba(249, 38, 114, 0.4), -0.03em 0 0 rgba(102, 217, 239, 0.4);
@@ -1000,7 +1026,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
    Responsive
    ============================================================ */
 @media (max-width: 1100px) {
-  .docs { grid-template-columns: 220px minmax(0, 1fr); gap: 2rem; }
+  .docs { grid-template-columns: 250px minmax(0, 1fr); gap: 2rem; }
 }
 
 @keyframes nav-crt-open {
