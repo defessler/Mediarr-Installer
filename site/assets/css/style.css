@@ -44,10 +44,14 @@
      --color-comment-style below.
 
      Color roles, kept apart on purpose:
-       green  headings, brand, primary action
-       cyan   links, list markers, contents entries
+       green  the comment idiom, plus the brand and primary actions
+       cyan   page and hero titles, links, list markers, contents
        pink   current page
-       yellow inline code, emphasis
+       yellow inline code, emphasis, h4
+
+     The line between green and cyan is whether the thing wears a comment
+     mark, not what tag it is. An h2 framed in slash-star is green and an
+     h1 with no mark is cyan, even though one nests inside the other.
      Orange is deliberately absent from body copy. Next to the olive of
      --mk-comment it reads muddy, so it survives only on the card
      borders, where it never touches green text. */
@@ -56,10 +60,11 @@
   --color-link:         var(--mk-cyan);
   --color-link-hover:   #A8E9F7;
 
-  /* Anything wearing the comment idiom, mark AND text together: the
-     slash-star frames on headings, and every line that opens with a
-     double slash (the hero headline, the page lede, h3s, figure
-     captions, the footer name).
+  /* Anything wearing the comment idiom, mark AND text together. Both
+     kinds of mark count: the slash-star frames (h2 on both the landing
+     page and the guides) and every line opening with a double slash (the
+     hero headline, the page lede, h3s, figure captions, the footer
+     name).
 
      Green rather than --mk-comment, because at heading weight the olive
      read like text someone had switched off sitting next to a heading
@@ -426,7 +431,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 .home-section > h2 {
   font-size: 0.95rem;
   font-weight: 700;
-  color: var(--mk-green);
+  color: var(--color-comment-style);
   margin-bottom: 1rem;
 }
 .home-section > h2::before { content: '/* '; color: var(--color-comment-style); }
@@ -714,7 +719,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 .doc-content h2 {
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--mk-green);
+  color: var(--color-comment-style);
   margin: 2.75rem 0 0.9rem;
   scroll-margin-top: calc(var(--nav-height) + 1rem);
 }
