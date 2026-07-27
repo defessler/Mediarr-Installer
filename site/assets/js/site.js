@@ -56,9 +56,9 @@
       if (wrapped) return
       const details = document.createElement('details')
       const summary = document.createElement('summary')
-      // The rail carries the page contents as well as the guide list now,
-      // so "Guides" alone would undersell what's behind it.
-      summary.textContent = 'Contents & guides'
+      // The rail is tabbed, holding both the page contents and the guide
+      // list, so name it for the whole thing rather than either half.
+      summary.textContent = 'Navigation'
       summary.style.cssText =
         'cursor:pointer;color:var(--mk-comment);font-size:0.8rem;padding:0.5rem 0;list-style:none'
       details.appendChild(summary)

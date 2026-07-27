@@ -406,6 +406,73 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   scrollbar-color: #5f5d52 transparent;
 }
 
+/* Tab strip. The radios drive it; they're visually hidden but stay
+   focusable, so the whole thing is keyboard-operable as a radio group
+   with no ARIA bolted on. */
+.rail-radio {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.rail-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px solid var(--mk-border);
+  padding-bottom: 0.5rem;
+  /* Pinned inside the rail's own scroll. The tutorial's contents run to
+     32 entries, so the panel scrolls internally — without this the tab
+     strip scrolls away with it and there's no way back to the guides
+     without scrolling the rail back up. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--mk-bg);
+}
+.rail-tabs label {
+  flex: 1;
+  text-align: center;
+  font-size: 0.74rem;
+  color: var(--color-nav);
+  padding: 0.35rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.rail-tabs label:hover {
+  color: var(--color-nav-hover);
+  background: rgba(255,255,255,0.05);
+}
+
+/* Selected tab + its panel. Sibling selectors, so the radios have to
+   precede both the strip and the panels in the markup. */
+#rail-toc:checked ~ .rail-tabs label[for="rail-toc"],
+#rail-guides:checked ~ .rail-tabs label[for="rail-guides"] {
+  color: var(--mk-cyan);
+  border-color: var(--mk-border);
+  background: rgba(102, 217, 239, 0.08);
+  font-weight: 700;
+}
+/* Focus lands on the hidden radio, so surface it on the visible label
+   instead — otherwise keyboard users get no focus indicator at all. */
+#rail-toc:focus-visible ~ .rail-tabs label[for="rail-toc"],
+#rail-guides:focus-visible ~ .rail-tabs label[for="rail-guides"] {
+  outline: 2px solid var(--mk-cyan);
+  outline-offset: 2px;
+}
+
+.rail-panel { display: none; }
+#rail-toc:checked ~ .rail-panel.rail-toc,
+#rail-guides:checked ~ .rail-panel.rail-guides { display: block; }
+/* No stylesheet: both panels just render in order, which is the plain
+   stacked list this replaced. Still navigable. */
+.docs-sidebar-single .rail-panel { display: block; }
+
 .docs-sidebar .side-group { margin-bottom: 1.35rem; }
 .docs-sidebar .side-title {
   color: var(--mk-comment);
@@ -437,12 +504,9 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   background: rgba(249, 38, 114, 0.10);
 }
 
-/* Contents list, now the top block of the same rail. Numbered, because
-   a reader referring back to "section 4" wants to find section 4. */
-.docs-toc {
-  padding-bottom: 1.1rem;
-  border-bottom: 1px solid var(--mk-border);
-}
+/* Contents list. Numbered, because a reader referring back to
+   "section 4" wants to be able to find section 4. The separating rule
+   it used to carry is gone — the tab strip does that job now. */
 .docs-toc ol {
   list-style: none;
   counter-reset: toc;

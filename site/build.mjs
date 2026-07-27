@@ -201,14 +201,26 @@ function renderToc(toc) {
   const items = toc.map((h) =>
     `<li class="toc-h${h.depth}"><a href="#${h.id}">${h.text}</a></li>`,
   ).join('\n')
-  return `<div class="side-group docs-toc"><div class="side-title">on this page</div><ol>\n${items}\n</ol></div>`
+  return `<ol>\n${items}\n</ol>`
 }
 
-/** Page navigation and the current page's contents, in one rail.
+/** The one navigation rail, holding two different things.
  *
- *  Both used to be rendered, one down each edge of the screen, which put
- *  navigation on both sides of the reader at once. They're the same kind
- *  of thing, so they belong in the same column. */
+ *  These are two separate axes: where you are IN THE PAGE, and where you
+ *  are IN THE DOCS. Stacking them meant the longer one buried the other
+ *  — the tutorial's 32-entry contents list pushed every guide link off
+ *  the bottom of a sticky, scrolling column. Putting them back on
+ *  opposite edges isn't the answer either; that surrounds the reader
+ *  with navigation.
+ *
+ *  So they share the rail by switching rather than by stacking. Both are
+ *  one click away, and neither can ever hide the other however long
+ *  either grows.
+ *
+ *  Implemented with hidden radio inputs and sibling selectors rather
+ *  than JavaScript, so the tabs work with scripting blocked. Without
+ *  CSS, both panels simply render in sequence, which is the old
+ *  behaviour and still perfectly usable. */
 function renderSidebar(pages, current, rootPrefix, toc) {
   const groups = new Map()
   for (const p of pages) {
@@ -233,11 +245,28 @@ function renderSidebar(pages, current, rootPrefix, toc) {
     return `<div class="side-group"><div class="side-title">${escapeHtml(g)}</div><ul>\n${items}\n</ul></div>`
   }).join('\n')
 
-  // Contents first: it's about the page already open, so it's what the
-  // reader reaches for most. The full guide list sits under it.
-  const tocBlock = renderToc(toc)
-  const guides = `<div class="side-group-wrap">${blocks}</div>`
-  return `<nav class="docs-sidebar" aria-label="Documentation">\n${tocBlock}\n${guides}\n</nav>`
+  const tocList = renderToc(toc)
+  const guides = `<div class="rail-panel rail-guides">${blocks}</div>`
+
+  // A short page has no contents worth listing, so it gets the guide
+  // list outright with no tab strip to click past.
+  if (!tocList) {
+    return '<nav class="docs-sidebar docs-sidebar-single" aria-label="Documentation">\n'
+      + guides + '\n</nav>'
+  }
+
+  // Contents is the default tab: you just navigated here, so you know
+  // where you are in the docs, and what you want next is the shape of
+  // the page in front of you.
+  return '<nav class="docs-sidebar" aria-label="Documentation">\n'
+    + '<input type="radio" name="rail" id="rail-toc" class="rail-radio" checked>\n'
+    + '<input type="radio" name="rail" id="rail-guides" class="rail-radio">\n'
+    + '<div class="rail-tabs">'
+    + '<label for="rail-toc">On this page</label>'
+    + '<label for="rail-guides">All guides</label>'
+    + '</div>\n'
+    + `<div class="rail-panel rail-toc docs-toc">${tocList}</div>\n`
+    + guides + '\n</nav>'
 }
 
 function renderNav(pages, current, rootPrefix) {
