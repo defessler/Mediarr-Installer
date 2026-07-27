@@ -504,7 +504,7 @@ def collect_radarr(base, key, api):
     follow-up needed, which is why movies are the cheapest library to
     report on."""
     data = http_json(f'{base}/api/{api}/movie', arr_headers(key), timeout=90)
-    items = []
+    items, files = [], []
     for m in data or []:
         if not isinstance(m, dict):
             continue
@@ -531,7 +531,22 @@ def collect_radarr(base, key, api):
             'profile': m.get('qualityProfileId'),
             'fileId': mf.get('id'),
         })
-    return items, {}, None
+        if mf.get('id') is not None:
+            files.append({
+                'arr': 'radarr', 'kind': 'movie',
+                'file_id': mf['id'], 'item_id': m.get('id'),
+                'item': m.get('title') or '(untitled)',
+                'name': os.path.basename(mf.get('relativePath') or mf.get('path') or '')
+                        or (m.get('title') or 'file'),
+                'size': size, 'quality': quality,
+                'codec': mi.get('videoCodec') or '',
+                'path': mf.get('path') or '',
+                # A movie has exactly one file, so there are no siblings
+                # to compare it against. Bytes-per-hour already carries
+                # the "is this bloated" signal for movies.
+                'ratio': None,
+            })
+    return items, {'files': files}, None
 
 
 def collect_sonarr(base, key, api, want_quality_detail=True):
@@ -574,20 +589,36 @@ def collect_sonarr(base, key, api, want_quality_detail=True):
         })
         id_by_index.append(s.get('id'))
 
-    quality_bytes = {}
+    quality_bytes, files = {}, []
     if want_quality_detail and items:
-        quality_bytes = _sonarr_quality_mix(base, key, api, items, id_by_index)
+        quality_bytes, files = _sonarr_quality_mix(base, key, api, items, id_by_index)
 
-    return items, {'quality_bytes': quality_bytes}, None
+    return items, {'quality_bytes': quality_bytes, 'files': files}, None
+
+
+def _median(values):
+    v = sorted(values)
+    if not v:
+        return 0
+    mid = len(v) // 2
+    return v[mid] if len(v) % 2 else (v[mid - 1] + v[mid]) / 2
 
 
 def _sonarr_quality_mix(base, key, api, items, series_ids):
-    """Bytes-by-quality across every episode file, plus a per-series
-    dominant quality + codec written back onto `items`.
+    """Bytes-by-quality across every episode file, a per-series dominant
+    quality + codec written back onto `items`, and the individual file
+    records.
+
+    Keeping the files costs nothing extra: this pass already fetches
+    every one of them to tally the quality mix, and used to discard them.
+    Without them a series is a single row, so one bloated episode inside
+    an otherwise sane show is invisible, and the only available remedy is
+    deleting all of its files at once.
 
     Failures here are per-series and swallowed: one series whose files
     the API won't enumerate shouldn't cost us the other 299."""
     totals = {}
+    all_files = []
 
     def one(idx_and_id):
         idx, sid = idx_and_id
@@ -599,22 +630,33 @@ def _sonarr_quality_mix(base, key, api, items, series_ids):
                 arr_headers(key), timeout=45)
         except LibrarianSourceError:
             return None
-        local, codecs = {}, {}
+        local, codecs, recs = {}, {}, []
         for f in files or []:
             if not isinstance(f, dict):
                 continue
+            size = f.get('size') or 0
             q = ((f.get('quality') or {}).get('quality') or {}).get('name') or 'Unknown'
-            local[q] = local.get(q, 0) + (f.get('size') or 0)
+            local[q] = local.get(q, 0) + size
             codec = ((f.get('mediaInfo') or {}).get('videoCodec') or '')
             if codec:
                 codecs[codec] = codecs.get(codec, 0) + 1
-        return idx, local, codecs
+            if f.get('id') is None or not size:
+                continue
+            path = f.get('relativePath') or f.get('path') or ''
+            recs.append({
+                'arr': 'sonarr', 'kind': 'episode',
+                'file_id': f['id'], 'item_id': sid,
+                'name': os.path.basename(path) or f'file {f["id"]}',
+                'size': size, 'quality': q, 'codec': codec,
+                'path': f.get('path') or '',
+            })
+        return idx, local, codecs, recs
 
     with ThreadPoolExecutor(max_workers=DETAIL_WORKERS) as pool:
         for result in pool.map(one, list(enumerate(series_ids))):
             if not result:
                 continue
-            idx, local, codecs = result
+            idx, local, codecs, recs = result
             for q, b in local.items():
                 totals[q] = totals.get(q, 0) + b
             if local:
@@ -624,7 +666,17 @@ def _sonarr_quality_mix(base, key, api, items, series_ids):
                 items[idx]['quality'] = max(local.items(), key=lambda kv: kv[1])[0]
             if codecs:
                 items[idx]['codec'] = max(codecs.items(), key=lambda kv: kv[1])[0]
-    return totals
+
+            # Ratio against the series' own median. This is the signal
+            # that finds the odd episode somebody grabbed as a remux:
+            # "40 GB" means nothing on its own, "6x the rest of this
+            # show" is immediately actionable.
+            med = _median([r['size'] for r in recs])
+            for r in recs:
+                r['item'] = items[idx]['title']
+                r['ratio'] = round(r['size'] / med, 1) if med else None
+            all_files.extend(recs)
+    return totals, all_files
 
 
 def collect_lidarr(base, key, api):
@@ -956,6 +1008,140 @@ def build_plan(report, env, mode, arr_name, profile_id, item_ids):
     return plan
 
 
+def build_file_plan(report, env, arr_name, file_ids):
+    """Plan a REPLACE of specific files.
+
+    Distinct from shrink, which works on whole items and changes the
+    quality profile. This one is surgical: delete these exact files and
+    search for just what they covered, at the profile already set. It
+    exists because the common real case is one bad file — somebody
+    hand-grabbed a remux into an otherwise 1080p show — and the item-level
+    remedy for that is deleting all sixty of the show's files.
+    """
+    if not actions_enabled(env):
+        raise LibrarianSourceError(
+            'Actions are disabled. Set LIBRARIAN_ALLOW_ACTIONS=true in .env '
+            'and re-run the installer to enable them.')
+
+    spec = ACTION_SPEC.get(arr_name)
+    conn = (report.get('connections') or {}).get(arr_name)
+    if not spec or not conn:
+        raise LibrarianSourceError(f'{arr_name} is not reachable right now')
+
+    wanted = set(file_ids)
+    files = [f for f in report.get('files') or []
+             if f.get('arr') == arr_name and f.get('file_id') in wanted]
+    if not files:
+        raise LibrarianSourceError('None of the selected files were found in the current scan')
+
+    cap = max_batch(env)
+    if len(files) > cap:
+        raise LibrarianSourceError(
+            f'{len(files)} files selected but the per-run cap is {cap}. '
+            'Do it in smaller batches, or raise LIBRARIAN_MAX_BATCH.')
+
+    bin_path = recycle_bin_path(conn['base'], conn['key'], conn['api'])
+    if not bin_path:
+        raise LibrarianSourceError(
+            'Refusing to delete: this app has no Recycle Bin configured, so '
+            'the files would be gone for good. Set one in Settings → Media '
+            'Management → Recycle Bin, then try again.')
+
+    return {
+        'mode': 'replace',
+        'arr': arr_name,
+        'label': ARRS[arr_name]['label'],
+        'profile_id': None,
+        'profile_name': 'unchanged',
+        'deletes_files': True,
+        'recycle_bin': bin_path,
+        'files': [{'file_id': f['file_id'], 'item_id': f['item_id'],
+                   'label': f.get('label') or f['name'], 'size': f['size'],
+                   'quality': f.get('quality') or '', 'ratio': f.get('ratio'),
+                   'path': f.get('path') or ''} for f in files],
+        'items': [],
+        'total_size': sum(f['size'] for f in files),
+        'steps': [
+            f'Delete {len(files)} file(s), which the Recycle Bin at {bin_path} will catch.',
+            'Search for exactly what those files covered, and nothing else.',
+            'The quality profile is left alone: this replaces a specific bad '
+            'file rather than re-grading the whole item. Each file is missing '
+            'until its replacement imports.',
+        ],
+    }
+
+
+def execute_file_plan(report, env, plan):
+    """Apply a replace plan. Per file, so one failure strands nothing."""
+    arr_name = plan['arr']
+    spec = ACTION_SPEC[arr_name]
+    conn = report['connections'][arr_name]
+    base, key, api = conn['base'], conn['key'], conn['api']
+    pre = f'/api/{api}'
+    results = {'ok': [], 'failed': [], 'deleted_files': 0, 'notes': []}
+
+    # Sonarr needs episode ids to run a targeted search, and the mapping
+    # from file to episodes only exists WHILE the file does. Build it
+    # before deleting anything, or the search afterwards has nothing to
+    # aim at and the only fallback is re-searching the entire series.
+    episodes_for = {}
+    if arr_name == 'sonarr':
+        for series_id in {f['item_id'] for f in plan['files']}:
+            try:
+                eps = http_json(f'{base}{pre}/episode?seriesId={series_id}',
+                                arr_headers(key), timeout=60) or []
+            except LibrarianSourceError as e:
+                results['failed'].append(f'could not list episodes for series {series_id}: {e}')
+                continue
+            for ep in eps:
+                if not isinstance(ep, dict) or ep.get('episodeFileId') in (None, 0):
+                    continue
+                episodes_for.setdefault(ep['episodeFileId'], []).append(ep.get('id'))
+
+    search_eps, search_movies = [], set()
+    for f in plan['files']:
+        try:
+            arr_request(base, key, f'{pre}{spec["delete_file"](f["file_id"])}', 'DELETE')
+            results['deleted_files'] += 1
+            results['ok'].append(f['label'])
+            if arr_name == 'sonarr':
+                search_eps.extend(e for e in episodes_for.get(f['file_id'], []) if e)
+            else:
+                search_movies.add(f['item_id'])
+            note = audit({
+                'at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                'action': 'replace-file',
+                'arr': arr_name,
+                'file': f['label'],
+                'file_id': f['file_id'],
+                'size': f['size'],
+                'recycle_bin': plan['recycle_bin'],
+                'deleted_path': f.get('path') or '',
+            })
+            if note:
+                results['notes'].append(note)
+        except LibrarianSourceError as e:
+            results['failed'].append(f'{f["label"]}: {e}')
+
+    # Targeted search, once, for everything that just lost a file.
+    try:
+        if arr_name == 'sonarr' and search_eps:
+            arr_request(base, key, f'{pre}/command', 'POST',
+                        {'name': 'EpisodeSearch', 'episodeIds': search_eps})
+        elif search_movies:
+            arr_request(base, key, f'{pre}/command', 'POST',
+                        {'name': spec['search_cmd'],
+                         spec['search_ids']: sorted(search_movies)})
+        elif arr_name == 'sonarr' and results['deleted_files']:
+            results['notes'].append(
+                'Files were deleted but no episode ids resolved, so no search '
+                'was triggered. Run a season search in Sonarr to refill them.')
+    except LibrarianSourceError as e:
+        results['failed'].append(f'search: {e}')
+
+    return results
+
+
 def execute_plan(report, env, plan):
     """Apply a plan that was already built and confirmed. Returns a
     result dict. Each item is handled independently, so one failure
@@ -1232,6 +1418,10 @@ def build_report(top_n=25, quality_detail=True):
         'warnings': [],
         'watch_source': None,
         'root_paths': [],
+        # Individual files, not just the items that own them. A series is
+        # one item but sixty files, and the fat one is invisible at item
+        # level.
+        'files': [],
         # Per-arr base URL, API key, api version and quality profiles.
         # Actions need them. NOTHING may serialise this: see
         # public_report(), which strips it before anything leaves the
@@ -1265,6 +1455,8 @@ def build_report(top_n=25, quality_detail=True):
         except LibrarianSourceError as e:
             report['warnings'].append(f'{spec["label"]}: {e}')
             continue
+
+        report['files'].extend(extras.get('files') or [])
 
         for q, b in (extras.get('quality_bytes') or {}).items():
             report['quality_bytes'][q] = report['quality_bytes'].get(q, 0) + b
@@ -1367,6 +1559,32 @@ def build_report(top_n=25, quality_detail=True):
 
     for it in report['items']:
         it['per_hour'] = bytes_per_hour(it['size'], it['minutes'])
+
+    # ── file-level views ─────────────────────────────────────────────
+    # An "outlier" is a file well out of step with its siblings. That is
+    # the one worth replacing: 40 GB is meaningless alone, 6x the rest of
+    # the same show is not. OUTLIER_RATIO is deliberately not 1.5 — a
+    # long season finale legitimately runs bigger than a normal episode.
+    OUTLIER_RATIO = 2.5
+    for f in report['files']:
+        f['is_outlier'] = bool(f.get('ratio') and f['ratio'] >= OUTLIER_RATIO)
+        f['label'] = (f"{f['item']} — {f['name']}"
+                      if f.get('item') and f['kind'] == 'episode' else f.get('item') or f['name'])
+
+    files_by_size = sorted(report['files'], key=lambda f: f['size'], reverse=True)
+    report['top_files'] = files_by_size[:top_n]
+    # Outliers ranked by how far out of step they are rather than by raw
+    # size, so a 12 GB file among 1 GB siblings outranks a 30 GB one
+    # among 25 GB siblings. The second is just a big show.
+    report['outlier_files'] = sorted(
+        [f for f in report['files'] if f['is_outlier']],
+        key=lambda f: (f['ratio'], f['size']), reverse=True)[:top_n]
+    report['outlier_bytes'] = sum(f['size'] for f in report['files'] if f['is_outlier'])
+    # Keep the payload bounded on a large library: everything that is
+    # rendered or searchable, and nothing else.
+    keep = {id(f) for f in files_by_size[:400]}
+    keep |= {id(f) for f in report['files'] if f['is_outlier']}
+    report['files'] = [f for f in report['files'] if id(f) in keep]
 
     by_size = sorted(report['items'], key=lambda i: i['size'], reverse=True)
     report['top_by_size'] = by_size[:top_n]
@@ -1489,6 +1707,30 @@ def render_text(report):
                 it.get('last_played') or ('never' if report['watch_source'] else '—'),
             ), w))
 
+    def file_table(title, files, note=None):
+        if not files:
+            return
+        add('')
+        add(f'  {title}')
+        if note:
+            add(f'    {note}')
+        w = (52, 11, 17, 8)
+        add('    ' + _row(('File', 'Size', 'Quality', 'vs sibs'), w))
+        for f in files:
+            add('    ' + _row((
+                f.get('label') or f.get('name', ''),
+                human_bytes(f['size']),
+                f.get('quality') or '—',
+                f'{f["ratio"]}x' if f.get('ratio') else '—',
+            ), w))
+
+    if report.get('outlier_files'):
+        file_table(
+            'FILES OUT OF STEP WITH THEIR SHOW', report['outlier_files'],
+            'Much larger than the other files in the same series. '
+            f'{human_bytes(report.get("outlier_bytes") or 0)} total.')
+    file_table('LARGEST INDIVIDUAL FILES', report.get('top_files') or [])
+
     item_table('BIGGEST ITEMS', report['top_by_size'])
     item_table('MOST BLOATED (bytes per hour)', report['top_by_rate'],
                'High rate + low runtime is usually a remux you can re-grab smaller.')
@@ -1585,6 +1827,7 @@ code {
                  align-items: center; gap: 0.35rem; }
 .filter-count { font-size: 0.8rem; color: #64748b; }
 tr.hidden-row { display: none; }
+.ratio-hot { color: #fca5a5; font-weight: 600; }
 .no-matches { color: #94a3b8; font-size: 0.875rem; padding: 0.75rem 0; }
 
 /* ── Selection + actions ─────────────────────────────────────────── */
@@ -1702,8 +1945,9 @@ function fuzzyScore(query, text) {
         // A row hidden by a filter must not stay silently selected, or
         // an action would run against something the user can't see.
         if (!ok) {
-          var box = row.querySelector('.pick');
-          if (box && box.checked) { box.checked = false; }
+          row.querySelectorAll('.pick, .pickfile').forEach(function (box) {
+            if (box.checked) box.checked = false;
+          });
         }
         if (ok) { shown++; scored.push([score, row]); }
       });
@@ -1723,6 +1967,7 @@ function fuzzyScore(query, text) {
         ? shown + ' of ' + total + ' shown' : '';
     }
     syncSelection();
+    syncFiles();
   }
 
   var bar = document.getElementById('action-bar');
@@ -1780,12 +2025,48 @@ function fuzzyScore(query, text) {
     if (hidden) hidden.value = keys.map(function (k) { return k.split(':')[1]; }).join(',');
   }
 
+  // Files select independently of items: replacing a file and re-grading
+  // an item are different actions, so they get separate bars and never
+  // share a selection.
+  var fileBar = document.getElementById('file-action-bar');
+  var fileCount = document.getElementById('file-sel-count');
+  var fileArr = document.getElementById('file-action-arr');
+  var fileIds = document.getElementById('file-ids');
+  var fileWarn = document.getElementById('file-sel-warn');
+
+  function syncFiles() {
+    if (!fileBar) return;
+    var picks = Array.prototype.slice.call(document.querySelectorAll('.pickfile:checked'))
+      .filter(function (b) { return !b.closest('tr').classList.contains('hidden-row'); });
+    var seen = {};
+    picks.forEach(function (b) { seen[b.dataset.arr + ':' + b.dataset.id] = b.dataset.arr; });
+    var keys = Object.keys(seen);
+    var arrs = {};
+    keys.forEach(function (k) { arrs[seen[k]] = 1; });
+    var arrList = Object.keys(arrs);
+    var single = arrList.length === 1;
+
+    fileBar.hidden = keys.length === 0;
+    if (fileCount) fileCount.textContent = keys.length + (keys.length === 1 ? ' file selected' : ' files selected');
+    if (fileWarn) {
+      fileWarn.hidden = single || keys.length === 0;
+      fileWarn.textContent = single ? '' : 'Select files from one app at a time.';
+    }
+    if (fileArr) fileArr.value = single ? arrList[0] : '';
+    if (fileIds) fileIds.value = keys.map(function (k) { return k.split(':')[1]; }).join(',');
+    Array.prototype.slice.call(fileBar.querySelectorAll('button')).forEach(function (b) {
+      b.disabled = !single || keys.length === 0;
+    });
+  }
+
   q.addEventListener('input', apply);
   [arrSel, minSel, unplayed].forEach(function (el) {
     if (el) el.addEventListener('change', apply);
   });
   document.addEventListener('change', function (e) {
-    if (e.target && e.target.classList.contains('pick')) syncSelection();
+    if (!e.target) return;
+    if (e.target.classList.contains('pick')) syncSelection();
+    if (e.target.classList.contains('pickfile')) syncFiles();
   });
 
   // "/" focuses the search, the one keyboard nicety worth having on a
@@ -1798,6 +2079,47 @@ function fuzzyScore(query, text) {
   apply();
 })();
 """
+
+
+def _file_table_html(files, selectable=False, show_ratio=True):
+    """Individual files. `ratio` is the point of this table: it says how
+    far out of step a file is with its own siblings, which is what makes
+    one worth replacing."""
+    if not files:
+        return '<p class="muted">Nothing to show yet.</p>'
+    rows = []
+    for f in files:
+        hay = html.escape(' '.join(str(x) for x in (
+            f.get('label', ''), f.get('name', ''), f.get('quality', ''),
+            f.get('codec', ''), f.get('arr', '')) if x))
+        sel = ''
+        if selectable:
+            sel = (f'<td class="sel"><input type="checkbox" class="pickfile" '
+                   f'data-arr="{html.escape(str(f.get("arr", "")))}" '
+                   f'data-id="{int(f["file_id"])}" '
+                   f'aria-label="Select {html.escape(f.get("label") or f["name"])}"></td>')
+        if f.get('ratio'):
+            cls = ' class="ratio-hot"' if f.get('is_outlier') else ' class="dim"'
+            ratio = f'<span{cls}>{f["ratio"]}x</span>'
+        else:
+            ratio = '<span class="dim">—</span>'
+        rows.append(
+            f'<tr data-search="{hay}" data-size="{int(f.get("size") or 0)}" '
+            f'data-arr="{html.escape(str(f.get("arr", "")))}" data-plays="0">'
+            + sel
+            + f'<td>{html.escape(f.get("label") or f["name"])}</td>'
+            f'<td class="num">{html.escape(human_bytes(f["size"]))}</td>'
+            f'<td class="dim">{html.escape(f.get("quality") or "—")}</td>'
+            + (f'<td class="num">{ratio}</td>' if show_ratio else '')
+            + '</tr>')
+    head_sel = '<th class="sel"></th>' if selectable else ''
+    ratio_head = ('<th class="num" title="Size compared with the other files '
+                  'in the same show">vs siblings</th>') if show_ratio else ''
+    return (
+        '<table><thead><tr>' + head_sel +
+        '<th>File</th><th class="num">Size</th><th>Quality</th>' + ratio_head +
+        '</tr></thead><tbody>' + ''.join(rows) + '</tbody>'
+        '</table><p class="no-matches" hidden>Nothing matches that search.</p>')
 
 
 def _item_table_html(items, watch_source, selectable=False):
@@ -1957,6 +2279,24 @@ def render_html(report, env=None):
             f'<div class="label">Big and never played · via {html.escape(report["watch_source"])}</div>'
             + _item_table_html(report['big_unwatched'], report['watch_source'], can_act) + '</div>')
 
+    # Files, not just the items that own them.
+    if report.get('outlier_files'):
+        add('<div class="card"><div class="label">Files out of step with their show</div>'
+            '<p class="muted" style="margin-top:0">Each of these is much larger than '
+            'the other files in the same series — usually one release grabbed at a '
+            'quality the rest of the show does not use. Replacing one of these is the '
+            'cheapest space you will ever reclaim, because nothing else about the '
+            'show changes. '
+            f'<strong>{html.escape(human_bytes(report.get("outlier_bytes") or 0))}</strong> '
+            'sits in files like this.</p>'
+            + _file_table_html(report['outlier_files'], can_act) + '</div>')
+
+    if report.get('top_files'):
+        add('<div class="card"><div class="label">Largest individual files</div>'
+            '<p class="muted" style="margin-top:0">Every file, ranked on its own '
+            'rather than rolled up into the movie or series that owns it.</p>'
+            + _file_table_html(report['top_files'], can_act) + '</div>')
+
     if can_act:
         prof_opts = []
         for name, conn in (report.get('connections') or {}).items():
@@ -1974,6 +2314,20 @@ def render_html(report, env=None):
             '<button type="submit" name="mode" value="upgrade">Upgrade</button>'
             '<button type="submit" name="mode" value="shrink" class="danger">Shrink</button>'
             '<span class="muted" id="sel-warn" hidden></span>'
+            '</div></form>')
+        # Files get their own bar. Replacing a file is a different action
+        # from re-grading an item, and mixing the two selections in one
+        # control would only invite picking the wrong one.
+        add('<form method="POST" action="/plan">'
+            '<div class="action-bar" id="file-action-bar" hidden>'
+            '<span class="sel-count" id="file-sel-count">0 files selected</span>'
+            '<input type="hidden" name="ids" id="file-ids">'
+            '<input type="hidden" name="arr" id="file-action-arr">'
+            '<input type="hidden" name="mode" value="replace">'
+            '<button type="submit" class="danger">Replace file(s)</button>'
+            '<span class="muted">Deletes just these files and searches for '
+            'what they covered. The quality profile is left alone.</span>'
+            '<span class="muted" id="file-sel-warn" hidden></span>'
             '</div></form>')
 
     add('<div class="card"><form method="POST" action="/rescan">'
@@ -2015,24 +2369,36 @@ def _page(body, code_note=''):
 def render_plan_html(plan, token):
     """The confirmation page. Deliberately verbose about the destructive
     case: this is the last screen before files move."""
+    # A replace plan lists files; upgrade and shrink list items.
+    if plan['mode'] == 'replace':
+        entries = [{'name': f['label'], 'size': f['size'],
+                    'quality': f.get('quality') or '', 'extra':
+                    (f'{f["ratio"]}x its siblings' if f.get('ratio') else '')}
+                   for f in plan['files']]
+        noun = 'file'
+    else:
+        entries = [{'name': i['title'] + (f' ({i["year"]})' if i.get('year') else ''),
+                    'size': i['size'], 'quality': i.get('quality') or '', 'extra': ''}
+                   for i in plan['items']]
+        noun = 'item'
+
     rows = ''.join(
         '<tr>'
-        f'<td>{html.escape(i["title"])}'
-        + (f' <span class="dim">({i["year"]})</span>' if i.get('year') else '')
-        + '</td>'
-        f'<td class="num">{html.escape(human_bytes(i["size"]))}</td>'
-        f'<td class="dim">{html.escape(i["quality"] or "—")}</td>'
+        f'<td>{html.escape(e["name"])}</td>'
+        f'<td class="num">{html.escape(human_bytes(e["size"]))}</td>'
+        f'<td class="dim">{html.escape(e["quality"] or "—")}</td>'
+        f'<td class="dim">{html.escape(e["extra"])}</td>'
         '</tr>'
-        for i in plan['items'])
+        for e in entries)
 
     steps = ''.join(f'<li>{html.escape(x)}</li>' for x in plan['steps'])
-    verb = 'Shrink' if plan['deletes_files'] else 'Upgrade'
+    verb = {'replace': 'Replace', 'shrink': 'Shrink'}.get(plan['mode'], 'Upgrade')
 
     warn = ''
     if plan['deletes_files']:
         warn = (
             '<div class="plan-warn"><strong>This deletes files.</strong> '
-            f'{len(plan["items"])} item(s), '
+            f'{len(entries)} {noun}(s), '
             f'{html.escape(human_bytes(plan["total_size"]))} on disk, will have '
             'their current files removed through the arr and replaced by a fresh '
             f'search at "{html.escape(plan["profile_name"])}".<br><br>'
@@ -2043,18 +2409,19 @@ def render_plan_html(plan, token):
 
     return _page(
         '<h1>Librarian</h1>'
-        f'<p class="muted">Confirm: {verb.lower()} {len(plan["items"])} item(s) '
+        f'<p class="muted">Confirm: {verb.lower()} {len(entries)} {noun}(s) '
         f'in {html.escape(plan["label"])}</p>'
         + warn +
         '<div class="card"><div class="label">What will happen</div>'
         f'<ol class="plan-steps">{steps}</ol></div>'
         '<div class="card"><div class="label">Items</div>'
-        '<table><thead><tr><th>Title</th><th class="num">Size</th>'
-        '<th>Current quality</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        '<table><thead><tr><th>Name</th><th class="num">Size</th>'
+        '<th>Current quality</th><th></th></tr></thead><tbody>'
+        + rows + '</tbody></table></div>'
         '<div class="card"><form method="POST" action="/apply">'
         f'<input type="hidden" name="token" value="{html.escape(token)}">'
         f'<button type="submit" class="{"danger" if plan["deletes_files"] else ""}">'
-        f'Yes, {verb.lower()} {len(plan["items"])} item(s)</button> '
+        f'Yes, {verb.lower()} {len(entries)} {noun}(s)</button> '
         '<a href="/" style="margin-left:0.75rem;color:#94a3b8">Cancel</a>'
         '</form></div>')
 
@@ -2226,8 +2593,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._error_page('Malformed profile.')
                 return
             try:
-                plan = build_plan(report, env, (form.get('mode') or '').strip(),
-                                  (form.get('arr') or '').strip(), profile_id, ids)
+                mode = (form.get('mode') or '').strip()
+                if mode == 'replace':
+                    plan = build_file_plan(report, env,
+                                           (form.get('arr') or '').strip(), ids)
+                else:
+                    plan = build_plan(report, env, mode,
+                                      (form.get('arr') or '').strip(), profile_id, ids)
             except LibrarianSourceError as e:
                 self._error_page(str(e))
                 return
@@ -2271,7 +2643,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._error_page('A scan is running — try again in a moment.', 409)
                 return
             try:
-                results = execute_plan(report, env, plan)
+                if plan['mode'] == 'replace':
+                    results = execute_file_plan(report, env, plan)
+                else:
+                    results = execute_plan(report, env, plan)
             except LibrarianSourceError as e:
                 self._error_page(str(e), 502)
                 return
@@ -2354,6 +2729,21 @@ def main():
             report['big_unwatched'] = (
                 [i for i in picked if i['kind'] == 'movie' and not i.get('plays')][:args.top]
                 if report['watch_source'] else [])
+
+            # Files narrow by the same query, so `--filter severance` shows
+            # that show's files rather than the whole library's.
+            fpick = [f for f in report.get('files') or []
+                     if (not args.arr or f.get('arr') == args.arr)
+                     and (not args.min_size or f['size'] >= parse_size(args.min_size))
+                     and (not args.quality or args.quality.lower() in (f.get('quality') or '').lower())
+                     and (not args.filter or fuzzy_score(args.filter, ' '.join(str(x) for x in (
+                         f.get('label', ''), f.get('quality', ''), f.get('codec', ''),
+                         f.get('arr', '')) if x))[0])]
+            report['top_files'] = sorted(fpick, key=lambda f: f['size'], reverse=True)[:args.top]
+            report['outlier_files'] = sorted(
+                [f for f in fpick if f.get('is_outlier')],
+                key=lambda f: (f['ratio'], f['size']), reverse=True)[:args.top]
+            report['outlier_bytes'] = sum(f['size'] for f in fpick if f.get('is_outlier'))
         if args.json:
             print(json.dumps(public_report(report), indent=2, default=str))
         else:

@@ -25,6 +25,18 @@ Librarian is that screen. It's opt-in and off by default. Added in v0.20.0.
 
 **Big and never played** - last-played and play count, pulled from Tautulli on Plex or from Jellyfin's own watch data. This is the view that actually decides things.
 
+### Individual Files, Not Just Titles
+
+A movie is one file, so the two are the same thing. A series isn't. Sixty episodes roll up into one row, and that row is an average, which is a good way to hide a bad file.
+
+The case worth catching: a show sitting on a 1080p profile where somebody once hand-grabbed a single episode as a 40 GB remux. The series total looks large but plausible, its dominant quality still reads WEBDL-1080p because the other fifty-nine episodes outvote the one, and nothing on the page suggests anything is wrong.
+
+So there are two file-level views:
+
+**Files out of step with their show** compares each file against the median of its own siblings and lists the ones well clear of it. This is the useful signal, because raw size on its own says nothing. 40 GB is normal for a feature film and absurd for one episode of a comedy. Six times the rest of the same show is unambiguous either way. A series where *everything* is 30 GB is not flagged, because nothing about it is out of step.
+
+**Largest individual files** is the plain version: every file ranked on its own, ignoring what owns it.
+
 ### Why Bytes Per Hour
 
 Sorting by raw size only ever finds long shows. A 90 GB twelve-hour series is completely normal. A 90 GB two-hour film is a remux you probably didn't mean to keep.
@@ -99,6 +111,16 @@ Do it in the other order and the search re-grabs the same oversized release you 
 IMPORTANT: a shrink leaves the item unavailable until a new release lands, which might be minutes or might be never for something obscure. Librarian refuses to delete anything at all unless the arr has **Settings → Media Management → Recycle Bin** set, so deletions stay recoverable, but that safety net is only as good as the disk space you leave in the bin.
 
 Shrinking isn't offered for Lidarr. There it would mean deleting every track file an artist owns, which is too blunt to sit behind one button.
+
+### Replacing One File
+
+Shrink works on whole items, which is the wrong tool for a single bad episode. Shrinking a series to fix one file deletes all sixty of them.
+
+So files have their own action. Tick the files you want, press **Replace file(s)**, and Librarian deletes exactly those and searches for exactly what they covered. On Sonarr that means the affected episodes, not the series. The quality profile is left alone, because the point here is "this particular file is wrong", not "re-grade this show".
+
+That distinction matters for the outlier case. The show's profile is already right. One file just doesn't match it, and re-searching under the existing profile is what fixes that.
+
+Same rails as everything else: it refuses without a Recycle Bin, shows you the plan first, and logs what it deleted.
 
 ### Turning On Actions
 
