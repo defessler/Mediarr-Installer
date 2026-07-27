@@ -165,6 +165,13 @@ export interface EnvFormValues {
    *  Dispatcharr UI instead. */
   LIVETV_CHANNEL_PACKS?: string
 
+  // ── Storage analysis (Librarian) — OPT-IN like Soulseek (isOptInEnabled).
+  /** Whether to install Librarian: a read-only sidecar that reports which
+   *  media is eating the array, at what quality, and (with Tautulli/Jellyfin)
+   *  what has never been played. Needs no credentials of its own — it reads
+   *  the arr API keys already in .env. A missing key counts as OFF. */
+  ENABLE_LIBRARIAN?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -558,6 +565,12 @@ export function renderEnv(v: EnvFormValues): string {
     line('DISPATCHARR_ADMIN_USER', v.DISPATCHARR_ADMIN_USER || 'admin'),
     line('DISPATCHARR_ADMIN_PASS', v.DISPATCHARR_ADMIN_PASS),
     line('LIVETV_CHANNEL_PACKS', v.LIVETV_CHANNEL_PACKS),
+    '',
+    '# Storage analysis (Librarian). OPT-IN; off by default. A missing',
+    '# ENABLE_LIBRARIAN key counts as OFF (like ENABLE_SOULSEEK) — emitted via',
+    '# isOptInEnabled. Read-only report on ${LAN_IP}:8890 showing what is eating',
+    '# the array, at what quality, and what has never been played.',
+    line('ENABLE_LIBRARIAN', isOptInEnabled(v.ENABLE_LIBRARIAN) ? 'true' : 'false'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

@@ -537,6 +537,10 @@ fi
 # the LAN as a (virtual) HDHomeRun tuner, so it stays on the media bridge and
 # never pulls in the "vpn" sidecar.
 is_optin_enabled ENABLE_DISPATCHARR && PROFILES+=("livetv")
+# Storage analysis (Librarian) is OPT-IN (default off) — same is_optin_enabled
+# rule. Read-only sidecar on the media bridge: it reads the arrs over plain HTTP
+# and never touches gluetun, so like Dispatcharr it pulls in no "vpn" sidecar.
+is_optin_enabled ENABLE_LIBRARIAN && PROFILES+=("librarian")
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
@@ -720,6 +724,7 @@ stop_disabled_services() {
         "slskd:ENABLE_SOULSEEK"   "soularr:ENABLE_SOULSEEK"
         "playlistsync:ENABLE_PLAYLIST_SYNC"
         "dispatcharr:ENABLE_DISPATCHARR"
+        "librarian:ENABLE_LIBRARIAN"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -727,10 +732,12 @@ stop_disabled_services() {
         flag="${pair#*:}"
         # Service is enabled → leave the container alone, up -d will
         # (re-)create or update it as needed. ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC
-        # / ENABLE_DISPATCHARR are OPT-IN, so use the explicit-true helper; the
-        # default-on is_enabled would treat a missing key as "enabled" and never
-        # reap slskd/soularr, playlistsync, or dispatcharr.
-        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] || [ "$flag" = "ENABLE_DISPATCHARR" ]; then
+        # / ENABLE_DISPATCHARR / ENABLE_LIBRARIAN are OPT-IN, so use the
+        # explicit-true helper; the default-on is_enabled would treat a missing key
+        # as "enabled" and never reap slskd/soularr, playlistsync, dispatcharr, or
+        # librarian.
+        if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] \
+           || [ "$flag" = "ENABLE_DISPATCHARR" ] || [ "$flag" = "ENABLE_LIBRARIAN" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -913,6 +920,8 @@ check_port_conflicts() {
     # LAN bind on 9191, so a foreign holder would fail the compose-up bind
     # late — surface it here instead.
     is_optin_enabled ENABLE_DISPATCHARR && pairs+=("dispatcharr:9191")
+    # Librarian (opt-in storage report): single plain LAN bind on 8890.
+    is_optin_enabled ENABLE_LIBRARIAN && pairs+=("librarian:8890")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
     # separate package), so the old per-port `netstat -lnt 2>/dev/null`
@@ -1046,6 +1055,9 @@ wait_for_services() {
     # signal (its Django first boot serves HTTP minutes later — post-deploy's
     # lenient URL check covers that, this wait must not stall on it). Opt-in.
     is_optin_enabled ENABLE_DISPATCHARR && services="$services dispatcharr"
+    # Librarian is a plain bridge service that boots straight into python (no
+    # apk step), so .State.Status flips to running almost immediately. Opt-in.
+    is_optin_enabled ENABLE_LIBRARIAN && services="$services librarian"
 
     echo ""
     echo "  Waiting for containers to become healthy..."

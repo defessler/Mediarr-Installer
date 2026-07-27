@@ -772,6 +772,54 @@ services:
     # docker compose up -d recyclarr-trigger.
     restart: on-failure:5
 
+  # Storage analysis sidecar — "where did my disk go, and what's worth
+  # re-grabbing?". Reads sizeOnDisk + quality out of Sonarr/Radarr/Lidarr,
+  # /diskspace for the mounts, and (when available) Tautulli or Jellyfin
+  # for last-played, then serves one page joining all three. Opt-in and
+  # started only when ENABLE_LIBRARIAN is explicitly true.
+  #
+  # Deliberately less privileged than its sibling recyclarr-trigger:
+  #   - no docker.sock. It talks to the arrs over plain HTTP on the
+  #     `media` network, so it never needs the daemon.
+  #   - ${INSTALL_DIR} mounted READ-ONLY. It needs the API keys out of
+  #     .env and Tautulli's api_key out of its config.ini, and nothing
+  #     else. The container runs as root (like recyclarr-trigger) so a
+  #     0600 .env is readable whichever uid owns it — the :ro mount, not
+  #     the uid, is what makes that safe.
+  #   - the script itself issues GETs only: it never edits a profile,
+  #     triggers a search, or deletes a file.
+  # No apk step either — librarian.py is pure stdlib, so the container
+  # boots straight into python with none of recyclarr-trigger's
+  # docker-cli install delay or mirror-outage failure mode.
+  librarian:
+    # Same pinned minor + Docker Hub pull-through mirror as
+    # recyclarr-trigger; bump both together after smoke-testing.
+    image: mirror.gcr.io/library/python:3.12-alpine
+    container_name: librarian
+    profiles: ["librarian"]
+    networks: [media]
+    security_opt: *security
+    # No depends_on: every arr it reads is independently profile-gated,
+    # so a hard dep would fail compose validation on a movies-only or
+    # TV-only install. Unreachable arrs degrade to a warning on the page.
+    ports:
+      - ${LAN_IP}:8890:8890
+    volumes:
+      # The analyser itself — single file, bind-mounted, so edits ship
+      # with a wizard re-run rather than an image rebuild.
+      - ${INSTALL_DIR}/scripts/librarian.py:/app/librarian.py:ro
+      # Read-only view of the install dir: .env for the arr API keys,
+      # tautulli/config/config.ini for the Tautulli key.
+      - ${INSTALL_DIR}:/install-dir:ro
+    environment:
+      - TZ=${TZ}
+    command: ["python3", "/app/librarian.py"]
+    logging: *logging
+    # on-failure:5 rather than unless-stopped, matching recyclarr-trigger:
+    # a persistent boot failure (bad mount, syntax error) stops rather
+    # than crash-looping against the docker daemon forever.
+    restart: on-failure:5
+
   unpackerr:
     # ghcr.io path is unpackerr/unpackerr (golift/unpackerr on Docker Hub) —
     # same image, off Docker Hub's rate limit.

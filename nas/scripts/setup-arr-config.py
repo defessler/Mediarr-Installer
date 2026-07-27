@@ -4066,6 +4066,19 @@ def render_homepage_services(env, ip):
             f"        icon: recyclarr.svg\n"
             f"        siteMonitor: http://{ip}:8889/"
         )
+    # Librarian (opt-in): the storage report sidecar. Sits in Maintenance
+    # next to Recyclarr because the two answer adjacent questions — Recyclarr
+    # decides what quality you WANT, Librarian shows what that has actually
+    # cost you on disk. Independently gated: either can be on without the
+    # other, which is why the section gate below is an OR.
+    if is_optin_enabled(env, 'ENABLE_LIBRARIAN'):
+        maintenance.append(
+            f"    - Librarian:\n"
+            f"        href: http://{ip}:8890/\n"
+            f"        description: 'Storage report · biggest items, quality mix, never played'\n"
+            f"        icon: mdi-harddisk\n"
+            f"        siteMonitor: http://{ip}:8890/"
+        )
     # The "Update Images" tile (/pull on recyclarr-trigger) was removed:
     # `compose up -d` after the pull recreated gluetun, which severed
     # qBittorrent's `network_mode: service:gluetun` namespace and left
@@ -4121,14 +4134,18 @@ def render_homepage_settings(env):
         out.append("  Live TV:")
         out.append("    style: row")
         out.append("    columns: 1")
-    # Maintenance — only the Recyclarr tile lives here now (Update Images
-    # was removed; see render_homepage_services for the reason). Skip the
-    # section + its layout entry entirely when Recyclarr is off, otherwise
-    # Homepage logs "layout key has no matching section" warnings.
-    if is_enabled(env, 'ENABLE_RECYCLARR'):
+    # Maintenance — Recyclarr and/or Librarian (Update Images was removed;
+    # see render_homepage_services for the reason). Skip the section + its
+    # layout entry entirely when BOTH are off, otherwise Homepage logs
+    # "layout key has no matching section" warnings. The two are gated
+    # independently, so mirror the OR from render_homepage_services exactly
+    # and size the row to how many tiles will actually land in it.
+    maint_tiles = ((1 if is_enabled(env, 'ENABLE_RECYCLARR') else 0)
+                   + (1 if is_optin_enabled(env, 'ENABLE_LIBRARIAN') else 0))
+    if maint_tiles:
         out.append("  Maintenance:")
         out.append("    style: row")
-        out.append("    columns: 1")
+        out.append(f"    columns: {maint_tiles}")
     return "\n".join(out) + "\n"
 
 def write_config_file(label, path, content):

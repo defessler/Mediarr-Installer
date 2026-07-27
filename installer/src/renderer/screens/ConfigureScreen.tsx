@@ -177,6 +177,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
   { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
+  { key: 'ENABLE_LIBRARIAN',   label: 'Librarian',    hint: 'Read-only storage report — what is eating your disk, at what quality', icon: HardDrive, iconColor: 'text-lime-400' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
@@ -185,7 +186,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN'])
 
 function ServicesSection({
   config, update,
@@ -195,9 +196,10 @@ function ServicesSection({
 }) {
   // Imported from env-render so the renderer, setup.sh, and setup-arr-
   // config.py all agree on what counts as disabled (0/no/off/false).
-  // ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC / ENABLE_DISPATCHARR are the
-  // OPT-IN services: a missing/empty value means OFF, so they use
-  // isOptInEnabled instead of the default-on isEnabled. Without this, an
+  // ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC / ENABLE_DISPATCHARR /
+  // ENABLE_LIBRARIAN are the OPT-IN services: a missing/empty value means
+  // OFF, so they use isOptInEnabled instead of the default-on isEnabled.
+  // Without this, an
   // older profile loaded without the key would show their toggle ON.
   const isOn = (k: keyof EnvFormValues) =>
     OPT_IN_SERVICES.has(k)
@@ -748,6 +750,7 @@ const FIELD_LABELS: Record<string, string> = {
   DISPATCHARR_ADMIN_USER: 'Live TV admin username',
   DISPATCHARR_ADMIN_PASS: 'Live TV admin password',
   LIVETV_CHANNEL_PACKS: 'Live TV channel packs',
+  ENABLE_LIBRARIAN: 'Librarian',
   USENET_USER: 'Usenet username',
   USENET_PASS: 'Usenet password',
   VPN_PROVIDER: 'VPN provider',

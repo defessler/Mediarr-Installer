@@ -47,6 +47,11 @@ export const envObject = z.object({
   // below escalates the Dispatcharr admin credentials to required on an
   // explicit-true check. A missing key stays OFF everywhere.
   ENABLE_DISPATCHARR: optStr,
+  // OPT-IN (default off), mirroring ENABLE_SOULSEEK. No superRefine block
+  // below: the storage analyser has no credentials of its own — it reads the
+  // arr API keys already in .env — so there is nothing to escalate to
+  // required. A missing key stays OFF everywhere.
+  ENABLE_LIBRARIAN: optStr,
   // ── TRaSH Guide profile picks (consumed by setup-arr-config.py to
   // generate recyclarr.yml's `include:` blocks). Defaults to the most
   // common TRaSH choices: WEB-1080p for Sonarr, HD Bluray + WEB for

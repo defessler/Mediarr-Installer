@@ -212,6 +212,15 @@ esac
 case "$(env_val ENABLE_DISPATCHARR | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("livetv") ;;
 esac
+# Storage report (Librarian) is OPT-IN too, same case-guard for the same
+# reason: a missing key must not enable it. It also matters more here than
+# most, because librarian runs `restart: on-failure:5` rather than
+# unless-stopped — so a clean stop (or five boot failures) leaves it down
+# until something composes it back up, and that something is this script.
+# Not VPN-coupled: it reads the arrs over the media bridge.
+case "$(env_val ENABLE_LIBRARIAN | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("librarian") ;;
+esac
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

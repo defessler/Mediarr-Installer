@@ -699,6 +699,41 @@ sudo bash <SCRIPTS_DIR>/setup.sh`,
       `# Reference page (open in a browser):
 # https://trash-guides.info/Lidarr/lidarr-setup-quality-profiles/`,
   },
+  {
+    category: 'Storage',
+    symptom: 'What is actually using all my disk space?',
+    cause:
+      'Every arr knows exactly how many bytes each movie, series, and artist takes and what quality it grabbed, but no single screen puts those together. Working it out by hand means paging through Radarr\'s list view and doing the arithmetic yourself.',
+    fix:
+      'Enable Librarian on the Configure screen. It reads size and quality straight out of Sonarr, Radarr, and Lidarr and serves one page on port 8890 (there\'s a tile for it under Maintenance on Homepage). It ranks your biggest items by bytes per hour, which is the number that finds bloated remuxes. Raw size only ever finds long shows. It also shows space grouped by quality tier, each arr\'s cutoff-unmet count, and, when Tautulli or Jellyfin can tell it, what is large and has never been played. The same report runs from SSH if you\'d rather not enable the container. Librarian is read-only either way. It issues nothing but GETs, so it never edits a profile, triggers a search, or deletes a file.',
+    command: (c) =>
+      `# Browser (needs ENABLE_LIBRARIAN=true and a wizard re-run):\n`
+      + `#   http://<NAS>:8890  (or the Librarian tile on Homepage)\n\n`
+      + `# Same report over SSH, no container required:\n`
+      + `python3 ${c.scriptsDir}/librarian.py --report\n\n`
+      + `# Faster on a big TV library (skips the per-series quality breakdown):\n`
+      + `python3 ${c.scriptsDir}/librarian.py --report --fast\n\n`
+      + `# Machine-readable, if you want to post-process it:\n`
+      + `python3 ${c.scriptsDir}/librarian.py --json > /tmp/library.json\n\n`
+      + `# ${scheduleHint(c.nasFamily, 'monthly', `python3 ${c.scriptsDir}/librarian.py --report`).replace(/^# /, '')}`,
+  },
+  {
+    category: 'Storage',
+    symptom: 'How do I re-grab something at a different quality?',
+    cause:
+      'Upgrading and downgrading aren\'t symmetric. An arr will happily replace a file with a better one, so an upgrade is just a profile change plus a search. It will never replace a file with a worse one, so a downgrade needs the existing file deleted first, and the order matters.',
+    fix:
+      'To upgrade, open Radarr or Sonarr, select the items, use Mass Editor to set a higher quality profile, then run a search. The arr keeps the current file until something better actually imports, so nothing goes missing in the meantime. To downgrade, set the LOWER profile first, then delete the existing file, then search. Doing it the other way round just re-grabs the release you were trying to get rid of. Note: a downgrade leaves the item unavailable until the new release lands, so check your arr has a Recycle Bin path set (Settings -> Media Management) before deleting anything. That way the file is recoverable if the re-grab doesn\'t go the way you wanted. Librarian\'s report is the shortlist for both: sort by bytes per hour to find what\'s worth shrinking, and read the cutoff-unmet counts to see what each arr already wants to upgrade.',
+    command: (c) =>
+      `# Find the candidates first:\n`
+      + `python3 ${c.scriptsDir}/librarian.py --report\n\n`
+      + `# Then, in the arr's web UI:\n`
+      + `#   Upgrade:   Mass Editor -> raise Quality Profile -> Search\n`
+      + `#   Downgrade: Mass Editor -> LOWER Quality Profile -> delete the\n`
+      + `#              file -> Search   (profile change goes FIRST)\n\n`
+      + `# Check the Recycle Bin is set before any delete:\n`
+      + `#   Settings -> Media Management -> Recycle Bin`,
+  },
 ]
 
 const CATEGORIES = [
@@ -716,6 +751,13 @@ const CATEGORIES = [
   'SABnzbd',
   'Homepage dashboard',
   'Recyclarr',
+  'Storage',
+  // Two categories that entries above already use but this list never
+  // named. Grouping filters strictly by CATEGORIES membership, so those
+  // entries were being dropped from the rendered modal entirely rather
+  // than falling through to an "other" bucket.
+  'Hardlinks',
+  'Can\'t open a dashboard from another device',
 ]
 
 interface Props {

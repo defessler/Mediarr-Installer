@@ -559,6 +559,7 @@ if is_optin ENABLE_PLAYLIST_SYNC; then
   case "$VPN" in true|1|yes|on) case " \${P[*]} " in *" vpn "*) ;; *) P+=("vpn") ;; esac ;; esac
 fi
 is_optin ENABLE_DISPATCHARR && P+=("livetv")
+is_optin ENABLE_LIBRARIAN && P+=("librarian")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 
 echo "[wizard-update] compose files: $FILES"
@@ -769,6 +770,7 @@ if is_optin ENABLE_PLAYLIST_SYNC; then
   case "$VPN" in true|1|yes|on) case " \${P[*]} " in *" vpn "*) ;; *) P+=("vpn") ;; esac ;; esac
 fi
 is_optin ENABLE_DISPATCHARR && P+=("livetv")
+is_optin ENABLE_LIBRARIAN && P+=("librarian")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never up -d`

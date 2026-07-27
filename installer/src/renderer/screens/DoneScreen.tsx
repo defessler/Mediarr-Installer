@@ -5,7 +5,7 @@ import {
   ExternalLink, RefreshCw, CheckCircle2, XCircle, Circle, RotateCcw,
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
-  Newspaper, Download, MessageSquare, BarChart3, Shield, Music2, Radio,
+  Newspaper, Download, MessageSquare, BarChart3, Shield, Music2, Radio, HardDrive,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -46,6 +46,7 @@ const SERVICES: {
   { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
   { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
   { name: 'Dispatcharr',  port: '9191',      note: 'Live TV',    icon: Radio,           iconColor: 'text-cyan-400' },
+  { name: 'Librarian',    port: '8890',      note: 'Storage',    icon: HardDrive,       iconColor: 'text-lime-400' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
@@ -253,6 +254,8 @@ export function DoneScreen() {
     if (s.name === 'slskd' && !isOptInEnabled(config.ENABLE_SOULSEEK)) return []
     // Dispatcharr (Live TV & DVR) is opt-in too — same treatment.
     if (s.name === 'Dispatcharr' && !isOptInEnabled(config.ENABLE_DISPATCHARR)) return []
+    // Librarian (storage report) is opt-in too — same treatment.
+    if (s.name === 'Librarian' && !isOptInEnabled(config.ENABLE_LIBRARIAN)) return []
     return [s]
   })
 

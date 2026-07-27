@@ -172,6 +172,9 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_DISPATCHARR: 'false',
   DISPATCHARR_ADMIN_USER: 'admin',
   LIVETV_CHANNEL_PACKS: 'pluto,samsungtvplus,plextv,roku,tubi',
+  // Storage analysis (Librarian) is OPT-IN too — default OFF. Read-only and
+  // credential-free, so there is nothing else to pre-seed.
+  ENABLE_LIBRARIAN: 'false',
 
   PUID: '1026',
   PGID: '100',

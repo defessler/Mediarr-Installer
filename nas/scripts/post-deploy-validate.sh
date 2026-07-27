@@ -148,6 +148,8 @@ is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 is_optin_enabled ENABLE_SOULSEEK && CONTAINERS+=(slskd soularr)
 # Live TV (opt-in) — Dispatcharr. Explicit-true gate, same reason.
 is_optin_enabled ENABLE_DISPATCHARR && CONTAINERS+=(dispatcharr)
+# Storage report (opt-in) — Librarian. Explicit-true gate, same reason.
+is_optin_enabled ENABLE_LIBRARIAN && CONTAINERS+=(librarian)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -449,6 +451,16 @@ is_optin_enabled ENABLE_SOULSEEK && check_url_lenient "slskd" "http://$LAN_IP:50
 is_optin_enabled ENABLE_DISPATCHARR && check_url_lenient "Dispatcharr" "http://$LAN_IP:9191" \
     "Dispatcharr's first boot runs database setup — give it a few minutes, then re-run."
 
+# Librarian (opt-in storage report). Lenient for a different reason than
+# Dispatcharr: the container serves instantly (pure stdlib, no apk step), but
+# its FIRST scan walks every arr and can take a few seconds on a large library,
+# during which / answers 503 with a self-refreshing holding page. /healthz is
+# unconditional, so probe that instead and the check reflects "is the sidecar
+# up" rather than "has the first scan finished". Also the line the wizard's
+# Done screen scrapes for its Librarian health tile.
+is_optin_enabled ENABLE_LIBRARIAN && check_url_lenient "Librarian" "http://$LAN_IP:8890/healthz" \
+    "Librarian's first scan runs at startup — give it a moment, then re-run."
+
 # ── Plex External Access ──────────────────────────────────────────────────────
 
 # Fetch public IP up-front — both Plex external check and VPN check need
@@ -729,6 +741,7 @@ if is_enabled ENABLE_HOMEPAGE; then
         # loop below re-checks with is_enabled (default-on), which is fine: we
         # only append when is_optin_enabled already proved an explicit true.
         is_optin_enabled ENABLE_DISPATCHARR && EXPECTED_TILES+=("ENABLE_DISPATCHARR:Dispatcharr")
+        is_optin_enabled ENABLE_LIBRARIAN && EXPECTED_TILES+=("ENABLE_LIBRARIAN:Librarian")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"
