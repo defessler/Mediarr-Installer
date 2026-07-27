@@ -1064,22 +1064,72 @@ wait_for_services() {
     echo "  (First run pulls images — this may take 5-15 minutes)"
     echo ""
 
+    # A container that keeps dying is not a container that is still
+    # starting, and waiting out the full timeout on one is pure waste —
+    # ten minutes of identical status lines that were never going to
+    # resolve. Docker counts restarts, so a climbing RestartCount tells
+    # the two apart cheaply. Three is past any plausible one-off.
+    local crash_limit=3
+
     while [ $elapsed -lt $max_wait ]; do
         local all_up=true
         local status_line="  ${elapsed}s  "
+        local crashed=""
 
         for svc in $services; do
-            local state
+            local state restarts
             state=$($CONTAINER_RUNTIME inspect --format='{{.State.Status}}' "$svc" 2>/dev/null || echo "missing")
-            if [ "$state" = "running" ]; then
+            restarts=$($CONTAINER_RUNTIME inspect --format='{{.RestartCount}}' "$svc" 2>/dev/null || echo 0)
+            case "$restarts" in ''|*[!0-9]*) restarts=0 ;; esac
+
+            if [ "$state" = "running" ] && [ "$restarts" -lt "$crash_limit" ]; then
                 status_line+="$svc ✔  "
+                continue
+            fi
+
+            all_up=false
+            # Show WHICH kind of not-ready this is. Everything used to
+            # render as "…", so a container pulling a large image and one
+            # crash-looping looked exactly alike.
+            if [ "$restarts" -ge "$crash_limit" ]; then
+                status_line+="$svc ⟳${restarts} "
+                crashed="$crashed $svc"
+            elif [ "$state" = "restarting" ]; then
+                status_line+="$svc ⟳ "
+            elif [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+                status_line+="$svc ✘ "
             else
                 status_line+="$svc … "
-                all_up=false
             fi
         done
 
         echo "$status_line"
+
+        # Bail the moment something is demonstrably crash-looping rather
+        # than sitting here until max_wait. The reason is in the
+        # container's own log, so print it instead of asking for a second
+        # round trip to go and find it.
+        if [ -n "$crashed" ]; then
+            echo ""
+            echo "  ✘ Not waiting any longer — these are crash-looping, not starting:"
+            for svc in $crashed; do
+                local rc oom
+                rc=$($CONTAINER_RUNTIME inspect -f '{{.State.ExitCode}}' "$svc" 2>/dev/null || echo '?')
+                oom=$($CONTAINER_RUNTIME inspect -f '{{.State.OOMKilled}}' "$svc" 2>/dev/null || echo 'false')
+                echo ""
+                echo "  ── $svc (exit $rc, restarted $($CONTAINER_RUNTIME inspect -f '{{.RestartCount}}' "$svc" 2>/dev/null) times) ──"
+                if [ "$oom" = "true" ]; then
+                    echo "  OOM-KILLED — it ran out of memory. Dispatcharr in particular"
+                    echo "  bundles Postgres + Redis + Celery and wants roughly 2GB."
+                fi
+                $CONTAINER_RUNTIME logs --tail 25 "$svc" 2>&1 | tail -25 | sed 's/^/  /'
+            done
+            echo ""
+            echo "  Read the FIRST error above, not the last — a crash-loop repeats"
+            echo "  the same failure, so the tail is usually just the newest copy."
+            echo "  Turn the service off in the wizard to install without it."
+            return 1
+        fi
 
         if $all_up; then
             echo ""
