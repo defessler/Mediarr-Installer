@@ -41,7 +41,7 @@
      arrows, footer text, and the caption under a figure.
 
      The comment marks framing a heading are green instead, see
-     --color-heading-mark below.
+     --color-comment-style below.
 
      Color roles, kept apart on purpose:
        green  headings, brand, primary action
@@ -56,12 +56,17 @@
   --color-link:         var(--mk-cyan);
   --color-link-hover:   #A8E9F7;
 
-  /* The decorative marks that frame a heading, and the matching mark on
-     the lede line under a page title. Green rather than --mk-comment: at
-     heading weight the olive read like text someone had switched off,
-     sitting right next to a heading that was very much on. The mark is
-     part of the heading, so it takes the heading's color. */
-  --color-heading-mark: var(--mk-green);
+  /* Anything wearing the comment idiom, mark AND text together: the
+     slash-star frames on headings, and every line that opens with a
+     double slash (the hero headline, the page lede, h3s, figure
+     captions, the footer name).
+
+     Green rather than --mk-comment, because at heading weight the olive
+     read like text someone had switched off sitting next to a heading
+     that was very much on. Coloring the mark alone was worse: it left
+     a green prefix on a cyan line, which is two colors doing one job. A
+     comment is one color in any editor, so it is one color here. */
+  --color-comment-style: var(--mk-green);
 
   /* Hover step for the solid Ko-fi chip, lifted from Window Layout
      Manager's landing page along with the rest of its treatment. */
@@ -209,7 +214,20 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   background: rgba(249, 38, 114, 0.10);
   text-shadow: 0.02em 0 0 rgba(249, 38, 114, 0.4), -0.02em 0 0 rgba(102, 217, 239, 0.4);
 }
-#nav-links a.active::before { content: '# '; }
+/* The active marker is reserved on every link rather than added to one.
+   An ::before that exists only on .active pushes every item to its right
+   along by two characters the moment you change page, and a nav bar is
+   the one thing on the site that should never move. Hidden rather than
+   absent, so it still takes up its width.
+
+   The weight jump is safe on its own: JetBrains Mono and every fallback
+   in the stack are monospaced, so 500 and 700 share an advance width.
+   Only the marker had to be reserved. */
+#nav-links a::before {
+  content: '# ';
+  visibility: hidden;
+}
+#nav-links a.active::before { visibility: visible; }
 
 #nav-social { display: flex; align-items: center; gap: 0.5rem; }
 .social-link {
@@ -362,12 +380,12 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 }
 
 .hero .headline {
-  color: var(--mk-cyan);
+  color: var(--color-comment-style);
   font-size: 0.95rem;
   margin-top: 0.4rem;
   text-shadow: 0.03em 0 0 rgba(249, 38, 114, 0.3), -0.03em 0 0 rgba(102, 217, 239, 0.3);
 }
-.hero .headline::before { content: '// '; color: var(--color-heading-mark); }
+.hero .headline::before { content: '// '; color: var(--color-comment-style); }
 
 /* No measure of its own. Content inside <main> follows <main>, and the
    only thing that decides how wide a line runs is the width of the
@@ -405,8 +423,8 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   color: var(--mk-green);
   margin-bottom: 1rem;
 }
-.home-section > h2::before { content: '/* '; color: var(--color-heading-mark); }
-.home-section > h2::after  { content: ' */'; color: var(--color-heading-mark); }
+.home-section > h2::before { content: '/* '; color: var(--color-comment-style); }
+.home-section > h2::after  { content: ' */'; color: var(--color-comment-style); }
 
 /* Service / feature card grid, borrowing the cycling left border.
    The 380px minimum is doing layout work, not just setting a floor. At
@@ -652,14 +670,20 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   text-shadow: 0.03em 0 0 rgba(249, 38, 114, 0.4), -0.03em 0 0 rgba(102, 217, 239, 0.4);
 }
 
-.doc-lede {
-  color: var(--mk-cyan);
+/* Scoped to .doc-content on purpose. The lede is a <p>, so a bare
+   .doc-lede (0,1,0) loses to .doc-content p (0,1,1) further down, which
+   sets both the color and a 0.88 opacity. That is why this rule had no
+   effect at all before: the lede rendered as ordinary body text and the
+   cyan it asked for never once reached the page. */
+.doc-content .doc-lede {
+  color: var(--color-comment-style);
+  opacity: 1;
   font-size: 0.9rem;
   margin-bottom: 2rem;
   padding-bottom: 1.25rem;
   border-bottom: 1px solid var(--mk-border);
 }
-.doc-lede::before { content: '// '; color: var(--color-heading-mark); }
+.doc-lede::before { content: '// '; color: var(--color-comment-style); }
 
 .doc-content h2 {
   font-size: 1.05rem;
@@ -668,17 +692,17 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   margin: 2.75rem 0 0.9rem;
   scroll-margin-top: calc(var(--nav-height) + 1rem);
 }
-.doc-content h2::before { content: '/* '; color: var(--color-heading-mark); }
-.doc-content h2::after  { content: ' */'; color: var(--color-heading-mark); }
+.doc-content h2::before { content: '/* '; color: var(--color-comment-style); }
+.doc-content h2::after  { content: ' */'; color: var(--color-comment-style); }
 
 .doc-content h3 {
   font-size: 0.925rem;
   font-weight: 700;
-  color: var(--mk-cyan);
+  color: var(--color-comment-style);
   margin: 1.9rem 0 0.6rem;
   scroll-margin-top: calc(var(--nav-height) + 1rem);
 }
-.doc-content h3::before { content: '// '; color: var(--color-heading-mark); font-weight: 400; }
+.doc-content h3::before { content: '// '; color: var(--color-comment-style); font-weight: 400; }
 
 .doc-content h4 {
   font-size: 0.875rem;
@@ -932,7 +956,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 
 .figure-caption {
   font-size: 0.75rem;
-  color: var(--mk-comment);
+  color: var(--color-comment-style);
   margin: 0 0 1.75rem;
   padding-left: 0.15rem;
 }
@@ -968,6 +992,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
 }
 #site-footer a { color: var(--mk-comment); }
 #site-footer a:hover { color: var(--mk-cyan); text-decoration: none; }
+.footer-note { color: var(--color-comment-style); }
 .footer-note::before { content: '// '; }
 .footer-sep { color: var(--mk-border); margin: 0 0.5rem; }
 
