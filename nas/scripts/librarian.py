@@ -666,7 +666,24 @@ def collect_diskspace(base, key, api):
     filesystem its root folder sits on, and librarian needs no access to
     the media volume at all."""
     data = http_json(f'{base}/api/{api}/diskspace', arr_headers(key), timeout=20)
-    disks = []
+
+    # DEDUPLICATE BY FILESYSTEM. /diskspace lists every mount point the
+    # container can see, and several of them are routinely the SAME
+    # underlying filesystem: /data and /data/Media are one volume, and a
+    # bind mount shows up alongside the path it was mounted from. Each
+    # entry then reports that volume's full size, so summing them counts
+    # one array two or three times — which is how a 38 TB NAS reports
+    # more used space than it physically has.
+    #
+    # The API exposes no device id, so identical totalSpace AND
+    # freeSpace is the available signal. Two genuinely separate disks
+    # agreeing on both, to the byte, is vanishingly unlikely, and if it
+    # ever happened the result would be a slight UNDER-count rather than
+    # the impossible over-count this replaces.
+    #
+    # The shortest path wins, because that's the mount root rather than
+    # something nested inside it.
+    by_fs = {}
     for d in data or []:
         if not isinstance(d, dict):
             continue
@@ -674,14 +691,19 @@ def collect_diskspace(base, key, api):
         free = d.get('freeSpace') or 0
         if not total:
             continue
-        disks.append({
-            'path': d.get('path') or '?',
+        path = d.get('path') or '?'
+        fs_key = (total, free)
+        prev = by_fs.get(fs_key)
+        if prev and len(prev['path']) <= len(path):
+            continue
+        by_fs[fs_key] = {
+            'path': path,
             'label': d.get('label') or '',
             'total': total,
             'free': free,
             'used': max(total - free, 0),
-        })
-    return disks
+        }
+    return sorted(by_fs.values(), key=lambda d: d['path'])
 
 
 def collect_rootfolders(base, key, api):
@@ -1326,9 +1348,19 @@ def build_report(top_n=25, quality_detail=True):
     # filter the arr's /config volume gets folded in and the figure is
     # nonsense. If we couldn't read any root folder we suppress the
     # number entirely rather than publish a wrong one.
+    def _under(root, mount):
+        """Is `root` on this `mount`? A raw startswith would count
+        /database as living under /data, so require the match to land on
+        a path separator (or be the whole string)."""
+        if not root or not mount:
+            return False
+        m = mount.rstrip('/')
+        if not m:            # mount is '/', everything is under it
+            return True
+        return root == m or root.startswith(m + '/')
+
     for d in report['disks']:
-        d['is_media'] = any(
-            (r or '').startswith(d['path']) for r in report['root_paths'])
+        d['is_media'] = any(_under(r, d['path']) for r in report['root_paths'])
     media_used = sum(d['used'] for d in report['disks'] if d.get('is_media'))
     report['media_used'] = media_used
     report['unaccounted'] = max(media_used - library_bytes, 0) if media_used else 0
