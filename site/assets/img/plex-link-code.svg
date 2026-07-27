@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 278" width="760" height="278" role="img" aria-label="A TV showing a four-character code, and a phone at plex.tv/link where that code is typed in">
+  <defs>
+    <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E6DB74"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A6E22E"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: 'JetBrains Mono','Fira Code','Courier New',monospace; }
+    .cap  { fill: #BFBBAA; font-size: 11px; }
+    .mut  { fill: #75715E; font-size: 10px; }
+    .note { font-size: 11px; }
+  </style>
+
+  <rect width="760" height="278" fill="#141414"/>
+
+  <!-- TV -->
+  <rect x="24" y="28" width="300" height="186" rx="8" fill="#2d2d2d" stroke="#49483E"/>
+  <rect x="38" y="42" width="272" height="158" rx="3" fill="#1e1e1e"/>
+  <text x="174" y="78" text-anchor="middle" fill="#66D9EF" font-size="14">plex.tv/link</text>
+  <rect x="104" y="94" width="140" height="52" rx="4" fill="#141414" stroke="#A6E22E" stroke-width="1.5"/>
+  <text x="174" y="130" text-anchor="middle" fill="#A6E22E" font-size="28" font-weight="700" letter-spacing="5">H4KP</text>
+  <text x="174" y="174" text-anchor="middle" class="mut">Leave this on the screen</text>
+  <rect x="149" y="214" width="50" height="10" fill="#49483E"/>
+  <rect x="114" y="224" width="120" height="7" rx="3.5" fill="#49483E"/>
+  <text x="174" y="258" text-anchor="middle" class="cap">Your TV</text>
+
+  <!-- Phone -->
+  <rect x="560" y="18" width="176" height="226" rx="16" fill="#2d2d2d" stroke="#49483E"/>
+  <rect x="628" y="26" width="40" height="5" rx="2.5" fill="#49483E"/>
+  <rect x="570" y="38" width="156" height="190" rx="3" fill="#1e1e1e"/>
+  <rect x="578" y="46" width="140" height="20" rx="3" fill="#2d2d2d" stroke="#49483E"/>
+  <text x="586" y="60" fill="#66D9EF" font-size="9">plex.tv/link</text>
+  <text x="578" y="90" fill="#F8F8F2" font-size="10">Enter the code</text>
+  <rect x="578" y="98" width="140" height="34" rx="3" fill="#141414" stroke="#66D9EF"/>
+  <text x="648" y="121" text-anchor="middle" fill="#A6E22E" font-size="17" font-weight="700" letter-spacing="3">H4KP</text>
+  <rect x="578" y="142" width="140" height="28" rx="3" fill="#A6E22E"/>
+  <text x="648" y="161" text-anchor="middle" fill="#1e1e1e" font-size="11" font-weight="700">Link</text>
+  <text x="648" y="258" text-anchor="middle" class="cap">Your phone or computer</text>
+
+  <!-- Flow between them -->
+  <text x="442" y="96" text-anchor="middle" fill="#E6DB74" class="note">type the code you see</text>
+  <line x1="336" y1="110" x2="548" y2="110" stroke="#E6DB74" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow-yellow)"/>
+  <line x1="548" y1="160" x2="336" y2="160" stroke="#A6E22E" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow-green)"/>
+  <text x="442" y="182" text-anchor="middle" fill="#A6E22E" class="note">the TV signs itself in</text>
+</svg>

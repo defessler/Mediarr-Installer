@@ -66,6 +66,11 @@ Access and look under "Library Invitations Received". Accept it with the checkma
 Find your TV in the list below. If you're not sure what you've got, the brand name is
 usually printed on the front of the TV, and the remote is a giveaway too.
 
+<figure>
+<img src="../assets/img/tv-remotes.svg" alt="Five TV remotes drawn side by side, with the Home button marked in green on each. On Roku it sits at the top right, on Fire TV, Samsung, and LG it sits below the ring or wheel, and on Apple TV the TV button does the same job.">
+<figcaption class="figure-caption">Roughly where Home sits on the common remotes. Models vary, so treat this as a hint rather than a map. It's nearly always a little house, and Apple is the one exception.</figcaption>
+</figure>
+
 - [Samsung](#samsung)
 - [LG](#lg)
 - [Roku Sticks and Roku TVs](#roku-sticks-and-roku-tvs) (TCL, Hisense, Sharp, Philips, onn)
@@ -204,6 +209,11 @@ follow the matching section above.
 This is the part people expect to be painful. It isn't, because you never type your
 password on the TV.
 
+<figure>
+<img src="../assets/img/plex-link-code.svg" alt="A TV showing the address plex.tv/link above a four-character code, and a phone showing that same address in a browser with the code typed into a box and a Link button below it.">
+<figcaption class="figure-caption">The TV shows a code. You type it on your phone. The TV catches up on its own.</figcaption>
+</figure>
+
 1. Open the **Plex** app on the TV.
 2. Choose **"Sign In"**.
 3. The TV shows a **four-character code**, something like `H4KP`. Leave it on the screen.
@@ -233,6 +243,11 @@ separate entries under it.
 remote to open it, or look for the "hamburger" button, which is three stacked lines.
 Scroll past your own things to the bottom, and their server name is sitting there with
 its libraries underneath.
+
+<figure>
+<img src="../assets/img/find-library.svg" alt="Two TV screens compared. In the newer layout the shared library sits behind a Libraries tab in the bottom bar. In the older layout it sits at the bottom of the slide-out side menu, under the name of the server.">
+<figcaption class="figure-caption">Where the shared library hides in each layout. The name you're hunting for is theirs, not yours.</figcaption>
+</figure>
 
 Either way, once you've found it: open a library, pick something, and press play.
 That's the whole job done.

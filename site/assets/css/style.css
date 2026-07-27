@@ -36,8 +36,12 @@
      OUT. It is meant to recede, which is wrong for anything you expect
      someone to read and click. Navigation, sidebar entries and captions
      use --color-nav instead, which clears WCAG AA on the page
-     background. --mk-comment is kept strictly for the decorative
-     comment marks that frame headings.
+     background. --mk-comment now survives only on furniture that really
+     is meant to recede: syntax-highlighted code comments, the pager
+     arrows, footer text, and the caption under a figure.
+
+     The comment marks framing a heading are green instead, see
+     --color-heading-mark below.
 
      Colour roles, kept apart on purpose:
        green  headings, brand, primary action
@@ -51,6 +55,13 @@
   --color-nav-hover:    var(--mk-fg);
   --color-link:         var(--mk-cyan);
   --color-link-hover:   #A8E9F7;
+
+  /* The decorative marks that frame a heading, and the matching mark on
+     the lede line under a page title. Green rather than --mk-comment: at
+     heading weight the olive read like text someone had switched off,
+     sitting right next to a heading that was very much on. The mark is
+     part of the heading, so it takes the heading's colour. */
+  --color-heading-mark: var(--mk-green);
 
   /* Hover / press steps for the solid Ko-fi button, mirroring Window
      Layout Manager's accent / accent-hover / accent-press ramp. */
@@ -298,7 +309,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   margin-top: 0.4rem;
   text-shadow: 0.03em 0 0 rgba(249, 38, 114, 0.3), -0.03em 0 0 rgba(102, 217, 239, 0.3);
 }
-.hero .headline::before { content: '// '; color: var(--mk-comment); }
+.hero .headline::before { content: '// '; color: var(--color-heading-mark); }
 
 .hero-lede {
   margin-top: 1.25rem;
@@ -332,8 +343,8 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   color: var(--mk-green);
   margin-bottom: 1rem;
 }
-.home-section > h2::before { content: '/* '; color: var(--mk-comment); }
-.home-section > h2::after  { content: ' */'; color: var(--mk-comment); }
+.home-section > h2::before { content: '/* '; color: var(--color-heading-mark); }
+.home-section > h2::after  { content: ' */'; color: var(--color-heading-mark); }
 
 /* Service / feature card grid, borrowing the cycling left border */
 .card-grid {
@@ -581,7 +592,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   padding-bottom: 1.25rem;
   border-bottom: 1px solid var(--mk-border);
 }
-.doc-lede::before { content: '// '; color: var(--mk-comment); }
+.doc-lede::before { content: '// '; color: var(--color-heading-mark); }
 
 .doc-content h2 {
   font-size: 1.05rem;
@@ -590,8 +601,8 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   margin: 2.75rem 0 0.9rem;
   scroll-margin-top: calc(var(--nav-height) + 1rem);
 }
-.doc-content h2::before { content: '/* '; color: var(--mk-comment); }
-.doc-content h2::after  { content: ' */'; color: var(--mk-comment); }
+.doc-content h2::before { content: '/* '; color: var(--color-heading-mark); }
+.doc-content h2::after  { content: ' */'; color: var(--color-heading-mark); }
 
 .doc-content h3 {
   font-size: 0.925rem;
@@ -600,7 +611,7 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   margin: 1.9rem 0 0.6rem;
   scroll-margin-top: calc(var(--nav-height) + 1rem);
 }
-.doc-content h3::before { content: '// '; color: var(--mk-comment); font-weight: 400; }
+.doc-content h3::before { content: '// '; color: var(--color-heading-mark); font-weight: 400; }
 
 .doc-content h4 {
   font-size: 0.875rem;
@@ -759,6 +770,19 @@ a:hover { color: var(--color-link-hover); text-decoration: underline; }
   border-radius: var(--radius);
   display: block;
   margin: 0 0 1.25rem;
+}
+
+/* A diagram plus its caption, kept together. The caption stays in the
+   receding grey rather than the heading green, because it annotates the
+   picture instead of announcing it. */
+.doc-content figure {
+  margin: 1.5rem 0 1.75rem;
+}
+.doc-content figure img {
+  margin-bottom: 0.55rem;
+}
+.doc-content figure .figure-caption {
+  margin-bottom: 0;
 }
 
 /* ============================================================

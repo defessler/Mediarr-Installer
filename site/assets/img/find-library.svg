@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" role="img" aria-label="Two TV screens compared. On the newer Plex layout the shared library sits behind the Libraries tab in the bottom bar. On the older layout it sits at the bottom of the slide-out side menu, under the name of the server">
+  <defs>
+    <marker id="up-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A6E22E"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: 'JetBrains Mono','Fira Code','Courier New',monospace; }
+    .head { fill: #A6E22E; font-size: 12px; text-anchor: middle; }
+    .tile { fill: #2d2d2d; stroke: #3a3a32; }
+    .tab  { fill: #75715E; font-size: 9px; text-anchor: middle; }
+    .menu { fill: #75715E; font-size: 9px; }
+    .lib  { fill: #66D9EF; font-size: 9px; }
+    .hint { fill: #A6E22E; font-size: 10px; text-anchor: middle; }
+  </style>
+
+  <rect width="760" height="300" fill="#141414"/>
+
+  <!-- ── Newer layout: tab bar along the bottom ── -->
+  <text x="195" y="26" class="head">Newer layout</text>
+  <rect x="24" y="38" width="342" height="214" rx="6" fill="#2d2d2d" stroke="#49483E"/>
+  <rect x="34" y="48" width="322" height="194" fill="#1e1e1e"/>
+  <rect x="44"  y="64" width="70" height="56" rx="2" class="tile"/>
+  <rect x="124" y="64" width="70" height="56" rx="2" class="tile"/>
+  <rect x="204" y="64" width="70" height="56" rx="2" class="tile"/>
+  <rect x="284" y="64" width="70" height="56" rx="2" class="tile"/>
+  <rect x="44"  y="130" width="70" height="48" rx="2" class="tile"/>
+  <rect x="124" y="130" width="70" height="48" rx="2" class="tile"/>
+  <rect x="204" y="130" width="70" height="48" rx="2" class="tile"/>
+  <rect x="284" y="130" width="70" height="48" rx="2" class="tile"/>
+  <rect x="34" y="196" width="322" height="46" fill="#141414"/>
+  <rect x="163" y="204" width="64" height="30" rx="3" fill="rgba(166,226,46,0.14)" stroke="#A6E22E"/>
+  <text x="66"  y="224" class="tab">Home</text>
+  <text x="131" y="224" class="tab">Search</text>
+  <text x="195" y="224" class="tab" fill="#A6E22E" font-weight="700">Libraries</text>
+  <text x="259" y="224" class="tab">Live TV</text>
+  <text x="324" y="224" class="tab">More</text>
+  <line x1="195" y1="278" x2="195" y2="258" stroke="#A6E22E" stroke-width="1.5" marker-end="url(#up-green)"/>
+  <text x="195" y="292" class="hint">open this tab</text>
+
+  <!-- ── Older layout: menu slides out from the side ── -->
+  <text x="575" y="26" class="head">Older layout</text>
+  <rect x="404" y="38" width="342" height="214" rx="6" fill="#2d2d2d" stroke="#49483E"/>
+  <rect x="414" y="48" width="322" height="194" fill="#1e1e1e"/>
+  <rect x="548" y="64" width="84" height="60" rx="2" class="tile"/>
+  <rect x="642" y="64" width="84" height="60" rx="2" class="tile"/>
+  <rect x="548" y="136" width="84" height="60" rx="2" class="tile"/>
+  <rect x="642" y="136" width="84" height="60" rx="2" class="tile"/>
+  <rect x="414" y="48" width="118" height="194" fill="#141414"/>
+  <text x="426" y="74"  class="menu">Home</text>
+  <text x="426" y="94"  class="menu">Live TV</text>
+  <text x="426" y="114" class="menu">More</text>
+  <line x1="422" y1="126" x2="524" y2="126" stroke="#49483E"/>
+  <rect x="418" y="134" width="110" height="76" rx="3" fill="rgba(166,226,46,0.14)" stroke="#A6E22E"/>
+  <text x="426" y="151" fill="#A6E22E" font-size="9" font-weight="700">Their server</text>
+  <text x="432" y="170" class="lib">Movies</text>
+  <text x="432" y="187" class="lib">TV Shows</text>
+  <text x="432" y="204" class="lib">Music</text>
+  <line x1="473" y1="278" x2="473" y2="258" stroke="#A6E22E" stroke-width="1.5" marker-end="url(#up-green)"/>
+  <text x="473" y="292" class="hint">scroll to the bottom</text>
+</svg>
