@@ -1907,6 +1907,32 @@ select, input[type="search"], input[type="text"] {
 }
 select:focus, input:focus { outline: 2px solid var(--mk-cyan); outline-offset: 1px; }
 
+/* Drop the native dropdown button. On Windows it renders as a pale grey
+   square that ignores every colour on this page. The chevron is an inline
+   data URI so there is still exactly one file to serve. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 1.9rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%2375715E' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  cursor: pointer;
+}
+select:hover, input[type="search"]:hover { border-color: var(--mk-comment); }
+/* A filter that is doing something should not look like one that isn't.
+   apply() puts .set on any control holding a non-default value, so you
+   can see at a glance why the list is short. */
+select.set {
+  border-color: var(--mk-cyan);
+  color: var(--mk-cyan);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%2366D9EF' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+}
+/* Windows draws the open list from the OS palette unless told otherwise. */
+option { background: var(--mk-surface); color: var(--mk-fg); }
+input[type="search"]::placeholder { color: var(--mk-comment); }
+input[type="search"]::-webkit-search-cancel-button { filter: invert(0.7); cursor: pointer; }
+
 .actions { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
 
 /* Solid fills, the treatment Window Layout Manager uses for its primary
@@ -1990,9 +2016,27 @@ th {
 th.sortable { cursor: pointer; user-select: none; -webkit-user-select: none; }
 th.sortable:hover { color: var(--mk-fg); }
 th.sortable:focus-visible { outline: 1px solid var(--mk-cyan); outline-offset: 2px; }
-th.sortable::after { content: ' \2195'; opacity: 0.3; }
-th.sorted-asc::after  { content: ' \2191'; opacity: 1; color: var(--mk-cyan); }
-th.sorted-desc::after { content: ' \2193'; opacity: 1; color: var(--mk-cyan); }
+/* Drawn with borders rather than a glyph. The arrow characters (\2195 and
+   friends) are missing from JetBrains Mono and every other font in the
+   stack, so they came out as tofu boxes. A triangle always renders. */
+th.sortable::after {
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 0.45em;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: 0.35;
+}
+th.sorted-asc::after {
+  border-top: 0;
+  border-bottom: 4px solid var(--mk-cyan);
+  opacity: 1;
+}
+th.sorted-desc::after { border-top-color: var(--mk-cyan); opacity: 1; }
 th.sorted-asc, th.sorted-desc { color: var(--mk-fg); }
 td {
   padding: 0.45rem 0.6rem 0.45rem 0;
@@ -2030,9 +2074,50 @@ td.num, th.num { text-align: right; }
 
 /* ── Search / filter ─────────────────────────────────────────────── */
 .filters { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.9rem; }
-.filters input[type="search"] { flex: 1; min-width: 200px; }
+/* Wide enough that the placeholder isn't cut mid-word. Below that the
+   row wraps instead, which beats squeezing the one control you type in. */
+.filters input[type="search"] { flex: 1 1 18rem; min-width: 15rem; }
 .filters label { font-size: 0.8rem; color: var(--dim); display: flex; align-items: center; gap: 0.35rem; }
-.filter-count { font-size: 0.8rem; color: var(--mk-comment); }
+.filter-count { font-size: 0.8rem; color: var(--mk-comment); margin-left: auto; }
+input[type="checkbox"] { accent-color: var(--mk-cyan); width: 0.95rem; height: 0.95rem; }
+
+/* Scope tabs (Titles / Files). Radios rather than buttons so the choice
+   is one control with one value, and keyboard arrows move between them
+   the way a radio group already does. */
+.scope { display: flex; gap: 0.4rem; margin-bottom: 0.85rem; }
+.scope-tab input { position: absolute; opacity: 0; pointer-events: none; }
+.scope-tab span {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--mk-border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  color: var(--mk-comment);
+  cursor: pointer;
+}
+.scope-tab span b { font-weight: 500; opacity: 0.65; margin-left: 0.35rem; }
+.scope-tab span:hover { color: var(--mk-fg); }
+.scope-tab input:checked + span {
+  background: var(--mk-cyan);
+  border-color: var(--mk-cyan);
+  color: var(--mk-bg);
+}
+.scope-tab input:focus-visible + span { outline: 1px solid var(--mk-cyan); outline-offset: 2px; }
+
+/* Quick views. Deliberately quieter than the real buttons: these only
+   move the sort and the filters, they never touch your library. */
+.presets { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.85rem; }
+.presets .muted { font-size: 0.75rem; }
+button.preset {
+  background: transparent;
+  border: 1px solid var(--mk-border);
+  color: var(--mk-comment);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+button.preset::before { content: none; }
+button.preset:hover { background: transparent; color: var(--mk-fg); border-color: var(--mk-cyan); }
 tr.hidden-row { display: none; }
 .no-matches { color: var(--dim); font-size: 0.875rem; padding: 0.75rem 0; }
 .ratio-hot { color: var(--mk-pink); font-weight: 700; }
@@ -2101,12 +2186,18 @@ def _meter(used_pct):
 # CDN. fuzzyScore mirrors fuzzy_score() in this same file — keep the two
 # in step or the CLI and the browser rank the same search differently.
 SCRIPT = r"""
+// The word-boundary test. Unicode-aware on purpose, to mirror Python's
+// str.isalnum(): with a plain [a-z0-9] an accented letter reads as a
+// boundary here and as a letter there, so "Låtar" scored differently in
+// the browser than on the CLI.
+var ALNUM = /[\p{L}\p{N}]/u;
+
 function fuzzyTerm(term, text) {
   if (!term) return [true, 0];
   var idx = text.indexOf(term);
   if (idx !== -1) {
     var s = 1000 - Math.min(idx, 100) * 2;
-    if (idx === 0 || !/[a-z0-9]/.test(text[idx - 1])) s += 60;
+    if (idx === 0 || !ALNUM.test(text[idx - 1])) s += 60;
     return [true, s];
   }
   var pos = 0, score = 0, prev = -2;
@@ -2114,7 +2205,7 @@ function fuzzyTerm(term, text) {
     var found = text.indexOf(term[i], pos);
     if (found === -1) return [false, 0];
     if (found === prev + 1) score += 10;
-    if (found === 0 || !/[a-z0-9]/.test(text[found - 1])) score += 8;
+    if (found === 0 || !ALNUM.test(text[found - 1])) score += 8;
     score += Math.max(0, 12 - (found - pos));
     prev = found; pos = found + 1;
   }
@@ -2123,10 +2214,16 @@ function fuzzyTerm(term, text) {
 
 function fuzzyScore(query, text) {
   if (!query) return [true, 0];
+  // Lower the HAYSTACK too, not just the query. Python's fuzzy_score
+  // does (text_l = str(text).lower()) and the two have to agree, or the
+  // same search finds different rows in the browser than on the CLI.
+  // Left uncased, "rmx" matched Arrival but not Dune, because only
+  // Arrival happened to carry a lowercase r before the Remux.
+  var hay = String(text).toLowerCase();
   var terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   var total = 0;
   for (var i = 0; i < terms.length; i++) {
-    var r = fuzzyTerm(terms[i], text);
+    var r = fuzzyTerm(terms[i], hay);
     if (!r[0]) return [false, 0];
     total += r[1];
   }
@@ -2138,7 +2235,10 @@ function fuzzyScore(query, text) {
   var arrSel = document.getElementById('f-arr');
   var minSel = document.getElementById('f-min');
   var rateSel = document.getElementById('f-rate');
+  var qualSel = document.getElementById('f-qual');
   var unplayed = document.getElementById('f-unplayed');
+  var scopeRadios = Array.prototype.slice.call(
+    document.querySelectorAll('input[name="scope"]'));
   var countEl = document.getElementById('filter-count');
   if (!q) return;
 
@@ -2205,6 +2305,9 @@ function fuzzyScore(query, text) {
         th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
         applySort(table);
       }
+      // Exposed so the quick views can drive a column without faking a
+      // click event on a header the user never touched.
+      th.sortToggle = toggle;
       th.addEventListener('click', toggle);
       th.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
@@ -2212,15 +2315,80 @@ function fuzzyScore(query, text) {
     });
   });
 
+  // ── Scope (Titles / Files) ────────────────────────────────────────
+  // Two tables, exactly one of them on screen. They aren't one list:
+  // a title carries a runtime and a play count, a file carries neither,
+  // and they have different actions. So the controls that only mean
+  // something for a title hide themselves when you switch to files,
+  // rather than sitting there doing nothing.
+  function currentScope() {
+    for (var i = 0; i < scopeRadios.length; i++) {
+      if (scopeRadios[i].checked) return scopeRadios[i].value;
+    }
+    return 'items';
+  }
+
+  function syncPanels() {
+    var s = currentScope();
+    document.querySelectorAll('[data-scope-panel]').forEach(function (el) {
+      el.hidden = el.getAttribute('data-scope-panel') !== s;
+    });
+    document.querySelectorAll('[data-items-only]').forEach(function (el) {
+      el.hidden = s !== 'items';
+    });
+  }
+
+  function setScope(s) {
+    scopeRadios.forEach(function (r) { r.checked = (r.value === s); });
+    syncPanels();
+  }
+
+  /** Sort a scope's table by a named column, in a chosen direction. */
+  function sortBy(scope, label, wantDesc) {
+    var table = document.querySelector('table[data-scope="' + scope + '"]');
+    if (!table) return;
+    var th = Array.prototype.slice.call(table.querySelectorAll('thead th'))
+      .filter(function (h) { return h.textContent.trim() === label; })[0];
+    if (!th || !th.sortToggle) return;
+    th.sortToggle();
+    if ((th.getAttribute('aria-sort') === 'descending') !== wantDesc) th.sortToggle();
+  }
+
+  function resetFilters() {
+    if (q) q.value = '';
+    if (arrSel) arrSel.value = '';
+    if (minSel) minSel.value = '0';
+    if (rateSel) rateSel.value = '0';
+    if (qualSel) qualSel.value = '';
+    if (unplayed) unplayed.checked = false;
+  }
+
+  var PRESETS = {
+    biggest:  function () { setScope('items'); sortBy('items', 'Size', true); },
+    bloated:  function () { setScope('items'); sortBy('items', 'Per hour', true); },
+    unplayed: function () {
+      setScope('items');
+      if (unplayed) unplayed.checked = true;
+      sortBy('items', 'Size', true);
+    },
+    outliers: function () { setScope('files'); sortBy('files', 'vs siblings', true); },
+  };
+
   function apply() {
     var query = q.value.trim().toLowerCase();
     var arr = arrSel ? arrSel.value : '';
     var min = minSel ? parseInt(minSel.value, 10) || 0 : 0;
     var rate = rateSel ? parseInt(rateSel.value, 10) || 0 : 0;
+    var qual = qualSel ? qualSel.value : '';
     var onlyUnplayed = unplayed && unplayed.checked;
+    var scope = currentScope();
     var shown = 0, total = 0;
 
     tables.forEach(function (table) {
+      // Only the visible scope gets filtered and counted. The summary
+      // tables above carry no data-scope and no data-search rows, so
+      // they fall straight through untouched.
+      if (table.dataset.scope && table.dataset.scope !== scope) return;
       var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
       var scored = [];
       rows.forEach(function (row) {
@@ -2229,6 +2397,7 @@ function fuzzyScore(query, text) {
         var ok = true;
         if (arr && row.dataset.arr !== arr) ok = false;
         if (ok && min && parseInt(row.dataset.size, 10) < min) ok = false;
+        if (ok && qual && row.dataset.quality !== qual) ok = false;
         // File rows carry no data-rate on purpose: a file has a size but
         // no runtime of its own, so a per-hour floor means nothing there
         // and leaves those tables alone rather than emptying them.
@@ -2264,9 +2433,13 @@ function fuzzyScore(query, text) {
     });
 
     if (countEl) {
-      countEl.textContent = (query || arr || min || rate || onlyUnplayed)
-        ? shown + ' of ' + total + ' shown' : '';
+      countEl.textContent = (query || arr || min || rate || qual || onlyUnplayed)
+        ? shown + ' of ' + total + ' shown' : total + ' rows';
     }
+    // Light up whichever controls are actually narrowing the list.
+    [arrSel, minSel, rateSel, qualSel].forEach(function (el) {
+      if (el) el.classList.toggle('set', !!el.value && el.value !== '0');
+    });
     syncSelection();
     syncFiles();
   }
@@ -2361,9 +2534,24 @@ function fuzzyScore(query, text) {
   }
 
   q.addEventListener('input', apply);
-  [arrSel, minSel, rateSel, unplayed].forEach(function (el) {
+  [arrSel, minSel, rateSel, qualSel, unplayed].forEach(function (el) {
     if (el) el.addEventListener('change', apply);
   });
+  scopeRadios.forEach(function (r) {
+    r.addEventListener('change', function () { syncPanels(); apply(); });
+  });
+  document.querySelectorAll('.preset').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var fn = PRESETS[btn.dataset.preset];
+      if (!fn) return;
+      resetFilters();
+      fn();
+      apply();
+    });
+  });
+  // Panels first, then the apply() at the end of this block does the
+  // initial filter pass with the right scope already in place.
+  syncPanels();
   document.addEventListener('change', function (e) {
     if (!e.target) return;
     if (e.target.classList.contains('pick')) syncSelection();
@@ -2406,6 +2594,7 @@ def _file_table_html(files, selectable=False, show_ratio=True):
             ratio = '<span class="dim">—</span>'
         rows.append(
             f'<tr data-search="{hay}" data-size="{int(f.get("size") or 0)}" '
+            f'data-quality="{html.escape(f.get("quality") or "")}" '
             f'data-arr="{html.escape(str(f.get("arr", "")))}" data-plays="0">'
             + sel
             + f'<td>{html.escape(f.get("label") or f["name"])}</td>'
@@ -2419,7 +2608,7 @@ def _file_table_html(files, selectable=False, show_ratio=True):
     ratio_head = ('<th class="num" title="Size compared with the other files '
                   'in the same show">vs siblings</th>') if show_ratio else ''
     return (
-        '<table><thead><tr>' + head_sel +
+        '<table data-scope="files"><thead><tr>' + head_sel +
         '<th>File</th><th class="num">Size</th><th>Quality</th>' + ratio_head +
         '</tr></thead><tbody>' + ''.join(rows) + '</tbody>'
         '</table><p class="no-matches" hidden>Nothing matches that search.</p>')
@@ -2452,6 +2641,7 @@ def _item_table_html(items, watch_source, selectable=False):
             f'<tr data-search="{hay}" data-size="{int(it.get("size") or 0)}" '
             f'data-rate="{int(it.get("per_hour") or 0)}" '
             f'data-plays="{int(it.get("plays") or 0)}" '
+            f'data-quality="{html.escape(it.get("quality") or "")}" '
             f'data-arr="{html.escape(str(it.get("arr", "")))}">'
             + sel
             + f'<td>{html.escape(it["title"])}{year}</td>'
@@ -2465,7 +2655,7 @@ def _item_table_html(items, watch_source, selectable=False):
             '</tr>')
     head_sel = '<th class="sel"></th>' if selectable else ''
     return (
-        '<table><thead><tr>' + head_sel +
+        '<table data-scope="items"><thead><tr>' + head_sel +
         '<th>Title</th><th class="num">Size</th><th>Quality</th>'
         '<th>Codec</th><th class="num">Per hour</th><th>Last played</th>'
         '</tr></thead><tbody>' + ''.join(rows) + '</tbody>'
@@ -2548,11 +2738,46 @@ def render_html(report, env=None):
                 '</tr>')
         add('</tbody></table></div>')
 
-    # Search / filter. One control set drives every table below it.
+    # ── One results table ────────────────────────────────────────────
+    #
+    # This used to be five cards: biggest items, most bloated, big and
+    # never played, largest files, files out of step. Every one of them
+    # was the same rows in a different order, so the same title showed up
+    # three times and you had to know which card answered your question.
+    # Now there is one table, and the orderings are what the sort headers
+    # and the quick views do. Titles and files stay separate scopes: they
+    # are different rows with different actions, not one list.
+    items = sorted(report['items'], key=lambda i: i.get('size') or 0, reverse=True)
+    files = sorted(report.get('files') or [], key=lambda f: f['size'], reverse=True)
+
     arr_opts = ''.join(
         f'<option value="{html.escape(n)}">{html.escape(ARRS[n]["label"])}</option>'
         for n in (report.get('connections') or {}) if n in ARRS)
-    add('<div class="card"><div class="label">Find something</div>'
+    qual_opts = ''.join(
+        f'<option value="{html.escape(q)}">{html.escape(q)}</option>'
+        for q, _b in sorted((report.get('quality_bytes') or {}).items(),
+                            key=lambda kv: kv[1], reverse=True))
+
+    scope_tabs = ('<label class="scope-tab"><input type="radio" name="scope" value="items" checked>'
+                  f'<span>Titles <b>{len(items)}</b></span></label>')
+    if files:
+        scope_tabs += ('<label class="scope-tab"><input type="radio" name="scope" value="files">'
+                       f'<span>Files <b>{len(files)}</b></span></label>')
+
+    # Quick views replace what the old card headings used to advertise.
+    # Without them, "most bloated" stops being something you can find by
+    # reading the page and becomes something you have to already know.
+    presets = ['<button type="button" class="preset" data-preset="biggest">Biggest</button>',
+               '<button type="button" class="preset" data-preset="bloated">Most bloated</button>']
+    if report['watch_source']:
+        presets.append('<button type="button" class="preset" data-preset="unplayed">'
+                       'Never played</button>')
+    if any(f.get('is_outlier') for f in files):
+        presets.append('<button type="button" class="preset" data-preset="outliers">'
+                       'Out of step</button>')
+
+    add('<div class="card"><div class="label">Results</div>'
+        f'<div class="scope">{scope_tabs}</div>'
         '<div class="filters">'
         '<input type="search" id="q" placeholder="Search title, quality, codec. Press / to focus" '
         'autocomplete="off" spellcheck="false">'
@@ -2565,7 +2790,7 @@ def render_html(report, env=None):
         '<option value="21474836480">Over 20 GB</option>'
         '<option value="53687091200">Over 50 GB</option>'
         '</select>'
-        '<select id="f-rate" title="Bytes per hour of runtime">'
+        '<select id="f-rate" data-items-only title="Bytes per hour of runtime">'
         '<option value="0">Any rate</option>'
         '<option value="1073741824">Over 1 GB/h</option>'
         '<option value="2147483648">Over 2 GB/h</option>'
@@ -2573,45 +2798,32 @@ def render_html(report, env=None):
         '<option value="8589934592">Over 8 GB/h</option>'
         '<option value="16106127360">Over 15 GB/h</option>'
         '</select>'
-        '<label><input type="checkbox" id="f-unplayed"> Never played</label>'
-        '<span class="filter-count" id="filter-count"></span>'
+        f'<select id="f-qual"><option value="">Any quality</option>{qual_opts}</select>'
+        + ('<label data-items-only><input type="checkbox" id="f-unplayed"> Never played</label>'
+           if report['watch_source'] else '')
+        + '<span class="filter-count" id="filter-count"></span>'
         '</div>'
-        '<p class="muted" style="margin:0">Matching is fuzzy, so <code>rmx 216</code> '
-        'finds Remux-2160p. Several words all have to match. The rate filter is the '
-        'one that catches a bloated 90-minute film, which no size floor ever will.</p>'
-        '</div>')
+        + (f'<div class="presets"><span class="muted">Quick views</span>{"".join(presets)}'
+           '</div>' if presets else '')
+        + '<p class="muted" style="margin:0 0 0.8rem">Click any column to sort by it, '
+        'again to flip. Matching is fuzzy, so <code>rmx 216</code> finds Remux-2160p, '
+        'and several words all have to match. The rate filter is the one that catches '
+        'a bloated 90-minute film, which no size floor ever will.</p>'
+        f'<div data-scope-panel="items">{_item_table_html(items, report["watch_source"], can_act)}</div>')
 
-    # Item tables
-    add('<div class="card"><div class="label">Biggest items</div>'
-        + _item_table_html(report['top_by_size'], report['watch_source'], can_act) + '</div>')
+    if files:
+        shown_outliers = human_bytes(report.get('outlier_bytes') or 0)
+        add('<div data-scope-panel="files" hidden>'
+            '<p class="muted" style="margin-top:0">Every file on its own, rather than '
+            'rolled up into the movie or series that owns it. <b>vs siblings</b> is how '
+            'far a file is out of step with the rest of its own show, which is the '
+            'signal that matters: 40 GB means nothing on its own, six times the rest of '
+            'the same series means a lot. '
+            f'<strong>{html.escape(shown_outliers)}</strong> sits in files well clear of '
+            'their siblings.</p>'
+            + _file_table_html(files, can_act) + '</div>')
 
-    add('<div class="card"><div class="label">Most bloated, by bytes per hour</div>'
-        '<p class="muted" style="margin-top:0">A high rate on a short runtime is '
-        'usually a remux. Sorting by raw size only ever finds long shows.</p>'
-        + _item_table_html(report['top_by_rate'], report['watch_source'], can_act) + '</div>')
-
-    if report['big_unwatched']:
-        add('<div class="card">'
-            f'<div class="label">Big and never played · via {html.escape(report["watch_source"])}</div>'
-            + _item_table_html(report['big_unwatched'], report['watch_source'], can_act) + '</div>')
-
-    # Files, not just the items that own them.
-    if report.get('outlier_files'):
-        add('<div class="card"><div class="label">Files out of step with their show</div>'
-            '<p class="muted" style="margin-top:0">Each of these is much larger than '
-            'the other files in the same series — usually one release grabbed at a '
-            'quality the rest of the show does not use. Replacing one of these is the '
-            'cheapest space you will ever reclaim, because nothing else about the '
-            'show changes. '
-            f'<strong>{html.escape(human_bytes(report.get("outlier_bytes") or 0))}</strong> '
-            'sits in files like this.</p>'
-            + _file_table_html(report['outlier_files'], can_act) + '</div>')
-
-    if report.get('top_files'):
-        add('<div class="card"><div class="label">Largest individual files</div>'
-            '<p class="muted" style="margin-top:0">Every file, ranked on its own '
-            'rather than rolled up into the movie or series that owns it.</p>'
-            + _file_table_html(report['top_files'], can_act) + '</div>')
+    add('</div>')
 
     if can_act:
         prof_opts = []

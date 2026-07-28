@@ -17,7 +17,7 @@ LibrARRian is that screen. It's opt-in and off by default. Added in v0.20.0.
 
 **Unaccounted bytes** - what the filesystem says is used, minus what the arrs claim. This is your orphan detector. Failed imports, extras, other shares on the same volume, and files the arrs no longer track all land here. It's a pointer, not an accusation.
 
-**Biggest items** - ranked by bytes per hour as well as raw size.
+**One results table** - every title, or every file, sorted and filtered however you ask. See [Finding things](#finding-things).
 
 **Space by quality** - bytes and counts grouped by tier, which is what you look at to decide whether dropping a collection from Remux to Bluray is worth the trouble.
 
@@ -31,11 +31,9 @@ A movie is one file, so the two are the same thing. A series isn't. Sixty episod
 
 The case worth catching: a show sitting on a 1080p profile where somebody once hand-grabbed a single episode as a 40 GB remux. The series total looks large but plausible, its dominant quality still reads WEBDL-1080p because the other fifty-nine episodes outvote the one, and nothing on the page suggests anything is wrong.
 
-So there are two file-level views:
+That's what the **Files** scope is for. Every file on its own, ranked however you sort it, ignoring what owns it.
 
-**Files out of step with their show** compares each file against the median of its own siblings and lists the ones well clear of it. This is the useful signal, because raw size on its own says nothing. 40 GB is normal for a feature film and absurd for one episode of a comedy. Six times the rest of the same show is unambiguous either way. A series where *everything* is 30 GB is not flagged, because nothing about it is out of step.
-
-**Largest individual files** is the plain version: every file ranked on its own, ignoring what owns it.
+Its **vs siblings** column is the signal that matters, because raw size on its own says nothing. 40 GB is normal for a feature film and absurd for one episode of a comedy. Six times the rest of the same show is unambiguous either way. Each file is compared against the median of its own siblings, so a series where *everything* is 30 GB is never flagged. Nothing about it is out of step.
 
 ### Why Bytes Per Hour
 
@@ -66,17 +64,23 @@ Either way it needs no credentials of its own, takes no docker socket, and mount
 
 ## Finding Things
 
-The report is only useful if you can get to the item you're thinking of, so the search box is fuzzy. Type roughly what you mean and it narrows as you go.
+There's **one results table**, not a stack of them. It used to be five separate cards (biggest, most bloated, never played, largest files, files out of step), which meant the same title appeared three times and you had to know which card answered your question. Those orderings are now just what the sort headers and the quick views do.
+
+**Titles** and **Files** are two scopes of that one table, picked with the tabs above it. They stay separate because they're different rows with different actions: a title has a runtime and a play count, a file has neither. Controls that only mean something for a title hide themselves when you switch to Files, rather than sitting there doing nothing.
+
+**Quick views** are one-click presets. *Biggest*, *Most bloated*, *Never played*, and *Out of step* each set the scope, clear the filters, and sort the right column. They're the fastest way in, and everything they do you can also do by hand.
+
+The search box is fuzzy. Type roughly what you mean and it narrows as you go.
 
 Matching is subsequence-based with scoring, so `rmx 216` finds `Remux-2160p` and `sev` finds `Severance`. Several words all have to match, which makes `sonarr remux` a useful way to ask "which of my TV shows are remuxes". It searches title, year, quality, codec and which app owns the item, so `x265` and `radarr` work as searches too.
 
 Press `/` anywhere on the page to jump to the box, and Escape to clear it.
 
-Alongside it there are plain filters for app, minimum size, minimum rate and never-played. The rate floor is the one that catches a bloated ninety-minute film, because no size floor ever will. That film is smaller than any long series you own.
+Alongside it there are plain filters for app, quality tier, minimum size, minimum rate, and never-played. Any filter that's actually narrowing the list turns cyan, so a short result set always explains itself. The rate floor is the one that catches a bloated ninety-minute film, because no size floor ever will. That film is smaller than any long series you own.
 
 ### Sorting
 
-Every column header sorts. Click one to sort by it, click it again to flip the direction. Numbers sort on their real value rather than on the text, so 900 MB lands below 4 TB where it belongs, and number columns open on the big end because that's the end you came for.
+Every column header sorts, which is what lets one table replace five. Click a header to sort by it, click it again to flip the direction. Numbers sort on their real value rather than on the text, so 900 MB lands below 4 TB where it belongs, and number columns open on the big end because that's the end you came for.
 
 A column you picked sticks while you type in the search box. Without one, the results re-order themselves by how well they match what you typed.
 
