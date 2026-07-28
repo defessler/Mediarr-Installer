@@ -25,6 +25,8 @@ LibrARRian is that screen. It's opt-in and off by default. Added in v0.20.0.
 
 **Recycle bins** - what's waiting in each arr's bin, how big it is, and how long before that arr clears it. See [The Recycle Bin](#the-recycle-bin).
 
+**Which version you're on** - the header line carries the Mediarr version and when the wizard last deployed to this NAS. The same pair shows up as a tile on your [dashboard](dashboard). It's the quick answer to "did that update actually land?", which previously took guessing from which features the page happened to show.
+
 **Big and never played** - last-played and play count, pulled from Tautulli on Plex or from Jellyfin's own watch data. This is the view that actually decides things.
 
 ### Individual Files, Not Just Titles
@@ -85,6 +87,14 @@ Alongside it there are plain filters for app, quality tier, minimum size, minimu
 Every column header sorts, which is what lets one table replace five. Click a header to sort by it, click it again to flip the direction. Numbers sort on their real value rather than on the text, so 900 MB lands below 4 TB where it belongs, and number columns open on the big end because that's the end you came for.
 
 A column you picked sticks while you type in the search box. Without one, the results re-order themselves by how well they match what you typed.
+
+### Paging
+
+One table with your whole library in it needs paging, so there is some. **Rows per page** is an input you set to whatever suits your screen, and it's remembered for next time. **Show all** drops the limit entirely.
+
+Every matching row stays in the page regardless, which is what lets the filters be honest: they're filtering everything you have, not just what's currently on screen. Paging only decides how much is rendered at once.
+
+Two behaviours worth knowing. Narrowing the filters or changing the sort puts you back on page one, since staying on page nine of a result set that just became three rows long shows you nothing. And **a selection survives paging**. Ticking something on page one and paging away doesn't quietly untick it, unlike filtering it out, which does.
 
 ### On The Command Line
 

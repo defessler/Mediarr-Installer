@@ -4,7 +4,7 @@
 // Records the git SHA of the source nas/ tree to .payload-sha for
 // support diagnostics — the dashboard screen reads it.
 
-import { mkdir, copyFile, readdir, stat, writeFile, rm } from 'node:fs/promises'
+import { mkdir, copyFile, readdir, readFile, stat, writeFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, posix, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -63,6 +63,43 @@ async function recordSha() {
   await writeFile(join(scriptsDir, '.payload-sha'), sha + '\n', 'utf8')
 }
 
+// Stamp the payload with which release it came from. This file rides along
+// to ${INSTALL_DIR}/scripts/ with everything else (the SFTP walk uploads
+// every file, no name filtering), and setup.sh appends `deployed=` to it on
+// each run. LibrARRian and the Homepage dashboard read it back.
+//
+// The reason this exists: there was no way to tell which version a NAS was
+// actually running. Working it out meant fingerprinting the rendered page
+// by which features were present, and a stale sidecar could sit several
+// releases behind with nothing anywhere reporting it.
+async function recordStackVersion(fileCount) {
+  let version = 'unknown'
+  try {
+    const pkg = JSON.parse(await readFile(join(__dirname, '..', 'package.json'), 'utf8'))
+    version = pkg.version || 'unknown'
+  } catch {
+    // A payload built outside the repo still works, it just can't say from what.
+  }
+  let sha = 'unknown'
+  try {
+    sha = execSync('git rev-parse --short HEAD', { cwd: SRC, encoding: 'utf8' }).trim() || 'unknown'
+  } catch {
+    // Not a git checkout. Fine.
+  }
+  const body = [
+    '# Written by copy-nas-payload.mjs at build time. setup.sh appends',
+    '# deployed= on each run. Read by librarian.py and setup-arr-config.py.',
+    `version=${version}`,
+    `sha=${sha}`,
+    `built=${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}`,
+    `files=${fileCount}`,
+    '',
+  ].join('\n')
+  await mkdir(join(DST, 'scripts'), { recursive: true })
+  await writeFile(join(DST, 'scripts', 'stack-version'), body, 'utf8')
+  console.log(`[copy-nas-payload] Stamped stack-version: ${version} (${sha})`)
+}
+
 async function main() {
   if (!existsSync(SRC)) {
     console.error(`[copy-nas-payload] Source not found: ${SRC}`)
@@ -81,6 +118,7 @@ async function main() {
   }
 
   await recordSha()
+  await recordStackVersion(files.length)
 
   let totalBytes = 0
   for (const f of files) {

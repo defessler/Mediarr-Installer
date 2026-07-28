@@ -851,6 +851,42 @@ def state_dir():
     return d
 
 
+def stack_stamp():
+    """Which build these scripts came from, and when they went into service.
+
+    copy-nas-payload.mjs writes scripts/stack-version at build time and
+    setup.sh appends deployed= on each run. Every field defaults to empty
+    because a hand-rolled install has no such file, and not knowing the
+    version is not a reason to fail a storage report."""
+    out = {'version': '', 'sha': '', 'built': '', 'deployed': ''}
+    try:
+        with open(os.path.join(install_dir(), 'scripts', 'stack-version'),
+                  encoding='utf-8') as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, v = line.split('=', 1)
+                if k.strip() in out:
+                    out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def stamp_summary(stamp):
+    """One line: which version, and when it was deployed. Empty when we
+    know neither, so callers can skip the line entirely."""
+    bits = []
+    if stamp.get('version'):
+        bits.append('Mediarr v' + stamp['version'])
+    if stamp.get('deployed'):
+        bits.append('deployed ' + stamp['deployed'].replace('T', ' ').rstrip('Z'))
+    elif stamp.get('built'):
+        bits.append('built ' + stamp['built'].replace('T', ' ').rstrip('Z'))
+    return ' · '.join(bits)
+
+
 def audit(entry):
     """Append one JSON line to the audit log. Best effort: failing to
     write the log must not abort an action that already half-happened,
@@ -1858,6 +1894,8 @@ def build_report(top_n=25, quality_detail=True):
     # arr's settings: the bin lives on the SAME filesystem as the media,
     # so a shrink frees nothing at all until the arr clears it, and until
     # then everything in here counts toward unaccounted space.
+    report['stack'] = stack_stamp()
+
     report['recycle'] = []
     for name, conn in (report['connections'] or {}).items():
         try:
@@ -1956,6 +1994,9 @@ def render_text(report):
     add('')
     add('  Mediarr LibrARRian · storage report')
     add(f'  generated {report["generated"]}  ({report["elapsed"]}s)')
+    _stamp = stamp_summary(report.get('stack') or {})
+    if _stamp:
+        add(f'  {_stamp}')
     f = report.get('filtered')
     if f:
         bits = []
@@ -2428,6 +2469,27 @@ button.preset {
 }
 button.preset::before { content: none; }
 button.preset:hover { background: transparent; color: var(--mk-fg); border-color: var(--mk-cyan); }
+button.preset:disabled { opacity: 0.35; cursor: not-allowed; border-color: var(--mk-border); }
+button.preset:disabled:hover { color: var(--mk-comment); border-color: var(--mk-border); }
+
+/* Pager. Sits under the table because that's where you are when you run
+   out of rows. */
+.pager {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--mk-border);
+}
+.pager label { font-size: 0.75rem; display: flex; align-items: center; gap: 0.4rem; }
+.pager input[type="number"] { width: 5.5rem; padding: 0.25rem 0.4rem; font-size: 0.8rem; }
+#page-status { font-size: 0.8rem; min-width: 12rem; }
+#page-all { margin-left: auto; }
+/* Paged-off rows hide separately from filtered-out ones. A row on
+   another page still MATCHES, so it keeps any selection it had. */
+tr.page-hidden { display: none; }
 tr.hidden-row { display: none; }
 .no-matches { color: var(--dim); font-size: 0.875rem; padding: 0.75rem 0; }
 .ratio-hot { color: var(--mk-pink); font-weight: 700; }
@@ -2613,7 +2675,11 @@ function fuzzyScore(query, text) {
         var asc = table.sortDir === 1;
         th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
         th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
-        applySort(table);
+        // Re-run the whole pass rather than just re-sorting: sorting
+        // changes which rows land on page one, and you sorted to see
+        // the top of the list.
+        resetPage();
+        apply();
       }
       // Exposed so the quick views can drive a column without faking a
       // click event on a header the user never touched.
@@ -2684,6 +2750,64 @@ function fuzzyScore(query, text) {
     outliers: function () { setScope('files'); sortBy('files', 'vs siblings', true); },
   };
 
+  // ── Paging ────────────────────────────────────────────────────────
+  // Every matching row stays in the DOM, because that is what lets the
+  // filters be honest about what they matched. This decides how many are
+  // on screen at once, which on a thousand-row library is the difference
+  // between a usable table and a wall.
+  //
+  // Paged-off rows get their OWN class, not hidden-row. A row on another
+  // page still matches, so unlike a filtered-out row it keeps whatever
+  // selection it had — paging away from something you ticked must not
+  // quietly untick it.
+  var PAGE_KEY = 'librarian.pageSize';
+  var pageSize = 50;
+  try {
+    var savedSize = parseInt(window.localStorage.getItem(PAGE_KEY), 10);
+    if (!isNaN(savedSize) && savedSize >= 0) pageSize = savedSize;
+  } catch (e) { /* private mode, or no storage. The default is fine. */ }
+  var pageNum = { items: 1, files: 1 };
+
+  function resetPage() { pageNum.items = 1; pageNum.files = 1; }
+
+  function paginate(table, rows) {
+    var scope = table.dataset.scope || 'items';
+    var total = rows.length;
+    var size = pageSize > 0 ? pageSize : (total || 1);
+    var pages = Math.max(1, Math.ceil(total / size));
+    if (pageNum[scope] > pages) pageNum[scope] = pages;
+    if (pageNum[scope] < 1) pageNum[scope] = 1;
+    var start = (pageNum[scope] - 1) * size;
+    var end = Math.min(start + size, total);
+    rows.forEach(function (row, i) {
+      row.classList.toggle('page-hidden', i < start || i >= end);
+    });
+    return { total: total, pages: pages, page: pageNum[scope], start: start, end: end };
+  }
+
+  function syncPager(info) {
+    var status = document.getElementById('page-status');
+    var prev = document.getElementById('page-prev');
+    var next = document.getElementById('page-next');
+    var sizeInput = document.getElementById('page-size');
+    // Don't fight someone mid-type in the box.
+    if (sizeInput && document.activeElement !== sizeInput) {
+      sizeInput.value = pageSize > 0 ? String(pageSize) : '';
+    }
+    if (status) {
+      if (!info || !info.total) {
+        status.textContent = 'No rows';
+      } else if (info.pages === 1) {
+        status.textContent = 'All ' + info.total + ' rows';
+      } else {
+        status.textContent = (info.start + 1) + '–' + info.end + ' of ' +
+          info.total + '  ·  page ' + info.page + ' of ' + info.pages;
+      }
+    }
+    if (prev) prev.disabled = !info || info.page <= 1;
+    if (next) next.disabled = !info || info.page >= info.pages;
+  }
+
   function apply() {
     var query = q.value.trim().toLowerCase();
     var arr = arrSel ? arrSel.value : '';
@@ -2692,7 +2816,7 @@ function fuzzyScore(query, text) {
     var qual = qualSel ? qualSel.value : '';
     var onlyUnplayed = unplayed && unplayed.checked;
     var scope = currentScope();
-    var shown = 0, total = 0;
+    var shown = 0, total = 0, pagerInfo = null;
 
     tables.forEach(function (table) {
       // Only the visible scope gets filtered and counted. The summary
@@ -2738,9 +2862,21 @@ function fuzzyScore(query, text) {
         scored.forEach(function (p) { body.appendChild(p[1]); });
       }
       applySort(table);
+      // Page AFTER sorting, over the rows that survived the filter, in
+      // whatever order they now sit. Only the result tables page: the
+      // summary tables above carry no data-scope and paginating them
+      // would clobber the real page number with their zero rows.
+      if (table.dataset.scope && body) {
+        var ordered = Array.prototype.slice.call(body.children).filter(function (r) {
+          return r.dataset && r.dataset.search && !r.classList.contains('hidden-row');
+        });
+        var info = paginate(table, ordered);
+        if (table.dataset.scope === scope) pagerInfo = info;
+      }
       var empty = table.parentNode.querySelector('.no-matches');
       if (empty) empty.hidden = scored.length > 0;
     });
+    syncPager(pagerInfo);
 
     if (countEl) {
       countEl.textContent = (query || arr || min || rate || qual || onlyUnplayed)
@@ -2897,10 +3033,47 @@ function fuzzyScore(query, text) {
     });
   }
 
-  q.addEventListener('input', apply);
+  // Narrowing the list should put you back on page one. Staying on page 9
+  // of a result set that just became three rows long shows you nothing.
+  q.addEventListener('input', function () { resetPage(); apply(); });
   [arrSel, minSel, rateSel, qualSel, unplayed].forEach(function (el) {
-    if (el) el.addEventListener('change', apply);
+    if (el) el.addEventListener('change', function () { resetPage(); apply(); });
   });
+
+  var pageSizeInput = document.getElementById('page-size');
+  if (pageSizeInput) {
+    pageSizeInput.addEventListener('change', function () {
+      var n = parseInt(pageSizeInput.value, 10);
+      pageSize = (isNaN(n) || n < 1) ? 0 : n;   // 0 means every row
+      try { window.localStorage.setItem(PAGE_KEY, String(pageSize)); } catch (e) {}
+      resetPage();
+      apply();
+    });
+  }
+  var allBtn = document.getElementById('page-all');
+  if (allBtn) {
+    allBtn.addEventListener('click', function () {
+      pageSize = 0;
+      try { window.localStorage.setItem(PAGE_KEY, '0'); } catch (e) {}
+      resetPage();
+      apply();
+    });
+  }
+  var prevBtn = document.getElementById('page-prev');
+  var nextBtn = document.getElementById('page-next');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', function () {
+      var s = currentScope();
+      pageNum[s] = Math.max(1, pageNum[s] - 1);
+      apply();
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener('click', function () {
+      pageNum[currentScope()] += 1;   // paginate() clamps to the last page
+      apply();
+    });
+  }
   scopeRadios.forEach(function (r) {
     r.addEventListener('change', function () { syncPanels(); apply(); });
   });
@@ -2912,6 +3085,7 @@ function fuzzyScore(query, text) {
       var fn = PRESETS[btn.dataset.preset];
       if (!fn) return;
       resetFilters();
+      resetPage();
       fn();
       apply();
     });
@@ -3037,8 +3211,11 @@ def render_html(report, env=None):
     add = parts.append
 
     add('<h1>LibrARRian</h1>')
+    stamp_line = stamp_summary(report.get('stack') or {})
     add(f'<p class="muted">Where the space went · scanned {html.escape(report["generated"])} '
-        f'in {report["elapsed"]}s</p>')
+        f'in {report["elapsed"]}s'
+        + (f' · {html.escape(stamp_line)}' if stamp_line else '')
+        + '</p>')
 
     for w_ in report['warnings']:
         add(f'<div class="banner">{html.escape(w_)}</div>')
@@ -3239,6 +3416,20 @@ def render_html(report, env=None):
             f'<strong>{html.escape(shown_outliers)}</strong> sits in files well clear of '
             'their siblings.</p>'
             + _file_table_html(files, can_act) + '</div>')
+
+    # Pager. Every matching row stays in the DOM so the filters can't lie
+    # about what they matched — this only controls how many are on screen
+    # at once, which is what a 1,000-row library actually needs.
+    add('<div class="pager">'
+        '<button type="button" class="preset" id="page-prev">Prev</button>'
+        '<span class="muted" id="page-status"></span>'
+        '<button type="button" class="preset" id="page-next">Next</button>'
+        '<label class="muted">Rows per page '
+        '<input type="number" id="page-size" min="1" max="10000" step="25" '
+        'value="50" placeholder="all">'
+        '</label>'
+        '<button type="button" class="preset" id="page-all">Show all</button>'
+        '</div>')
 
     add('</div>')
 

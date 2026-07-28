@@ -4090,6 +4090,27 @@ def render_homepage_services(env, ip):
     # no easy rollback. Use the wizard's Update Stack screen (which can
     # be aborted) or `docker compose pull && docker compose up -d` from
     # the install dir if you want to update manually.
+    # Which build is on this box, and when it went in. Only added when a
+    # Maintenance section already exists, so this never creates a section
+    # on its own (a layout key with no matching section makes Homepage
+    # warn). Tile rather than a settings tweak because Homepage has no
+    # plain-text field, and a tile can link somewhere useful.
+    stamp = read_stack_stamp()
+    bits = []
+    if stamp.get('version'):
+        bits.append('v' + stamp['version'])
+    if stamp.get('deployed'):
+        bits.append('updated ' + stamp['deployed'][:16].replace('T', ' '))
+    elif stamp.get('built'):
+        bits.append('built ' + stamp['built'][:16].replace('T', ' '))
+    if maintenance and bits:
+        maintenance.append(
+            f"    - Mediarr:\n"
+            f"        href: https://github.com/defessler/Mediarr-Installer/releases\n"
+            f"        description: '{' · '.join(bits)}'\n"
+            f"        icon: mdi-package-variant"
+        )
+
     if maintenance:
         out.append("- Maintenance:")
         out.extend(maintenance)
@@ -4176,6 +4197,28 @@ body::after {
   * { transition-duration: 0.001ms !important; }
 }
 """
+
+
+def read_stack_stamp():
+    """Which build these scripts came from and when they went into service.
+
+    scripts/stack-version is written by copy-nas-payload.mjs at build time
+    and stamped with deployed= by setup.sh. Absent on a hand-rolled install,
+    so every field defaults to empty and callers just skip the tile."""
+    out = {'version': '', 'sha': '', 'built': '', 'deployed': ''}
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stack-version')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, v = line.split('=', 1)
+                if k.strip() in out:
+                    out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
 
 
 def render_homepage_settings(env):

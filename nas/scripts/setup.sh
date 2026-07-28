@@ -1650,6 +1650,31 @@ fi
 # the whole step — `up -d` afterwards is the authority on success and re-pulls
 # anything still missing. Runs as a function (not `bash -c`) so retry() is in
 # scope. cd into the compose root first; a failed cd must fail the step.
+# Record WHEN this deploy ran, next to WHICH build it came from.
+#
+# copy-nas-payload.mjs writes scripts/stack-version at build time; this adds
+# the one thing only the NAS knows, which is when the scripts were actually
+# put into service. LibrARRian and the Homepage dashboard both read it back,
+# so "is this box up to date?" stops being a question you answer by squinting
+# at which features the page happens to render.
+#
+# Idempotent: strip any previous deployed= line before appending, so running
+# setup.sh twice without a fresh upload doesn't stack them up.
+stamp_deploy_time() {
+    # SCRIPT_DIR is where this file lives, which is where the payload
+    # (and so stack-version) was uploaded.
+    local f="$SCRIPT_DIR/stack-version"
+    local now
+    now="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+    if [ ! -f "$f" ]; then
+        # Running from a git checkout rather than an installer payload.
+        printf 'version=unknown\nsha=unknown\n' > "$f" 2>/dev/null || return 0
+    fi
+    grep -v '^deployed=' "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f" 2>/dev/null
+    printf 'deployed=%s\n' "$now" >> "$f" 2>/dev/null || true
+    rm -f "$f.tmp" 2>/dev/null || true
+}
+
 # Reload the sidecars whose entire program is a bind-mounted .py file.
 #
 # recyclarr-trigger and librarian are a stock python image plus ONE
@@ -1714,6 +1739,9 @@ start_stack() {
     fi
     rm -f "$up_log" 2>/dev/null || true
 
+    # Stamp BEFORE the reload, so the sidecar that comes back up is already
+    # reading the timestamp for this run rather than the previous one.
+    stamp_deploy_time
     reload_script_sidecars
 
 
