@@ -109,17 +109,19 @@ An arr will happily replace a file with a better one. It will never replace a fi
 
 LibrARRian can drive both for you, or you can do them by hand in the arr. The buttons are there by default. See [Turning Off Actions](#turning-off-actions) if you'd rather they weren't.
 
-### Upgrading
+### Changing Quality
 
-Select the items, pick a higher quality profile, and press **Upgrade**.
+Select the items, pick the profile you want, and press the button. There's one button, not two. Upgrade versus shrink was never really a choice you make, it's a consequence of the profile you picked compared with what each item already has, so the page works it out instead of asking.
 
-That sets the profile and triggers a search. The arr keeps your current file until something better actually imports, so nothing goes missing in the meantime. This is the safe direction, and it's why the cutoff-unmet count is a to-do list rather than a warning.
+It tells you which way it went before you commit. Pick something higher and it reads **Upgrade 3 items**, plain, with "nothing is deleted" beside it. Pick something lower and it turns red and reads **Shrink 3 items**. Select a mix and it says so: *1 of them shrink, the rest just upgrade*.
+
+That last case is the one two buttons handled badly. A selection can be above the target for some items and below it for others, and the right answer is different per item. Only the ones actually above the target lose their files.
+
+**Upgrading** sets the profile and triggers a search. The arr keeps your current file until something better actually imports, so nothing goes missing in the meantime. This is the safe direction, and it's why the cutoff-unmet count is a to-do list rather than a warning.
 
 By hand: Radarr or Sonarr → select → **Mass Editor** → set the profile → search.
 
-### Shrinking To Reclaim Space
-
-Select the items, pick a *lower* profile, and press **Shrink**. Order matters, and LibrARRian does it in this order for a reason:
+**Shrinking** has to delete first, and order matters. LibrARRian does it in this order for a reason:
 
 1. Set the **lower** quality profile first.
 2. Delete the existing files, through the arr so the Recycle Bin catches them.
@@ -129,7 +131,9 @@ Do it in the other order and the search re-grabs the same oversized release you 
 
 IMPORTANT: a shrink leaves the item unavailable until a new release lands, which might be minutes or might be never for something obscure. LibrARRian refuses to delete anything at all unless the arr has **Settings → Media Management → Recycle Bin** set, so deletions stay recoverable, but that safety net is only as good as the disk space you leave in the bin.
 
-Shrinking isn't offered for Lidarr. There it would mean deleting every track file an artist owns, which is too blunt to sit behind one button.
+Shrinking isn't offered for Lidarr. There it would mean deleting every track file an artist owns, which is too blunt to sit behind one button. Picking a lower profile for a Lidarr artist is refused with an explanation rather than silently doing something drastic. Upgrading works normally.
+
+One safety note on how the direction is decided: profiles are ranked by the best quality they allow, read from the arr itself. If that can't be read for some reason, the item is treated as an upgrade. Guessing wrong that way costs a re-download. Guessing wrong the other way costs the file.
 
 ### Replacing One File
 

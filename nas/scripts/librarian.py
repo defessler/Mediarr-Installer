@@ -899,8 +899,43 @@ def arr_request(base, key, path, method='GET', data=None, timeout=60):
 def collect_quality_profiles(base, key, api):
     """[{id, name}] for the profile pickers."""
     data = http_json(f'{base}/api/{api}/qualityprofile', arr_headers(key), timeout=30)
-    return [{'id': p.get('id'), 'name': p.get('name')}
+    return [{'id': p.get('id'), 'name': p.get('name'), 'rank': profile_rank(p)}
             for p in (data or []) if isinstance(p, dict) and p.get('id') is not None]
+
+
+def profile_rank(profile):
+    """How good a profile is allowed to get, as an index into the arr's own
+    quality ordering (worst first). Returns -1 when it can't be worked out.
+
+    This is what lets one button decide between upgrading and shrinking:
+    compare the item's current profile against the target and the direction
+    falls out. It's comparable across profiles because every profile in an
+    app lists the SAME qualities in the SAME order, and only the `allowed`
+    flags differ. Groups nest, and a group being allowed carries down to
+    the qualities inside it.
+
+    A profile whose rank can't be read ranks -1, which reads as "no lower
+    than anything" and so never triggers a delete. Guessing wrong in that
+    direction costs a re-download; guessing wrong the other way costs the
+    file."""
+    best = [-1]
+    idx = [0]
+
+    def walk(items, inherited=False):
+        for entry in items or []:
+            if not isinstance(entry, dict):
+                continue
+            allowed = bool(entry.get('allowed')) or inherited
+            kids = entry.get('items') or []
+            if kids:
+                walk(kids, allowed)
+            else:
+                if allowed:
+                    best[0] = max(best[0], idx[0])
+                idx[0] += 1
+
+    walk(profile.get('items'))
+    return best[0]
 
 
 def recycle_config(base, key, api):
@@ -1059,14 +1094,23 @@ ACTION_SPEC = {
 }
 
 
-def build_plan(report, env, mode, arr_name, profile_id, item_ids):
-    """Work out exactly what an action would do, without doing any of it.
+def build_plan(report, env, arr_name, profile_id, item_ids):
+    """Work out exactly what changing quality would do, without doing it.
+
+    There is no "upgrade" or "shrink" to choose between any more. You pick
+    the profile you want and the direction falls out of the comparison,
+    per item: anything currently ABOVE the target needs its files deleted
+    before the search, or the arr just re-grabs what you were replacing.
+    Anything at or below it only needs the profile change, because an arr
+    replaces a file with a better one on its own.
+
+    That also means one selection can go both ways at once, and this is
+    where that's resolved rather than being pushed back onto the user as
+    two buttons they have to choose between correctly.
 
     Returns a plan dict. Raises LibrarianSourceError with a plain-English
     reason when the action isn't allowed, which the UI shows verbatim.
     """
-    if mode not in ('upgrade', 'shrink'):
-        raise LibrarianSourceError(f'unknown action "{mode}"')
     if not actions_enabled(env):
         raise LibrarianSourceError(
             'Actions are turned off. LIBRARIAN_ALLOW_ACTIONS is set to false '
@@ -1077,11 +1121,6 @@ def build_plan(report, env, mode, arr_name, profile_id, item_ids):
     conn = (report.get('connections') or {}).get(arr_name)
     if not spec or not conn:
         raise LibrarianSourceError(f'{arr_name} is not reachable right now')
-    if mode == 'shrink' and not spec['can_shrink']:
-        raise LibrarianSourceError(
-            f'Shrinking is not offered for {arr_name}: it would mean deleting '
-            'every file the item owns, which is too blunt to put behind one '
-            'button. Change the profile in the app if you really want it.')
 
     cap = max_batch(env)
     wanted = set(item_ids)
@@ -1098,28 +1137,55 @@ def build_plan(report, env, mode, arr_name, profile_id, item_ids):
     target = next((p for p in profiles if p['id'] == profile_id), None)
     if not target:
         raise LibrarianSourceError('That quality profile no longer exists')
+    rank_of = {p['id']: p.get('rank', -1) for p in profiles}
+    target_rank = target.get('rank', -1)
+
+    # Direction, per item. An unknown current profile ranks -1 and so never
+    # reads as "above the target": the fallback is always the path that
+    # doesn't delete anything.
+    entries = []
+    for i in items:
+        current = rank_of.get(i.get('profile'), -1)
+        down = (target_rank >= 0 and current >= 0 and current > target_rank)
+        entries.append({
+            'id': i['id'], 'title': i['title'], 'year': i.get('year'),
+            'size': i.get('size') or 0, 'quality': i.get('quality') or '',
+            'path': i.get('path') or '',
+            'direction': 'down' if down else 'up',
+        })
+    down_items = [e for e in entries if e['direction'] == 'down']
+
+    if down_items and not spec['can_shrink']:
+        raise LibrarianSourceError(
+            f'That profile is lower than what {len(down_items)} of the selected '
+            f'item(s) use, and shrinking is not offered for {arr_name}: it would '
+            'mean deleting every file the item owns, which is too blunt to put '
+            'behind one button. Pick a profile that is not a downgrade, or '
+            'change it in the app.')
 
     plan = {
-        'mode': mode,
+        'mode': 'apply',
         'arr': arr_name,
         'label': ARRS[arr_name]['label'],
         'profile_id': profile_id,
         'profile_name': target['name'],
-        'items': [{'id': i['id'], 'title': i['title'], 'year': i.get('year'),
-                   'size': i.get('size') or 0, 'quality': i.get('quality') or '',
-                   'path': i.get('path') or ''} for i in items],
-        'total_size': sum(i.get('size') or 0 for i in items),
-        'deletes_files': mode == 'shrink',
+        'items': entries,
+        'down_ids': [e['id'] for e in down_items],
+        'total_size': sum(e['size'] for e in entries),
+        'down_size': sum(e['size'] for e in down_items),
+        'deletes_files': bool(down_items),
         'recycle_bin': '',
         'steps': [],
     }
 
-    if mode == 'upgrade':
+    up_count = len(entries) - len(down_items)
+    if not down_items:
         plan['steps'] = [
-            f'Set the quality profile of {len(items)} item(s) to "{target["name"]}".',
+            f'Set the quality profile of {len(entries)} item(s) to "{target["name"]}".',
             'Trigger a search for each one.',
-            'Nothing is deleted. Each existing file stays until a better '
-            'release actually imports, so nothing goes missing in the meantime.',
+            'Nothing is deleted. This profile is not lower than what any of '
+            'them use, so each existing file stays until a better release '
+            'actually imports.',
         ]
     else:
         bin_path = recycle_bin_path(conn['base'], conn['key'], conn['api'])
@@ -1130,12 +1196,21 @@ def build_plan(report, env, mode, arr_name, profile_id, item_ids):
                 'the files would be gone for good. Set one in Settings → Media '
                 'Management → Recycle Bin, then try again.')
         plan['steps'] = [
-            f'Set the quality profile of {len(items)} item(s) to "{target["name"]}" FIRST.',
-            f'Delete their current files, which the Recycle Bin at {bin_path} will catch.',
+            f'Set the quality profile of {len(entries)} item(s) to '
+            f'"{target["name"]}" FIRST.',
+            f'Delete the current files of the {len(down_items)} item(s) already '
+            f'above that profile, which the Recycle Bin at {bin_path} will catch.',
+        ]
+        if up_count:
+            plan['steps'].append(
+                f'Leave the other {up_count} item(s) alone. They are at or below '
+                'the target, so the arr replaces them on its own when something '
+                'better shows up.')
+        plan['steps'] += [
             'Trigger a search under the new profile.',
             'Order matters: profile first, or the search re-grabs the same '
-            'release you are replacing. Each item is unavailable between the '
-            'delete and the new release importing.',
+            'release you are replacing. Anything that lost a file is '
+            'unavailable until a new release imports.',
         ]
     return plan
 
@@ -1376,10 +1451,15 @@ def execute_plan(report, env, plan):
         results['failed'].append(f'Could not set the quality profile: {e}')
         return results
 
-    # 2. Delete, on a shrink only, and only through the arr so the
-    #    Recycle Bin applies.
+    # 2. Delete only what the target profile is actually a downgrade for,
+    #    and only through the arr so the Recycle Bin applies. Items at or
+    #    below the target keep their files: the arr swaps those out by
+    #    itself once something better lands.
     if plan['deletes_files']:
+        down = set(plan.get('down_ids') or [])
         for item in plan['items']:
+            if item['id'] not in down:
+                continue
             try:
                 files = http_json(f'{base}{pre}{spec["files"](item["id"])}',
                                   arr_headers(key), timeout=60) or []
@@ -2685,15 +2765,69 @@ function fuzzyScore(query, text) {
       .filter(function (b) { return !b.closest('tr').classList.contains('hidden-row'); });
   }
 
+  // ── Which way is this going? ──────────────────────────────────────
+  // Profiles carry a rank: how good they're allowed to get, as an index
+  // into the arr's own quality order. An item above the target has to
+  // lose its file first or the search just re-grabs it; an item at or
+  // below only needs the profile change. An unknown rank is -1 and never
+  // reads as "above", so the fallback is always the path that deletes
+  // nothing. The server decides for real — this is so the button doesn't
+  // lie about what pressing it does.
+  function rankOf(profileId) {
+    if (!profileSel || !profileId) return -1;
+    var opt = Array.prototype.slice.call(profileSel.options)
+      .filter(function (o) { return o.value === String(profileId); })[0];
+    var r = opt ? parseInt(opt.dataset.rank, 10) : NaN;
+    return isNaN(r) ? -1 : r;
+  }
+
+  function syncDirection(keys, profileOf) {
+    var btn = document.getElementById('apply-btn');
+    var note = document.getElementById('direction-note');
+    if (!btn || !profileSel) return;
+    var chosen = profileSel.options[profileSel.selectedIndex];
+    var target = chosen ? parseInt(chosen.dataset.rank, 10) : NaN;
+    if (isNaN(target)) target = -1;
+
+    var down = 0;
+    keys.forEach(function (k) {
+      var mine = rankOf(profileOf[k]);
+      if (target >= 0 && mine >= 0 && mine > target) down++;
+    });
+
+    var n = keys.length;
+    btn.classList.toggle('danger', down > 0);
+    if (!n) {
+      btn.textContent = 'Apply';
+      if (note) note.textContent = '';
+      return;
+    }
+    if (down === 0) {
+      btn.textContent = 'Upgrade ' + n + ' item' + (n === 1 ? '' : 's');
+      if (note) note.textContent = 'Nothing is deleted.';
+    } else if (down === n) {
+      btn.textContent = 'Shrink ' + n + ' item' + (n === 1 ? '' : 's');
+      if (note) note.textContent = 'Current files are deleted first, via the Recycle Bin.';
+    } else {
+      btn.textContent = 'Apply to ' + n + ' items';
+      if (note) note.textContent = down + ' of them shrink, the rest just upgrade.';
+    }
+  }
+
   function syncSelection() {
     if (!bar) return;
     var picks = selected();
-    // The same item appears in more than one table (biggest, most
-    // bloated, never played), so count distinct items rather than
-    // distinct checkboxes.
-    var seen = {};
-    picks.forEach(function (b) { seen[b.dataset.arr + ':' + b.dataset.id] = b.dataset.arr; });
+    // Count distinct items rather than distinct checkboxes, and carry
+    // each one's current profile so the button can work out which way
+    // this is going.
+    var seen = {}, profileOf = {};
+    picks.forEach(function (b) {
+      var k = b.dataset.arr + ':' + b.dataset.id;
+      seen[k] = b.dataset.arr;
+      profileOf[k] = b.dataset.profile;
+    });
     var keys = Object.keys(seen);
+    syncDirection(keys, profileOf);
     var arrs = {};
     keys.forEach(function (k) { arrs[seen[k]] = 1; });
     var arrList = Object.keys(arrs);
@@ -2770,6 +2904,9 @@ function fuzzyScore(query, text) {
   scopeRadios.forEach(function (r) {
     r.addEventListener('change', function () { syncPanels(); apply(); });
   });
+  // Changing the target profile can flip the action from an upgrade to a
+  // shrink without the selection changing at all.
+  if (profileSel) profileSel.addEventListener('change', syncSelection);
   document.querySelectorAll('.preset').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var fn = PRESETS[btn.dataset.preset];
@@ -2863,6 +3000,7 @@ def _item_table_html(items, watch_source, selectable=False):
             sel = (f'<td class="sel"><input type="checkbox" class="pick" '
                    f'data-arr="{html.escape(str(it.get("arr", "")))}" '
                    f'data-id="{int(it["id"])}" '
+                   f'data-profile="{html.escape(str(it.get("profile") or ""))}" '
                    f'data-title="{html.escape(it["title"])}" '
                    f'aria-label="Select {html.escape(it["title"])}"></td>')
         elif selectable:
@@ -3109,17 +3247,24 @@ def render_html(report, env=None):
         for name, conn in (report.get('connections') or {}).items():
             for prof in conn.get('profiles') or []:
                 prof_opts.append(
-                    f'<option value="{int(prof["id"])}" data-arr="{html.escape(name)}">'
+                    f'<option value="{int(prof["id"])}" data-arr="{html.escape(name)}" '
+                    f'data-rank="{int(prof.get("rank", -1))}">'
                     f'{html.escape(str(prof["name"]))}</option>')
+        # One button, not two. Upgrade and shrink were never a choice the
+        # user makes, they're a consequence of the profile picked versus
+        # what each item already has, so the page works that out instead of
+        # asking. The label and the colour say which way it went before you
+        # press it; build_plan decides for real, per item.
         add('<form method="POST" action="/plan">'
             '<div class="action-bar" id="action-bar" hidden>'
             '<span class="sel-count" id="sel-count">0 selected</span>'
             '<input type="hidden" name="ids" id="ids">'
             '<input type="hidden" name="arr" id="action-arr">'
+            '<input type="hidden" name="mode" value="apply">'
             '<label class="muted">Target profile '
             f'<select name="profile" id="profile">{"".join(prof_opts)}</select></label>'
-            '<button type="submit" name="mode" value="upgrade">Upgrade</button>'
-            '<button type="submit" name="mode" value="shrink" class="danger">Shrink</button>'
+            '<button type="submit" id="apply-btn">Apply</button>'
+            '<span class="muted" id="direction-note"></span>'
             '<span class="muted" id="sel-warn" hidden></span>'
             '</div></form>')
         # Files get their own bar. Replacing a file is a different action
@@ -3222,7 +3367,9 @@ def render_plan_html(plan, token):
         noun = 'file'
     else:
         entries = [{'name': i['title'] + (f' ({i["year"]})' if i.get('year') else ''),
-                    'size': i['size'], 'quality': i.get('quality') or '', 'extra': ''}
+                    'size': i['size'], 'quality': i.get('quality') or '',
+                    'extra': ('files deleted first'
+                              if i.get('direction') == 'down' else 'no delete')}
                    for i in plan['items']]
         noun = 'item'
 
@@ -3236,18 +3383,31 @@ def render_plan_html(plan, token):
         for e in entries)
 
     steps = ''.join(f'<li>{html.escape(x)}</li>' for x in plan['steps'])
-    verb = {'replace': 'Replace', 'shrink': 'Shrink'}.get(plan['mode'], 'Upgrade')
+    if plan['mode'] == 'replace':
+        verb = 'Replace'
+    elif plan['deletes_files']:
+        verb = 'Shrink'
+    else:
+        verb = 'Upgrade'
 
     warn = ''
     if plan['deletes_files']:
+        # Only the items the target is actually a downgrade for lose files.
+        # Warning about the whole selection would overstate it and train
+        # people to skim the one screen that matters.
+        down = len(plan.get('down_ids') or []) or len(entries)
+        down_size = plan.get('down_size') or plan['total_size']
+        rest = len(entries) - down
+        also = (f' The other {rest} {noun}(s) keep their files, because that '
+                'profile is not a downgrade for them.' if rest > 0 else '')
         warn = (
             '<div class="plan-warn"><strong>This deletes files.</strong> '
-            f'{len(entries)} {noun}(s), '
-            f'{html.escape(human_bytes(plan["total_size"]))} on disk, will have '
-            'their current files removed through the arr and replaced by a fresh '
-            f'search at "{html.escape(plan["profile_name"])}".<br><br>'
+            f'{down} of {len(entries)} {noun}(s) sit above '
+            f'"{html.escape(plan["profile_name"])}" today, so their current files '
+            f'({html.escape(human_bytes(down_size))} on disk) are removed through '
+            f'the arr and replaced by a fresh search.{html.escape(also)}<br><br>'
             f'They go to the Recycle Bin at <code>{html.escape(plan["recycle_bin"])}</code>, '
-            'so they are recoverable until you empty it. Each item is unavailable '
+            'so they are recoverable until you empty it. Each one is unavailable '
             'between the delete and a new release importing, and for something '
             'obscure that could be a while.</div>')
 
@@ -3472,7 +3632,11 @@ class Handler(BaseHTTPRequestHandler):
                     plan = build_file_plan(report, env,
                                            (form.get('arr') or '').strip(), ids)
                 else:
-                    plan = build_plan(report, env, mode,
+                    # 'upgrade' and 'shrink' were separate buttons once. A
+                    # page cached from back then still posts them, and they
+                    # both mean the same thing now: apply this profile and
+                    # work the direction out per item.
+                    plan = build_plan(report, env,
                                       (form.get('arr') or '').strip(), profile_id, ids)
             except LibrarianSourceError as e:
                 self._error_page(str(e))
