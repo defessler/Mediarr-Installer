@@ -23,6 +23,8 @@ LibrARRian is that screen. It's opt-in and off by default. Added in v0.20.0.
 
 **Upgrade backlog** - each arr's cutoff-unmet count, meaning items it already considers below your quality bar and would replace on the next search.
 
+**Recycle bins** - what's waiting in each arr's bin, how big it is, and how long before that arr clears it. See [The Recycle Bin](#the-recycle-bin).
+
 **Big and never played** - last-played and play count, pulled from Tautulli on Plex or from Jellyfin's own watch data. This is the view that actually decides things.
 
 ### Individual Files, Not Just Titles
@@ -138,6 +140,22 @@ So files have their own action. Tick the files you want, press **Replace file(s)
 That distinction matters for the outlier case. The show's profile is already right. One file just doesn't match it, and re-searching under the existing profile is what fixes that.
 
 Same rails as everything else: it refuses without a Recycle Bin, shows you the plan first, and logs what it deleted.
+
+### The Recycle Bin
+
+Every delete here goes through the arr, which means it lands in that arr's Recycle Bin rather than disappearing. The installer sets one up per app at `${DATA_ROOT}/.recycle/<arr>` and keeps things for **30 days**, which is more generous than the arr default of 7. After that the arr clears it on its own schedule.
+
+There's a catch worth understanding before you shrink anything: **the bin is on the same filesystem as your media**. Deleting doesn't free space, it moves it sideways. And since a shrink also downloads a replacement, your disk usage goes *up* until the bin is cleared. On a nearly-full array that's the difference between reclaiming space and running out of it.
+
+So LibrARRian shows you the bins directly: the path, how long each keeps things, how many files are in there, and how much space that is. A bin set to keep things forever gets called out, because an arr will never clear that one by itself.
+
+**Empty now** deletes the contents immediately and gives the space straight back.
+
+IMPORTANT: this is the one action here with no undo. Everything else is recoverable *because* it goes to the recycle bin first, and this is the recycle bin. It shows you the exact size and file count and asks a second time before doing anything, and what it removed goes to the audit log, but nothing catches it afterwards.
+
+The bin folders themselves are always left in place. The arrs validate that the path exists and reject their entire media management config if it's missing, so removing them would break the next wizard run in a way that looks nothing like its cause.
+
+Prefer not to have the button at all? It follows the same switch as everything else, see below.
 
 ### Turning Off Actions
 

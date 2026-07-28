@@ -822,6 +822,14 @@ services:
       # a Recycle Bin restore possible after the fact. Narrow on purpose
       # rather than making the whole install dir writable.
       - ${INSTALL_DIR}/librarian:/state:rw
+      # The arrs' recycle bins, so the page can report what's sitting in
+      # them and empty them on request. Deliberately :rw and deliberately
+      # ONLY this subtree — it's the one place LibrARRian touches files
+      # directly instead of going through an arr API, because no arr
+      # exposes "purge the bin now" (their own cleanup only removes what's
+      # already older than recycleBinCleanupDays). Media stays out of
+      # reach: ${DATA_ROOT}/Media is not mounted here at all.
+      - ${DATA_ROOT}/.recycle:/recycle:rw
     environment:
       - TZ=${TZ}
     command: ["python3", "/app/librarian.py"]

@@ -76,6 +76,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sys
 import threading
 import time
@@ -902,17 +903,127 @@ def collect_quality_profiles(base, key, api):
             for p in (data or []) if isinstance(p, dict) and p.get('id') is not None]
 
 
-def recycle_bin_path(base, key, api):
-    """The arr's configured Recycle Bin, or '' when it has none.
+def recycle_config(base, key, api):
+    """The arr's Recycle Bin path and how long it keeps things.
 
-    This is the difference between a delete you can undo and one you
-    cannot. Deleting through the arr's API moves the file here rather
-    than unlinking it, but only if it's set."""
+    Two settings answering one question: where deleted files go, and when
+    they stop existing. cleanup_days of 0 means the arr never clears it
+    on its own, which is a patient way to fill a disk."""
     data = http_json(f'{base}/api/{api}/config/mediamanagement',
                      arr_headers(key), timeout=30)
-    if isinstance(data, dict):
-        return (data.get('recycleBin') or '').strip()
+    if not isinstance(data, dict):
+        return {'path': '', 'cleanup_days': 0}
+    try:
+        days = int(data.get('recycleBinCleanupDays') or 0)
+    except (TypeError, ValueError):
+        days = 0
+    return {'path': (data.get('recycleBin') or '').strip(), 'cleanup_days': days}
+
+
+def recycle_bin_path(base, key, api):
+    """Just the path. The delete guards only care whether one is set at
+    all: it's the difference between a delete you can undo and one you
+    cannot, because deleting through the arr's API moves the file here
+    rather than unlinking it."""
+    return recycle_config(base, key, api)['path']
+
+
+# Where compose bind-mounts ${DATA_ROOT}/.recycle for us. The arrs see the
+# same tree as /data/.recycle, so only the last segment carries across.
+CONTAINER_RECYCLE_DIR = '/recycle'
+
+
+def _contained(path, root):
+    """True when path resolves inside root. This is the guard that keeps
+    an unexpected recycleBin value from turning a purge into something
+    much worse, so it resolves symlinks before comparing."""
+    try:
+        real_root = os.path.realpath(root)
+        real = os.path.realpath(path)
+    except OSError:
+        return False
+    return real == real_root or real.startswith(real_root + os.sep)
+
+
+def recycle_local_path(bin_path, env):
+    """Where THIS process can reach that recycle bin, or '' if it can't.
+
+    The arrs report a path in their own namespace (/data/.recycle/sonarr).
+    In the container we see the same tree at /recycle; on the host the CLI
+    resolves it under DATA_ROOT instead. Anything that doesn't land inside
+    a directory we actually hold is reported unreadable rather than
+    guessed at, because the next thing someone does with this path is
+    delete what's under it."""
+    name = os.path.basename((bin_path or '').rstrip('/'))
+    if not name or name in ('.', '..'):
+        return ''
+    for root in (CONTAINER_RECYCLE_DIR,
+                 os.path.join((env.get('DATA_ROOT') or '').strip(), '.recycle')
+                 if (env.get('DATA_ROOT') or '').strip() else ''):
+        if not root or not os.path.isdir(root):
+            continue
+        local = os.path.join(root, name)
+        if os.path.isdir(local) and _contained(local, root):
+            return local
     return ''
+
+
+def recycle_host_path(bin_path, env):
+    """The path as it reads on the NAS. The arrs see DATA_ROOT as /data;
+    nobody typing into an SSH session does."""
+    root = (env.get('DATA_ROOT') or '').strip().rstrip('/')
+    if root and bin_path.startswith('/data/'):
+        return root + bin_path[len('/data'):]
+    return bin_path
+
+
+def recycle_usage(local_path):
+    """(bytes, files) under local_path. lstat, and never follow a link
+    out: a symlink's target is somebody else's disk usage, not ours."""
+    total = files = 0
+    for dirpath, _dirnames, filenames in os.walk(local_path, followlinks=False):
+        for fn in filenames:
+            try:
+                total += os.lstat(os.path.join(dirpath, fn)).st_size
+                files += 1
+            except OSError:
+                pass
+    return total, files
+
+
+def purge_dir(root):
+    """Delete everything INSIDE root and leave root itself standing.
+
+    Leaving the directory matters: the arrs validate that the recycleBin
+    path exists and is writable by their own user, and reject the WHOLE
+    media-management update if it isn't. Removing it here would break the
+    next wizard run in a way that looks nothing like this function.
+
+    Returns (files, bytes, errors). Symlinks are unlinked, never followed.
+    """
+    freed = files = 0
+    errors = []
+    try:
+        entries = list(os.scandir(root))
+    except OSError as e:
+        return 0, 0, [f'{root}: {e}']
+    for entry in entries:
+        try:
+            if entry.is_symlink():
+                os.unlink(entry.path)
+                files += 1
+            elif entry.is_dir(follow_symlinks=False):
+                sub_bytes, sub_files = recycle_usage(entry.path)
+                shutil.rmtree(entry.path)
+                freed += sub_bytes
+                files += sub_files
+            else:
+                freed += entry.stat(follow_symlinks=False).st_size
+                os.unlink(entry.path)
+                files += 1
+        except OSError as e:
+            errors.append(f'{entry.name}: {e}')
+    return files, freed, errors
 
 
 # Per-arr action wiring. Kept as data so the plan/apply code doesn't
@@ -1161,6 +1272,86 @@ def execute_file_plan(report, env, plan):
     except LibrarianSourceError as e:
         results['failed'].append(f'search: {e}')
 
+    return results
+
+
+def build_empty_plan(report, env):
+    """Plan for emptying the recycle bins.
+
+    The odd one out among the actions: it touches the filesystem directly
+    rather than going through an arr, because no arr exposes "purge the
+    bin now" — their own cleanup only removes what's already older than
+    recycleBinCleanupDays. It's also the only delete here that is truly
+    final, since the recycle bin IS the safety net."""
+    if not actions_enabled(env):
+        raise LibrarianSourceError(
+            'Actions are turned off. LIBRARIAN_ALLOW_ACTIONS is set to false '
+            'in .env — set it back to true to enable them.')
+    entries = [r for r in (report.get('recycle') or [])
+               if r.get('readable') and r.get('files')]
+    if not entries:
+        unreadable = [r for r in (report.get('recycle') or [])
+                      if r.get('path') and not r.get('readable')]
+        if unreadable:
+            raise LibrarianSourceError(
+                "The recycle bins aren't reachable from here. Compose mounts "
+                '${DATA_ROOT}/.recycle at /recycle for this; re-run the wizard '
+                'so the container picks the mount up.')
+        raise LibrarianSourceError('The recycle bins are already empty.')
+    total = sum(e['bytes'] for e in entries)
+    return {
+        'mode': 'empty',
+        'arr': '',
+        'label': 'Recycle bins',
+        'profile_id': 0,
+        'profile_name': '',
+        'items': [],
+        'files': [],
+        'recycle': entries,
+        'recycle_bin': ', '.join(e['host_path'] for e in entries),
+        'total_size': total,
+        'deletes_files': True,
+        'steps': [
+            f'Permanently delete {sum(e["files"] for e in entries):,} file(s) '
+            f'from {len(entries)} recycle bin(s), freeing '
+            f'{human_bytes(total)}.',
+            'Leave the bin folders themselves in place, because the arrs '
+            'refuse their whole media-management config if the path is gone.',
+            'Write what was removed to the audit log.',
+        ],
+    }
+
+
+def execute_empty_plan(report, env, plan):
+    """Empty the bins listed in the plan. Each is independent, so one
+    unwritable bin doesn't strand the rest."""
+    results = {'ok': [], 'failed': [], 'deleted_files': 0, 'notes': []}
+    for entry in plan['recycle']:
+        local = recycle_local_path(entry['path'], env)
+        if not local:
+            results['failed'].append(
+                f'{entry["label"]}: recycle bin is no longer reachable')
+            continue
+        files, freed, errors = purge_dir(local)
+        results['deleted_files'] += files
+        for e in errors:
+            results['failed'].append(f'{entry["label"]}: {e}')
+        if files:
+            results['ok'].append(
+                f'{entry["label"]} — {files:,} file(s), {human_bytes(freed)}')
+        note = audit({
+            'at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+            'action': 'empty-recycle-bin',
+            'arr': entry['arr'],
+            'recycle_bin': entry['host_path'],
+            'deleted_files': files,
+            'freed_bytes': freed,
+            'errors': errors,
+        })
+        if note:
+            results['notes'].append(note)
+    if not results['ok'] and not results['failed']:
+        results['notes'].append('Nothing was there to remove.')
     return results
 
 
@@ -1582,6 +1773,31 @@ def build_report(top_n=25, quality_detail=True):
     for it in report['items']:
         it['per_hour'] = bytes_per_hour(it['size'], it['minutes'])
 
+    # ── recycle bins ─────────────────────────────────────────────────
+    # Worth sitting next to the disk figures rather than buried in an
+    # arr's settings: the bin lives on the SAME filesystem as the media,
+    # so a shrink frees nothing at all until the arr clears it, and until
+    # then everything in here counts toward unaccounted space.
+    report['recycle'] = []
+    for name, conn in (report['connections'] or {}).items():
+        try:
+            cfg = recycle_config(conn['base'], conn['key'], conn['api'])
+        except LibrarianSourceError:
+            continue
+        local = recycle_local_path(cfg['path'], env) if cfg['path'] else ''
+        used, count = recycle_usage(local) if local else (0, 0)
+        report['recycle'].append({
+            'arr': name,
+            'label': ARRS[name]['label'],
+            'path': cfg['path'],
+            'host_path': recycle_host_path(cfg['path'], env) if cfg['path'] else '',
+            'cleanup_days': cfg['cleanup_days'],
+            'bytes': used,
+            'files': count,
+            'readable': bool(local),
+        })
+    report['recycle_bytes'] = sum(r['bytes'] for r in report['recycle'])
+
     # ── file-level views ─────────────────────────────────────────────
     # An "outlier" is a file well out of step with its siblings. That is
     # the one worth replacing: 40 GB is meaningless alone, 6x the rest of
@@ -1694,6 +1910,20 @@ def render_text(report):
             f'  ({pct(report["unaccounted"], report["media_used"]):.0f}% of used space)')
         add('      Downloads in progress, extras, other shares on the same volume,')
         add('      and anything the arrs no longer track. Worth a look, not an alarm.')
+
+    if report.get('recycle'):
+        add('')
+        add('  RECYCLE BINS (deleted files, still on the same disk)')
+        for r in report['recycle']:
+            if not r['path']:
+                add(f'    {r["label"]:<10} not configured')
+                continue
+            kept = f'{r["cleanup_days"]}d' if r['cleanup_days'] else 'forever'
+            size = human_bytes(r['bytes']) if r['readable'] else 'unreadable'
+            add(f'    {r["label"]:<10} {size:>10}  {r["files"]:>6,} files  '
+                f'kept {kept:<8} {r["host_path"]}')
+        if report.get('recycle_bytes'):
+            add(f'    {"total":<10} {human_bytes(report["recycle_bytes"]):>10}')
 
     if report['cutoff']:
         add('')
@@ -2738,6 +2968,55 @@ def render_html(report, env=None):
                 '</tr>')
         add('</tbody></table></div>')
 
+    # Recycle bins
+    if report.get('recycle'):
+        rec = report['recycle']
+        add('<div class="card"><div class="label">Recycle bins</div>'
+            '<p class="muted" style="margin-top:0">Where deleted files wait. '
+            'This sits on the same filesystem as your media, so a shrink frees '
+            'nothing until the bin is cleared, and everything below still '
+            'counts as space in use.</p>'
+            '<table><thead><tr><th>App</th><th>Path</th>'
+            '<th class="num">Kept for</th><th class="num">Files</th>'
+            '<th class="num">Size</th></tr></thead><tbody>')
+        for r in rec:
+            if not r['path']:
+                kept, size, count = 'not set', '—', '—'
+            else:
+                kept = f'{r["cleanup_days"]} days' if r['cleanup_days'] else 'forever'
+                size = human_bytes(r['bytes']) if r['readable'] else 'unreadable'
+                count = f'{r["files"]:,}' if r['readable'] else '—'
+            add('<tr>'
+                f'<td>{html.escape(r["label"])}</td>'
+                f'<td class="dim">{html.escape(r["host_path"] or "—")}</td>'
+                f'<td class="num dim">{html.escape(kept)}</td>'
+                f'<td class="num dim">{html.escape(str(count))}</td>'
+                f'<td class="num" data-sort-value="{int(r["bytes"])}">'
+                f'{html.escape(size)}</td>'
+                '</tr>')
+        add('<tr><td><strong>Total</strong></td><td></td><td></td>'
+            f'<td class="num"><strong>{sum(r["files"] for r in rec):,}</strong></td>'
+            f'<td class="num"><strong>{html.escape(human_bytes(report["recycle_bytes"]))}'
+            '</strong></td></tr>')
+        add('</tbody></table>')
+        if any(r['cleanup_days'] == 0 and r['path'] for r in rec):
+            add('<p class="muted">A bin set to keep things <strong>forever</strong> '
+                'is never cleared by the arr on its own. Set Recycle Bin Cleanup '
+                'in that app, or empty it here.</p>')
+        if can_act and report['recycle_bytes']:
+            add('<form method="POST" action="/plan">'
+                '<input type="hidden" name="mode" value="empty">'
+                '<div class="actions">'
+                '<button type="submit" class="danger">Empty now</button>'
+                f'<span class="muted">Reclaims {html.escape(human_bytes(report["recycle_bytes"]))} '
+                'straight away. This is permanent, and the recycle bin is the '
+                'thing that made the last delete recoverable.</span>'
+                '</div></form>')
+        elif report['recycle_bytes'] and not can_act:
+            add('<p class="muted">Emptying needs write mode '
+                '(<code>LIBRARIAN_ALLOW_ACTIONS</code>).</p>')
+        add('</div>')
+
     # ── One results table ────────────────────────────────────────────
     #
     # This used to be five cards: biggest items, most bloated, big and
@@ -2899,6 +3178,41 @@ def _page(body, code_note=''):
 def render_plan_html(plan, token):
     """The confirmation page. Deliberately verbose about the destructive
     case: this is the last screen before files move."""
+    # An empty plan lists bins. It gets its own warning because it's the
+    # only action here with no undo: everything else lands in the recycle
+    # bin, and this IS the recycle bin.
+    if plan['mode'] == 'empty':
+        rows = ''.join(
+            '<tr>'
+            f'<td>{html.escape(e["label"])}</td>'
+            f'<td class="num">{html.escape(human_bytes(e["bytes"]))}</td>'
+            f'<td class="dim">{e["files"]:,} file(s)</td>'
+            f'<td class="dim">{html.escape(e["host_path"])}</td>'
+            '</tr>'
+            for e in plan['recycle'])
+        steps = ''.join(f'<li>{html.escape(x)}</li>' for x in plan['steps'])
+        return _page(
+            '<h1>LibrARRian</h1>'
+            f'<p class="muted">Confirm: empty {len(plan["recycle"])} recycle bin(s)</p>'
+            '<div class="plan-warn"><strong>This cannot be undone.</strong> '
+            f'{sum(e["files"] for e in plan["recycle"]):,} file(s), '
+            f'{html.escape(human_bytes(plan["total_size"]))}, will be removed from '
+            'disk for good. Every other action on this page is recoverable '
+            'because it puts files here first. Nothing catches this one.<br><br>'
+            'The space comes back immediately.</div>'
+            '<div class="card"><div class="label">What will happen</div>'
+            f'<ol class="plan-steps">{steps}</ol></div>'
+            '<div class="card"><div class="label">Bins</div>'
+            '<table><thead><tr><th>App</th><th class="num">Size</th>'
+            '<th>Contents</th><th>Path</th></tr></thead><tbody>'
+            + rows + '</tbody></table></div>'
+            '<div class="card"><form method="POST" action="/apply">'
+            f'<input type="hidden" name="token" value="{html.escape(token)}">'
+            '<button type="submit" class="danger">'
+            f'Yes, permanently delete {html.escape(human_bytes(plan["total_size"]))}</button> '
+            '<a href="/" style="margin-left:0.75rem">Cancel</a>'
+            '</form></div>')
+
     # A replace plan lists files; upgrade and shrink list items.
     if plan['mode'] == 'replace':
         entries = [{'name': f['label'], 'size': f['size'],
@@ -2964,12 +3278,19 @@ def render_result_html(plan, results):
         body.append('<div class="banner err">Finished with problems.</div>')
     else:
         body.append('<div class="banner ok">Done.</div>')
+    # Emptying a bin re-grades nothing, so the profile row would just read
+    # blank. Report the space instead, which is the point of having run it.
+    if plan['mode'] == 'empty':
+        tail = (f'<div class="row"><span>Space reclaimed</span><strong>'
+                f'{html.escape(human_bytes(plan["total_size"]))}</strong></div>')
+    else:
+        tail = (f'<div class="row"><span>New profile</span><strong>'
+                f'{html.escape(plan["profile_name"])}</strong></div>')
     body.append(
         '<div class="card"><div class="label">Result</div>'
         f'<div class="row"><span>Items actioned</span><strong>{ok}</strong></div>'
         f'<div class="row"><span>Files deleted</span><strong>{results["deleted_files"]}</strong></div>'
-        f'<div class="row"><span>New profile</span><strong>{html.escape(plan["profile_name"])}</strong></div>'
-        '</div>')
+        + tail + '</div>')
     if bad:
         body.append('<div class="card"><div class="label">Problems</div><pre>'
                     + html.escape('\n'.join(bad)) + '</pre></div>')
@@ -3088,6 +3409,19 @@ class Handler(BaseHTTPRequestHandler):
             '<p class="hint"><a href="/">Back to the report</a></p>'),
             code=code)
 
+    def _issue_token(self, plan):
+        """Single-use token for one exact plan. Applying requires having
+        been shown that plan, so a bare POST to /apply can't do anything.
+        Expired tokens are swept on the way past."""
+        token = secrets.token_urlsafe(24)
+        with _ACTION_LOCK:
+            now = time.time()
+            for t, (_, ts) in list(ACTION_TOKENS.items()):
+                if now - ts > ACTION_TOKEN_TTL:
+                    ACTION_TOKENS.pop(t, None)
+            ACTION_TOKENS[token] = (plan, now)
+        return token
+
     def do_POST(self):
         if not self._check_csrf():
             self.send_error(403, 'Cross-origin POST rejected (CSRF protection)')
@@ -3109,6 +3443,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             form = self._read_form()
             env = read_env()
+            # Emptying the recycle bins selects nothing and targets no arr,
+            # so it short-circuits the id/profile parsing below.
+            if (form.get('mode') or '').strip() == 'empty':
+                try:
+                    plan = build_empty_plan(report, env)
+                except LibrarianSourceError as e:
+                    self._error_page(str(e))
+                    return
+                self._send(render_plan_html(plan, self._issue_token(plan)))
+                return
             try:
                 ids = [int(x) for x in (form.get('ids') or '').split(',') if x.strip()]
             except ValueError:
@@ -3134,16 +3478,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._error_page(str(e))
                 return
 
-            # Single-use token. Applying requires having been shown this
-            # exact plan, so a bare POST to /apply can't do anything.
-            token = secrets.token_urlsafe(24)
-            with _ACTION_LOCK:
-                now = time.time()
-                for t, (_, ts) in list(ACTION_TOKENS.items()):
-                    if now - ts > ACTION_TOKEN_TTL:
-                        ACTION_TOKENS.pop(t, None)
-                ACTION_TOKENS[token] = (plan, now)
-            self._send(render_plan_html(plan, token))
+            self._send(render_plan_html(plan, self._issue_token(plan)))
             return
 
         # ── Apply: only ever runs a plan that was already shown ───────
@@ -3166,14 +3501,20 @@ class Handler(BaseHTTPRequestHandler):
             if not actions_enabled(env):
                 self._error_page('Actions are disabled.', 403)
                 return
-            if report is None or plan['arr'] not in (report.get('connections') or {}):
+            # Emptying a recycle bin touches the filesystem, not an arr, so
+            # it has no arr to be reachable. Everything else does.
+            if plan['mode'] != 'empty' and (
+                    report is None
+                    or plan['arr'] not in (report.get('connections') or {})):
                 self._error_page(f'{plan["arr"]} is not reachable right now.', 503)
                 return
             if not _SCAN_LOCK.acquire(blocking=False):
                 self._error_page('A scan is running — try again in a moment.', 409)
                 return
             try:
-                if plan['mode'] == 'replace':
+                if plan['mode'] == 'empty':
+                    results = execute_empty_plan(report, env, plan)
+                elif plan['mode'] == 'replace':
                     results = execute_file_plan(report, env, plan)
                 else:
                     results = execute_plan(report, env, plan)
