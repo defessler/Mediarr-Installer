@@ -806,7 +806,11 @@ services:
       - ${LAN_IP}:8890:8890
     volumes:
       # The analyser itself — single file, bind-mounted, so edits ship
-      # with a wizard re-run rather than an image rebuild.
+      # with a wizard re-run rather than an image rebuild. NOTE: python
+      # reads this once at process start, and `up -d` won't recreate a
+      # container just because a bind-mounted file changed underneath it.
+      # setup.sh restarts this service after uploading scripts for exactly
+      # that reason. Without that restart the new file is inert.
       - ${INSTALL_DIR}/scripts/librarian.py:/app/librarian.py:ro
       # Read-only view of the install dir: .env for the arr API keys,
       # tautulli/config/config.ini for the Tautulli key. Stays :ro even

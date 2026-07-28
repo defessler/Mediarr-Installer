@@ -1650,6 +1650,36 @@ fi
 # the whole step — `up -d` afterwards is the authority on success and re-pulls
 # anything still missing. Runs as a function (not `bash -c`) so retry() is in
 # scope. cd into the compose root first; a failed cd must fail the step.
+# Reload the sidecars whose entire program is a bind-mounted .py file.
+#
+# recyclarr-trigger and librarian are a stock python image plus ONE
+# bind-mounted script. `up -d` only touches a container when its CONFIG
+# changes, and the CONTENTS of a bind-mounted file are not config — so a
+# new librarian.py lands on disk and the running python keeps executing
+# the copy it read at startup. Nothing looks broken: the file is current,
+# the process is not, and the page quietly stays as old as the container.
+#
+# (An image tag moving WOULD recreate them, which is why this sometimes
+# appeared to work by itself. Not something to rely on.)
+#
+# Restart unconditionally rather than diffing the file: this run just
+# uploaded the scripts, both services are python:alpine, and they boot in
+# under a second. Non-fatal — a sidecar that won't come back is a stale
+# page, not a broken stack.
+reload_script_sidecars() {
+    local sidecar sidecars="recyclarr-trigger"
+    is_optin_enabled ENABLE_LIBRARIAN && sidecars="$sidecars librarian"
+    for sidecar in $sidecars; do
+        $CONTAINER_RUNTIME inspect "$sidecar" >/dev/null 2>&1 || continue
+        if $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES restart "$sidecar" >/dev/null 2>&1; then
+            echo "  ✓ Reloaded $sidecar with the script this run uploaded"
+        else
+            echo "  ⚠ Couldn't restart $sidecar — it may still be running the previous"
+            echo "    script. 'docker restart $sidecar' on the NAS picks up the new one."
+        fi
+    done
+}
+
 start_stack() {
     cd "$SCRIPT_DIR" || return 1
     retry 3 "Image pull" $COMPOSE $COMPOSE_QUIET_FLAGS $COMPOSE_FILES pull \
@@ -1683,6 +1713,9 @@ start_stack() {
         up_rc=${PIPESTATUS[0]}
     fi
     rm -f "$up_log" 2>/dev/null || true
+
+    reload_script_sidecars
+
 
     # Post-up reconcile (VPN on): the pull above may have RECREATED gluetun
     # with a new container id. An already-running qBittorrent is welded to
