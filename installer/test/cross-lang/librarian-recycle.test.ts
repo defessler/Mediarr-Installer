@@ -109,6 +109,50 @@ shutil.rmtree(root, ignore_errors=True)`)
     expect(r.host_odd, 'a path outside /data is shown as-is').toBe('/mnt/elsewhere/bin')
   })
 
+  it('always renders the Empty button, disabled when it cannot act', () => {
+    // It used to be hidden unless there was something to delete, which made
+    // an empty bin look like a missing feature: three rows of zeros and a
+    // blank space where a control should be. Present-but-inert, with the
+    // reason next to it, is the honest version.
+    const r = py(`
+import re
+def rec(files, byts, readable=True):
+    return {'arr': 'sonarr', 'label': 'Sonarr', 'path': '/data/.recycle/sonarr',
+            'host_path': '/v/Data/.recycle/sonarr', 'cleanup_days': 30,
+            'bytes': byts, 'files': files, 'readable': readable}
+
+def page(recycle, act='true'):
+    rep = {'generated': 'now', 'elapsed': 1.0, 'warnings': [], 'disks': [],
+           'libraries': [{'label': 'M', 'items': 1, 'files': 1, 'size': 10**9, 'mean': 10**9}],
+           'watch_source': '', 'connections': {}, 'quality_bytes': {}, 'cutoff': {},
+           'items': [], 'files': [], 'outlier_bytes': 0, 'library_bytes': 10**9,
+           'unaccounted': 0, 'top_by_size': [], 'top_by_rate': [], 'big_unwatched': [],
+           'top_files': [], 'outlier_files': [], 'recycle': recycle,
+           'recycle_bytes': sum(x['bytes'] for x in recycle), 'stack': {}}
+    return m.render_html(rep, {'LIBRARIAN_ALLOW_ACTIONS': act})
+
+def probe(h):
+    return {'present': 'Empty now' in h,
+            'disabled': bool(re.search(r'<button[^>]*disabled[^>]*>Empty now', h)),
+            'submits': 'name="mode" value="empty"' in h}
+
+out['empty']      = probe(page([rec(0, 0)]))
+out['unreadable'] = probe(page([rec(0, 0, readable=False)]))
+out['full']       = probe(page([rec(318, 10**12)]))
+out['readonly']   = probe(page([rec(318, 10**12)], act='false'))`)
+    for (const k of ['empty', 'unreadable', 'full', 'readonly']) {
+      expect(r[k].present, `the button should be visible in the "${k}" case`).toBe(true)
+    }
+    expect(r.empty.disabled, 'nothing to delete').toBe(true)
+    expect(r.unreadable.disabled, 'bins not reachable').toBe(true)
+    expect(r.readonly.disabled, 'write mode off').toBe(true)
+    expect(r.full.disabled, 'there is something to reclaim').toBe(false)
+    // Only the live case may actually post.
+    expect(r.full.submits).toBe(true)
+    expect(r.empty.submits, 'an inert button must not carry a submit').toBe(false)
+    expect(r.readonly.submits, 'read-only must not carry a submit').toBe(false)
+  })
+
   it('refuses to plan an empty when write mode is off', () => {
     const r = py(`
 report = {'recycle': [{'arr': 'sonarr', 'label': 'Sonarr', 'path': '/data/.recycle/sonarr',

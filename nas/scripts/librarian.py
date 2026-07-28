@@ -3318,7 +3318,26 @@ def render_html(report, env=None):
             add('<p class="muted">A bin set to keep things <strong>forever</strong> '
                 'is never cleared by the arr on its own. Set Recycle Bin Cleanup '
                 'in that app, or empty it here.</p>')
-        if can_act and report['recycle_bytes']:
+        # Show the button even with nothing to delete, just inert. Hiding it
+        # outright made an empty bin look like a missing feature: three rows
+        # of zeros and a blank space where a control should be reads as
+        # broken rather than as "nothing to do".
+        if not report['recycle_bytes']:
+            unreadable = [r for r in rec if r['path'] and not r['readable']]
+            if unreadable:
+                why = ("Can't read " + ', '.join(r['label'] for r in unreadable) +
+                       " from here, so there is nothing to act on. Compose mounts "
+                       "${DATA_ROOT}/.recycle at /recycle for this; re-run the "
+                       "wizard if that mount is missing.")
+            else:
+                why = ('Every bin is empty, so there is nothing to reclaim. Files '
+                       'land here when you shrink or replace something, and each '
+                       'arr clears its own after the time shown above.')
+            add('<div class="actions">'
+                '<button type="button" class="danger" disabled>Empty now</button>'
+                f'<span class="muted">{html.escape(why)}</span>'
+                '</div>')
+        elif can_act:
             add('<form method="POST" action="/plan">'
                 '<input type="hidden" name="mode" value="empty">'
                 '<div class="actions">'
@@ -3327,9 +3346,12 @@ def render_html(report, env=None):
                 'straight away. This is permanent, and the recycle bin is the '
                 'thing that made the last delete recoverable.</span>'
                 '</div></form>')
-        elif report['recycle_bytes'] and not can_act:
-            add('<p class="muted">Emptying needs write mode '
-                '(<code>LIBRARIAN_ALLOW_ACTIONS</code>).</p>')
+        else:
+            add('<div class="actions">'
+                '<button type="button" class="danger" disabled>Empty now</button>'
+                '<span class="muted">Emptying needs write mode '
+                '(<code>LIBRARIAN_ALLOW_ACTIONS</code>).</span>'
+                '</div>')
         add('</div>')
 
     # ── One results table ────────────────────────────────────────────
