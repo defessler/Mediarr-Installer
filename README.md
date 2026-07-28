@@ -95,7 +95,7 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 | **Unpackerr** | Watches completed downloads and unpacks archives for import |
 | **Playlist Sync** | Opt-in — mirrors SiriusXM channels into Plex/Jellyfin playlists (Soulseek-first, yt-dlp fallback) |
 | **Dispatcharr** | Opt-in — live TV & DVR: free ad-supported channel packs + your own IPTV sources, presented to Plex/Jellyfin as an HDHomeRun tuner; records into `Media/Recordings` (no Plex Pass needed for recording) |
-| **Librarian** | Opt-in — storage report on `:8890`, read-only unless you enable actions. Reads size and quality out of Sonarr/Radarr/Lidarr, ranks your biggest items by bytes-per-hour (which finds bloated remuxes, where raw size only finds long shows), shows space by quality tier, and flags what is large and never played when Tautulli or Jellyfin can tell it. With `LIBRARIAN_ALLOW_ACTIONS=true` it can also re-grab items at a different quality, with deletes gated behind a configured Recycle Bin |
+| **LibrARRian** | Opt-in — storage report on `:8890`. Reads size and quality out of Sonarr/Radarr/Lidarr, ranks your biggest items by bytes-per-hour (which finds bloated remuxes, where raw size only finds long shows), shows space by quality tier, and flags what is large and never played when Tautulli or Jellyfin can tell it. Sort any column, filter by size or by bytes-per-hour. Write mode is on by default so it can re-grab items at a different quality, with deletes gated behind a configured Recycle Bin. `LIBRARIAN_ALLOW_ACTIONS=false` makes it a read-only report |
 
 ### Key concepts
 
@@ -140,7 +140,7 @@ After install, the stack is mostly self-managing — Sonarr / Radarr / Prowlarr 
 |--------|-------|
 | Add a TV show / movie | Sonarr / Radarr, or **Seerr** for the Netflix-style request flow |
 | Change TRaSH Guide quality profile | Recyclarr tile on Homepage → pick the new profile in the dropdown → "Save profile & sync". (Or re-run the installer.) The trigger page rewrites `.env` + `recyclarr.yml` + syncs in one click. |
-| See what's eating your disk | Librarian tile on Homepage, or `http://<NAS>:8890`. Biggest items, space by quality, and what's never been played. Same report from SSH with `python3 scripts/librarian.py --report`, which works whether or not you enabled the container. |
+| See what's eating your disk | LibrARRian tile on Homepage, or `http://<NAS>:8890`. Biggest items, space by quality, and what's never been played. Same report from SSH with `python3 scripts/librarian.py --report`, which works whether or not you enabled the container. |
 | Re-grab something at a different quality | Upgrade is just a profile change plus a search, so the arr keeps the current file until something better imports. Downgrade needs the lower profile set FIRST, then the file deleted, then a search, otherwise you re-grab what you were trying to replace. Check Settings → Media Management has a Recycle Bin path before deleting. See Help → Storage in the installer. |
 | Re-pull container images | Installer → pick the profile → **Update mode** → "Pull + recreate". No SSH needed. |
 | Refresh the Homepage dashboard | Installer Update mode → "Refresh dashboard". Regenerates `services.yaml` from your current enabled-service flags. |

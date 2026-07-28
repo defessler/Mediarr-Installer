@@ -212,7 +212,7 @@ esac
 case "$(env_val ENABLE_DISPATCHARR | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("livetv") ;;
 esac
-# Storage report (Librarian) is OPT-IN too, same case-guard for the same
+# Storage report (LibrARRian) is OPT-IN too, same case-guard for the same
 # reason: a missing key must not enable it. It also matters more here than
 # most, because librarian runs `restart: on-failure:5` rather than
 # unless-stopped — so a clean stop (or five boot failures) leaves it down

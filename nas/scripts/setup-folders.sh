@@ -113,7 +113,7 @@ CONFIG_DIRS=(
     # themselves, but pre-creating it PUID:PGID-owned means the bind mount never
     # starts out root-owned on a box where docker creates missing bind sources.
     "$INSTALL_DIR/dispatcharr/data"
-    # Storage report (opt-in). The one writable path Librarian gets: an
+    # Storage report (opt-in). The one writable path LibrARRian gets: an
     # append-only audit log of applied re-grab actions. Pre-created so the
     # bind mount never starts out root-owned on a box where docker creates
     # a missing bind source itself.

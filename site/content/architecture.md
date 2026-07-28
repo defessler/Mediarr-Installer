@@ -236,7 +236,7 @@ flowchart LR
 
 Compose profiles are what make that work. Every service carries a `profiles:` key, `setup.sh` builds `COMPOSE_PROFILES` from your flags, and `docker compose up -d` starts that set and nothing else. Turning a service off later removes its container on the next run rather than leaving it orphaned.
 
-Opt-in at time of writing: Soulseek, Playlist Sync, [Live TV](live-tv), and [Librarian](storage).
+Opt-in at time of writing: Soulseek, Playlist Sync, [Live TV](live-tv), and [LibrARRian](storage).
 
 ## Where To Look When It Breaks
 
@@ -252,6 +252,6 @@ Downloads never start - indexer or download-client wiring, covered in [Indexers]
 
 Everything works but the VPN is down - qBittorrent goes quiet by design. It isn't broken, that's the kill-switch doing its job.
 
-Disk filling up - [Librarian](storage) will tell you what's eating it.
+Disk filling up - [LibrARRian](storage) will tell you what's eating it.
 
 The installer's Help modal indexes these by symptom, and the diagnostics bundle it can collect gathers the logs for all of them into one file.

@@ -172,12 +172,14 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_DISPATCHARR: 'false',
   DISPATCHARR_ADMIN_USER: 'admin',
   LIVETV_CHANNEL_PACKS: 'pluto,samsungtvplus,plextv,roku,tubi',
-  // Storage analysis (Librarian) is OPT-IN too — default OFF. Read-only and
-  // credential-free, so there is nothing else to pre-seed.
+  // Storage analysis (LibrARRian) is OPT-IN too — default OFF. Credential-free,
+  // so there is nothing else to pre-seed.
   ENABLE_LIBRARIAN: 'false',
-  // Actions stay off even when the report is on. Enabling them is a
-  // separate, deliberate choice on the Configure screen.
-  LIBRARIAN_ALLOW_ACTIONS: 'false',
+  // Write mode is ON once the report itself is on, so enabling LibrARRian
+  // gives you the upgrade/shrink buttons out of the box. It keeps its own key
+  // so the Configure screen can drop the page back to read-only. Note this is
+  // default-ON (isEnabled), unlike ENABLE_LIBRARIAN above (isOptInEnabled).
+  LIBRARIAN_ALLOW_ACTIONS: 'true',
   LIBRARIAN_MAX_BATCH: '25',
 
   PUID: '1026',

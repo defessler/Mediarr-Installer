@@ -1,15 +1,15 @@
 ---
 title: "Storage & Re-grabbing"
-description: "Librarian: find what is eating your disk, and re-grab releases at a different quality."
+description: "LibrARRian: find what is eating your disk, and re-grab releases at a different quality."
 lede: "Find what's eating your array, then decide what to do about it."
 group: "Using your stack"
 order: 10
 ---
 Every arr already knows how many bytes each movie, series, and artist takes and what quality it grabbed. Nothing ever put those on one screen, so working out where your disk went meant paging through Radarr's list view and doing the arithmetic yourself.
 
-Librarian is that screen. It's opt-in and off by default. Added in v0.20.0.
+LibrARRian is that screen. It's opt-in and off by default. Added in v0.20.0.
 
-> **In one sentence:** turn on Librarian, open it, and see exactly what's eating your array and whether it's worth keeping.
+> **In one sentence:** turn on LibrARRian, open it, and see exactly what's eating your array and whether it's worth keeping.
 
 ## What It Shows
 
@@ -41,11 +41,11 @@ So there are two file-level views:
 
 Sorting by raw size only ever finds long shows. A 90 GB twelve-hour series is completely normal. A 90 GB two-hour film is a remux you probably didn't mean to keep.
 
-Rate separates those two cases and raw size can't. It's the column to sort by when you're hunting for space to reclaim.
+Rate separates those two cases and raw size can't. Click the **Per hour** header to sort by it, or set a rate floor in the filter bar, and what's left is a list of things worth reclaiming.
 
 ## Turning It On
 
-Enable **Librarian** on the installer's **Configure** screen and finish a run. It appears on port 8890 and gets a tile under Maintenance on your [dashboard](dashboard).
+Enable **LibrARRian** on the installer's **Configure** screen and finish a run. It appears on port 8890 and gets a tile under Maintenance on your [dashboard](dashboard).
 
 You can also skip the container entirely and run the same report over SSH:
 
@@ -60,9 +60,9 @@ python3 scripts/librarian.py --report --fast
 python3 scripts/librarian.py --json > library.json
 ```
 
-Left alone, Librarian is read-only by construction rather than by promise. It issues nothing but GETs, so it can't edit a profile, trigger a search, or delete a file. It needs no credentials of its own, takes no docker socket, and mounts the install directory read-only. You can point it at a live library without thinking twice.
+Write mode is on out of the box, so the page can re-grab as well as report. If you'd rather it only ever read, untick **Allow re-grab actions** on the same Configure screen. Set that way it issues nothing but GETs, so it can't edit a profile, trigger a search, or delete a file. See [Turning Off Actions](#turning-off-actions) below.
 
-If you want it to *act* as well as report, that's a separate switch. See [Re-grabbing](#re-grabbing-at-a-different-quality) below.
+Either way it needs no credentials of its own, takes no docker socket, and mounts the install directory read-only.
 
 ## Finding Things
 
@@ -72,7 +72,17 @@ Matching is subsequence-based with scoring, so `rmx 216` finds `Remux-2160p` and
 
 Press `/` anywhere on the page to jump to the box, and Escape to clear it.
 
-Alongside it there are plain filters for app, minimum size and never-played, and the same narrowing works on the command line:
+Alongside it there are plain filters for app, minimum size, minimum rate and never-played. The rate floor is the one that catches a bloated ninety-minute film, because no size floor ever will. That film is smaller than any long series you own.
+
+### Sorting
+
+Every column header sorts. Click one to sort by it, click it again to flip the direction. Numbers sort on their real value rather than on the text, so 900 MB lands below 4 TB where it belongs, and number columns open on the big end because that's the end you came for.
+
+A column you picked sticks while you type in the search box. Without one, the results re-order themselves by how well they match what you typed.
+
+### On The Command Line
+
+The same narrowing works there:
 
 ```bash
 # Fuzzy, same matcher as the web UI
@@ -80,6 +90,9 @@ python3 scripts/librarian.py --report --filter "remux"
 
 # Combine with plain filters
 python3 scripts/librarian.py --report --arr radarr --min-size 20GB --unplayed
+
+# Bytes per hour of runtime, which --min-size can't express
+python3 scripts/librarian.py --report --min-rate 4GB
 ```
 
 ## Re-Grabbing At A Different Quality
@@ -88,7 +101,7 @@ Once you know what's oversized, the next question is what to do about it. Upgrad
 
 An arr will happily replace a file with a better one. It will never replace a file with a worse one. So the two paths differ.
 
-Librarian can drive both for you, or you can do them by hand in the arr. The actions are off by default. See [Turning on actions](#turning-on-actions) below.
+LibrARRian can drive both for you, or you can do them by hand in the arr. The buttons are there by default. See [Turning Off Actions](#turning-off-actions) if you'd rather they weren't.
 
 ### Upgrading
 
@@ -100,7 +113,7 @@ By hand: Radarr or Sonarr → select → **Mass Editor** → set the profile →
 
 ### Shrinking To Reclaim Space
 
-Select the items, pick a *lower* profile, and press **Shrink**. Order matters, and Librarian does it in this order for a reason:
+Select the items, pick a *lower* profile, and press **Shrink**. Order matters, and LibrARRian does it in this order for a reason:
 
 1. Set the **lower** quality profile first.
 2. Delete the existing files, through the arr so the Recycle Bin catches them.
@@ -108,7 +121,7 @@ Select the items, pick a *lower* profile, and press **Shrink**. Order matters, a
 
 Do it in the other order and the search re-grabs the same oversized release you were trying to get rid of, because at that moment the old profile still says it's the best thing available.
 
-IMPORTANT: a shrink leaves the item unavailable until a new release lands, which might be minutes or might be never for something obscure. Librarian refuses to delete anything at all unless the arr has **Settings → Media Management → Recycle Bin** set, so deletions stay recoverable, but that safety net is only as good as the disk space you leave in the bin.
+IMPORTANT: a shrink leaves the item unavailable until a new release lands, which might be minutes or might be never for something obscure. LibrARRian refuses to delete anything at all unless the arr has **Settings → Media Management → Recycle Bin** set, so deletions stay recoverable, but that safety net is only as good as the disk space you leave in the bin.
 
 Shrinking isn't offered for Lidarr. There it would mean deleting every track file an artist owns, which is too blunt to sit behind one button.
 
@@ -116,17 +129,17 @@ Shrinking isn't offered for Lidarr. There it would mean deleting every track fil
 
 Shrink works on whole items, which is the wrong tool for a single bad episode. Shrinking a series to fix one file deletes all sixty of them.
 
-So files have their own action. Tick the files you want, press **Replace file(s)**, and Librarian deletes exactly those and searches for exactly what they covered. On Sonarr that means the affected episodes, not the series. The quality profile is left alone, because the point here is "this particular file is wrong", not "re-grade this show".
+So files have their own action. Tick the files you want, press **Replace file(s)**, and LibrARRian deletes exactly those and searches for exactly what they covered. On Sonarr that means the affected episodes, not the series. The quality profile is left alone, because the point here is "this particular file is wrong", not "re-grade this show".
 
 That distinction matters for the outlier case. The show's profile is already right. One file just doesn't match it, and re-searching under the existing profile is what fixes that.
 
 Same rails as everything else: it refuses without a Recycle Bin, shows you the plan first, and logs what it deleted.
 
-### Turning On Actions
+### Turning Off Actions
 
-Actions are a separate switch from the report, on the installer's **Configure** screen under Storage report, or `LIBRARIAN_ALLOW_ACTIONS=true` in `.env`.
+Actions are on by default and have their own switch, on the installer's **Configure** screen under Storage report, or `LIBRARIAN_ALLOW_ACTIONS=false` in `.env`.
 
-They're separate because Librarian has no login. Anyone who can reach port 8890 on your network can use whatever it exposes, so enabling a read-only report deliberately does not also hand out a delete button.
+The switch is separate from the report because LibrARRian has no login. Anyone who can reach port 8890 on your network can use whatever it exposes. On a LAN you don't fully trust, turning this off leaves you the report without the delete button.
 
 With actions on, the guard rails are:
 

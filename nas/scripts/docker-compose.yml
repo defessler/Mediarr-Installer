@@ -810,7 +810,7 @@ services:
       - ${INSTALL_DIR}/scripts/librarian.py:/app/librarian.py:ro
       # Read-only view of the install dir: .env for the arr API keys,
       # tautulli/config/config.ini for the Tautulli key. Stays :ro even
-      # with actions enabled — Librarian changes your library through the
+      # with actions enabled — LibrARRian changes your library through the
       # arrs' APIs, never by editing files on this mount.
       - ${INSTALL_DIR}:/install-dir:ro
       # The one writable path: an append-only audit log of every action

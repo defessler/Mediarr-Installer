@@ -537,7 +537,7 @@ fi
 # the LAN as a (virtual) HDHomeRun tuner, so it stays on the media bridge and
 # never pulls in the "vpn" sidecar.
 is_optin_enabled ENABLE_DISPATCHARR && PROFILES+=("livetv")
-# Storage analysis (Librarian) is OPT-IN (default off) — same is_optin_enabled
+# Storage analysis (LibrARRian) is OPT-IN (default off) — same is_optin_enabled
 # rule. Read-only sidecar on the media bridge: it reads the arrs over plain HTTP
 # and never touches gluetun, so like Dispatcharr it pulls in no "vpn" sidecar.
 is_optin_enabled ENABLE_LIBRARIAN && PROFILES+=("librarian")
@@ -920,7 +920,7 @@ check_port_conflicts() {
     # LAN bind on 9191, so a foreign holder would fail the compose-up bind
     # late — surface it here instead.
     is_optin_enabled ENABLE_DISPATCHARR && pairs+=("dispatcharr:9191")
-    # Librarian (opt-in storage report): single plain LAN bind on 8890.
+    # LibrARRian (opt-in storage report): single plain LAN bind on 8890.
     is_optin_enabled ENABLE_LIBRARIAN && pairs+=("librarian:8890")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
@@ -1055,7 +1055,7 @@ wait_for_services() {
     # signal (its Django first boot serves HTTP minutes later — post-deploy's
     # lenient URL check covers that, this wait must not stall on it). Opt-in.
     is_optin_enabled ENABLE_DISPATCHARR && services="$services dispatcharr"
-    # Librarian is a plain bridge service that boots straight into python (no
+    # LibrARRian is a plain bridge service that boots straight into python (no
     # apk step), so .State.Status flips to running almost immediately. Opt-in.
     is_optin_enabled ENABLE_LIBRARIAN && services="$services librarian"
 

@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { join } from 'node:path'
-import { BASH, NAS_SCRIPTS, extractShellFunc, runBash, withEnvFile } from '../helpers/shell.js'
-import { renderEnv, isOptInEnabled, type EnvFormValues } from '../../src/shared/env-render.js'
+import {
+  BASH, PYTHON, NAS_SCRIPTS, extractShellFunc, runBash, runPython, withEnvFile,
+} from '../helpers/shell.js'
+import {
+  renderEnv, isEnabled, isOptInEnabled, type EnvFormValues,
+} from '../../src/shared/env-render.js'
 import { BASE_ENV } from '../helpers/render.js'
 
 // enable-agreement.test.ts pins the bash ↔ TS classifiers against raw .env
@@ -30,12 +34,9 @@ const OPT_IN_FLAGS: { key: keyof EnvFormValues; profile: string }[] = [
   { key: 'ENABLE_PLAYLIST_SYNC', profile: 'playlists' },
   { key: 'ENABLE_DISPATCHARR', profile: 'livetv' },
   { key: 'ENABLE_LIBRARIAN', profile: 'librarian' },
-  // Not an ENABLE_ flag and not a compose profile, but it carries the
-  // same explicit-true semantics and the same failure mode: render it
-  // as absent and the capability silently never switches on, with the
-  // user having ticked the box. It gates deleting media, so a silent
-  // disagreement here is worth pinning too.
-  { key: 'LIBRARIAN_ALLOW_ACTIONS', profile: '' },
+  // LIBRARIAN_ALLOW_ACTIONS used to be in this list. It's now LibrARRian's
+  // write mode and DEFAULT-ON, so it has the opposite semantics and gets its
+  // own block below.
 ]
 
 /** Render a full .env with `key` set to `value`, then read the emitted line. */
@@ -69,6 +70,49 @@ describe('opt-in flags survive the renderer', () => {
       expect(emittedValue(key, undefined), `${key} not emitted when unset`).toBe('false')
     })
   }
+})
+
+/** Run the REAL actions_enabled() out of librarian.py against one value, so
+ *  this is an oracle rather than a reimplementation that could drift. */
+function pyActionsEnabled(value: string): boolean {
+  const program = [
+    'import importlib.util, json, sys',
+    `spec = importlib.util.spec_from_file_location('lib', ${
+      JSON.stringify(join(NAS_SCRIPTS, 'librarian.py'))})`,
+    'm = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(m)',
+    "print(json.dumps(m.actions_enabled({'LIBRARIAN_ALLOW_ACTIONS': sys.argv[1]})))",
+  ].join('\n')
+  return JSON.parse(runPython(program, { args: [value] }).stdout.trim())
+}
+
+// LibrARRian's write mode is DEFAULT-ON (isEnabled), the opposite of every
+// flag above, so the undefined case must render `true`. Pinned on its own
+// because it gates deleting media: if the renderer and librarian.py ever
+// disagree about the default, the user either loses buttons the wizard
+// promised them or gains ones they explicitly turned off.
+describe('LIBRARIAN_ALLOW_ACTIONS renders as default-on write mode', () => {
+  it('is true when unset, and false only for an explicit off value', () => {
+    expect(emittedValue('LIBRARIAN_ALLOW_ACTIONS', undefined)).toBe('true')
+    expect(emittedValue('LIBRARIAN_ALLOW_ACTIONS', '')).toBe('true')
+    expect(emittedValue('LIBRARIAN_ALLOW_ACTIONS', 'true')).toBe('true')
+    for (const off of ['false', '0', 'no', 'off', 'OFF', ' False ']) {
+      expect(emittedValue('LIBRARIAN_ALLOW_ACTIONS', off), `"${off}" should render false`)
+        .toBe('false')
+    }
+  })
+})
+
+describe.skipIf(!PYTHON)('rendered .env ↔ librarian.py actions_enabled', () => {
+  it('the page and the wizard agree on write mode, default included', () => {
+    for (const value of ['true', 'false', '0', 'off', 'NO', '', undefined]) {
+      const emitted = emittedValue('LIBRARIAN_ALLOW_ACTIONS', value) ?? ''
+      expect(
+        pyActionsEnabled(emitted),
+        `LIBRARIAN_ALLOW_ACTIONS=${String(value)} rendered "${emitted}"`,
+      ).toBe(isEnabled(emitted))
+    }
+  })
 })
 
 describe.skipIf(!BASH)('rendered .env ↔ bash is_optin_enabled', () => {

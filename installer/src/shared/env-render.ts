@@ -165,17 +165,19 @@ export interface EnvFormValues {
    *  Dispatcharr UI instead. */
   LIVETV_CHANNEL_PACKS?: string
 
-  // ── Storage analysis (Librarian) — OPT-IN like Soulseek (isOptInEnabled).
-  /** Whether to install Librarian: a read-only sidecar that reports which
-   *  media is eating the array, at what quality, and (with Tautulli/Jellyfin)
-   *  what has never been played. Needs no credentials of its own — it reads
-   *  the arr API keys already in .env. A missing key counts as OFF. */
+  // ── Storage analysis (LibrARRian) — OPT-IN like Soulseek (isOptInEnabled).
+  /** Whether to install LibrARRian: a sidecar that reports which media is
+   *  eating the array, at what quality, and (with Tautulli/Jellyfin) what has
+   *  never been played. Needs no credentials of its own — it reads the arr API
+   *  keys already in .env. A missing key counts as OFF. */
   ENABLE_LIBRARIAN?: string
-  /** Whether Librarian may CHANGE things (set a quality profile, trigger a
-   *  search, delete a file through the arr) as well as report on them.
-   *  Separate from ENABLE_LIBRARIAN and off by default: the page has no
-   *  authentication, so enabling a read-only report must never silently
-   *  grant delete rights to anyone who can reach the port. */
+  /** Whether LibrARRian may CHANGE things (set a quality profile, trigger a
+   *  search, delete a file through the arr) as well as report on them, i.e.
+   *  write mode. ON by default, and evaluated with isEnabled (default-on),
+   *  NOT isOptInEnabled — only an explicit false/0/no/off turns it off. Keep
+   *  that in step with actions_enabled() in librarian.py. It stays a separate
+   *  key from ENABLE_LIBRARIAN so a LAN you don't fully trust can run the
+   *  report read-only without giving up the report itself. */
   LIBRARIAN_ALLOW_ACTIONS?: string
   /** Per-run cap on how many items one action may touch (default 25). */
   LIBRARIAN_MAX_BATCH?: string
@@ -574,15 +576,17 @@ export function renderEnv(v: EnvFormValues): string {
     line('DISPATCHARR_ADMIN_PASS', v.DISPATCHARR_ADMIN_PASS),
     line('LIVETV_CHANNEL_PACKS', v.LIVETV_CHANNEL_PACKS),
     '',
-    '# Storage analysis (Librarian). OPT-IN; off by default. A missing',
+    '# Storage analysis (LibrARRian). OPT-IN; off by default. A missing',
     '# ENABLE_LIBRARIAN key counts as OFF (like ENABLE_SOULSEEK) — emitted via',
-    '# isOptInEnabled. Read-only report on ${LAN_IP}:8890 showing what is eating',
-    '# the array, at what quality, and what has never been played.',
+    '# isOptInEnabled. Report on ${LAN_IP}:8890 showing what is eating the',
+    '# array, at what quality, and what has never been played.',
     line('ENABLE_LIBRARIAN', isOptInEnabled(v.ENABLE_LIBRARIAN) ? 'true' : 'false'),
-    '# Re-grab actions. OFF unless explicitly true. Librarian has no login,',
-    '# so this stays a separate decision from running the report at all.',
-    '# Deletes additionally refuse unless the arr has a Recycle Bin set.',
-    line('LIBRARIAN_ALLOW_ACTIONS', isOptInEnabled(v.LIBRARIAN_ALLOW_ACTIONS) ? 'true' : 'false'),
+    '# Re-grab actions (write mode). ON by default. Note this uses isEnabled,',
+    '# NOT isOptInEnabled: only an explicit false/0/no/off turns it off, which',
+    '# is exactly what actions_enabled() in librarian.py does. Set it false for',
+    '# a read-only page. Deletes additionally refuse unless the arr has a',
+    '# Recycle Bin set, and every action is planned and confirmed first.',
+    line('LIBRARIAN_ALLOW_ACTIONS', isEnabled(v.LIBRARIAN_ALLOW_ACTIONS) ? 'true' : 'false'),
     line('LIBRARIAN_MAX_BATCH', v.LIBRARIAN_MAX_BATCH || '25'),
     '',
     '# SABnzbd usenet provider (optional)',

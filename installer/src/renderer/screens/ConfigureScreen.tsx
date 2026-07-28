@@ -177,7 +177,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
   { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_LIBRARIAN',   label: 'Librarian',    hint: 'Read-only storage report — what is eating your disk, at what quality', icon: HardDrive, iconColor: 'text-lime-400' },
+  { key: 'ENABLE_LIBRARIAN',   label: 'LibrARRian',   hint: 'Storage report — what is eating your disk, at what quality, and re-grabbing it', icon: HardDrive, iconColor: 'text-lime-400' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
@@ -750,9 +750,9 @@ const FIELD_LABELS: Record<string, string> = {
   DISPATCHARR_ADMIN_USER: 'Live TV admin username',
   DISPATCHARR_ADMIN_PASS: 'Live TV admin password',
   LIVETV_CHANNEL_PACKS: 'Live TV channel packs',
-  ENABLE_LIBRARIAN: 'Librarian',
-  LIBRARIAN_ALLOW_ACTIONS: 'Librarian re-grab actions',
-  LIBRARIAN_MAX_BATCH: 'Librarian batch cap',
+  ENABLE_LIBRARIAN: 'LibrARRian',
+  LIBRARIAN_ALLOW_ACTIONS: 'LibrARRian re-grab actions',
+  LIBRARIAN_MAX_BATCH: 'LibrARRian batch cap',
   USENET_USER: 'Usenet username',
   USENET_PASS: 'Usenet password',
   VPN_PROVIDER: 'VPN provider',
@@ -1487,7 +1487,7 @@ export function ConfigureScreen() {
         {isOptInEnabled(config.ENABLE_LIBRARIAN as string | undefined) ? (
           <section className="space-y-4">
             <p className="text-sm text-slate-400">
-              Librarian reads size and quality straight out of Sonarr, Radarr and
+              LibrARRian reads size and quality straight out of Sonarr, Radarr and
               Lidarr and serves one page on{' '}
               <code className="font-mono text-slate-300">http://&lt;NAS&gt;:8890</code>.
               It ranks your library by <span className="font-medium text-slate-300">bytes per hour</span>,
@@ -1499,7 +1499,7 @@ export function ConfigureScreen() {
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4 accent-emerald-500"
-                  checked={isOptInEnabled(config.LIBRARIAN_ALLOW_ACTIONS as string | undefined)}
+                  checked={isEnabled(config.LIBRARIAN_ALLOW_ACTIONS as string | undefined)}
                   onChange={(e) => update('LIBRARIAN_ALLOW_ACTIONS', e.target.checked ? 'true' : 'false')}
                 />
                 <span className="text-sm">
@@ -1507,14 +1507,14 @@ export function ConfigureScreen() {
                     Allow re-grab actions (upgrade &amp; shrink)
                   </span>
                   <span className="block text-xs text-slate-400 mt-0.5">
-                    Off by default. Leave it off and the page is read-only: it issues
+                    On by default. Untick it and the page is read-only: it issues
                     nothing but GETs and cannot change or delete anything.
                   </span>
                 </span>
               </label>
-              {isOptInEnabled(config.LIBRARIAN_ALLOW_ACTIONS as string | undefined) && (
+              {isEnabled(config.LIBRARIAN_ALLOW_ACTIONS as string | undefined) && (
                 <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2 leading-relaxed">
-                  Librarian has no login, so anyone who can reach that port on your
+                  LibrARRian has no login, so anyone who can reach that port on your
                   network can use these. Upgrades only ever add a better file.
                   &ldquo;Shrink&rdquo; deletes the current files through the arr, and
                   refuses to run unless the arr has a Recycle Bin configured, so
@@ -1527,7 +1527,7 @@ export function ConfigureScreen() {
         ) : (
           <p className="text-sm text-slate-500">
             Storage report is off. Enable{' '}
-            <span className="font-medium text-slate-300">Librarian</span> in the
+            <span className="font-medium text-slate-300">LibrARRian</span> in the
             Services group above to configure it.
           </p>
         )}

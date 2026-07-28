@@ -41,7 +41,7 @@ Live tuning inside Jellyfin - free, since Jellyfin's live TV and DVR aren't payw
 
 Watching in Dispatcharr's own web UI - free, always, regardless of media server.
 
-IMPORTANT: recordings land in `Media/Recordings` and nothing prunes them. A season pass on a daily show will fill a disk eventually. [Librarian](storage) will show you when that's happening.
+IMPORTANT: recordings land in `Media/Recordings` and nothing prunes them. A season pass on a daily show will fill a disk eventually. [LibrARRian](storage) will show you when that's happening.
 
 ## Turning It On
 

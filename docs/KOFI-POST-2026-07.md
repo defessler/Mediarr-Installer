@@ -37,21 +37,25 @@ Writing it also turned up three pages that had quietly gone out of date, which
 is the sort of thing you only notice when you sit down and read your own docs
 end to end.
 
-## Librarian: where did my disk go?
+## LibrARRian: where did my disk go?
 
 Every arr already knows how many bytes each movie and series takes and what
 quality it grabbed. Nothing ever put those on one screen, so working out where
 your space went meant paging through Radarr and doing the arithmetic yourself.
 
-Librarian is that screen. It ranks your library by **bytes per hour**, not raw
+LibrARRian is that screen. It ranks your library by **bytes per hour**, not raw
 size, which is the difference between finding your long shows and finding the
 90 GB two-hour remux you didn't mean to keep. It shows space grouped by quality
 tier, how much of your disk the arrs can't account for, and, if you run
 Tautulli or Jellyfin, what's large and has never once been played.
 
-It's read-only by construction. It issues nothing but GETs, so it can't edit a
-profile, trigger a search, or delete anything. You can point it at a live
-library without thinking twice.
+Every column sorts, and you can put a floor on size or on bytes per hour, which
+is the one that surfaces a bloated ninety-minute film. No size floor ever will,
+because that film is smaller than any long series you own.
+
+It needs no credentials of its own and mounts your install directory read-only.
+If you'd rather it never wrote anything at all, one tick box in the installer
+drops it to a report that issues nothing but GETs.
 
 There's also a guide on re-grabbing releases at a different quality, including
 the bit that catches people out: upgrading and downgrading aren't symmetric, and

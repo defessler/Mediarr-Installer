@@ -5,8 +5,8 @@ takes basic markdown, so headings and links should survive a paste. Nothing
 here publishes itself.
 
 This is the second draft in the repo. The first, `KOFI-POST-2026-07.md`,
-announced the docs site and Librarian arriving at all. This one is about what
-Librarian can now do. If you never posted the first, the two fold together
+announced the docs site and LibrARRian arriving at all. This one is about what
+LibrARRian can now do. If you never posted the first, the two fold together
 easily: keep that post's opening and drop this post's "Re-grabbing" section
 into it.
 
@@ -25,7 +25,7 @@ the lot over SSH. No command line.
 
 ## The problem with knowing
 
-Last release added Librarian, which tells you what's eating your array. It
+Last release added LibrARRian, which tells you what's eating your array. It
 ranks by bytes per hour rather than raw size, because raw size only ever finds
 your longest shows. Rate finds the 90 GB two-hour remux you didn't mean to
 keep.
@@ -61,20 +61,20 @@ Press `/` to jump to it. Same matching on the command line if you prefer.
 
 ## About the delete button
 
-Librarian has no login. Anyone who can reach it on your network can use
+LibrARRian has no login. Anyone who can reach it on your network can use
 whatever it exposes, which is completely fine for a report and completely not
 fine for a delete button.
 
-So the actions are off by default, behind their own separate switch. Turning on
-the report doesn't turn on the ability to change anything. Left alone it
-behaves exactly as it did before: it can't edit a profile, trigger a search, or
+So the actions keep their own switch, separate from the report. They're on by
+default, because a storage tool you can't act on is half a tool, but on a
+network you don't fully trust you can untick one box and get the report without
+the delete button. Set that way it can't edit a profile, trigger a search, or
 delete a file.
 
-When you do switch them on, deleting refuses outright unless your arr has a
-Recycle Bin configured, so nothing is unrecoverable. Every action shows you the
-exact plan and waits for a second confirmation. Runs are capped. Everything
-applied is logged, including the paths of deleted files, so you can find them
-again.
+Left on, deleting refuses outright unless your arr has a Recycle Bin
+configured, so nothing is unrecoverable. Every action shows you the exact plan
+and waits for a second confirmation. Runs are capped. Everything applied is
+logged, including the paths of deleted files, so you can find them again.
 
 I'd rather ship a feature with a hand-brake than a feature that's quietly one
 misclick from deleting your library.

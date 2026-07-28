@@ -48,11 +48,8 @@ What it reports
                     only view that really matters: big AND never
                     watched. Degrades silently to size-only.
 
-Read-only by default. Left alone this script issues nothing but GETs,
-so it cannot edit a profile, trigger a search, or delete a file, and you
-can point it at a live library without a second thought.
-
-Set LIBRARIAN_ALLOW_ACTIONS=true and it additionally offers re-grab:
+Write mode is ON by default, so the page offers re-grab alongside the
+report:
 
   Upgrade  set a higher quality profile on the selected items, then
            search. Nothing is deleted. Each existing file stays until a
@@ -62,12 +59,14 @@ Set LIBRARIAN_ALLOW_ACTIONS=true and it additionally offers re-grab:
            search before the profile change and you re-grab the release
            you were trying to replace.
 
-Actions are gated separately from ENABLE_LIBRARIAN because this page has
-no authentication — turning on a report must not hand everyone who can
-reach the port a delete button. On top of that, a delete refuses unless
-the arr has a Recycle Bin configured, every action is planned and then
-confirmed against a single-use token, runs are capped, and what was done
-(including deleted paths) is appended to an audit log.
+Set LIBRARIAN_ALLOW_ACTIONS=false to drop back to a read-only report.
+Left off, this script issues nothing but GETs, so it cannot edit a
+profile, trigger a search, or delete a file.
+
+Either way nothing destructive happens on one click. A delete refuses
+unless the arr has a Recycle Bin configured, every action is planned and
+then confirmed against a single-use token, runs are capped, and what was
+done (including deleted paths) is appended to an audit log.
 """
 
 import argparse
@@ -397,13 +396,21 @@ def item_haystack(it):
     ) if x)
 
 
-def filter_items(items, query='', min_size=0, quality='', unplayed=False, arr=''):
+def filter_items(items, query='', min_size=0, quality='', unplayed=False, arr='',
+                 min_rate=0):
     """Apply every filter, then sort by relevance when a query is given
     and by size when one isn't. Filters are AND, which is what people
-    expect from a row of controls."""
+    expect from a row of controls.
+
+    min_rate is bytes per hour, and it's the one filter that finds a
+    bloated remux of a 90-minute film. min_size can't: the film is
+    smaller than any long series. An item with no runtime has no rate,
+    so it can never clear a rate floor and drops out."""
     out = []
     for it in items:
         if min_size and (it.get('size') or 0) < min_size:
+            continue
+        if min_rate and (it.get('per_hour') or 0) < min_rate:
             continue
         if quality and quality.lower() not in (it.get('quality') or '').lower():
             continue
@@ -785,13 +792,14 @@ def collect_cutoff_unmet(base, key, api):
 # Everything above this line reads. Everything below can change your
 # library, so the guard rails matter more than the features.
 #
-# Why actions are OFF by default, separately from ENABLE_LIBRARIAN:
-# this web UI has no authentication. Anyone who can reach the port can
-# use it, which is fine for a report and emphatically not fine for a
-# delete button. Turning the report on must not hand the whole LAN the
-# ability to remove media, so the capability has its own explicit flag.
+# Actions are ON by default, and still carry their own flag separately
+# from ENABLE_LIBRARIAN. This web UI has no authentication, so anyone
+# who can reach the port can use whatever it exposes. Keeping the switch
+# separate is what lets a LAN you don't fully trust drop back to a
+# read-only report with LIBRARIAN_ALLOW_ACTIONS=false, without giving up
+# the report itself.
 #
-# On top of that, in order:
+# What keeps the default safe, in order:
 #   * a delete refuses outright unless the arr has a Recycle Bin path
 #     configured, so anything removed is recoverable
 #   * every action is planned first and applied second, against a
@@ -809,10 +817,15 @@ DEFAULT_MAX_BATCH = 25
 
 
 def actions_enabled(env):
-    """Explicit-true only. A missing key means off, matching the opt-in
-    convention the rest of the stack uses for anything consequential."""
-    return (env.get('LIBRARIAN_ALLOW_ACTIONS') or '').strip().lower() in (
-        '1', 'true', 'yes', 'on')
+    """Default ON, off only for an explicit false / 0 / no / off. This
+    follows the default-on `is_enabled` convention the rest of the stack
+    uses for ENABLE_* flags, NOT the explicit-true opt-in rule that gates
+    ENABLE_LIBRARIAN itself. Keep the disabled set in step with
+    ENABLE_DISABLED_VALUES in env-render.ts and is_enabled in
+    setup-arr-config.py, or the wizard and the page disagree about
+    whether the delete button exists."""
+    return (env.get('LIBRARIAN_ALLOW_ACTIONS') or '').strip().lower() not in (
+        'false', '0', 'no', 'off')
 
 
 def max_batch(env):
@@ -857,6 +870,13 @@ def arr_request(base, key, path, method='GET', data=None, timeout=60):
     call is visibly a different function from the read path."""
     body = json.dumps(data).encode() if data is not None else None
     headers = dict(arr_headers(key))
+    if body is not None:
+        # urllib labels an unlabelled body application/x-www-form-urlencoded,
+        # and the arrs' [FromBody] binder answers that with 415 Unsupported
+        # Media Type before it ever looks at the payload. Every mutating call
+        # here sends JSON, so say so. Without this line PUT /movie/editor
+        # fails on the first step of both Upgrade and Shrink.
+        headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(f'{base}{path}', data=body,
                                  headers=headers, method=method)
     try:
@@ -938,8 +958,9 @@ def build_plan(report, env, mode, arr_name, profile_id, item_ids):
         raise LibrarianSourceError(f'unknown action "{mode}"')
     if not actions_enabled(env):
         raise LibrarianSourceError(
-            'Actions are disabled. Set LIBRARIAN_ALLOW_ACTIONS=true in .env '
-            'and re-run the installer to enable them.')
+            'Actions are turned off. LIBRARIAN_ALLOW_ACTIONS is set to false '
+            'in .env — set it back to true (or untick "read-only" in the '
+            'installer and re-run) to enable them.')
 
     spec = ACTION_SPEC.get(arr_name)
     conn = (report.get('connections') or {}).get(arr_name)
@@ -1020,8 +1041,9 @@ def build_file_plan(report, env, arr_name, file_ids):
     """
     if not actions_enabled(env):
         raise LibrarianSourceError(
-            'Actions are disabled. Set LIBRARIAN_ALLOW_ACTIONS=true in .env '
-            'and re-run the installer to enable them.')
+            'Actions are turned off. LIBRARIAN_ALLOW_ACTIONS is set to false '
+            'in .env — set it back to true (or untick "read-only" in the '
+            'installer and re-run) to enable them.')
 
     spec = ACTION_SPEC.get(arr_name)
     conn = (report.get('connections') or {}).get(arr_name)
@@ -1636,13 +1658,14 @@ def render_text(report):
     add = out.append
 
     add('')
-    add('  Mediarr Librarian · storage report')
+    add('  Mediarr LibrARRian · storage report')
     add(f'  generated {report["generated"]}  ({report["elapsed"]}s)')
     f = report.get('filtered')
     if f:
         bits = []
         if f['query']:    bits.append(f'match "{f["query"]}"')
         if f['min_size']: bits.append(f'≥ {f["min_size"]}')
+        if f.get('min_rate'): bits.append(f'≥ {f["min_rate"]}/h')
         if f['quality']:  bits.append(f'quality ~ {f["quality"]}')
         if f['arr']:      bits.append(f['arr'])
         if f['unplayed']: bits.append('never played')
@@ -1962,6 +1985,15 @@ th {
   border-bottom: 1px solid var(--mk-border);
   white-space: nowrap;
 }
+/* Sortable headers. The idle glyph is deliberately faint but always
+   present, so the column reads as clickable before you hover it. */
+th.sortable { cursor: pointer; user-select: none; -webkit-user-select: none; }
+th.sortable:hover { color: var(--mk-fg); }
+th.sortable:focus-visible { outline: 1px solid var(--mk-cyan); outline-offset: 2px; }
+th.sortable::after { content: ' \2195'; opacity: 0.3; }
+th.sorted-asc::after  { content: ' \2191'; opacity: 1; color: var(--mk-cyan); }
+th.sorted-desc::after { content: ' \2193'; opacity: 1; color: var(--mk-cyan); }
+th.sorted-asc, th.sorted-desc { color: var(--mk-fg); }
 td {
   padding: 0.45rem 0.6rem 0.45rem 0;
   border-bottom: 1px solid #322f28;
@@ -2105,16 +2137,86 @@ function fuzzyScore(query, text) {
   var q = document.getElementById('q');
   var arrSel = document.getElementById('f-arr');
   var minSel = document.getElementById('f-min');
+  var rateSel = document.getElementById('f-rate');
   var unplayed = document.getElementById('f-unplayed');
   var countEl = document.getElementById('filter-count');
   if (!q) return;
 
   var tables = Array.prototype.slice.call(document.querySelectorAll('table'));
 
+  // ── Column sorting ────────────────────────────────────────────────
+  // Click a header to sort by it, click again to flip. Numeric columns
+  // sort on data-sort-value (raw bytes) rather than the rendered text,
+  // because "900 MB" sorts above "4 TB" as a string. State lives on the
+  // table element so tables sort independently, and apply() finishes by
+  // calling applySort so a chosen column survives filtering.
+  function cellKey(row, idx, numeric) {
+    var cell = row.children[idx];
+    if (!cell) return numeric ? -Infinity : '';
+    if (numeric) {
+      var raw = cell.getAttribute('data-sort-value');
+      var n = raw === null ? NaN : parseFloat(raw);
+      return isNaN(n) ? -Infinity : n;
+    }
+    return (cell.textContent || '').trim().toLowerCase();
+  }
+
+  function applySort(table) {
+    if (table.sortCol == null) return;
+    var body = table.querySelector('tbody');
+    if (!body) return;
+    var idx = table.sortCol, numeric = table.sortNum, dir = table.sortDir;
+    var rows = Array.prototype.slice.call(body.children);
+    rows.sort(function (a, b) {
+      var x = cellKey(a, idx, numeric), y = cellKey(b, idx, numeric);
+      if (x < y) return -dir;
+      if (x > y) return dir;
+      return 0;
+    });
+    rows.forEach(function (r) { body.appendChild(r); });
+  }
+
+  tables.forEach(function (table) {
+    var heads = Array.prototype.slice.call(table.querySelectorAll('thead th'));
+    heads.forEach(function (th, idx) {
+      // The checkbox column, and any unlabelled spacer, has nothing to
+      // sort on. Their headers are still counted, so idx keeps lining up
+      // with the cells in each row.
+      if (th.classList.contains('sel') || !th.textContent.trim()) return;
+      th.classList.add('sortable');
+      th.tabIndex = 0;
+      th.setAttribute('role', 'button');
+      function toggle() {
+        if (table.sortCol === idx) {
+          table.sortDir = -table.sortDir;
+        } else {
+          table.sortCol = idx;
+          table.sortNum = th.classList.contains('num');
+          // Numbers open descending. The end of every number column on
+          // this page worth looking at first is the big one.
+          table.sortDir = table.sortNum ? -1 : 1;
+        }
+        heads.forEach(function (h) {
+          h.classList.remove('sorted-asc', 'sorted-desc');
+          h.removeAttribute('aria-sort');
+        });
+        var asc = table.sortDir === 1;
+        th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
+        th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
+        applySort(table);
+      }
+      th.addEventListener('click', toggle);
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
+  });
+
   function apply() {
     var query = q.value.trim().toLowerCase();
     var arr = arrSel ? arrSel.value : '';
     var min = minSel ? parseInt(minSel.value, 10) || 0 : 0;
+    var rate = rateSel ? parseInt(rateSel.value, 10) || 0 : 0;
     var onlyUnplayed = unplayed && unplayed.checked;
     var shown = 0, total = 0;
 
@@ -2127,6 +2229,11 @@ function fuzzyScore(query, text) {
         var ok = true;
         if (arr && row.dataset.arr !== arr) ok = false;
         if (ok && min && parseInt(row.dataset.size, 10) < min) ok = false;
+        // File rows carry no data-rate on purpose: a file has a size but
+        // no runtime of its own, so a per-hour floor means nothing there
+        // and leaves those tables alone rather than emptying them.
+        if (ok && rate && row.dataset.rate !== undefined
+            && parseInt(row.dataset.rate, 10) < rate) ok = false;
         if (ok && onlyUnplayed && parseInt(row.dataset.plays, 10) > 0) ok = false;
         var score = 0;
         if (ok && query) {
@@ -2143,19 +2250,21 @@ function fuzzyScore(query, text) {
         }
         if (ok) { shown++; scored.push([score, row]); }
       });
-      // Re-order by relevance while a query is active, then restore
-      // the original size ordering when it's cleared.
+      // Re-order by relevance while a query is active. A column the user
+      // picked outranks that: having clicked "Size", they don't expect
+      // typing in the search box to silently re-order the results.
       var body = table.querySelector('tbody');
-      if (query && body) {
+      if (query && body && table.sortCol == null) {
         scored.sort(function (a, b) { return b[0] - a[0]; });
         scored.forEach(function (p) { body.appendChild(p[1]); });
       }
+      applySort(table);
       var empty = table.parentNode.querySelector('.no-matches');
       if (empty) empty.hidden = scored.length > 0;
     });
 
     if (countEl) {
-      countEl.textContent = (query || arr || min || onlyUnplayed)
+      countEl.textContent = (query || arr || min || rate || onlyUnplayed)
         ? shown + ' of ' + total + ' shown' : '';
     }
     syncSelection();
@@ -2252,7 +2361,7 @@ function fuzzyScore(query, text) {
   }
 
   q.addEventListener('input', apply);
-  [arrSel, minSel, unplayed].forEach(function (el) {
+  [arrSel, minSel, rateSel, unplayed].forEach(function (el) {
     if (el) el.addEventListener('change', apply);
   });
   document.addEventListener('change', function (e) {
@@ -2300,9 +2409,11 @@ def _file_table_html(files, selectable=False, show_ratio=True):
             f'data-arr="{html.escape(str(f.get("arr", "")))}" data-plays="0">'
             + sel
             + f'<td>{html.escape(f.get("label") or f["name"])}</td>'
-            f'<td class="num">{html.escape(human_bytes(f["size"]))}</td>'
+            f'<td class="num" data-sort-value="{int(f.get("size") or 0)}">'
+            f'{html.escape(human_bytes(f["size"]))}</td>'
             f'<td class="dim">{html.escape(f.get("quality") or "—")}</td>'
-            + (f'<td class="num">{ratio}</td>' if show_ratio else '')
+            + (f'<td class="num" data-sort-value="{f.get("ratio") or 0}">{ratio}</td>'
+               if show_ratio else '')
             + '</tr>')
     head_sel = '<th class="sel"></th>' if selectable else ''
     ratio_head = ('<th class="num" title="Size compared with the other files '
@@ -2339,14 +2450,17 @@ def _item_table_html(items, watch_source, selectable=False):
             sel = '<td class="sel"></td>'
         rows.append(
             f'<tr data-search="{hay}" data-size="{int(it.get("size") or 0)}" '
+            f'data-rate="{int(it.get("per_hour") or 0)}" '
             f'data-plays="{int(it.get("plays") or 0)}" '
             f'data-arr="{html.escape(str(it.get("arr", "")))}">'
             + sel
             + f'<td>{html.escape(it["title"])}{year}</td>'
-            f'<td class="num">{html.escape(human_bytes(it["size"]))}</td>'
+            f'<td class="num" data-sort-value="{int(it.get("size") or 0)}">'
+            f'{html.escape(human_bytes(it["size"]))}</td>'
             f'<td class="dim">{html.escape(it["quality"] or "—")}</td>'
             f'<td class="dim">{html.escape(it["codec"] or "—")}</td>'
-            f'<td class="num dim">{html.escape(rate)}</td>'
+            f'<td class="num dim" data-sort-value="{int(it.get("per_hour") or 0)}">'
+            f'{html.escape(rate)}</td>'
             f'<td class="dim">{html.escape(played)}</td>'
             '</tr>')
     head_sel = '<th class="sel"></th>' if selectable else ''
@@ -2364,7 +2478,7 @@ def render_html(report, env=None):
     parts = []
     add = parts.append
 
-    add('<h1>Librarian</h1>')
+    add('<h1>LibrARRian</h1>')
     add(f'<p class="muted">Where the space went · scanned {html.escape(report["generated"])} '
         f'in {report["elapsed"]}s</p>')
 
@@ -2451,11 +2565,20 @@ def render_html(report, env=None):
         '<option value="21474836480">Over 20 GB</option>'
         '<option value="53687091200">Over 50 GB</option>'
         '</select>'
+        '<select id="f-rate" title="Bytes per hour of runtime">'
+        '<option value="0">Any rate</option>'
+        '<option value="1073741824">Over 1 GB/h</option>'
+        '<option value="2147483648">Over 2 GB/h</option>'
+        '<option value="4294967296">Over 4 GB/h</option>'
+        '<option value="8589934592">Over 8 GB/h</option>'
+        '<option value="16106127360">Over 15 GB/h</option>'
+        '</select>'
         '<label><input type="checkbox" id="f-unplayed"> Never played</label>'
         '<span class="filter-count" id="filter-count"></span>'
         '</div>'
         '<p class="muted" style="margin:0">Matching is fuzzy, so <code>rmx 216</code> '
-        'finds Remux-2160p. Several words all have to match.</p>'
+        'finds Remux-2160p. Several words all have to match. The rate filter is the '
+        'one that catches a bloated 90-minute film, which no size floor ever will.</p>'
         '</div>')
 
     # Item tables
@@ -2529,16 +2652,18 @@ def render_html(report, env=None):
         '</form></div>')
 
     if can_act:
-        hint = ('Actions are enabled (LIBRARIAN_ALLOW_ACTIONS). Upgrades never '
+        hint = ('Write mode is on, which is the default. Upgrades never '
                 'delete anything. Shrink deletes the current files through the '
                 'arr, so they land in its Recycle Bin, and refuses to run at '
                 'all if no Recycle Bin is configured. Every action shows you '
-                'the exact plan before it does anything.')
+                'the exact plan before it does anything. Set '
+                'LIBRARIAN_ALLOW_ACTIONS=false in .env for a read-only page.')
     else:
-        hint = ('This page is read-only. It issues nothing but GETs, so it '
-                'cannot edit a profile, trigger a search, or delete a file. '
-                'Set LIBRARIAN_ALLOW_ACTIONS=true in .env to turn on re-grab '
-                'actions.')
+        hint = ('This page is read-only, because LIBRARIAN_ALLOW_ACTIONS is '
+                'set to false. It issues nothing but GETs, so it cannot edit a '
+                'profile, trigger a search, or delete a file. Set that key back '
+                'to true, or drop the line entirely, to turn re-grab actions '
+                'on again.')
     add(f'<p class="hint">{hint} Same report on the command line: '
         '<code>python3 librarian.py --report</code>, or '
         '<code>--json</code> for the raw numbers. '
@@ -2547,7 +2672,7 @@ def render_html(report, env=None):
     return (
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>Librarian · storage report</title>'
+        '<title>LibrARRian · storage report</title>'
         f'<style>{CSS}</style></head><body>' + ''.join(parts) +
         f'<script>{SCRIPT}</script></body></html>')
 
@@ -2555,7 +2680,7 @@ def render_html(report, env=None):
 def _page(body, code_note=''):
     return ('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<title>Librarian</title>'
+            '<title>LibrARRian</title>'
             f'<style>{CSS}</style></head><body>{body}</body></html>')
 
 
@@ -2601,7 +2726,7 @@ def render_plan_html(plan, token):
             'obscure that could be a while.</div>')
 
     return _page(
-        '<h1>Librarian</h1>'
+        '<h1>LibrARRian</h1>'
         f'<p class="muted">Confirm: {verb.lower()} {len(entries)} {noun}(s) '
         f'in {html.escape(plan["label"])}</p>'
         + warn +
@@ -2622,7 +2747,7 @@ def render_plan_html(plan, token):
 def render_result_html(plan, results):
     ok = len(results['ok'])
     bad = results['failed']
-    body = ['<h1>Librarian</h1>']
+    body = ['<h1>LibrARRian</h1>']
     if bad:
         body.append('<div class="banner err">Finished with problems.</div>')
     else:
@@ -2709,15 +2834,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(
                     '<!DOCTYPE html><html><head><meta charset="utf-8">'
                     '<meta http-equiv="refresh" content="4">'
-                    f'<title>Librarian</title><style>{CSS}</style></head><body>'
-                    '<h1>Librarian</h1><p class="muted">First scan running. '
+                    f'<title>LibrARRian</title><style>{CSS}</style></head><body>'
+                    '<h1>LibrARRian</h1><p class="muted">First scan running. '
                     'This page refreshes itself.</p></body></html>', code=503)
                 return
             html_body = render_html(report, read_env())
             if busy:
                 html_body = html_body.replace(
-                    '<h1>Librarian</h1>',
-                    '<h1>Librarian</h1><div class="banner warn">A scan is already '
+                    '<h1>LibrARRian</h1>',
+                    '<h1>LibrARRian</h1><div class="banner warn">A scan is already '
                     'running, so this is the previous result.</div>', 1)
             self._send(html_body)
             return
@@ -2746,7 +2871,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _error_page(self, message, code=400):
         self._send(_page(
-            '<h1>Librarian</h1>'
+            '<h1>LibrARRian</h1>'
             f'<div class="banner err">{html.escape(message)}</div>'
             '<p class="hint"><a href="/">Back to the report</a></p>'),
             code=code)
@@ -2856,7 +2981,7 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port):
     addr = ('0.0.0.0', port)
     acting = 'ON' if actions_enabled(read_env()) else 'off (read-only)'
-    print(f'Librarian listening on http://{addr[0]}:{port}/ '
+    print(f'LibrARRian listening on http://{addr[0]}:{port}/ '
           f'(GET / · GET /api/report.json · POST /rescan · POST /plan · POST /apply)\n'
           f'  re-grab actions: {acting}', flush=True)
     # Warm the cache in the background so the first visitor doesn't
@@ -2889,6 +3014,10 @@ def main():
                          'Several words must all match, e.g. -f "sonarr remux"')
     ap.add_argument('--min-size', default='', metavar='SIZE',
                     help='only items at least this big, e.g. 20GB')
+    ap.add_argument('--min-rate', default='', metavar='RATE',
+                    help='only items above this many bytes per hour of '
+                         'runtime, e.g. 4GB. Catches a bloated 90-minute '
+                         'film, which --min-size never will')
     ap.add_argument('--quality', default='', metavar='NAME',
                     help='only items whose quality contains NAME, e.g. remux')
     ap.add_argument('--arr', default='', choices=['', 'radarr', 'sonarr', 'lidarr'],
@@ -2904,13 +3033,16 @@ def main():
         # Any narrowing option rebuilds the item tables from the filtered
         # set, so the report answers the question you actually asked
         # rather than showing the global top-N with holes in it.
-        if args.filter or args.min_size or args.quality or args.arr or args.unplayed:
+        if (args.filter or args.min_size or args.min_rate or args.quality
+                or args.arr or args.unplayed):
             picked = filter_items(
                 report['items'], query=args.filter,
                 min_size=parse_size(args.min_size), quality=args.quality,
-                unplayed=args.unplayed, arr=args.arr)
+                unplayed=args.unplayed, arr=args.arr,
+                min_rate=parse_size(args.min_rate))
             report['filtered'] = {
                 'query': args.filter, 'min_size': args.min_size,
+                'min_rate': args.min_rate,
                 'quality': args.quality, 'arr': args.arr,
                 'unplayed': args.unplayed, 'matched': len(picked),
                 'of': len(report['items']),

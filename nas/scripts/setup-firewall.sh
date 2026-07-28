@@ -173,7 +173,7 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_DISPATCHARR=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 9191 -j ACCEPT ;;
     esac
-    # Librarian storage report (8890) — OPT-IN (explicit true only), same
+    # LibrARRian storage report (8890) — OPT-IN (explicit true only), same
     # semantics as Soulseek above. Plain LAN bind serving one read-only page,
     # so this is only about you reaching it from a browser on the LAN.
     case "$(grep -m1 '^ENABLE_LIBRARIAN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
@@ -240,7 +240,7 @@ remove_rules() {
     # add_rules' spec exactly so re-runs never leave a stale rule.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 9191 -j ACCEPT 2>/dev/null
 
-    # Librarian storage report. Unconditional -D, same reasoning as above.
+    # LibrARRian storage report. Unconditional -D, same reasoning as above.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8890 -j ACCEPT 2>/dev/null
 
     # Seerr

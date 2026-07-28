@@ -4066,14 +4066,17 @@ def render_homepage_services(env, ip):
             f"        icon: recyclarr.svg\n"
             f"        siteMonitor: http://{ip}:8889/"
         )
-    # Librarian (opt-in): the storage report sidecar. Sits in Maintenance
+    # LibrARRian (opt-in): the storage report sidecar. Sits in Maintenance
     # next to Recyclarr because the two answer adjacent questions — Recyclarr
-    # decides what quality you WANT, Librarian shows what that has actually
+    # decides what quality you WANT, LibrARRian shows what that has actually
     # cost you on disk. Independently gated: either can be on without the
     # other, which is why the section gate below is an OR.
+    #
+    # The tile name is asserted by post-deploy-validate.sh's EXPECTED_TILES,
+    # so rename it in both places or the validator reports a missing tile.
     if is_optin_enabled(env, 'ENABLE_LIBRARIAN'):
         maintenance.append(
-            f"    - Librarian:\n"
+            f"    - LibrARRian:\n"
             f"        href: http://{ip}:8890/\n"
             f"        description: 'Storage report · biggest items, quality mix, never played'\n"
             f"        icon: mdi-harddisk\n"
@@ -4217,7 +4220,7 @@ def render_homepage_settings(env):
         out.append("  Live TV:")
         out.append("    style: row")
         out.append("    columns: 1")
-    # Maintenance — Recyclarr and/or Librarian (Update Images was removed;
+    # Maintenance — Recyclarr and/or LibrARRian (Update Images was removed;
     # see render_homepage_services for the reason). Skip the section + its
     # layout entry entirely when BOTH are off, otherwise Homepage logs
     # "layout key has no matching section" warnings. The two are gated

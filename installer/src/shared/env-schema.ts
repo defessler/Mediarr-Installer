@@ -53,7 +53,7 @@ export const envObject = z.object({
   // required. A missing key stays OFF everywhere.
   ENABLE_LIBRARIAN: optStr,
   // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
-  // separately from ENABLE_LIBRARIAN on purpose: Librarian has no auth,
+  // separately from ENABLE_LIBRARIAN on purpose: LibrARRian has no auth,
   // so turning the report on must not also hand everyone on the LAN a
   // delete button. No superRefine entry — there is nothing to require.
   LIBRARIAN_ALLOW_ACTIONS: optStr,

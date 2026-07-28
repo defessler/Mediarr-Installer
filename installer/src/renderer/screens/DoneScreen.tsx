@@ -46,7 +46,7 @@ const SERVICES: {
   { name: 'Flaresolverr', port: '8191',                          icon: Shield,          iconColor: 'text-amber-300' },
   { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
   { name: 'Dispatcharr',  port: '9191',      note: 'Live TV',    icon: Radio,           iconColor: 'text-cyan-400' },
-  { name: 'Librarian',    port: '8890',      note: 'Storage',    icon: HardDrive,       iconColor: 'text-lime-400' },
+  { name: 'LibrARRian',   port: '8890',      note: 'Storage',    icon: HardDrive,       iconColor: 'text-lime-400' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
@@ -254,8 +254,10 @@ export function DoneScreen() {
     if (s.name === 'slskd' && !isOptInEnabled(config.ENABLE_SOULSEEK)) return []
     // Dispatcharr (Live TV & DVR) is opt-in too — same treatment.
     if (s.name === 'Dispatcharr' && !isOptInEnabled(config.ENABLE_DISPATCHARR)) return []
-    // Librarian (storage report) is opt-in too — same treatment.
-    if (s.name === 'Librarian' && !isOptInEnabled(config.ENABLE_LIBRARIAN)) return []
+    // LibrARRian (storage report) is opt-in too — same treatment. The name
+    // has to match check_url_lenient's label in post-deploy-validate.sh,
+    // which is what this tile scrapes for its health state.
+    if (s.name === 'LibrARRian' && !isOptInEnabled(config.ENABLE_LIBRARIAN)) return []
     return [s]
   })
 
