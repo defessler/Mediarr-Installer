@@ -11,7 +11,7 @@ Plex has no support for CBZ, CBR, PDF, or EPUB. Jellyfin technically had a books
 
 > **In one sentence:** turn on Komga or Kavita, drop files into a folder, and read them in a browser or on your phone.
 
-Both are opt-in and off by default. Added in v0.27.0.
+All of this is opt-in and off by default. The readers landed in v0.27.0, the automation in v0.28.0.
 
 ## Two Readers, Not One
 
@@ -26,11 +26,38 @@ Neither one downloads anything. They read files off disk, and they mount your li
 
 ## Getting Files In
 
-Right now this is a drop folder, and we should be straight with you about why.
+Comics and books can be automated. Manga can't, and it's worth understanding why before you go looking for the setting.
 
-Comics have real automation available and it's coming in a later release. Books and manga are harder. Readarr, the Sonarr equivalent for books, was retired by the *arr team in June 2025 when its metadata source went away, and nothing has cleanly replaced it yet. Manga never had an indexer lane at all, because it lives on scanlation sites rather than the usenet and torrent indexers the rest of your stack uses.
+### Comics and Books: Automated
 
-So for now, copy files into:
+Two more opt-in services, both of which work exactly like Sonarr does:
+
+- **Mylar3** on `http://<NAS-IP>:49159` for comics. Add a series, it watches for new issues.
+- **LazyLibrarian** on `http://<NAS-IP>:49160` for books. Track an author, it grabs new releases.
+
+Both are real Prowlarr Applications, so the indexers you already set up get synced into them automatically. They use the same SABnzbd and qBittorrent as the rest of the stack, with no new accounts and no separate download path.
+
+### What You Finish By Hand
+
+Unlike Sonarr and Radarr, these two aren't fully configured for you, and it's better you hear that here than discover it:
+
+- **Point each one at a download client.** Open Mylar3 or LazyLibrarian's own settings and add SABnzbd (`sabnzbd:8080`) or qBittorrent (`gluetun:49156`). The installer creates the matching SABnzbd `comics` and `books` categories for you, so you just pick them from the list.
+- **Set the library folder.** `/comics` in Mylar3, `/books` in LazyLibrarian. Those are the paths the containers see.
+- **Mylar3 needs a ComicVine key.** It's [free](https://comicvine.gamespot.com/api/) and goes in Mylar3's own Settings. There's no way to pass it from the installer, and without it Mylar3 runs but can't look anything up.
+
+One more honest caveat: comic coverage on general-purpose indexers is thinner than TV or movies, so expect a lower hit rate than Sonarr gives you. That's the cost of using your own indexers rather than a comics-specific source.
+
+On LazyLibrarian we should be straight with you: it ships with several direct-download providers built in, including Anna's Archive, Z-Library, and IRC. The installer writes those off and configures the Prowlarr-fed path instead, so it behaves like the rest of your stack out of the box. The settings are still there in its own UI. What you do with them is your call.
+
+### Manga: Not Automated, and That's Not an Oversight
+
+There's no manga equivalent because there's nothing to build it on. Prowlarr supports exactly seven application types and none of them is a manga app. Manga simply isn't in the usenet or torrent indexer world the way TV, movies, and comics are, so the whole Sonarr pattern has nothing to attach to. Every real manga tool scrapes scanlation sites through Mihon extensions instead, which is a separate lane with its own source questions.
+
+Suwayomi is the tool people use, and it works well pointed at `Media/Manga`, but it ships with no extension sources at all and you'd have to supply your own. That's a decision we'd rather leave with you than make on your behalf, so it isn't bundled.
+
+### Or Just Drop Files In
+
+Every folder works as a plain drop target whether or not you enable any automation:
 
 ```
 <your data root>/Media/Comics/
@@ -38,7 +65,7 @@ So for now, copy files into:
 <your data root>/Media/Books/
 ```
 
-The installer creates all three whether or not you turn a reader on, so you can start filling them early.
+The installer creates all three regardless, so you can start filling them early.
 
 ### The One Layout Rule That Matters
 
@@ -78,12 +105,16 @@ Beyond the browser:
 
 ## Turning It On
 
-Both are toggles on the installer's Services screen, or set them by hand in `.env`:
+They're toggles on the installer's Services screen, or set them by hand in `.env`:
 
 ```
-ENABLE_KOMGA=true
-ENABLE_KAVITA=true
+ENABLE_KOMGA=true            # comics + manga reader
+ENABLE_KAVITA=true           # ebook reader
+ENABLE_MYLAR=true            # comic automation
+ENABLE_LAZYLIBRARIAN=true    # book automation
 ```
+
+Pick whichever you want. A reader with no automation is a perfectly normal setup, and so is automation feeding a library you read somewhere else.
 
 Re-run the installer or `bash setup.sh` and they'll appear on your [Dashboard](Dashboard) under a Reading section.
 

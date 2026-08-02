@@ -152,6 +152,8 @@ is_optin_enabled ENABLE_DISPATCHARR && CONTAINERS+=(dispatcharr)
 is_optin_enabled ENABLE_LIBRARIAN && CONTAINERS+=(librarian)
 is_optin_enabled ENABLE_KOMGA  && CONTAINERS+=(komga)
 is_optin_enabled ENABLE_KAVITA && CONTAINERS+=(kavita)
+is_optin_enabled ENABLE_MYLAR         && CONTAINERS+=(mylar3)
+is_optin_enabled ENABLE_LAZYLIBRARIAN && CONTAINERS+=(lazylibrarian)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -500,6 +502,17 @@ is_optin_enabled ENABLE_KAVITA && check_url_lenient "Kavita" "http://$LAN_IP:491
 is_optin_enabled ENABLE_KOMGA && check_url_lenient "Komga" "http://$LAN_IP:49158" \
     "Komga runs on Java and takes longer than most to start serving — give it a minute, then re-run."
 
+# Reading acquisition (opt-in). Lenient like the rest: both build a database on
+# first boot. Mylar3 additionally crawls ComicVine on its first library scan,
+# which is rate-limited and slow, so a not-yet-serving Mylar3 must warn rather
+# than fail the install. "Mylar3" matches the DoneScreen SERVICES entry;
+# LazyLibrarian has no Homepage widget upstream so it gets no tile assertion,
+# but it still gets a reachability check here.
+is_optin_enabled ENABLE_MYLAR && check_url_lenient "Mylar3" "http://$LAN_IP:49159" \
+    "Mylar3 builds its database on first boot — give it a moment, then re-run."
+is_optin_enabled ENABLE_LAZYLIBRARIAN && check_url_lenient "LazyLibrarian" "http://$LAN_IP:49160" \
+    "LazyLibrarian builds its database on first boot — give it a moment, then re-run."
+
 # ── Plex External Access ──────────────────────────────────────────────────────
 
 # Fetch public IP up-front — both Plex external check and VPN check need
@@ -785,6 +798,9 @@ if is_enabled ENABLE_HOMEPAGE; then
         # rule as Dispatcharr/LibrARRian above.
         is_optin_enabled ENABLE_KOMGA  && EXPECTED_TILES+=("ENABLE_KOMGA:Komga")
         is_optin_enabled ENABLE_KAVITA && EXPECTED_TILES+=("ENABLE_KAVITA:Kavita")
+        is_optin_enabled ENABLE_MYLAR  && EXPECTED_TILES+=("ENABLE_MYLAR:Mylar3")
+        # LazyLibrarian has NO Homepage widget upstream, so it gets a plain
+        # bookmark tile rather than a service tile — nothing to assert here.
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

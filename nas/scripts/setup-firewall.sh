@@ -190,6 +190,15 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_KOMGA=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT ;;
     esac
+    # Reading acquisition: Mylar3 (49159) and LazyLibrarian (49160), same OPT-IN
+    # semantics. LAN web UIs only — the grabs themselves go out through SABnzbd
+    # and qBittorrent, which have their own rules above.
+    case "$(grep -m1 '^ENABLE_MYLAR=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT ;;
+    esac
+    case "$(grep -m1 '^ENABLE_LAZYLIBRARIAN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT ;;
+    esac
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
@@ -257,6 +266,10 @@ remove_rules() {
     # Reading libraries (Kavita, Komga). Unconditional -D, same reasoning.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT 2>/dev/null
+
+    # Reading acquisition (Mylar3, LazyLibrarian). Unconditional -D.
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT 2>/dev/null
 
     # Seerr
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT 2>/dev/null

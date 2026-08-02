@@ -72,6 +72,7 @@ import { pipeline } from 'node:stream/promises'
 import { spawn } from 'node:child_process'
 import log from 'electron-log/main.js'
 import type { UpdaterState } from '../shared/ipc.js'
+import { compareVersions, isPrereleaseVersion } from '../shared/version-compare.js'
 
 const REPO = 'defessler/Mediarr-Installer'
 // Short, not zero: let the window paint + the renderer mount its updater-state
@@ -183,20 +184,6 @@ function broadcast(state: UpdaterState): void {
   }
 }
 
-/** Compare two version strings (a, b) — returns negative, zero, or
- *  positive like a-b. Strips optional "v" / "installer-v" prefix, then
- *  numeric triple compare. No pre-release support — Mediarr doesn't
- *  ship pre-release tags. */
-function compareVersions(a: string, b: string): number {
-  const parse = (s: string): number[] =>
-    s.replace(/^[a-zA-Z-]*v?/, '').split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0)
-  const [a1, a2, a3] = parse(a)
-  const [b1, b2, b3] = parse(b)
-  if (a1 !== b1) return a1 - b1
-  if (a2 !== b2) return a2 - b2
-  return a3 - b3
-}
-
 interface GithubAsset { name?: string; browser_download_url?: string; size?: number }
 interface GithubRelease {
   tag_name?: string
@@ -299,8 +286,15 @@ async function checkForUpdates({ silent = true }: { silent?: boolean } = {}): Pr
     // Walk in publication order; pick the newest non-draft strictly
     // newer than `current` that has a matching zip asset.
     let best: GithubRelease | null = null
+    // Is the RUNNING build itself a prerelease? Someone who deliberately
+    // installed a beta stays on the beta track and keeps getting betas.
+    // Everyone else never sees one. Without this check `prerelease` was
+    // declared on the interface and never read, so tagging a single beta would
+    // have offered it to every existing install as a normal update.
+    const onPrereleaseTrack = isPrereleaseVersion(app.getVersion())
     for (const r of releases) {
       if (r.draft) continue
+      if (r.prerelease && !onPrereleaseTrack) continue
       const tag = (r.tag_name ?? '').replace(/^[a-zA-Z-]*v?/, '')
       if (!tag) continue
       if (compareVersions(tag, current) <= 0) continue

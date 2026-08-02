@@ -36,11 +36,37 @@ fresh install would have started nothing with no error. Both are fixed. That aud
 found `optin-render-gate.test.ts` had a `profile` field it declared and never asserted, so
 there was no automated guard on profile wiring at all. There is one now.
 
-### Phases 2 and 3: not started
+### Phase 2: shipped
 
-Phase 2 is Mylar3 plus LazyLibrarian, two more `add_prowlarr_app()` calls, and a shared
-ini-write helper for the two `config.ini` files. Phase 3 is Audiobookshelf. The known
-footguns for both are in the sections below.
+Mylar3 (`:49159`) and LazyLibrarian (`:49160`), both opt-in and default-off, both wired as
+native Prowlarr Applications so they sync the user's existing indexers and hand transfers to
+SABnzbd and qBittorrent.
+
+The new code is `reading_app_api_setup()` in `setup-arr-config.py`. Both apps ship their REST
+API disabled with an empty key and expose no environment variable for it, so unlike the arrs
+(whose keys we harvest from `config.xml`) these have to be configured before there is a key
+to harvest. It writes `config.ini`, restarts the container, and returns the key for
+`add_prowlarr_app()`.
+
+Two source-verified details worth keeping, because both would have failed silently:
+
+- Mylar3's ComicVine key is `comicvine_api` in section `[CV]`, **not** `comicvine_api_key`
+  as the synthesis below assumes. We don't write it at all now (it's a user-supplied key with
+  no env var), but the wrong name is recorded here so nobody re-derives it from the old text.
+- `configparser` must have `optionxform = str` set before reading. LazyLibrarian's keys are
+  UPPERCASE, and configparser's default would rewrite the whole file lowercase on save, which
+  LazyLibrarian then ignores. A perfectly healthy-looking config.ini that does nothing.
+
+LazyLibrarian's posture is written explicitly rather than left at defaults:
+`SHOW_DIRECT_PROV=0` and `SHOW_IRC_PROV=0` (those gate Anna's Archive, Z-Library,
+AudioBookBay, and IRC), with `SHOW_NEWZ_PROV=1` and `SHOW_TORZ_PROV=1` keeping the
+Prowlarr-fed path on. Verified against `lazylibrarian/configdefs.py`.
+
+### Phase 3: not started
+
+Audiobookshelf, library-only. The permission footgun is in the section below: it refuses
+PUID/PGID, wants `user: "1000:10"` on UGOS, and needs its config and metadata dirs
+pre-created or it dies with EACCES on `/metadata/streams`.
 
 ## Independently verified, 2026-08-02
 

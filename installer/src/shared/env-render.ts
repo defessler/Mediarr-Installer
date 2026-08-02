@@ -194,6 +194,18 @@ export interface EnvFormValues {
    *  no-credentials, missing-key-is-OFF rules as Komga. */
   ENABLE_KAVITA?: string
 
+  // ── Reading acquisition (Mylar3 + LazyLibrarian) — OPT-IN like Soulseek.
+  /** Whether to install Mylar3: comic automation on ${LAN_IP}:49159. A native
+   *  Prowlarr Application, so it uses the indexers already configured here and
+   *  hands transfers to SABnzbd/qBittorrent. Needs a free ComicVine key pasted
+   *  into its own UI post-install. A missing key counts as OFF. */
+  ENABLE_MYLAR?: string
+  /** Whether to install LazyLibrarian: book automation on ${LAN_IP}:49160, also
+   *  a native Prowlarr Application. setup-arr-config.py writes its built-in
+   *  direct-download and IRC providers OFF so it matches the rest of the
+   *  stack's posture. A missing key counts as OFF. */
+  ENABLE_LAZYLIBRARIAN?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -609,6 +621,15 @@ export function renderEnv(v: EnvFormValues): string {
     '# serve these formats at all, which is why they are standalone.',
     line('ENABLE_KOMGA', isOptInEnabled(v.ENABLE_KOMGA) ? 'true' : 'false'),
     line('ENABLE_KAVITA', isOptInEnabled(v.ENABLE_KAVITA) ? 'true' : 'false'),
+    '',
+    '# Reading acquisition. OPT-IN; off by default, emitted via isOptInEnabled.',
+    '# Mylar3 (comics) and LazyLibrarian (books) are both native Prowlarr',
+    '# Applications, so they sync the indexers you already configured and hand',
+    '# transfers to SABnzbd/qBittorrent. LazyLibrarian ships several direct',
+    '# providers built in; the installer writes those OFF and uses the',
+    '# Prowlarr-fed path instead.',
+    line('ENABLE_MYLAR', isOptInEnabled(v.ENABLE_MYLAR) ? 'true' : 'false'),
+    line('ENABLE_LAZYLIBRARIAN', isOptInEnabled(v.ENABLE_LAZYLIBRARIAN) ? 'true' : 'false'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

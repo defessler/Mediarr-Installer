@@ -231,6 +231,13 @@ esac
 case "$(env_val ENABLE_KAVITA | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("kavita") ;;
 esac
+# Reading acquisition (Mylar3, LazyLibrarian) — OPT-IN, same case-guard.
+case "$(env_val ENABLE_MYLAR | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("mylar") ;;
+esac
+case "$(env_val ENABLE_LAZYLIBRARIAN | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("lazylibrarian") ;;
+esac
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

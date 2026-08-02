@@ -37,6 +37,8 @@ const OPT_IN_FLAGS: { key: keyof EnvFormValues; profile: string }[] = [
   { key: 'ENABLE_LIBRARIAN', profile: 'librarian' },
   { key: 'ENABLE_KOMGA', profile: 'komga' },
   { key: 'ENABLE_KAVITA', profile: 'kavita' },
+  { key: 'ENABLE_MYLAR', profile: 'mylar' },
+  { key: 'ENABLE_LAZYLIBRARIAN', profile: 'lazylibrarian' },
   // LIBRARIAN_ALLOW_ACTIONS used to be in this list. It's now LibrARRian's
   // write mode and DEFAULT-ON, so it has the opposite semantics and gets its
   // own block below.

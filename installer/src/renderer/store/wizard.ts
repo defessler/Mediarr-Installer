@@ -180,6 +180,10 @@ const defaultConfig: Partial<EnvFormValues> = {
   // pre-seed. Separate keys because either is a normal install on its own.
   ENABLE_KOMGA: 'false',
   ENABLE_KAVITA: 'false',
+  // Reading acquisition (Mylar3, LazyLibrarian) — OPT-IN, default OFF. Their
+  // REST keys are generated into config.ini at install time, so nothing to seed.
+  ENABLE_MYLAR: 'false',
+  ENABLE_LAZYLIBRARIAN: 'false',
   // Write mode is ON once the report itself is on, so enabling LibrARRian
   // gives you the upgrade/shrink buttons out of the box. It keeps its own key
   // so the Configure screen can drop the page back to read-only. Note this is

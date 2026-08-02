@@ -919,6 +919,63 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # ── Reading acquisition (comics, books) ───────────────────
+  #
+  # Both are ordinary Prowlarr Applications, exactly like Sonarr/Radarr/Lidarr:
+  # Prowlarr push-syncs the user's own indexers into them, and the actual
+  # transfers happen in SABnzbd and qBittorrent. No new download path, no new
+  # source surface, and the torrent leg is already inside gluetun.
+  #
+  # There is deliberately NO manga equivalent. Manga has no Torznab/Newznab
+  # lane at all — Prowlarr supports exactly seven application types and none of
+  # them is a manga app — so it stays a documented standalone recipe rather
+  # than a service here. See site/content/reading.md.
+
+  mylar3:
+    image: lscr.io/linuxserver/mylar3:latest
+    container_name: mylar3
+    profiles: ["mylar"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    ports:
+      - ${LAN_IP}:49159:8090
+    volumes:
+      - ${INSTALL_DIR}/mylar3/config:/config
+      # Writes the finished library that Komga reads. NOT :ro — this is the one
+      # service that fills Media/Comics.
+      - ${DATA_ROOT}/Media/Comics:/comics
+      # Same /data root the arrs get, so completed downloads and the library
+      # sit on one filesystem and imports stay hardlink/atomic-move capable.
+      - ${DATA_ROOT}:/data
+    logging: *logging
+    restart: unless-stopped
+
+  lazylibrarian:
+    image: lscr.io/linuxserver/lazylibrarian:latest
+    container_name: lazylibrarian
+    profiles: ["lazylibrarian"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    ports:
+      - ${LAN_IP}:49160:5299
+    volumes:
+      - ${INSTALL_DIR}/lazylibrarian/config:/config
+      # Writes the ebook library that Kavita reads.
+      - ${DATA_ROOT}/Media/Books:/books
+      - ${DATA_ROOT}:/data
+    logging: *logging
+    restart: unless-stopped
+
   unpackerr:
     # ghcr.io path is unpackerr/unpackerr (golift/unpackerr on Docker Hub) —
     # same image, off Docker Hub's rate limit.

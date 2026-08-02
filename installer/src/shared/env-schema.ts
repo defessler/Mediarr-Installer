@@ -60,6 +60,13 @@ export const envObject = z.object({
   // are a split rather than an overlap, and running one alone is normal.
   ENABLE_KOMGA: optStr,
   ENABLE_KAVITA: optStr,
+  // OPT-IN (default off). Like the readers above, no superRefine entry:
+  // Mylar3's ComicVine key is set in its own UI (no env var exists for it) and
+  // both apps' REST keys are generated into their config.ini by
+  // setup-arr-config.py, so there is no credential here to escalate to
+  // required. A missing key stays OFF everywhere.
+  ENABLE_MYLAR: optStr,
+  ENABLE_LAZYLIBRARIAN: optStr,
   // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
   // separately from ENABLE_LIBRARIAN on purpose: LibrARRian has no auth,
   // so turning the report on must not also hand everyone on the LAN a

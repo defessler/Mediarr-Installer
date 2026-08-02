@@ -45,6 +45,8 @@ const VARIANTS: EnvFormValues[] = [
     // exercises the enabled branch alongside the other opt-in services.
     ENABLE_KOMGA: 'true',
     ENABLE_KAVITA: 'true',
+    ENABLE_MYLAR: 'true',
+    ENABLE_LAZYLIBRARIAN: 'true',
   },
   ...(['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom'] as const).map(
     (p): EnvFormValues => ({

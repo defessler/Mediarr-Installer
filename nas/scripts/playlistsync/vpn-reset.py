@@ -36,7 +36,25 @@ import urllib.request
 
 CTRL = os.environ.get("GLUETUN_CONTROL_URL", "http://127.0.0.1:8000").rstrip("/")
 API_KEY = os.environ.get("GLUETUN_CONTROL_APIKEY", "").strip()
-WAIT_SECS = int(os.environ.get("PLAYLIST_VPN_RESET_WAIT", "60") or "60")
+def _wait_secs():
+    """PLAYLIST_VPN_RESET_WAIT, defaulting to 60.
+
+    Parsed defensively: a non-numeric value (a stray comment, a unit suffix like
+    "60s", an empty-after-strip string) used to raise ValueError at import time
+    and take the whole script down. The wait is only how long we pause for the
+    tunnel to settle, so a bad value should fall back to the default rather than
+    abort a sync run.
+    """
+    raw = (os.environ.get("PLAYLIST_VPN_RESET_WAIT") or "").strip()
+    try:
+        v = int(raw)
+    except ValueError:
+        return 60
+    # A negative or absurd wait is a typo, not an instruction.
+    return v if 0 <= v <= 3600 else 60
+
+
+WAIT_SECS = _wait_secs()
 REQ_TIMEOUT = 10
 
 

@@ -547,6 +547,11 @@ is_optin_enabled ENABLE_LIBRARIAN && PROFILES+=("librarian")
 # media bridge, so like Dispatcharr/LibrARRian neither pulls in a "vpn" sidecar.
 is_optin_enabled ENABLE_KOMGA  && PROFILES+=("komga")
 is_optin_enabled ENABLE_KAVITA && PROFILES+=("kavita")
+# Reading acquisition (Mylar3 = comics, LazyLibrarian = books) is OPT-IN too.
+# Both are plain bridge services that hand work to SABnzbd/qBittorrent, so
+# neither pulls in the "vpn" sidecar.
+is_optin_enabled ENABLE_MYLAR         && PROFILES+=("mylar")
+is_optin_enabled ENABLE_LAZYLIBRARIAN && PROFILES+=("lazylibrarian")
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
@@ -733,6 +738,8 @@ stop_disabled_services() {
         "librarian:ENABLE_LIBRARIAN"
         "komga:ENABLE_KOMGA"
         "kavita:ENABLE_KAVITA"
+        "mylar3:ENABLE_MYLAR"
+        "lazylibrarian:ENABLE_LAZYLIBRARIAN"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -746,7 +753,8 @@ stop_disabled_services() {
         # playlistsync, dispatcharr, librarian, komga, or kavita.
         if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] \
            || [ "$flag" = "ENABLE_DISPATCHARR" ] || [ "$flag" = "ENABLE_LIBRARIAN" ] \
-           || [ "$flag" = "ENABLE_KOMGA" ] || [ "$flag" = "ENABLE_KAVITA" ]; then
+           || [ "$flag" = "ENABLE_KOMGA" ] || [ "$flag" = "ENABLE_KAVITA" ] \
+           || [ "$flag" = "ENABLE_MYLAR" ] || [ "$flag" = "ENABLE_LAZYLIBRARIAN" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -937,6 +945,10 @@ check_port_conflicts() {
     # ports used in the wait_for_services list further down.
     is_optin_enabled ENABLE_KOMGA  && pairs+=("komga:49158")
     is_optin_enabled ENABLE_KAVITA && pairs+=("kavita:49157")
+    # Reading acquisition (opt-in): single plain LAN bind each, published
+    # host ports 49159/49160 (container 8090/5299).
+    is_optin_enabled ENABLE_MYLAR         && pairs+=("mylar3:49159")
+    is_optin_enabled ENABLE_LAZYLIBRARIAN && pairs+=("lazylibrarian:49160")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
     # separate package), so the old per-port `netstat -lnt 2>/dev/null`
@@ -1079,6 +1091,9 @@ wait_for_services() {
     # must not stall on it. Opt-in, so the explicit-true helper.
     is_optin_enabled ENABLE_KOMGA  && services="$services komga"
     is_optin_enabled ENABLE_KAVITA && services="$services kavita"
+    # Reading acquisition: both are linuxserver Python apps that boot quickly.
+    is_optin_enabled ENABLE_MYLAR         && services="$services mylar3"
+    is_optin_enabled ENABLE_LAZYLIBRARIAN && services="$services lazylibrarian"
 
     echo ""
     echo "  Waiting for containers to become healthy..."

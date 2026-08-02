@@ -5,7 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
-  BookOpen, BookMarked,
+  BookOpen, BookMarked, BookCopy, Library,
   Clock, CheckCircle2, XCircle, AlertTriangle, Info, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
@@ -181,6 +181,8 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_LIBRARIAN',   label: 'LibrARRian',   hint: 'Storage report — what is eating your disk, at what quality, and re-grabbing it', icon: HardDrive, iconColor: 'text-lime-400' },
   { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' },
   { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' },
+  { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' },
+  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
@@ -189,7 +191,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN'])
 
 function ServicesSection({
   config, update,

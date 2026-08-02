@@ -28,6 +28,7 @@ Still requires manual setup after:
     Recyclarr   — Customise recyclarr.yml, then: docker exec recyclarr recyclarr sync
 """
 
+import configparser
 import json
 import os
 import re
@@ -648,6 +649,124 @@ def sabnzbd_ini_set(ini_path, keyword, value):
         return True
     except Exception:
         return False
+
+def reading_app_api_setup(label, container, ini_path, api_section,
+                          enabled_key, key_key, extra=()):
+    """Turn on the REST API in a Mylar3 / LazyLibrarian config.ini and return
+    its API key, so Prowlarr can be wired to it like any other app.
+
+    Both apps ship their API DISABLED with an empty key (Mylar3's API_ENABLED
+    defaults False; LazyLibrarian's API_ENABLED defaults 0), and neither exposes
+    it as an environment variable — it is a config.ini setting or nothing. So
+    unlike the arrs, whose keys we simply HARVEST from config.xml, these two have
+    to be configured before there is a key to harvest.
+
+    `extra` carries additional (section, key, value) triples — used to write
+    LazyLibrarian's provider posture. Returns the API key, or None if the file
+    never appeared or couldn't be written.
+
+    Idempotent: an existing non-empty key is reused as-is, and the container is
+    only restarted when something actually changed, so a re-run doesn't bounce a
+    healthy service.
+    """
+    # The container writes config.ini on its first boot. Poll rather than
+    # assume — on a cold install this runs shortly after `compose up`.
+    deadline = time.time() + 90
+    while time.time() < deadline and not os.path.exists(ini_path):
+        time.sleep(3)
+    if not os.path.exists(ini_path):
+        warn(f"{label}: config.ini never appeared at {ini_path} — skipping API setup")
+        return None
+
+    # optionxform=str preserves the case of keys we DIDN'T touch, so rewriting
+    # the file doesn't reformat the app's own settings. interpolation=None keeps
+    # a literal % in a value (a path, a format string) from being parsed as
+    # configparser interpolation — the same gotcha that bit configure_tautulli.
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str
+    try:
+        parser.read(ini_path, encoding='utf-8')
+    except Exception as e:
+        warn(f"{label}: couldn't parse config.ini ({e}) — skipping API setup")
+        return None
+
+    changed = False
+
+    def find_key(section, key):
+        """The on-disk spelling of `key` in `section`, matched case-INSENSITIVELY.
+
+        This is the load-bearing part. Both apps rewrite config.ini through
+        their own writers, and both lowercase every option name on the way out
+        (LazyLibrarian config2.py sets optionxform to .lower() when saving;
+        Mylar3's config.py does config.set(section, k.lower(), ...)). Because we
+        read with optionxform=str, a case-SENSITIVE lookup would miss the
+        lowercased key the app just wrote and happily add a second one beside
+        it. Their readers use a strict ConfigParser, which raises
+        DuplicateOptionError on a section holding both `api_key` and `API_KEY` —
+        and the app then refuses to start at all.
+
+        That failure only appears on the SECOND setup run after the app has
+        rewritten its own config, which is about as delayed and confusing as a
+        bug gets. Matching case-insensitively and reusing the existing spelling
+        makes the write idempotent regardless of which case is on disk.
+        """
+        if not parser.has_section(section):
+            return None
+        lowered = key.lower()
+        for existing in parser.options(section):
+            if existing.lower() == lowered:
+                return existing
+        return None
+
+    def setval(section, key, value):
+        nonlocal changed
+        if not parser.has_section(section):
+            parser.add_section(section)
+            changed = True
+        target = find_key(section, key) or key
+        if parser.get(section, target, fallback=None) != value:
+            parser.set(section, target, value)
+            changed = True
+
+    for section, key, value in extra:
+        setval(section, key, value)
+
+    existing_key = find_key(api_section, key_key)
+    api_key = ((parser.get(api_section, existing_key, fallback='')
+                if existing_key else '') or '').strip()
+    if not api_key:
+        # 32 hex chars, same shape as an arr API key. os.urandom is
+        # cryptographically secure and needs no extra import.
+        api_key = os.urandom(16).hex()
+        setval(api_section, key_key, api_key)
+    setval(api_section, enabled_key, '1')
+
+    if changed:
+        try:
+            with open(ini_path, 'w', encoding='utf-8') as f:
+                parser.write(f)
+        except Exception as e:
+            warn(f"{label}: couldn't write config.ini ({e}) — skipping API setup")
+            return None
+        # Both apps read config.ini at process start only, so the file we just
+        # wrote is inert until the container restarts. Same reasoning as the
+        # unpackerr restart further down.
+        try:
+            subprocess.run([CONTAINER_RT, 'restart', container],
+                           capture_output=True, timeout=60, text=True)
+            ok(f"{label}: API enabled, restarted to apply")
+        except Exception as e:
+            warn(f"{label}: config written but restart failed ({e}) — "
+                 f"restart it manually or Prowlarr sync will fail")
+            return None
+        # Give the app a moment to come back before Prowlarr probes its baseUrl —
+        # add_prowlarr_app runs a synchronous reachability test and a 400 here
+        # would look like a config error rather than a timing one.
+        time.sleep(8)
+    else:
+        skip(f"{label}: API already enabled")
+    return api_key
+
 
 def bazarr_get(base, key, path):
     result, _ = _safe_request(f"{base}{path}", {'X-API-KEY': key,
@@ -1712,7 +1831,7 @@ def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
 
 # ── SABnzbd ───────────────────────────────────────────────────────────────────
 
-def configure_sabnzbd(base, key, ini_path):
+def configure_sabnzbd(base, key, ini_path, env=None):
     section("SABnzbd")
     if not key:
         fail_unreachable("API key not found — is the container running?"); return
@@ -1786,13 +1905,24 @@ def configure_sabnzbd(base, key, ini_path):
             skip(f"{label}: {value}"); continue
         _sab_set(label, keyword, value)
 
-    # Categories — tv / movies / music
+    # Categories — tv / movies / music, plus comics / books when the reading
+    # acquirers are enabled. setup-folders.sh already creates the matching
+    # Downloads/Usenet/complete/{comics,books} dirs, so the category is the
+    # other half of that pair. Mylar3 and LazyLibrarian still need their
+    # download client pointed at SABnzbd inside their own settings — this only
+    # makes sure the category they'd select already exists.
+    reading_cats = []
+    if env is not None:
+        if is_optin_enabled(env, 'ENABLE_MYLAR'):
+            reading_cats.append(('comics', '/data/complete/comics'))
+        if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+            reading_cats.append(('books', '/data/complete/books'))
     cats_resp = sab_api(base, key, {'mode': 'get_config', 'section': 'categories'})
     existing_cats = {c['name'] for c in
                      (cats_resp or {}).get('config', {}).get('categories', [])}
     for cat_name, cat_dir in [('tv', '/data/complete/tv'),
                                ('movies', '/data/complete/movies'),
-                               ('music', '/data/complete/music')]:
+                               ('music', '/data/complete/music')] + reading_cats:
         if cat_name in existing_cats:
             skip(f"Category: {cat_name}"); continue
         result = sab_api(base, key, {
@@ -4107,6 +4237,27 @@ def render_homepage_services(env, ip):
             f"        icon: kavita.png\n"
             f"        siteMonitor: http://{ip}:49157/"
         )
+    # Mylar3 has a real Homepage widget (key is `mylar`, NOT `mylar3`).
+    # LazyLibrarian has none upstream, so it gets a plain link tile with a
+    # siteMonitor dot but no stats. Both sit in Reading next to the readers
+    # they feed rather than under Automation with the arrs, because the user
+    # thinks of them as "the comics/books half" rather than as another arr.
+    if is_optin_enabled(env, 'ENABLE_MYLAR'):
+        reading.append(
+            f"    - Mylar3:\n"
+            f"        href: http://{ip}:49159/\n"
+            f"        description: 'Comic automation · watchlist, pull-list, auto-grab'\n"
+            f"        icon: mylar.png\n"
+            f"        siteMonitor: http://{ip}:49159/"
+        )
+    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+        reading.append(
+            f"    - LazyLibrarian:\n"
+            f"        href: http://{ip}:49160/\n"
+            f"        description: 'Book automation · track authors, auto-grab new releases'\n"
+            f"        icon: mdi-book-search\n"
+            f"        siteMonitor: http://{ip}:49160/"
+        )
     if reading:
         out.append("- Reading:")
         out.extend(reading)
@@ -4300,7 +4451,9 @@ def render_homepage_settings(env):
     # matching section". Placed before Maintenance to match the section order
     # render_homepage_services emits.
     reading_tiles = ((1 if is_optin_enabled(env, 'ENABLE_KOMGA') else 0)
-                     + (1 if is_optin_enabled(env, 'ENABLE_KAVITA') else 0))
+                     + (1 if is_optin_enabled(env, 'ENABLE_KAVITA') else 0)
+                     + (1 if is_optin_enabled(env, 'ENABLE_MYLAR') else 0)
+                     + (1 if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN') else 0))
     if reading_tiles:
         out.append("  Reading:")
         out.append("    style: row")
@@ -4580,7 +4733,7 @@ def main():
     # ── SABnzbd (configure first so Sonarr/Radarr/Lidarr can connect to it) ──
 
     if is_enabled(env, 'ENABLE_SABNZBD'):
-        configure_sabnzbd(SABNZBD, SABNZBD_KEY, f"{B}/sabnzbd/config/sabnzbd.ini")
+        configure_sabnzbd(SABNZBD, SABNZBD_KEY, f"{B}/sabnzbd/config/sabnzbd.ini", env)
 
         # Optional usenet provider — if USENET_HOST is set in .env we add it
         # to SABnzbd's news servers via the API. Otherwise the user wires it
@@ -4909,6 +5062,55 @@ def main():
         # working run re-applies Lidarr's baseline.
         note_unreachable()
 
+    # ── Reading acquisition (Mylar3, LazyLibrarian) ───────────────────────────
+    # Prepared BEFORE the Prowlarr section because both need their API turned on
+    # in config.ini (and the container bounced) before Prowlarr can be pointed at
+    # them — Prowlarr's POST /applications runs a synchronous reachability test.
+    MYLAR_KEY = None
+    LAZYLIB_KEY = None
+    # Same resolution the rest of the script uses: .env wins, discovered
+    # install root is the fallback. There is no INSTALL_DIR module global.
+    _install_dir = env.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
+    if is_optin_enabled(env, 'ENABLE_MYLAR'):
+        section("Mylar3")
+        MYLAR_KEY = reading_app_api_setup(
+            "Mylar3", "mylar3",
+            os.path.join(_install_dir, 'mylar3', 'config', 'config.ini'),
+            'API', 'api_enabled', 'api_key')
+        # ComicVine is deliberately NOT set here. It's the user's own free key
+        # from comicvine.gamespot.com, there is no env var for it, and Mylar3
+        # validates it on save — so it stays a documented post-install step in
+        # Mylar3's own UI. Without it Mylar3 runs but can't look up series.
+        if MYLAR_KEY:
+            info("Mylar3 needs a free ComicVine API key pasted into its own "
+                 "Settings before it can look up comics")
+    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+        section("LazyLibrarian")
+        # Provider posture, written explicitly rather than left at defaults.
+        # LazyLibrarian ships with direct-download providers (Anna's Archive,
+        # Z-Library, AudioBookBay) and IRC visible, which is a different posture
+        # from the rest of this stack — everything else grabs from indexers the
+        # user configured in Prowlarr. SHOW_DIRECT_PROV and SHOW_IRC_PROV are the
+        # master switches for those groups; SHOW_NEWZ_PROV and SHOW_TORZ_PROV are
+        # the Newznab/Torznab path Prowlarr syncs into, so those stay ON.
+        # This is a DEFAULT, not a lock: the settings remain in LazyLibrarian's
+        # own UI for anyone who decides otherwise.
+        LAZYLIB_KEY = reading_app_api_setup(
+            "LazyLibrarian", "lazylibrarian",
+            os.path.join(_install_dir, 'lazylibrarian', 'config', 'config.ini'),
+            # Section names are CamelCase as LazyLibrarian writes them, but the
+            # option names go in LOWERCASE to match its own writer. It reads
+            # case-insensitively either way, and find_key() above matches
+            # case-insensitively, so this is belt and braces — but writing the
+            # app's own convention keeps the file looking like it wrote it.
+            'API', 'api_enabled', 'api_key',
+            extra=[
+                ('General', 'show_direct_prov', '0'),
+                ('General', 'show_irc_prov', '0'),
+                ('General', 'show_newz_prov', '1'),
+                ('General', 'show_torz_prov', '1'),
+            ])
+
     # ── Prowlarr ──────────────────────────────────────────────────────────────
 
     section("Prowlarr")
@@ -4934,6 +5136,24 @@ def main():
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Lidarr", "Lidarr",
                              "LidarrSettings", LIDARR_INT, LIDARR_KEY,
                              [3000, 3010, 3030, 3040, 3050])
+        # Reading apps. Both are native Prowlarr Application types — the
+        # implementation strings are "Mylar" and "LazyLibrarian", straight out of
+        # Prowlarr's src/NzbDrone.Core/Applications (which has exactly seven:
+        # LazyLibrarian, Lidarr, Mylar, Radarr, Readarr, Sonarr, Whisparr).
+        # Categories: 7030 is Books/Comics; LazyLibrarian takes Books + EBook +
+        # Audiobook so an audiobook-capable indexer isn't filtered out.
+        #
+        # Note there is deliberately no manga equivalent — manga has no
+        # Torznab/Newznab lane at all, so it stays a documented standalone
+        # recipe rather than an app here.
+        if MYLAR_KEY:
+            add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Mylar3", "Mylar",
+                             "MylarSettings", "http://mylar3:8090", MYLAR_KEY,
+                             [7030])
+        if LAZYLIB_KEY:
+            add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
+                             "LazyLibrarianSettings", "http://lazylibrarian:5299",
+                             LAZYLIB_KEY, [3030, 7000, 7020])
         # Prowlarr doesn't have a /config/mediamanagement endpoint
         # (no media files of its own), but it DOES have the same Bind
         # Address pitfall as the arrs — Sync Apps tests fail if

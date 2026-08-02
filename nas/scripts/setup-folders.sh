@@ -124,6 +124,10 @@ CONFIG_DIRS=(
     # owned up front or Komga boots and then fails to open its database.
     "$INSTALL_DIR/komga/config"
     "$INSTALL_DIR/kavita/config"
+    # Reading acquisition (opt-in). Both are linuxserver images that self-chown
+    # /config, but pre-creating keeps the bind source from starting out root-owned.
+    "$INSTALL_DIR/mylar3/config"
+    "$INSTALL_DIR/lazylibrarian/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -157,6 +161,12 @@ DATA_DIRS=(
     "$DATA_ROOT/Media/Comics"
     "$DATA_ROOT/Media/Manga"
     "$DATA_ROOT/Media/Books"
+    # Download categories for the reading acquirers, mirroring the arrs' own
+    # per-category dirs so imports hardlink instead of copying.
+    "$DATA_ROOT/Downloads/Usenet/complete/comics"
+    "$DATA_ROOT/Downloads/Usenet/complete/books"
+    "$DATA_ROOT/Downloads/Torrents/Completed/mylar"
+    "$DATA_ROOT/Downloads/Torrents/Completed/lazylibrarian"
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"
