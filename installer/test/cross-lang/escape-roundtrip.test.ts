@@ -38,6 +38,15 @@ const VALUES: string[] = [
   'a=b=c', // '=' in value — parser must split on the FIRST '=' only
   'no#1 café', // unicode + '#' + space
   '', // empty
+  // Embedded newline. env-render's ESCAPE() folds these into literal \n / \r
+  // sequences and its comment called the case "currently unreachable" — that is
+  // stale. CUSTOM_VPN_ENV is a <textarea> the user pastes a multi-line gluetun
+  // block into, so a raw newline is ordinary input today. An unescaped newline
+  // in .env would split one key into a key plus a garbage line, and every
+  // downstream parser would read a truncated value.
+  'line1\nline2',
+  'k=v\nk2=v2', // multi-line, each looking like its own assignment
+  'cr\r\nlf', // CRLF, which the readers also strip
 ]
 
 function bashEnvVal(key: string, envPath: string): string {

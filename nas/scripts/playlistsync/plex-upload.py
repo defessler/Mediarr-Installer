@@ -42,6 +42,23 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+def _int_env(name, default):
+    """Read an int from the environment, falling back on anything unparseable.
+
+    These come in through docker-compose ${VAR:-N} passthrough, so a user who
+    hand-adds one to .env with a unit suffix ("120s") or a trailing comment used
+    to crash the container at IMPORT time — before any logging, so the only
+    symptom was a restart loop with a bare ValueError. A bad timeout should fall
+    back, not take the sync down. Same rule as vpn-reset.py.
+    """
+    raw = (os.environ.get(name) or "").strip()
+    try:
+        v = int(raw)
+    except ValueError:
+        return default
+    return v if 0 < v <= 86400 else default
+
+
 # The Plex config dir is bind-mounted read-only here. In the linuxserver/plex
 # image Preferences.xml (which holds PlexOnlineToken) lives under
 # Library/Application Support/Plex Media Server/ — NOT at the dir root.
@@ -53,7 +70,7 @@ TIMEOUT = 30
 # How long to wait for a library scan to settle before uploading anyway. Bounded
 # so a slow/large box never hangs the nightly cron pass; a 0-match upload still
 # self-heals via the full-scan retry below and the next run.
-SCAN_TIMEOUT = int(os.environ.get("PLAYLIST_PLEX_SCAN_TIMEOUT", "120"))
+SCAN_TIMEOUT = _int_env("PLAYLIST_PLEX_SCAN_TIMEOUT", 120)
 SCAN_POLL = 3                       # seconds between scan-status polls
 SCAN_SETTLE = 2                     # grace after a scan clears, for metadata to commit
 MEASURE_TRIES = 4                   # re-query attempts for the new playlist's track count
@@ -63,7 +80,7 @@ MEASURE_POLL = 3                    # seconds between those attempts (leafCount 
 # can fire while Plex is still claiming on a fresh install, so poll rather than
 # hard-fail on the first empty read. Bounded so a never-claimed Plex can't hang
 # the cron job; set to 0 to disable the wait (single read, original behaviour).
-CLAIM_TIMEOUT = int(os.environ.get("PLAYLIST_PLEX_CLAIM_TIMEOUT", "180"))
+CLAIM_TIMEOUT = _int_env("PLAYLIST_PLEX_CLAIM_TIMEOUT", 180)
 CLAIM_POLL = 3                      # seconds between Preferences.xml re-reads
 
 

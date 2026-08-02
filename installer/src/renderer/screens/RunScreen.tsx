@@ -620,16 +620,24 @@ export function RunScreen() {
           `echo "[wizard-debug] before setup.sh: $(date)"; ` +
           `if command -v script >/dev/null 2>&1; then ` +
           `  echo "[wizard-debug] using: script -qfc (forced pty)"; ` +
-          `  script -qfc "bash $SETUP $ARGS" /dev/null 2>&1; rc=$?; ` +
+          // "$SETUP" is quoted in every branch. shellQuote() above makes the
+          // ASSIGNMENT safe, but an unquoted $SETUP still word-splits on use, and
+          // INSTALL_DIR is a user-supplied path with no no-spaces rule in
+          // env-schema — a Synology shared folder called "Docker Data" is
+          // completely ordinary. Unquoted, bash would try to run "/volume1/Docker"
+          // and fail with a confusing "No such file or directory".
+          // The script -qfc branch needs the inner escaped quotes because its
+          // argument is re-parsed by a second shell.
+          `  script -qfc "bash \\"$SETUP\\" $ARGS" /dev/null 2>&1; rc=$?; ` +
           `elif command -v stdbuf >/dev/null 2>&1; then ` +
           `  echo "[wizard-debug] using: stdbuf -oL -eL"; ` +
-          `  stdbuf -oL -eL bash $SETUP $ARGS 2>&1; rc=$?; ` +
+          `  stdbuf -oL -eL bash "$SETUP" $ARGS 2>&1; rc=$?; ` +
           `elif command -v awk >/dev/null 2>&1; then ` +
           `  echo "[wizard-debug] using: bash | awk fflush"; ` +
-          `  bash $SETUP $ARGS 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
+          `  bash "$SETUP" $ARGS 2>&1 | awk '{ print; fflush() }'; rc=\${PIPESTATUS[0]}; ` +
           `else ` +
           `  echo "[wizard-debug] using: plain bash (output may be block-buffered)"; ` +
-          `  bash $SETUP $ARGS 2>&1; rc=$?; ` +
+          `  bash "$SETUP" $ARGS 2>&1; rc=$?; ` +
           `fi; ` +
           `echo "[wizard-debug] after setup.sh (rc=$rc): $(date)"; exit $rc`,
         sudo: true,
@@ -882,7 +890,12 @@ export function RunScreen() {
         const acl = await window.installer.ssh.exec({
           sessionId,
           cmd:
-            `PUID="${puid}"; DATA=${shellQuote(dataRoot)}; ` +
+            // Both shellQuote'd. PUID is schema-constrained to /^\d+$/ so it
+            // can't currently carry a metacharacter, but it sat spliced raw
+            // inside hand-written quotes one line from a correctly-escaped
+            // sibling. Any future path that reaches Run without going through
+            // Configure's safeParse would reopen it as an injection point.
+            `PUID=${shellQuote(puid)}; DATA=${shellQuote(dataRoot)}; ` +
             // Non-Synology hosts skip the ACL grant entirely — POSIX
             // permissions handle write access on Unraid / TrueNAS /
             // QNAP / Linux without an overlay ACL layer to override.

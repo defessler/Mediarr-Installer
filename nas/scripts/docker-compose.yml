@@ -704,6 +704,10 @@ services:
     image: mirror.gcr.io/library/python:3.12-alpine
     container_name: recyclarr-trigger
     networks: [media]
+    # Was the one non-gluetun service missing this, which matters more here
+    # than most: this container holds a READ-WRITE docker.sock, so it is the
+    # last place in the stack that should be skipping no-new-privileges.
+    security_opt: *security
     # No depends_on recyclarr: this trigger is always-on (no profile) but
     # recyclarr IS profile-gated, so when Recyclarr is disabled the dep
     # would point at a service absent from the project — which fails

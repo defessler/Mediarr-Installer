@@ -114,14 +114,24 @@ mount_src() { $RT inspect -f "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.S
 
 # ── Derive OLD paths from live container mounts ──────────────────────────────
 OLD_INSTALL=""
-for c in sonarr radarr lidarr bazarr prowlarr qbittorrent sabnzbd plex jellyfin tautulli recyclarr unpackerr homepage playlistsync; do
+# Every service that bind-mounts ${INSTALL_DIR}/<name>/config at /config is a
+# valid witness for the OLD install path. Keep this in step with the compose
+# file: a stack running ONLY services missing from this list detects nothing,
+# skips the whole per-service config move, and silently strands the old configs.
+for c in sonarr radarr lidarr bazarr prowlarr qbittorrent sabnzbd plex jellyfin tautulli recyclarr unpackerr homepage playlistsync komga kavita mylar3 lazylibrarian audiobookshelf; do
     container_exists "$c" || continue
     src="$(mount_src "$c" /config)"
     [ -n "$src" ] || continue
     case "$src" in */"$c"/config) OLD_INSTALL="${src%/"$c"/config}"; break ;; esac
 done
 OLD_DATA=""
-for c in sonarr radarr lidarr bazarr unpackerr; do   # mount ${DATA_ROOT}:/data EXACTLY (NOT sabnzbd/playlistsync)
+# Services that mount ${DATA_ROOT}:/data EXACTLY (NOT sabnzbd/playlistsync,
+# which mount a subpath). This is the ONLY way the script learns the old
+# DATA_ROOT, and a miss here is worse than a miss above: add_pair skips the
+# move silently, the stack comes up against the new empty DATA_ROOT, and the
+# output still reads like a clean relocation. A books-and-comics-only install
+# (Mylar3 + LazyLibrarian + the readers, no video arrs) hits exactly that.
+for c in sonarr radarr lidarr bazarr unpackerr mylar3 lazylibrarian; do
     container_exists "$c" || continue
     src="$(mount_src "$c" /data)"
     [ -n "$src" ] && { OLD_DATA="$src"; break; }

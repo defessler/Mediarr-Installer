@@ -146,6 +146,10 @@ is_enabled ENABLE_UNPACKERR   && CONTAINERS+=(unpackerr)
 # Soulseek (opt-in music download) — slskd WebUI + the soularr bridge daemon.
 # Explicit-true gate so a pre-Soulseek .env isn't expected to have them.
 is_optin_enabled ENABLE_SOULSEEK && CONTAINERS+=(slskd soularr)
+# Playlist Sync (opt-in) — a real background worker, not a one-shot job, and it
+# runs restart: on-failure:5. Without it here, a playlistsync that crash-looped
+# five times on bad credentials sits dead while this reports the install healthy.
+is_optin_enabled ENABLE_PLAYLIST_SYNC && CONTAINERS+=(playlistsync)
 # Live TV (opt-in) — Dispatcharr. Explicit-true gate, same reason.
 is_optin_enabled ENABLE_DISPATCHARR && CONTAINERS+=(dispatcharr)
 # Storage report (opt-in) — LibrARRian. Explicit-true gate, same reason.

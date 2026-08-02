@@ -47,13 +47,30 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+def _int_env(name, default):
+    """Read an int from the environment, falling back on anything unparseable.
+
+    These come in through docker-compose ${VAR:-N} passthrough, so a user who
+    hand-adds one to .env with a unit suffix ("120s") or a trailing comment used
+    to crash the container at IMPORT time — before any logging, so the only
+    symptom was a restart loop with a bare ValueError. A bad timeout should fall
+    back, not take the sync down. Same rule as vpn-reset.py.
+    """
+    raw = (os.environ.get(name) or "").strip()
+    try:
+        v = int(raw)
+    except ValueError:
+        return default
+    return v if 0 < v <= 86400 else default
+
+
 HOST_MUSIC_PREFIX = "/data/Music"   # where the downloader writes
 JF_MUSIC_PREFIX = "/media/Music"    # where Jellyfin sees the same tree
 TIMEOUT = 30
 # How long to wait for a library scan to settle before resolving anyway. Bounded
 # so a slow/large box never hangs the nightly cron pass; a 0-match create still
 # self-heals via the full-scan retry below and the next run.
-SCAN_TIMEOUT = int(os.environ.get("PLAYLIST_JF_SCAN_TIMEOUT", "120"))
+SCAN_TIMEOUT = _int_env("PLAYLIST_JF_SCAN_TIMEOUT", 120)
 SCAN_POLL = 3                       # seconds between scan-status polls
 SCAN_SETTLE = 2                     # grace after a scan clears, for metadata to commit
 ADD_CHUNK = 50                      # ItemIds per POST /Playlists/{id}/Items request

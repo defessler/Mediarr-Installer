@@ -184,8 +184,15 @@ section "Directories"
 
 # NAS-family-portable: read INSTALL_DIR / DATA_ROOT from .env and
 # fall back to the Synology-historical defaults for older .envs.
-INSTALL_DIR=$(env_val "INSTALL_DIR")
-DATA_ROOT=$(env_val "DATA_ROOT")
+# Strip the wizard's surrounding quotes, exactly as setup-folders.sh and
+# relocate-stack.sh already do. env-render.ts double-quotes any value with
+# whitespace in it, so a perfectly ordinary INSTALL_DIR="/volume1/My Docker"
+# came back here WITH the quote characters attached. Every REQUIRED_DIRS path
+# built from it then had a stray `"` in the middle, every `[ -d ]` reported
+# missing, and the validator hard-failed a healthy install with "Fix the
+# failing checks above" — in the wizard, where this step runs by default.
+INSTALL_DIR=$(env_val "INSTALL_DIR" | sed 's/^"//; s/"$//')
+DATA_ROOT=$(env_val "DATA_ROOT" | sed 's/^"//; s/"$//')
 : "${INSTALL_DIR:=$INSTALL_DIR_DEFAULT}"
 : "${DATA_ROOT:=/volume1/Data}"
 

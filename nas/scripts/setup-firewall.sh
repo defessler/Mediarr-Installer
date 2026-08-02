@@ -207,6 +207,14 @@ add_rules() {
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
+    # recyclarr-trigger's Sync Now page (8889). Gated on ENABLE_RECYCLARR
+    # because that is the profile that starts it, even though the container
+    # itself is not profile-gated. check_port_conflicts already pre-checks
+    # 8889; without this rule the page was simply unreachable behind a
+    # deny-by-default firewall while everything else reported healthy.
+    if is_enabled ENABLE_RECYCLARR; then
+        iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8889 -j ACCEPT
+    fi
 
     # Prowlarr + Flaresolverr are always-on (not profile-gated)
     iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49150 -j ACCEPT
@@ -285,6 +293,9 @@ remove_rules() {
 
     # Homepage dashboard
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT 2>/dev/null
+
+    # recyclarr-trigger Sync Now page
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8889 -j ACCEPT 2>/dev/null
 
     # Flaresolverr
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8191 -j ACCEPT 2>/dev/null
