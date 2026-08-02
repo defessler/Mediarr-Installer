@@ -221,6 +221,16 @@ esac
 case "$(env_val ENABLE_LIBRARIAN | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("librarian") ;;
 esac
+# Reading libraries (Komga = comics + manga, Kavita = books) are OPT-IN too,
+# same case-guard for the same reason: a missing key must not enable them.
+# Independently gated because either is a normal install on its own. Neither is
+# VPN-coupled — they're read-only file servers on the media bridge.
+case "$(env_val ENABLE_KOMGA | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("komga") ;;
+esac
+case "$(env_val ENABLE_KAVITA | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("kavita") ;;
+esac
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

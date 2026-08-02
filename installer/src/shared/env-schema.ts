@@ -52,6 +52,14 @@ export const envObject = z.object({
   // arr API keys already in .env — so there is nothing to escalate to
   // required. A missing key stays OFF everywhere.
   ENABLE_LIBRARIAN: optStr,
+  // OPT-IN (default off), mirroring ENABLE_SOULSEEK. No superRefine block
+  // below for either: Komga and Kavita are read-only file servers with no
+  // credentials of their own and no dependency on another service, so there is
+  // nothing to escalate to required. A missing key stays OFF everywhere.
+  // Independently gated on purpose — Komga (comics + manga) and Kavita (books)
+  // are a split rather than an overlap, and running one alone is normal.
+  ENABLE_KOMGA: optStr,
+  ENABLE_KAVITA: optStr,
   // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
   // separately from ENABLE_LIBRARIAN on purpose: LibrARRian has no auth,
   // so turning the report on must not also hand everyone on the LAN a

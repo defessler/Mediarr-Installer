@@ -40,6 +40,11 @@ const VARIANTS: EnvFormValues[] = [
     DISPATCHARR_ADMIN_PASS: 'pw',
     LIVETV_CHANNEL_PACKS: 'pluto',
     CUSTOM_INDEXERS_JSON: '[]',
+    // Komga/Kavita emit unconditionally (isOptInEnabled always writes true or
+    // false), so BASE_ENV already surfaces the keys. Setting them true here
+    // exercises the enabled branch alongside the other opt-in services.
+    ENABLE_KOMGA: 'true',
+    ENABLE_KAVITA: 'true',
   },
   ...(['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom'] as const).map(
     (p): EnvFormValues => ({

@@ -118,6 +118,12 @@ CONFIG_DIRS=(
     # bind mount never starts out root-owned on a box where docker creates
     # a missing bind source itself.
     "$INSTALL_DIR/librarian"
+    # Reading libraries (opt-in). Kavita is a linuxserver image and would
+    # self-chown /config, but Komga is NOT — it's a plain JVM image running as
+    # the `user:` directive with no chown safety net, so its config dir MUST be
+    # owned up front or Komga boots and then fails to open its database.
+    "$INSTALL_DIR/komga/config"
+    "$INSTALL_DIR/kavita/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -137,6 +143,20 @@ DATA_DIRS=(
     # Dispatcharr's fixed recording root (/data/recordings), so recordings land
     # in the media tree where Plex/Jellyfin index them as ordinary files.
     "$DATA_ROOT/Media/Recordings"
+    # Reading libraries (opt-in). Created unconditionally like the rest of the
+    # Media tree so a user can drop .cbz/.epub files in BEFORE enabling a
+    # reader, and so Komga/Kavita's read-only binds never start out as a
+    # docker-created root-owned directory.
+    #
+    # Layout rule that is not a style preference: flat archive files inside
+    # exactly ONE folder per series, no per-volume subfolders. Komga mints a
+    # separate Series for every subfolder that contains files at any depth, so
+    # the Series/Volume 01/*.cbz shape most guides show silently produces a
+    # series literally named "Volume 01". Kavita independently refuses files at
+    # a library root. Flat-inside-one-folder is the only shape both accept.
+    "$DATA_ROOT/Media/Comics"
+    "$DATA_ROOT/Media/Manga"
+    "$DATA_ROOT/Media/Books"
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"

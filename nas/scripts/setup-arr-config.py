@@ -4082,6 +4082,36 @@ def render_homepage_services(env, ip):
             f"        icon: mdi-harddisk\n"
             f"        siteMonitor: http://{ip}:8890/"
         )
+    # Reading libraries (opt-in). Their own section rather than rows under
+    # Media, because Media is the Plex/Jellyfin group and neither of those can
+    # serve comics, manga, or ebooks at all — filing them there would imply a
+    # link that doesn't exist. Independently gated, so the section gate below
+    # is an OR and either tile can appear alone.
+    #
+    # Both tile names are asserted by post-deploy-validate.sh's EXPECTED_TILES,
+    # so rename them in both places or the validator reports a missing tile.
+    reading = []
+    if is_optin_enabled(env, 'ENABLE_KOMGA'):
+        reading.append(
+            f"    - Komga:\n"
+            f"        href: http://{ip}:49158/\n"
+            f"        description: 'Comics & manga · read in a browser, Mihon, or any OPDS app'\n"
+            f"        icon: komga.png\n"
+            f"        siteMonitor: http://{ip}:49158/"
+        )
+    if is_optin_enabled(env, 'ENABLE_KAVITA'):
+        reading.append(
+            f"    - Kavita:\n"
+            f"        href: http://{ip}:49157/\n"
+            f"        description: 'Ebooks · EPUB/PDF, KOReader sync, send-to-Kindle'\n"
+            f"        icon: kavita.png\n"
+            f"        siteMonitor: http://{ip}:49157/"
+        )
+    if reading:
+        out.append("- Reading:")
+        out.extend(reading)
+        out.append("")
+
     # The "Update Images" tile (/pull on recyclarr-trigger) was removed:
     # `compose up -d` after the pull recreated gluetun, which severed
     # qBittorrent's `network_mode: service:gluetun` namespace and left
@@ -4263,6 +4293,18 @@ def render_homepage_settings(env):
         out.append("  Live TV:")
         out.append("    style: row")
         out.append("    columns: 1")
+    # Reading — Komga and/or Kavita, gated independently exactly like
+    # Maintenance below, so mirror the OR from render_homepage_services and
+    # size the row to how many tiles actually land in it. Skipping the entry
+    # entirely when both are off keeps Homepage from logging "layout key has no
+    # matching section". Placed before Maintenance to match the section order
+    # render_homepage_services emits.
+    reading_tiles = ((1 if is_optin_enabled(env, 'ENABLE_KOMGA') else 0)
+                     + (1 if is_optin_enabled(env, 'ENABLE_KAVITA') else 0))
+    if reading_tiles:
+        out.append("  Reading:")
+        out.append("    style: row")
+        out.append(f"    columns: {reading_tiles}")
     # Maintenance — Recyclarr and/or LibrARRian (Update Images was removed;
     # see render_homepage_services for the reason). Skip the section + its
     # layout entry entirely when BOTH are off, otherwise Homepage logs

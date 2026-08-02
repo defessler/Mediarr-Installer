@@ -560,6 +560,8 @@ if is_optin ENABLE_PLAYLIST_SYNC; then
 fi
 is_optin ENABLE_DISPATCHARR && P+=("livetv")
 is_optin ENABLE_LIBRARIAN && P+=("librarian")
+is_optin ENABLE_KOMGA && P+=("komga")
+is_optin ENABLE_KAVITA && P+=("kavita")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 
 echo "[wizard-update] compose files: $FILES"
@@ -771,6 +773,8 @@ if is_optin ENABLE_PLAYLIST_SYNC; then
 fi
 is_optin ENABLE_DISPATCHARR && P+=("livetv")
 is_optin ENABLE_LIBRARIAN && P+=("librarian")
+is_optin ENABLE_KOMGA && P+=("komga")
+is_optin ENABLE_KAVITA && P+=("kavita")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never up -d`

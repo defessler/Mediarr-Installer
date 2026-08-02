@@ -5,6 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
+  BookOpen, BookMarked,
   Clock, CheckCircle2, XCircle, AlertTriangle, Info, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
@@ -178,6 +179,8 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_LIBRARIAN',   label: 'LibrARRian',   hint: 'Storage report — what is eating your disk, at what quality, and re-grabbing it', icon: HardDrive, iconColor: 'text-lime-400' },
+  { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' },
+  { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
@@ -186,7 +189,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA'])
 
 function ServicesSection({
   config, update,
@@ -197,9 +200,9 @@ function ServicesSection({
   // Imported from env-render so the renderer, setup.sh, and setup-arr-
   // config.py all agree on what counts as disabled (0/no/off/false).
   // ENABLE_SOULSEEK / ENABLE_PLAYLIST_SYNC / ENABLE_DISPATCHARR /
-  // ENABLE_LIBRARIAN are the OPT-IN services: a missing/empty value means
-  // OFF, so they use isOptInEnabled instead of the default-on isEnabled.
-  // Without this, an
+  // ENABLE_LIBRARIAN / ENABLE_KOMGA / ENABLE_KAVITA are the OPT-IN services:
+  // a missing/empty value means OFF, so they use isOptInEnabled instead of the
+  // default-on isEnabled. Without this, an
   // older profile loaded without the key would show their toggle ON.
   const isOn = (k: keyof EnvFormValues) =>
     OPT_IN_SERVICES.has(k)

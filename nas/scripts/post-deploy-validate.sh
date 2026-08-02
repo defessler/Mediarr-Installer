@@ -150,6 +150,8 @@ is_optin_enabled ENABLE_SOULSEEK && CONTAINERS+=(slskd soularr)
 is_optin_enabled ENABLE_DISPATCHARR && CONTAINERS+=(dispatcharr)
 # Storage report (opt-in) — LibrARRian. Explicit-true gate, same reason.
 is_optin_enabled ENABLE_LIBRARIAN && CONTAINERS+=(librarian)
+is_optin_enabled ENABLE_KOMGA  && CONTAINERS+=(komga)
+is_optin_enabled ENABLE_KAVITA && CONTAINERS+=(kavita)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -484,6 +486,20 @@ is_optin_enabled ENABLE_DISPATCHARR && check_url_lenient "Dispatcharr" "http://$
 is_optin_enabled ENABLE_LIBRARIAN && check_url_lenient "LibrARRian" "http://$LAN_IP:8890/healthz" \
     "LibrARRian's first scan runs at startup — give it a moment, then re-run."
 
+# Reading libraries (opt-in). Both lenient, for the same reason as Dispatcharr:
+# the container can be "running" well before it serves HTTP. Komga is the slower
+# of the two by a wide margin — it's a JVM, so Spring Boot startup runs for a
+# while after Docker reports the container up. Kavita is .NET and comes up fast,
+# but stays lenient so a slow first-run database migration warns rather than
+# red-failing the whole install.
+#
+# These labels are also the lines the wizard's Done screen scrapes for its
+# health tiles, so they have to match the SERVICES entries in DoneScreen.tsx.
+is_optin_enabled ENABLE_KAVITA && check_url_lenient "Kavita" "http://$LAN_IP:49157" \
+    "Kavita sets up its database on first boot — give it a moment, then re-run."
+is_optin_enabled ENABLE_KOMGA && check_url_lenient "Komga" "http://$LAN_IP:49158" \
+    "Komga runs on Java and takes longer than most to start serving — give it a minute, then re-run."
+
 # ── Plex External Access ──────────────────────────────────────────────────────
 
 # Fetch public IP up-front — both Plex external check and VPN check need
@@ -765,6 +781,10 @@ if is_enabled ENABLE_HOMEPAGE; then
         # only append when is_optin_enabled already proved an explicit true.
         is_optin_enabled ENABLE_DISPATCHARR && EXPECTED_TILES+=("ENABLE_DISPATCHARR:Dispatcharr")
         is_optin_enabled ENABLE_LIBRARIAN && EXPECTED_TILES+=("ENABLE_LIBRARIAN:LibrARRian")
+        # Reading tiles are opt-in — append only when explicitly enabled, same
+        # rule as Dispatcharr/LibrARRian above.
+        is_optin_enabled ENABLE_KOMGA  && EXPECTED_TILES+=("ENABLE_KOMGA:Komga")
+        is_optin_enabled ENABLE_KAVITA && EXPECTED_TILES+=("ENABLE_KAVITA:Kavita")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

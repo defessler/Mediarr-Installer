@@ -182,6 +182,18 @@ export interface EnvFormValues {
   /** Per-run cap on how many items one action may touch (default 25). */
   LIBRARIAN_MAX_BATCH?: string
 
+  // ── Reading libraries (Komga + Kavita) — OPT-IN like Soulseek.
+  /** Whether to install Komga: a reader for Media/Comics + Media/Manga on
+   *  ${LAN_IP}:49158. Reads files off disk and downloads nothing, so it needs
+   *  no credentials. A missing key counts as OFF. Independently gated from
+   *  Kavita below — the two split by format rather than overlapping, since
+   *  Komga has no ebook support at all. */
+  ENABLE_KOMGA?: string
+  /** Whether to install Kavita: an ebook reader for Media/Books on
+   *  ${LAN_IP}:49157, with KOReader progress sync and send-to-Kindle. Same
+   *  no-credentials, missing-key-is-OFF rules as Komga. */
+  ENABLE_KAVITA?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -588,6 +600,15 @@ export function renderEnv(v: EnvFormValues): string {
     '# Recycle Bin set, and every action is planned and confirmed first.',
     line('LIBRARIAN_ALLOW_ACTIONS', isEnabled(v.LIBRARIAN_ALLOW_ACTIONS) ? 'true' : 'false'),
     line('LIBRARIAN_MAX_BATCH', v.LIBRARIAN_MAX_BATCH || '25'),
+    '',
+    '# Reading libraries. OPT-IN; off by default. A missing key counts as OFF',
+    '# (like ENABLE_SOULSEEK) — both emitted via isOptInEnabled. Komga serves',
+    '# Media/Comics + Media/Manga on ${LAN_IP}:49158, Kavita serves Media/Books',
+    '# on ${LAN_IP}:49157. Both are readers only: they mount their libraries',
+    '# read-only and never download anything. Neither Plex nor Jellyfin can',
+    '# serve these formats at all, which is why they are standalone.',
+    line('ENABLE_KOMGA', isOptInEnabled(v.ENABLE_KOMGA) ? 'true' : 'false'),
+    line('ENABLE_KAVITA', isOptInEnabled(v.ENABLE_KAVITA) ? 'true' : 'false'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

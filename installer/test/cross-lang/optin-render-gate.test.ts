@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import {
   BASH, PYTHON, NAS_SCRIPTS, extractShellFunc, runBash, runPython, withEnvFile,
 } from '../helpers/shell.js'
@@ -34,6 +35,8 @@ const OPT_IN_FLAGS: { key: keyof EnvFormValues; profile: string }[] = [
   { key: 'ENABLE_PLAYLIST_SYNC', profile: 'playlists' },
   { key: 'ENABLE_DISPATCHARR', profile: 'livetv' },
   { key: 'ENABLE_LIBRARIAN', profile: 'librarian' },
+  { key: 'ENABLE_KOMGA', profile: 'komga' },
+  { key: 'ENABLE_KAVITA', profile: 'kavita' },
   // LIBRARIAN_ALLOW_ACTIONS used to be in this list. It's now LibrARRian's
   // write mode and DEFAULT-ON, so it has the opposite semantics and gets its
   // own block below.
@@ -59,6 +62,47 @@ function bashGate(key: string, rendered: string): boolean {
     cleanup()
   }
 }
+
+// The `profile` field above sat unused for a long time: it documented the
+// mapping but asserted nothing, so a new opt-in service could be fully wired
+// through the renderer and still never start, because nothing checked that
+// setup.sh's PROFILES builder actually gates its compose profile on the flag.
+// That is the exact miss this pins. Static read of setup.sh rather than an
+// execution oracle because the real PROFILES block depends on VPN state,
+// arch detection, and a populated .env — the mapping is what matters here.
+describe('every opt-in flag maps to a compose profile in setup.sh', () => {
+  const setupSrc = readFileSync(SETUP_SH, 'utf8')
+
+  // Anchor on the PROFILES builder itself rather than searching the whole
+  // file. Every one of these flags is referenced many times over (port
+  // pre-checks, wait_for_services, stop_disabled_services, sidecar reloads,
+  // VPN guards) — ENABLE_SOULSEEK alone has ~9 call sites — so a naive
+  // whole-file search would silently start asserting against whichever one
+  // happens to come first, and a future reorder would break the test without
+  // anything actually being wrong. Slicing to the builder block removes that
+  // ordering assumption entirely.
+  const start = setupSrc.indexOf('PROFILES=()')
+  const end = setupSrc.indexOf('if [ ${#PROFILES[@]}', start)
+  it('the PROFILES builder block is findable', () => {
+    expect(start, 'setup.sh no longer contains PROFILES=()').toBeGreaterThan(-1)
+    expect(end, 'setup.sh no longer closes the PROFILES block as expected')
+      .toBeGreaterThan(start)
+  })
+  const block = start > -1 && end > start ? setupSrc.slice(start, end) : ''
+
+  for (const { key, profile } of OPT_IN_FLAGS) {
+    it(`${key} gates the "${profile}" profile`, () => {
+      expect(
+        block.includes(`is_optin_enabled ${key}`),
+        `the PROFILES block never gates on is_optin_enabled ${key}`,
+      ).toBe(true)
+      expect(
+        block.includes(`PROFILES+=("${profile}")`),
+        `the PROFILES block never adds PROFILES+=("${profile}") for ${key}`,
+      ).toBe(true)
+    })
+  }
+})
 
 describe('opt-in flags survive the renderer', () => {
   for (const { key } of OPT_IN_FLAGS) {

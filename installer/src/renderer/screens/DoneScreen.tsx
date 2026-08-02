@@ -6,6 +6,7 @@ import {
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
   Newspaper, Download, MessageSquare, BarChart3, Shield, Music2, Radio, HardDrive,
+  BookOpen, BookMarked,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -47,6 +48,8 @@ const SERVICES: {
   { name: 'slskd',        port: '5030',                          icon: Music2,          iconColor: 'text-pink-400' },
   { name: 'Dispatcharr',  port: '9191',      note: 'Live TV',    icon: Radio,           iconColor: 'text-cyan-400' },
   { name: 'LibrARRian',   port: '8890',      note: 'Storage',    icon: HardDrive,       iconColor: 'text-lime-400' },
+  { name: 'Kavita',       port: '49157',     note: 'Books',      icon: BookMarked,      iconColor: 'text-indigo-300' },
+  { name: 'Komga',        port: '49158',     note: 'Comics',     icon: BookOpen,        iconColor: 'text-orange-300' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
@@ -258,6 +261,8 @@ export function DoneScreen() {
     // has to match check_url_lenient's label in post-deploy-validate.sh,
     // which is what this tile scrapes for its health state.
     if (s.name === 'LibrARRian' && !isOptInEnabled(config.ENABLE_LIBRARIAN)) return []
+    if (s.name === 'Kavita' && !isOptInEnabled(config.ENABLE_KAVITA)) return []
+    if (s.name === 'Komga' && !isOptInEnabled(config.ENABLE_KOMGA)) return []
     return [s]
   })
 

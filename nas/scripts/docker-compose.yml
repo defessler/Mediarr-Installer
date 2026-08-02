@@ -839,6 +839,86 @@ services:
     # than crash-looping against the docker daemon forever.
     restart: on-failure:5
 
+  # ── Reading (comics, manga, books) ────────────────────────
+  #
+  # Two readers on purpose, and it's a split rather than an overlap:
+  # Komga has NO ebook support at all, and Kavita only gets generic OPDS
+  # on Android where Komga publishes a first-party Mihon extension. So
+  # Komga owns Comics + Manga, Kavita owns Books. Each is independently
+  # opt-in — running one without the other is a normal install.
+  #
+  # Neither acquires anything. They read files off disk, which is why both
+  # library mounts are :ro. Nothing here belongs in gluetun's namespace:
+  # there's no P2P and no inbound port, and staying on the media bridge
+  # keeps them clear of the network_mode recreate race that wedges
+  # qBittorrent/slskd/playlistsync.
+  #
+  # Neither Plex nor Jellyfin can serve any of this — Plex has no CBZ/EPUB
+  # support and Jellyfin's bookshelf plugin was archived by the Jellyfin org
+  # on 2026-06-30 — so these stay standalone regardless of MEDIA_SERVER.
+  # That's why there's no plex/jellyfin branch anywhere in this block.
+
+  komga:
+    # ghcr mirror of gotson/komga — same image, off Docker Hub's rate limit
+    # (same reasoning as unpackerr below).
+    image: ghcr.io/gotson/komga:latest
+    container_name: komga
+    profiles: ["komga"]
+    networks: [media]
+    security_opt: *security
+    # Komga does NOT read PUID/PGID — it's a plain JVM image that runs as
+    # whatever `user:` says, so the stack's usual PUID/PGID env pair is
+    # silently ignored here. On UGOS that's 1000:10, NOT the 1000:1000 in
+    # Komga's own docs. Get this wrong and Komga boots fine but can't write
+    # /config, which surfaces much later as a database error.
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+      # Komga is a JVM and ships NO heap cap of its own: left alone the JVM
+      # sizes its max heap at 25% of HOST RAM, so on a 32GB NAS a comic
+      # reader reserves 8GB. Cap the heap here and the container below —
+      # the heap cap alone doesn't bound off-heap/metaspace growth.
+      - JAVA_TOOL_OPTIONS=-Xmx512m
+    mem_limit: 1g
+    ports:
+      - ${LAN_IP}:49158:25600
+    volumes:
+      - ${INSTALL_DIR}/komga/config:/config
+      # Read-only: Komga serves what's there and never writes into the
+      # library. Mylar3 (opt-in, phase 2) is what fills Comics.
+      - ${DATA_ROOT}/Media/Comics:/comics:ro
+      - ${DATA_ROOT}/Media/Manga:/manga:ro
+    logging: *logging
+    restart: unless-stopped
+
+  kavita:
+    # Pin floor, not preference: CVE-2026-47202 (CVSSv4 9.3) is a PRE-AUTH
+    # account takeover — an unauthenticated caller who knows a username gets
+    # a valid JWT for that account, including admin. Fixed in v0.9.0.2.
+    # `latest` tracks upstream and is well past that; never pin this service
+    # to a tag below v0.9.0.2, it sits on the LAN.
+    image: lscr.io/linuxserver/kavita:latest
+    container_name: kavita
+    profiles: ["kavita"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    ports:
+      - ${LAN_IP}:49157:5000
+    volumes:
+      - ${INSTALL_DIR}/kavita/config:/config
+      # Books only — Komga above owns Comics + Manga. Read-only for the same
+      # reason: Kavita is a reader, not a library manager. Kavita reads EPUB
+      # metadata out of the internal OPF (calibre:series drives grouping), so
+      # a plain drop folder groups correctly without naming discipline.
+      - ${DATA_ROOT}/Media/Books:/books:ro
+    logging: *logging
+    restart: unless-stopped
+
   unpackerr:
     # ghcr.io path is unpackerr/unpackerr (golift/unpackerr on Docker Hub) —
     # same image, off Docker Hub's rate limit.

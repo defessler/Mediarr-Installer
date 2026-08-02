@@ -179,6 +179,17 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_LIBRARIAN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8890 -j ACCEPT ;;
     esac
+    # Reading libraries: Kavita (49157) and Komga (49158) — OPT-IN (explicit
+    # true only), same semantics as Soulseek above. Plain LAN binds serving a
+    # web reader, so this is purely about reaching them from a browser or an
+    # OPDS client (Mihon, Panels, KOReader) on the LAN. Gated separately
+    # because either can be enabled without the other.
+    case "$(grep -m1 '^ENABLE_KAVITA=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT ;;
+    esac
+    case "$(grep -m1 '^ENABLE_KOMGA=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT ;;
+    esac
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
@@ -242,6 +253,10 @@ remove_rules() {
 
     # LibrARRian storage report. Unconditional -D, same reasoning as above.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 8890 -j ACCEPT 2>/dev/null
+
+    # Reading libraries (Kavita, Komga). Unconditional -D, same reasoning.
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT 2>/dev/null
 
     # Seerr
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT 2>/dev/null

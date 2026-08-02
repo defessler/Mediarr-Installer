@@ -175,6 +175,11 @@ const defaultConfig: Partial<EnvFormValues> = {
   // Storage analysis (LibrARRian) is OPT-IN too — default OFF. Credential-free,
   // so there is nothing else to pre-seed.
   ENABLE_LIBRARIAN: 'false',
+  // Reading libraries (Komga = comics + manga, Kavita = books) are OPT-IN too
+  // — default OFF, and credential-free like LibrARRian, so nothing else to
+  // pre-seed. Separate keys because either is a normal install on its own.
+  ENABLE_KOMGA: 'false',
+  ENABLE_KAVITA: 'false',
   // Write mode is ON once the report itself is on, so enabling LibrARRian
   // gives you the upgrade/shrink buttons out of the box. It keeps its own key
   // so the Configure screen can drop the page back to read-only. Note this is
