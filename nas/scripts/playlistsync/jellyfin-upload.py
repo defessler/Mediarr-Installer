@@ -291,7 +291,13 @@ def resolve_ids(entries, by_path, by_base, by_meta):
                 artist, title = _meta_from_basename(path)
             if artist and title:
                 iid = by_meta.get(_clean(artist) + _clean(title))
-            if not iid and title:
+            # Title-only fallback, and ONLY when we never learned an artist.
+            # With an artist in hand, an artist+title miss means Jellyfin has no
+            # copy of THIS recording — falling back to title alone would then
+            # happily attach a different band's song of the same name, which is
+            # worse than leaving the track out. Covers are common enough in the
+            # SiriusXM feeds this runs against for that to be a real risk.
+            if not iid and title and not artist:
                 iid = by_meta.get(_clean(title))
         if iid:
             if iid not in seen:
@@ -513,9 +519,17 @@ def main():
         # 7) Cosmetic: best-effort poster. Swallows every failure.
         set_poster(base, key, new_id,
                    resolve_art_url(sxm_slug=args.art_sxm_slug))
+    except urllib.error.HTTPError as e:
+        # HTTPError subclasses URLError, so the handler below would otherwise
+        # swallow a 401/403/500 and report it as "unreachable" — which sends
+        # you looking at the network when the real problem is a bad API key or
+        # a server-side error. Jellyfin ANSWERED; it just answered badly.
+        raise SystemExit("Jellyfin API returned HTTP %s (%s) — tracks are "
+                         "downloaded; check JELLYFIN_API_KEY and the Jellyfin "
+                         "log, then re-run" % (e.code, e.reason))
     except (urllib.error.URLError, OSError) as e:
-        # Jellyfin momentarily unreachable (connection refused / DNS / timeout).
-        # Exit cleanly — sync.sh keeps the downloaded tracks and retries next run.
+        # Genuinely unreachable (connection refused / DNS / timeout). Exit
+        # cleanly — sync.sh keeps the downloaded tracks and retries next run.
         raise SystemExit("Jellyfin API unreachable (%s) — tracks are downloaded; "
                          "will retry next run" % e)
 

@@ -1,7 +1,13 @@
 # Books, Comics, and Manga: Research (2026-08-02)
 
-Status: RESEARCHED, and phase 1 is BUILT. See "Decisions" below for where the shipped
-shape differs from the recommendation this document originally made.
+Status: RESEARCHED, and all three phases are BUILT and shipped. See "Decisions" below for
+where the shipped shape differs from the recommendation this document originally made.
+
+Still outstanding, and it's the important one: **none of this has run on real hardware.**
+Everything below was verified by source-reading, tests, and independent audit, not by a live
+NAS. The three things most likely to bite are Komga's `user: "1000:10"` on UGOS,
+Audiobookshelf's config/metadata ownership, and the Prowlarr connector against the
+MylarComics fork of Mylar3.
 
 The question was "what are the options for downloading manga, comics, and books the way we
 download movies and TV, and what's the best way to serve them." The short answer is that those
@@ -62,11 +68,27 @@ LazyLibrarian's posture is written explicitly rather than left at defaults:
 AudioBookBay, and IRC), with `SHOW_NEWZ_PROV=1` and `SHOW_TORZ_PROV=1` keeping the
 Prowlarr-fed path on. Verified against `lazylibrarian/configdefs.py`.
 
-### Phase 3: not started
+### Phase 3: shipped
 
-Audiobookshelf, library-only. The permission footgun is in the section below: it refuses
-PUID/PGID, wants `user: "1000:10"` on UGOS, and needs its config and metadata dirs
-pre-created or it dies with EACCES on `/metadata/streams`.
+Audiobookshelf (`:49161`), opt-in and default-off, library-only. Podcast RSS auto-download is
+the one thing it fetches on its own, and that needs no indexer at all.
+
+The permission footgun the research flagged is handled, and there was a second one underneath
+it that only shows up once you fix the first. Audiobookshelf ignores PUID/PGID and runs as the
+`user:` directive, so it gets `user: "${PUID}:${PGID}"` (1000:10 on UGOS, not the 1000:1000 in
+its own docs), and `setup-folders.sh` pre-creates and chowns both `config/` and `metadata/`
+because upstream issue #4471 is a non-root container dying on `mkdir /metadata/streams`
+against a root-owned bind source.
+
+The second problem: its Dockerfile sets `ENV PORT=80`, and a non-root process cannot bind a
+privileged port. Dropping to `user:` without touching the port would kill the container on
+startup. Verified from `server/Server.js` that it reads `process.env.PORT`, so the compose
+block sets `PORT=13378` and publishes `49161:13378`. Running unprivileged is only possible
+because of that override.
+
+No audiobook acquisition ships, deliberately. Listenarr is the nicest story on paper but has
+no stable release and its own README warns about data loss. MyAnonamouse is the real answer
+and it's invite-only, so it stays a documented Prowlarr step rather than anything automated.
 
 ## Independently verified, 2026-08-02
 

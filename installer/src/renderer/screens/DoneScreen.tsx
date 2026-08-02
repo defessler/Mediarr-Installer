@@ -6,7 +6,7 @@ import {
   FileText, ChevronDown, AlertTriangle,
   LayoutDashboard, PlaySquare, Tv, Film, Music, Radar, Captions,
   Newspaper, Download, MessageSquare, BarChart3, Shield, Music2, Radio, HardDrive,
-  BookOpen, BookMarked, BookCopy, Library,
+  BookOpen, BookMarked, BookCopy, Library, Headphones,
   type LucideIcon,
 } from 'lucide-react'
 import { useWizard } from '../store/wizard.js'
@@ -52,6 +52,7 @@ const SERVICES: {
   { name: 'Komga',        port: '49158',     note: 'Comics',     icon: BookOpen,        iconColor: 'text-orange-300' },
   { name: 'Mylar3',       port: '49159',     note: 'Comics auto', icon: BookCopy,       iconColor: 'text-orange-400' },
   { name: 'LazyLibrarian', port: '49160',    note: 'Books auto', icon: Library,         iconColor: 'text-indigo-400' },
+  { name: 'Audiobookshelf', port: '49161',   note: 'Audiobooks', icon: Headphones,      iconColor: 'text-emerald-300' },
 ]
 
 type ServiceHealth = 'unknown' | 'ok' | 'warn' | 'fail'
@@ -267,6 +268,7 @@ export function DoneScreen() {
     if (s.name === 'Komga' && !isOptInEnabled(config.ENABLE_KOMGA)) return []
     if (s.name === 'Mylar3' && !isOptInEnabled(config.ENABLE_MYLAR)) return []
     if (s.name === 'LazyLibrarian' && !isOptInEnabled(config.ENABLE_LAZYLIBRARIAN)) return []
+    if (s.name === 'Audiobookshelf' && !isOptInEnabled(config.ENABLE_AUDIOBOOKSHELF)) return []
     return [s]
   })
 

@@ -154,6 +154,7 @@ is_optin_enabled ENABLE_KOMGA  && CONTAINERS+=(komga)
 is_optin_enabled ENABLE_KAVITA && CONTAINERS+=(kavita)
 is_optin_enabled ENABLE_MYLAR         && CONTAINERS+=(mylar3)
 is_optin_enabled ENABLE_LAZYLIBRARIAN && CONTAINERS+=(lazylibrarian)
+is_optin_enabled ENABLE_AUDIOBOOKSHELF && CONTAINERS+=(audiobookshelf)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -512,6 +513,12 @@ is_optin_enabled ENABLE_MYLAR && check_url_lenient "Mylar3" "http://$LAN_IP:4915
     "Mylar3 builds its database on first boot — give it a moment, then re-run."
 is_optin_enabled ENABLE_LAZYLIBRARIAN && check_url_lenient "LazyLibrarian" "http://$LAN_IP:49160" \
     "LazyLibrarian builds its database on first boot — give it a moment, then re-run."
+# Audiobookshelf (opt-in). Lenient for the usual first-boot reason, but this one
+# is worth reading carefully if it warns: Audiobookshelf runs non-root and dies
+# with EACCES when /config or /metadata is root-owned (upstream #4471). If it
+# never comes up, that ownership is the first thing to check.
+is_optin_enabled ENABLE_AUDIOBOOKSHELF && check_url_lenient "Audiobookshelf" "http://$LAN_IP:49161" \
+    "Audiobookshelf sets up its database on first boot. If it stays down, check that ${INSTALL_DIR}/audiobookshelf/{config,metadata} are owned by PUID:PGID."
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
@@ -799,6 +806,7 @@ if is_enabled ENABLE_HOMEPAGE; then
         is_optin_enabled ENABLE_KOMGA  && EXPECTED_TILES+=("ENABLE_KOMGA:Komga")
         is_optin_enabled ENABLE_KAVITA && EXPECTED_TILES+=("ENABLE_KAVITA:Kavita")
         is_optin_enabled ENABLE_MYLAR  && EXPECTED_TILES+=("ENABLE_MYLAR:Mylar3")
+        is_optin_enabled ENABLE_AUDIOBOOKSHELF && EXPECTED_TILES+=("ENABLE_AUDIOBOOKSHELF:Audiobookshelf")
         # LazyLibrarian has NO Homepage widget upstream, so it gets a plain
         # bookmark tile rather than a service tile — nothing to assert here.
         MISSING=()

@@ -101,7 +101,22 @@ Beyond the browser:
 - **iPhone and iPad** - Panels, from the App Store, connected over OPDS. It reads CBR, CBZ, PDF, and comic EPUB in one app and writes your page progress back. Paperback is the free alternative.
 - **Kobo, jailbroken Kindle, other e-ink** - KOReader, which does two-way progress sync with Kavita. Set it to **manual** sync rather than automatic. Kavita's own docs warn that automatic sync can clobber your reading position, and that's not recoverable.
 - **A stock Kindle** - Kavita's send-to-Kindle button emails the book to your device. No jailbreak, no cables.
+- **Audiobooks and podcasts** - a separate app, because they're a separate thing. See below.
 - **Your TV** - nothing, and that's deliberate. None of these work on a TV, and nobody reads manga on one.
+
+## Audiobooks and Podcasts
+
+**Audiobookshelf** on `http://<NAS-IP>:49161` is the odd one out here, and it's opt-in like the rest:
+
+```
+ENABLE_AUDIOBOOKSHELF=true
+```
+
+It covers the two things nothing else in this stack touches. Drop audiobooks into `Media/Audiobooks` and it indexes them, tracks your position per user, and remembers where you were across devices. Podcasts are the one thing it fetches on its own, straight from RSS on a schedule, which needs no indexer and no account at all.
+
+The apps are the good part. Android is a normal Play Store install. On iOS the official app is TestFlight-only and the beta is usually full, but that's less of a wall than it sounds: ShelfPlayer and Plappa are both on the App Store, both talk to an Audiobookshelf server, and Plappa syncs your position back.
+
+There's no Sonarr for audiobooks in this stack, deliberately. The tools that exist are either unreleased or lean on sources that don't match the rest of the setup. If you want an audiobook tracker, MyAnonamouse is the one worth having, and you add it to Prowlarr yourself once you have an account.
 
 ## Turning It On
 

@@ -206,6 +206,13 @@ export interface EnvFormValues {
    *  stack's posture. A missing key counts as OFF. */
   ENABLE_LAZYLIBRARIAN?: string
 
+  // ── Audiobooks + podcasts (Audiobookshelf) — OPT-IN like Soulseek.
+  /** Whether to install Audiobookshelf: a library and player for audiobooks
+   *  and podcasts on ${LAN_IP}:49161, with its own iOS and Android apps. A
+   *  library rather than a downloader — the one thing it fetches on its own is
+   *  podcasts, straight from RSS. A missing key counts as OFF. */
+  ENABLE_AUDIOBOOKSHELF?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -630,6 +637,11 @@ export function renderEnv(v: EnvFormValues): string {
     '# Prowlarr-fed path instead.',
     line('ENABLE_MYLAR', isOptInEnabled(v.ENABLE_MYLAR) ? 'true' : 'false'),
     line('ENABLE_LAZYLIBRARIAN', isOptInEnabled(v.ENABLE_LAZYLIBRARIAN) ? 'true' : 'false'),
+    '',
+    '# Audiobooks and podcasts. OPT-IN; off by default, via isOptInEnabled.',
+    '# A library and player, not a downloader — podcasts are the one thing it',
+    '# fetches itself, straight from RSS with no indexer involved.',
+    line('ENABLE_AUDIOBOOKSHELF', isOptInEnabled(v.ENABLE_AUDIOBOOKSHELF) ? 'true' : 'false'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

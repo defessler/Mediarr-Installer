@@ -5,7 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
-  BookOpen, BookMarked, BookCopy, Library,
+  BookOpen, BookMarked, BookCopy, Library, Headphones,
   Clock, CheckCircle2, XCircle, AlertTriangle, Info, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
@@ -183,6 +183,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' },
   { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' },
   { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' },
+  { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
@@ -191,7 +192,7 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN'])
+const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_AUDIOBOOKSHELF'])
 
 function ServicesSection({
   config, update,

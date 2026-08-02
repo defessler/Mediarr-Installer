@@ -393,8 +393,16 @@ def main():
         # upload.
         set_poster(base, token, new_key,
                    resolve_art_url(sxm_slug=args.art_sxm_slug))
+    except urllib.error.HTTPError as e:
+        # HTTPError subclasses URLError, so the handler below would otherwise
+        # swallow a 401/403/500 and report it as "unreachable" — which sends you
+        # looking at the network when the real problem is an expired token or a
+        # server-side error. Plex ANSWERED; it just answered badly.
+        raise SystemExit("Plex API returned HTTP %s (%s) — tracks are "
+                         "downloaded; check PLEX_TOKEN and the Plex log, then "
+                         "re-run" % (e.code, e.reason))
     except (urllib.error.URLError, OSError) as e:
-        # Plex momentarily unreachable (connection refused / DNS / timeout). Exit
+        # Genuinely unreachable (connection refused / DNS / timeout). Exit
         # cleanly — sync.sh keeps the downloaded tracks and retries next run —
         # instead of dying with a raw traceback.
         raise SystemExit("Plex API unreachable (%s) — tracks are downloaded; "

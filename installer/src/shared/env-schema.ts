@@ -67,6 +67,8 @@ export const envObject = z.object({
   // required. A missing key stays OFF everywhere.
   ENABLE_MYLAR: optStr,
   ENABLE_LAZYLIBRARIAN: optStr,
+  // OPT-IN (default off). Library-only, no credentials, no superRefine entry.
+  ENABLE_AUDIOBOOKSHELF: optStr,
   // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
   // separately from ENABLE_LIBRARIAN on purpose: LibrARRian has no auth,
   // so turning the report on must not also hand everyone on the LAN a

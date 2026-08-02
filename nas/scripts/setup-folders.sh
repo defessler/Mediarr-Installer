@@ -128,6 +128,13 @@ CONFIG_DIRS=(
     # /config, but pre-creating keeps the bind source from starting out root-owned.
     "$INSTALL_DIR/mylar3/config"
     "$INSTALL_DIR/lazylibrarian/config"
+    # Audiobookshelf (opt-in). BOTH of these must exist and be PUID:PGID-owned
+    # BEFORE first start. It runs non-root via the `user:` directive with no
+    # linuxserver chown safety net, and upstream issue #4471 is exactly this:
+    # a docker-created root-owned bind source makes it die on
+    # `mkdir /metadata/streams` and never recover.
+    "$INSTALL_DIR/audiobookshelf/config"
+    "$INSTALL_DIR/audiobookshelf/metadata"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -167,6 +174,10 @@ DATA_DIRS=(
     "$DATA_ROOT/Downloads/Usenet/complete/books"
     "$DATA_ROOT/Downloads/Torrents/Completed/mylar"
     "$DATA_ROOT/Downloads/Torrents/Completed/lazylibrarian"
+    # Audiobookshelf libraries (opt-in). Podcasts is written BY the app when
+    # its RSS auto-download pulls new episodes, so it is not read-only.
+    "$DATA_ROOT/Media/Audiobooks"
+    "$DATA_ROOT/Media/Podcasts"
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"

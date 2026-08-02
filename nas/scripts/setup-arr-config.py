@@ -4258,6 +4258,17 @@ def render_homepage_services(env, ip):
             f"        icon: mdi-book-search\n"
             f"        siteMonitor: http://{ip}:49160/"
         )
+    # Audiobookshelf has a real Homepage widget. It sits in Reading rather than
+    # Media because Media is the Plex/Jellyfin group and Audiobookshelf is its
+    # own player with its own apps, not something either server surfaces.
+    if is_optin_enabled(env, 'ENABLE_AUDIOBOOKSHELF'):
+        reading.append(
+            f"    - Audiobookshelf:\n"
+            f"        href: http://{ip}:49161/\n"
+            f"        description: 'Audiobooks & podcasts · own apps on iOS and Android'\n"
+            f"        icon: audiobookshelf.png\n"
+            f"        siteMonitor: http://{ip}:49161/"
+        )
     if reading:
         out.append("- Reading:")
         out.extend(reading)
@@ -4453,7 +4464,8 @@ def render_homepage_settings(env):
     reading_tiles = ((1 if is_optin_enabled(env, 'ENABLE_KOMGA') else 0)
                      + (1 if is_optin_enabled(env, 'ENABLE_KAVITA') else 0)
                      + (1 if is_optin_enabled(env, 'ENABLE_MYLAR') else 0)
-                     + (1 if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN') else 0))
+                     + (1 if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN') else 0)
+                     + (1 if is_optin_enabled(env, 'ENABLE_AUDIOBOOKSHELF') else 0))
     if reading_tiles:
         out.append("  Reading:")
         out.append("    style: row")

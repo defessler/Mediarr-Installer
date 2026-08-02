@@ -103,7 +103,7 @@ esac
 # same reason — heavyweight LAN services that otherwise keep running (holding
 # RAM + bound ports) after a "stop all". Profile names match setup.sh's
 # COMPOSE_PROFILES builder.
-PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn soulseek playlists livetv librarian komga kavita mylar lazylibrarian homepage recyclarr unpackerr flaresolverr)
+PROFILES=(plex jellyfin sonarr radarr lidarr bazarr usenet torrenting vpn soulseek playlists livetv librarian komga kavita mylar lazylibrarian audiobookshelf homepage recyclarr unpackerr flaresolverr)
 
 # Pick the right compose files. When VPN was off at install time, the
 # no-vpn override is part of the active config; loading it on down
@@ -143,7 +143,7 @@ LEFTOVERS=""
 # same reason — the playlists/livetv profiles' containers.
 for c in prowlarr flaresolverr plex jellyfin tautulli seerr sonarr radarr lidarr \
          bazarr qbittorrent gluetun sabnzbd slskd soularr playlistsync dispatcharr \
-         librarian komga kavita mylar3 lazylibrarian homepage recyclarr unpackerr; do
+         librarian komga kavita mylar3 lazylibrarian audiobookshelf homepage recyclarr unpackerr; do
     if $RT ps --format '{{.Names}}' | grep -qx "$c"; then
         LEFTOVERS="$LEFTOVERS $c"
     fi

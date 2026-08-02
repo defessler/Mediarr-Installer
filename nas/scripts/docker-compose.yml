@@ -976,6 +976,40 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    profiles: ["audiobookshelf"]
+    networks: [media]
+    security_opt: *security
+    # Audiobookshelf ignores PUID/PGID entirely — it runs as whatever `user:`
+    # says, same as Komga. On UGOS that's 1000:10, NOT the 1000:1000 its own
+    # docs show. Getting this wrong doesn't fail loudly: the container starts
+    # and then can't write, which surfaces later as a broken library.
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+      # The image defaults to PORT=80 (see its Dockerfile). A non-root `user:`
+      # cannot bind a privileged port, so leaving the default would make the
+      # container die on startup with EACCES the moment we drop root. Moving it
+      # above 1024 is what makes running unprivileged possible at all.
+      - PORT=13378
+    ports:
+      - ${LAN_IP}:49161:13378
+    volumes:
+      # /config and /metadata MUST be pre-created and chowned by
+      # setup-folders.sh. Audiobookshelf issue #4471: running as non-root
+      # against a docker-created (root-owned) bind source dies with EACCES on
+      # `mkdir /metadata/streams` and never recovers on its own.
+      - ${INSTALL_DIR}/audiobookshelf/config:/config
+      - ${INSTALL_DIR}/audiobookshelf/metadata:/metadata
+      # Writable, unlike the readers: Audiobookshelf manages its own library and
+      # its podcast RSS auto-download writes new episodes into Podcasts.
+      - ${DATA_ROOT}/Media/Audiobooks:/audiobooks
+      - ${DATA_ROOT}/Media/Podcasts:/podcasts
+    logging: *logging
+    restart: unless-stopped
+
   unpackerr:
     # ghcr.io path is unpackerr/unpackerr (golift/unpackerr on Docker Hub) —
     # same image, off Docker Hub's rate limit.

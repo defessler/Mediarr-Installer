@@ -552,6 +552,9 @@ is_optin_enabled ENABLE_KAVITA && PROFILES+=("kavita")
 # neither pulls in the "vpn" sidecar.
 is_optin_enabled ENABLE_MYLAR         && PROFILES+=("mylar")
 is_optin_enabled ENABLE_LAZYLIBRARIAN && PROFILES+=("lazylibrarian")
+# Audiobooks/podcasts (Audiobookshelf) is OPT-IN too. Plain bridge service,
+# no VPN coupling.
+is_optin_enabled ENABLE_AUDIOBOOKSHELF && PROFILES+=("audiobookshelf")
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
@@ -740,6 +743,7 @@ stop_disabled_services() {
         "kavita:ENABLE_KAVITA"
         "mylar3:ENABLE_MYLAR"
         "lazylibrarian:ENABLE_LAZYLIBRARIAN"
+        "audiobookshelf:ENABLE_AUDIOBOOKSHELF"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -754,7 +758,8 @@ stop_disabled_services() {
         if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] \
            || [ "$flag" = "ENABLE_DISPATCHARR" ] || [ "$flag" = "ENABLE_LIBRARIAN" ] \
            || [ "$flag" = "ENABLE_KOMGA" ] || [ "$flag" = "ENABLE_KAVITA" ] \
-           || [ "$flag" = "ENABLE_MYLAR" ] || [ "$flag" = "ENABLE_LAZYLIBRARIAN" ]; then
+           || [ "$flag" = "ENABLE_MYLAR" ] || [ "$flag" = "ENABLE_LAZYLIBRARIAN" ] \
+           || [ "$flag" = "ENABLE_AUDIOBOOKSHELF" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -949,6 +954,7 @@ check_port_conflicts() {
     # host ports 49159/49160 (container 8090/5299).
     is_optin_enabled ENABLE_MYLAR         && pairs+=("mylar3:49159")
     is_optin_enabled ENABLE_LAZYLIBRARIAN && pairs+=("lazylibrarian:49160")
+    is_optin_enabled ENABLE_AUDIOBOOKSHELF && pairs+=("audiobookshelf:49161")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
     # separate package), so the old per-port `netstat -lnt 2>/dev/null`
@@ -1094,6 +1100,10 @@ wait_for_services() {
     # Reading acquisition: both are linuxserver Python apps that boot quickly.
     is_optin_enabled ENABLE_MYLAR         && services="$services mylar3"
     is_optin_enabled ENABLE_LAZYLIBRARIAN && services="$services lazylibrarian"
+    # Audiobookshelf is neither of those — it's a Node app on its own image, and
+    # a library rather than an acquirer. Same .State.Status readiness signal, and
+    # the same rule that this wait must not stall waiting for HTTP.
+    is_optin_enabled ENABLE_AUDIOBOOKSHELF && services="$services audiobookshelf"
 
     echo ""
     echo "  Waiting for containers to become healthy..."
