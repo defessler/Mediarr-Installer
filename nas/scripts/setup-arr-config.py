@@ -651,7 +651,7 @@ def sabnzbd_ini_set(ini_path, keyword, value):
         return False
 
 def reading_app_api_setup(label, container, ini_path, api_section,
-                          enabled_key, key_key, extra=()):
+                          enabled_key, key_key, probe_url=None, extra=()):
     """Turn on the REST API in a Mylar3 / LazyLibrarian config.ini and return
     its API key, so Prowlarr can be wired to it like any other app.
 
@@ -742,28 +742,71 @@ def reading_app_api_setup(label, container, ini_path, api_section,
     setval(api_section, enabled_key, '1')
 
     if changed:
+        # STOP, write, START — deliberately not `restart`.
+        #
+        # Both apps hold their whole config in memory and write it back out on
+        # shutdown. Writing the file under a RUNNING container and then
+        # restarting it means the app's own shutdown save lands AFTER our write
+        # and silently reverts it, so the app comes back up with the API still
+        # off. That is exactly what a live run showed: the config was written,
+        # the restart succeeded, and Prowlarr still got "API not enabled".
+        # Stopping first makes our write the last one before it reads.
+        stopped = False
+        try:
+            subprocess.run([CONTAINER_RT, 'stop', container],
+                           capture_output=True, timeout=90, text=True)
+            stopped = True
+        except Exception as e:
+            info(f"{label}: couldn't stop the container ({e}) — writing anyway")
         try:
             with open(ini_path, 'w', encoding='utf-8') as f:
                 parser.write(f)
         except Exception as e:
             warn(f"{label}: couldn't write config.ini ({e}) — skipping API setup")
+            if stopped:
+                subprocess.run([CONTAINER_RT, 'start', container],
+                               capture_output=True, timeout=90, text=True)
             return None
-        # Both apps read config.ini at process start only, so the file we just
-        # wrote is inert until the container restarts. Same reasoning as the
-        # unpackerr restart further down.
         try:
-            subprocess.run([CONTAINER_RT, 'restart', container],
-                           capture_output=True, timeout=60, text=True)
-            ok(f"{label}: API enabled, restarted to apply")
+            subprocess.run([CONTAINER_RT, 'start', container],
+                           capture_output=True, timeout=90, text=True)
         except Exception as e:
-            warn(f"{label}: config written but restart failed ({e}) — "
-                 f"restart it manually or Prowlarr sync will fail")
+            warn(f"{label}: config written but the container didn't start ({e}) — "
+                 f"start it manually, then re-run")
             return None
-        # Give the app a moment to come back before Prowlarr probes its baseUrl —
-        # add_prowlarr_app runs a synchronous reachability test and a 400 here
-        # would look like a config error rather than a timing one.
-        time.sleep(8)
-    else:
+
+    # VERIFY, rather than assume. The previous version printed "API enabled"
+    # purely because the write and restart returned without raising, which is
+    # not the same claim at all — it reported success on an install where the
+    # API was demonstrably still off. Ask the app itself.
+    if probe_url:
+        deadline = time.time() + 120
+        last = ''
+        while time.time() < deadline:
+            try:
+                req = Request(probe_url.format(key=api_key),
+                              headers={'User-Agent': 'setup-arr-config/1.0'})
+                with urlopen(req, timeout=10) as resp:
+                    body = (resp.read(400) or b'').decode('utf-8', 'replace')
+                # Both apps answer a disabled API with a plain "API not enabled"
+                # rather than an HTTP error, so a 200 alone proves nothing.
+                if 'not enabled' not in body.lower():
+                    ok(f"{label}: API enabled and answering")
+                    return api_key
+                last = body.strip()[:120]
+            except HTTPError as e:
+                last = f"HTTP {e.code}"
+            except (URLError, OSError) as e:
+                last = str(e)   # still booting, most likely
+            time.sleep(5)
+        # Deliberately a warn, not a fail: these are optional services, and the
+        # rest of the stack installed fine. Returning None also makes the caller
+        # SKIP the Prowlarr app rather than register one that can't authenticate.
+        warn(f"{label}: API still not answering after 2min ({last}) — "
+             f"enable the API in its own Settings, then re-run to wire Prowlarr")
+        return None
+
+    if not changed:
         skip(f"{label}: API already enabled")
     return api_key
 
@@ -5087,8 +5130,12 @@ def main():
         section("Mylar3")
         MYLAR_KEY = reading_app_api_setup(
             "Mylar3", "mylar3",
-            os.path.join(_install_dir, 'mylar3', 'config', 'config.ini'),
-            'API', 'api_enabled', 'api_key')
+            # lsio's mylar3 launches with `--datadir /config/mylar` (see its
+            # svc-mylar3 run script), so config.ini is one level deeper than
+            # the bind mount. Polling the shallower path just timed out.
+            os.path.join(_install_dir, 'mylar3', 'config', 'mylar', 'config.ini'),
+            'API', 'api_enabled', 'api_key',
+            probe_url=f"http://{LAN_IP}:49159/api?apikey={{key}}&cmd=getVersion")
         # ComicVine is deliberately NOT set here. It's the user's own free key
         # from comicvine.gamespot.com, there is no env var for it, and Mylar3
         # validates it on save — so it stays a documented post-install step in
@@ -5116,6 +5163,7 @@ def main():
             # case-insensitively, so this is belt and braces — but writing the
             # app's own convention keeps the file looking like it wrote it.
             'API', 'api_enabled', 'api_key',
+            probe_url=f"http://{LAN_IP}:49160/api?apikey={{key}}&cmd=getVersion",
             extra=[
                 ('General', 'show_direct_prov', '0'),
                 ('General', 'show_irc_prov', '0'),

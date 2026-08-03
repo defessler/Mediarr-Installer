@@ -148,6 +148,10 @@ interface ServiceToggle {
   key: keyof EnvFormValues
   label: string
   hint?: string
+  /** Shipped but not yet proven across a range of real NAS boxes. Renders a
+   *  small Beta chip next to the label so nobody turns one on expecting the
+   *  same maturity as the arrs, which have years of installs behind them. */
+  beta?: boolean
   /** Per-service Lucide icon. Children + scanning users pick a service by
    *  glyph (📺 Sonarr, 🎬 Radarr, 🎵 Lidarr) much faster than by reading
    *  ten near-identical bullet lines. */
@@ -172,18 +176,18 @@ const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
   { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
   { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM playlists → Plex or Jellyfin (auto-download)', icon: Music2, iconColor: 'text-green-400' },
-  { key: 'ENABLE_DISPATCHARR', label: 'Live TV & DVR', hint: 'Dispatcharr — free live channels + a DVR tuner for Plex/Jellyfin', icon: Tv, iconColor: 'text-cyan-400' },
+  { key: 'ENABLE_DISPATCHARR', label: 'Live TV & DVR', hint: 'Dispatcharr — free live channels + a DVR tuner for Plex/Jellyfin', icon: Tv, iconColor: 'text-cyan-400' , beta: true},
   { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
   { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
   { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
   { key: 'ENABLE_LIBRARIAN',   label: 'LibrARRian',   hint: 'Storage report — what is eating your disk, at what quality, and re-grabbing it', icon: HardDrive, iconColor: 'text-lime-400' },
-  { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' },
-  { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' },
-  { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' },
-  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' },
-  { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' },
+  { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' , beta: true},
+  { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' , beta: true},
+  { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' , beta: true},
+  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' , beta: true},
+  { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' , beta: true},
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
 ]
@@ -270,7 +274,14 @@ function ServicesSection({
                 <Icon size={20} className={t.iconColor} strokeWidth={1.75} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">{t.label}</div>
+                <div className="text-sm font-medium flex items-center gap-1.5">
+                  {t.label}
+                  {t.beta && (
+                    <span className="text-[10px] leading-none uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border border-sky-600/50 bg-sky-900/30 text-sky-300">
+                      Beta
+                    </span>
+                  )}
+                </div>
                 {t.hint && (
                   <div className="text-xs text-slate-400 mt-0.5">{t.hint}</div>
                 )}
