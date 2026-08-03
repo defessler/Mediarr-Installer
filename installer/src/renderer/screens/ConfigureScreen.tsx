@@ -167,36 +167,56 @@ interface ServiceToggle {
    *  toggle state — for a service whose cost the user should weigh BEFORE
    *  enabling. Unlike `needs`, it isn't gated on the toggle already being on. */
   warn?: string
+  /** Which category heading this sits under on the Configure screen.
+   *  Grouped by MEDIA TYPE rather than by role, because the question this
+   *  screen asks is "do I care about this?" — someone who doesn't read
+   *  comics can skip five rows at once instead of reading twenty. */
+  group: ServiceGroup
 }
 
-const SERVICE_TOGGLES: ServiceToggle[] = [
-  { key: 'ENABLE_PLEX',        label: 'Media server', hint: 'Plex or Jellyfin + Seerr (request system)',     icon: PlaySquare,      iconColor: 'text-amber-400' },
-  { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation',                                 icon: Tv,              iconColor: 'text-sky-400' },
-  { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation',                              icon: Film,            iconColor: 'text-yellow-400' },
-  { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400' },
-  { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'] },
-  { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM playlists → Plex or Jellyfin (auto-download)', icon: Music2, iconColor: 'text-green-400' },
-  { key: 'ENABLE_DISPATCHARR', label: 'Live TV & DVR', hint: 'Dispatcharr — free live channels + a DVR tuner for Plex/Jellyfin', icon: Tv, iconColor: 'text-cyan-400' , beta: true},
-  { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400' },
-  { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400' },
-  { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'] },
-  { key: 'ENABLE_LIBRARIAN',   label: 'LibrARRian',   hint: 'Storage report — what is eating your disk, at what quality, and re-grabbing it', icon: HardDrive, iconColor: 'text-lime-400' },
-  { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' , beta: true},
-  { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' , beta: true},
-  { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' , beta: true},
-  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' , beta: true},
-  { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' , beta: true},
-  { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400' },
-  { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300' },
+type ServiceGroup =
+  | 'watch' | 'tv' | 'music' | 'reading' | 'livetv' | 'downloads' | 'extras'
+
+/** Render order + headings. Media types first (what you want), plumbing
+ *  last (what makes it work). */
+export const SERVICE_GROUPS: { id: ServiceGroup; label: string; blurb: string }[] = [
+  { id: 'watch',     label: 'Watching',       blurb: 'The server everything plays through' },
+  { id: 'tv',        label: 'Movies & TV',    blurb: 'Find, download and organise video' },
+  { id: 'music',     label: 'Music',          blurb: 'Albums, and playlists from SiriusXM' },
+  { id: 'reading',   label: 'Books & comics', blurb: 'Plex and Jellyfin cannot serve these at all' },
+  { id: 'livetv',    label: 'Live TV',        blurb: 'Free channels and a DVR, no Plex Pass' },
+  { id: 'downloads', label: 'Downloading',    blurb: 'How files actually arrive' },
+  { id: 'extras',    label: 'Housekeeping',   blurb: 'Quality, tidying and the dashboard' },
+]
+
+export const SERVICE_TOGGLES: ServiceToggle[] = [
+  { key: 'ENABLE_PLEX',        label: 'Media server', hint: 'Plex or Jellyfin + Seerr (request system)',     icon: PlaySquare,      iconColor: 'text-amber-400', group: 'watch' },
+  { key: 'ENABLE_SONARR',      label: 'Sonarr',       hint: 'TV automation',                                 icon: Tv,              iconColor: 'text-sky-400', group: 'tv' },
+  { key: 'ENABLE_RADARR',      label: 'Radarr',       hint: 'Movie automation',                              icon: Film,            iconColor: 'text-yellow-400', group: 'tv' },
+  { key: 'ENABLE_LIDARR',      label: 'Lidarr',       hint: 'Music automation',                              icon: Music,           iconColor: 'text-fuchsia-400', group: 'music' },
+  { key: 'ENABLE_SOULSEEK',    label: 'Soulseek',     hint: 'slskd (via VPN) + soularr → Lidarr',            icon: Music2,          iconColor: 'text-pink-400',    needs: ['ENABLE_LIDARR'], group: 'music' },
+  { key: 'ENABLE_PLAYLIST_SYNC', label: 'Playlist Sync', hint: 'SiriusXM playlists → Plex or Jellyfin (auto-download)', icon: Music2, iconColor: 'text-green-400', group: 'music' },
+  { key: 'ENABLE_DISPATCHARR', label: 'Live TV & DVR', hint: 'Dispatcharr — free live channels + a DVR tuner for Plex/Jellyfin', icon: Tv, iconColor: 'text-cyan-400' , beta: true, group: 'livetv' },
+  { key: 'ENABLE_BAZARR',      label: 'Bazarr',       hint: 'Subtitle automation',                           icon: Captions,        iconColor: 'text-violet-400',  needs: ['ENABLE_SONARR', 'ENABLE_RADARR'], group: 'tv' },
+  { key: 'ENABLE_QBITTORRENT', label: 'qBittorrent',  hint: 'Torrents (+ Gluetun VPN when VPN_ENABLED)',     icon: Download,        iconColor: 'text-blue-400', group: 'downloads' },
+  { key: 'ENABLE_SABNZBD',     label: 'SABnzbd',      hint: 'Usenet downloader',                             icon: Newspaper,       iconColor: 'text-orange-400', group: 'downloads' },
+  { key: 'ENABLE_RECYCLARR',   label: 'Recyclarr',    hint: 'Quality-profile sync for *arr',                 icon: Award,           iconColor: 'text-emerald-400', needs: ['ENABLE_SONARR', 'ENABLE_RADARR'], group: 'extras' },
+  { key: 'ENABLE_UNPACKERR',   label: 'Unpackerr',    hint: 'Auto-extract download archives',                icon: Package,         iconColor: 'text-rose-400',    needs: ['ENABLE_SONARR', 'ENABLE_RADARR'], group: 'extras' },
+  { key: 'ENABLE_LIBRARIAN',   label: 'LibrARRian',   hint: 'Storage report — what is eating your disk, at what quality, and re-grabbing it', icon: HardDrive, iconColor: 'text-lime-400', group: 'extras' },
+  { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' , beta: true, group: 'reading' },
+  { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' , beta: true, group: 'reading' },
+  { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' , beta: true, group: 'reading' },
+  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' , beta: true, group: 'reading' },
+  { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' , beta: true, group: 'reading' },
+  { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400', group: 'extras' },
+  { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300', group: 'extras' },
 ]
 
 // The OPT-IN services: unlike the default-on bundle, a missing/empty
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_AUDIOBOOKSHELF'])
+export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_AUDIOBOOKSHELF'])
 
 function ServicesSection({
   config, update,
@@ -233,8 +253,21 @@ function ServicesSection({
         match the historical bundle; you can come back and re-run the wizard
         to enable a service later.
       </p>
-      <div className="grid grid-cols-2 gap-3">
-        {SERVICE_TOGGLES.map((t) => {
+      {SERVICE_GROUPS.map((g) => {
+        const rows = SERVICE_TOGGLES.filter((t) => t.group === g.id)
+        if (!rows.length) return null
+        const onHere = rows.filter((t) => isOn(t.key)).length
+        return (
+          <div key={g.id} className="space-y-2">
+            <div className="flex items-baseline gap-2 pt-1">
+              <h3 className="text-sm font-semibold text-slate-200">{g.label}</h3>
+              <span className="text-xs text-slate-500">{g.blurb}</span>
+              <span className="text-xs text-slate-600 ml-auto tabular-nums">
+                {onHere}/{rows.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+        {rows.map((t) => {
           const on = isOn(t.key)
           // "needs" check: surface a yellow hint when the user has this
           // on but none of its declared dependencies is on. We don't
@@ -304,7 +337,10 @@ function ServicesSection({
             </label>
           )
         })}
-      </div>
+            </div>
+          </div>
+        )
+      })}
     </section>
   )
 }
