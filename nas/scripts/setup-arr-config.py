@@ -1718,10 +1718,24 @@ def configure_jellyfin_notification(base, key, api, jf_apikey, jf_host='jellyfin
 # ── Prowlarr ──────────────────────────────────────────────────────────────────
 
 def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
-                     config_contract, app_internal_url, app_key, sync_categories):
+                     config_contract, app_internal_url, app_key, sync_categories,
+                     optional=False):
+    """Wire an app into Prowlarr's Applications so it receives the indexer set.
+
+    `optional=True` downgrades a failure from fail() to warn(). Use it for the
+    services that are opt-in extras rather than the spine of the stack: if
+    Prowlarr cannot reach Mylar3, comics do not work but the movies-and-TV
+    install everyone actually came for is completely fine, and reddening the
+    whole step misrepresents that. Same principle the indexer setup already
+    follows — a dead optional source warns, only a broken Prowlarr fails.
+
+    Note the failure here is NOT the same as the API-not-enabled case, which
+    reading_app_api_setup catches earlier by refusing to return a key at all.
+    This covers the remaining gap: the app's API answers on its LAN port (what
+    we probe) but Prowlarr's container-to-container call to it does not."""
     existing = GET(prowlarr_base, prowlarr_key, "/api/v1/applications")
     if existing is None:
-        fail(f"Prowlarr app {app_name}: can't reach API"); return
+        (warn if optional else fail)(f"Prowlarr app {app_name}: can't reach API"); return
     if any(a['name'] == app_name for a in existing):
         skip(f"Prowlarr app: {app_name}"); return
     schemas = GET(prowlarr_base, prowlarr_key, "/api/v1/applications/schema") or []
@@ -1783,7 +1797,12 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
         info(f"Prowlarr app: {app_name} (saved with forceSave — Prowlarr will sync "
              f"indexers to it once {app_name} is reachable)")
         return
-    fail(f"Prowlarr app: {app_name}")
+    if optional:
+        warn(f"Prowlarr app: {app_name} — not wired up. The rest of the stack is "
+             f"fine; open Prowlarr → Settings → Apps to add it by hand, or re-run "
+             f"once {app_name} is serving.")
+    else:
+        fail(f"Prowlarr app: {app_name}")
 
 def _get_or_create_tag(prowlarr_base, prowlarr_key, label):
     """Get or create a Prowlarr tag by label. Returns the tag id or None.
@@ -5151,11 +5170,11 @@ def main():
         if MYLAR_KEY:
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Mylar3", "Mylar",
                              "MylarSettings", "http://mylar3:8090", MYLAR_KEY,
-                             [7030])
+                             [7030], optional=True)
         if LAZYLIB_KEY:
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
                              "LazyLibrarianSettings", "http://lazylibrarian:5299",
-                             LAZYLIB_KEY, [3030, 7000, 7020])
+                             LAZYLIB_KEY, [3030, 7000, 7020], optional=True)
         # Prowlarr doesn't have a /config/mediamanagement endpoint
         # (no media files of its own), but it DOES have the same Bind
         # Address pitfall as the arrs — Sync Apps tests fail if
