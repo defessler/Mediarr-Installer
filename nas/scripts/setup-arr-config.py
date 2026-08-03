@@ -4139,6 +4139,17 @@ def render_homepage_services(env, ip):
             # service — a dashboard tile that just deep-links to plex.tv adds
             # clutter without a health signal. How to set up Plexamp is covered
             # on the Done screen + the Music Playback wiki page instead.
+    # The reading SERVERS belong here, not in a section of their own: from the
+    # household's point of view Komga and Kavita are media servers that happen to
+    # serve pages instead of video, and Audiobookshelf is a player. Grouping them
+    # with Plex/Jellyfin says "these are the things you consume media in", which
+    # is the distinction that actually matters when you glance at the dashboard.
+    if is_optin_enabled(env, 'ENABLE_KOMGA'):
+        media.append(block("Komga", f"http://{ip}:49158", "Comics & manga reader", "komga.png"))
+    if is_optin_enabled(env, 'ENABLE_KAVITA'):
+        media.append(block("Kavita", f"http://{ip}:49157", "Ebook reader", "kavita.png"))
+    if is_optin_enabled(env, 'ENABLE_AUDIOBOOKSHELF'):
+        media.append(block("Audiobookshelf", f"http://{ip}:49161", "Audiobooks & podcasts", "audiobookshelf.png"))
     if media:
         out.append("- Media:")
         out.extend(media)
@@ -4153,6 +4164,14 @@ def render_homepage_services(env, ip):
         automation.append(block("Radarr",   f"http://{ip}:49151", "Movie automation",   "radarr.png"))
     if is_enabled(env, 'ENABLE_LIDARR'):
         automation.append(block("Lidarr",   f"http://{ip}:49154", "Music automation",   "lidarr.png"))
+    # Mylar3 and LazyLibrarian sit with the arrs because that is exactly what
+    # they are: same Prowlarr sync, same download clients, same watch-and-grab
+    # loop, just for comics and books. Splitting them into a separate section
+    # implied they worked differently, which was misleading.
+    if is_optin_enabled(env, 'ENABLE_MYLAR'):
+        automation.append(block("Mylar3", f"http://{ip}:49159", "Comic automation", "mylar.png"))
+    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+        automation.append(block("LazyLibrarian", f"http://{ip}:49160", "Book automation", "mdi-book-search"))
     if is_enabled(env, 'ENABLE_BAZARR'):
         automation.append(block("Bazarr",   f"http://{ip}:49153", "Subtitle automation","bazarr.png"))
     automation.append(    block("Prowlarr", f"http://{ip}:49150", "Indexer manager",    "prowlarr.png"))
@@ -4255,68 +4274,6 @@ def render_homepage_services(env, ip):
             f"        icon: mdi-harddisk\n"
             f"        siteMonitor: http://{ip}:8890/"
         )
-    # Reading libraries (opt-in). Their own section rather than rows under
-    # Media, because Media is the Plex/Jellyfin group and neither of those can
-    # serve comics, manga, or ebooks at all — filing them there would imply a
-    # link that doesn't exist. Independently gated, so the section gate below
-    # is an OR and either tile can appear alone.
-    #
-    # Both tile names are asserted by post-deploy-validate.sh's EXPECTED_TILES,
-    # so rename them in both places or the validator reports a missing tile.
-    reading = []
-    if is_optin_enabled(env, 'ENABLE_KOMGA'):
-        reading.append(
-            f"    - Komga:\n"
-            f"        href: http://{ip}:49158/\n"
-            f"        description: 'Comics & manga · read in a browser, Mihon, or any OPDS app'\n"
-            f"        icon: komga.png\n"
-            f"        siteMonitor: http://{ip}:49158/"
-        )
-    if is_optin_enabled(env, 'ENABLE_KAVITA'):
-        reading.append(
-            f"    - Kavita:\n"
-            f"        href: http://{ip}:49157/\n"
-            f"        description: 'Ebooks · EPUB/PDF, KOReader sync, send-to-Kindle'\n"
-            f"        icon: kavita.png\n"
-            f"        siteMonitor: http://{ip}:49157/"
-        )
-    # Mylar3 has a real Homepage widget (key is `mylar`, NOT `mylar3`).
-    # LazyLibrarian has none upstream, so it gets a plain link tile with a
-    # siteMonitor dot but no stats. Both sit in Reading next to the readers
-    # they feed rather than under Automation with the arrs, because the user
-    # thinks of them as "the comics/books half" rather than as another arr.
-    if is_optin_enabled(env, 'ENABLE_MYLAR'):
-        reading.append(
-            f"    - Mylar3:\n"
-            f"        href: http://{ip}:49159/\n"
-            f"        description: 'Comic automation · watchlist, pull-list, auto-grab'\n"
-            f"        icon: mylar.png\n"
-            f"        siteMonitor: http://{ip}:49159/"
-        )
-    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
-        reading.append(
-            f"    - LazyLibrarian:\n"
-            f"        href: http://{ip}:49160/\n"
-            f"        description: 'Book automation · track authors, auto-grab new releases'\n"
-            f"        icon: mdi-book-search\n"
-            f"        siteMonitor: http://{ip}:49160/"
-        )
-    # Audiobookshelf has a real Homepage widget. It sits in Reading rather than
-    # Media because Media is the Plex/Jellyfin group and Audiobookshelf is its
-    # own player with its own apps, not something either server surfaces.
-    if is_optin_enabled(env, 'ENABLE_AUDIOBOOKSHELF'):
-        reading.append(
-            f"    - Audiobookshelf:\n"
-            f"        href: http://{ip}:49161/\n"
-            f"        description: 'Audiobooks & podcasts · own apps on iOS and Android'\n"
-            f"        icon: audiobookshelf.png\n"
-            f"        siteMonitor: http://{ip}:49161/"
-        )
-    if reading:
-        out.append("- Reading:")
-        out.extend(reading)
-        out.append("")
-
     # The "Update Images" tile (/pull on recyclarr-trigger) was removed:
     # `compose up -d` after the pull recreated gluetun, which severed
     # qBittorrent's `network_mode: service:gluetun` namespace and left
@@ -4498,21 +4455,6 @@ def render_homepage_settings(env):
         out.append("  Live TV:")
         out.append("    style: row")
         out.append("    columns: 1")
-    # Reading — Komga and/or Kavita, gated independently exactly like
-    # Maintenance below, so mirror the OR from render_homepage_services and
-    # size the row to how many tiles actually land in it. Skipping the entry
-    # entirely when both are off keeps Homepage from logging "layout key has no
-    # matching section". Placed before Maintenance to match the section order
-    # render_homepage_services emits.
-    reading_tiles = ((1 if is_optin_enabled(env, 'ENABLE_KOMGA') else 0)
-                     + (1 if is_optin_enabled(env, 'ENABLE_KAVITA') else 0)
-                     + (1 if is_optin_enabled(env, 'ENABLE_MYLAR') else 0)
-                     + (1 if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN') else 0)
-                     + (1 if is_optin_enabled(env, 'ENABLE_AUDIOBOOKSHELF') else 0))
-    if reading_tiles:
-        out.append("  Reading:")
-        out.append("    style: row")
-        out.append(f"    columns: {reading_tiles}")
     # Maintenance — Recyclarr and/or LibrARRian (Update Images was removed;
     # see render_homepage_services for the reason). Skip the section + its
     # layout entry entirely when BOTH are off, otherwise Homepage logs

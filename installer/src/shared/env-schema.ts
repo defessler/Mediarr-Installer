@@ -265,8 +265,7 @@ export const envObject = z.object({
   X1337_NO_KEY: optStr,
   THEPIRATEBAY_NO_KEY: optStr,
   EZTV_NO_KEY: optStr,
-  THERARBG_NO_KEY: optStr,
-  BITSEARCH_NO_KEY: optStr,
+  EBOOKBAY_NO_KEY: optStr,
   YTS_NO_KEY: optStr,
 
   // Private trackers

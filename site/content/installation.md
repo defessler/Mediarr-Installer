@@ -587,7 +587,7 @@ fully online. Open each URL in order:
 ### Prowlarr
 
 - Open `http://<nas-ip>:49150`.
-- The wizard already added free public indexers (1337x, TheRARBG, YTS, etc.).
+- The wizard already added free public indexers (1337x, The Pirate Bay, YTS, EBookBay, etc.).
 - If you have paid indexer accounts you didn't enter in the wizard, add them
   here: Indexers → Add Indexer.
 

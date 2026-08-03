@@ -100,15 +100,6 @@ def section(title):
 #                     know have flaky/in-flux upstream definitions where
 #                     the user can't usefully fix anything.
 INDEXER_OVERRIDES = {
-    # TheRARBG — Prowlarr added the definition in v1.20 (Feb 2024).
-    # Older Prowlarr builds (linuxserver image not yet rebuilt) won't
-    # have it in their schemas list. No good alias; "RARBG" itself
-    # was the discontinued original tracker, not a current schema in
-    # Prowlarr. If Prowlarr doesn't have TheRARBG, the user needs a
-    # newer Prowlarr build — not something the wizard can patch over.
-    'TheRARBG': {
-        'skip_if_missing': True,
-    },
     # AniDex — same pattern; bundled URL has been 502'ing intermittently.
     # Their primary domain is anidex.info; if Prowlarr's bundled URL
     # has drifted we'll pin it.
@@ -125,9 +116,9 @@ PUBLIC_TORRENT_INDEXERS = [
     "EZTV",
     "The Pirate Bay",
     "Knaben",            # Large Norwegian index, excellent general coverage
-    # TheRARBG — community-run successor to RARBG (which shut down in
-    # 2023). Public, no auth. Prowlarr ships a definition.
-    "TheRARBG",
+    # NB: TheRARBG was removed. It is on Prowlarr's PERMANENT exclusion list
+    # (scripts/blocklist.txt), so the definition is gone and is never coming
+    # back — the entry only ever skipped silently via skip_if_missing.
     # NB: Bitsearch and Solidtorrents were removed from Prowlarr's
     # indexer DB upstream (renamed / discontinued). Adding them here
     # just produced `not found in Prowlarr` failures during install
@@ -139,6 +130,21 @@ PUBLIC_TORRENT_INDEXERS = [
     "SubsPlease",        # Simulcast rips — best for current-season anime
     "Tokyo Toshokan",    # Japanese media (long-running, broad)
     "AniDex",            # Anime / manga / Asian video, public
+    # ── Books / comics ────────────────────────────────────────────────────────
+    # Feeds Mylar3 (comics, cat 7030) and LazyLibrarian (books 7000/7020,
+    # audiobooks 3030). Worth knowing before you go looking for more: the
+    # general trackers above ALREADY carry these categories — The Pirate Bay,
+    # 1337x and Knaben all map 7030 plus the book cats, and AniDex covers manga
+    # and light novels. EBookBay is the one dedicated source in Prowlarr's whole
+    # catalog that is public, needs no account (its definition has `settings: []`
+    # and no login block), and is in English.
+    #
+    # Prowlarr ships NO shadow-library definitions at all — no Library Genesis,
+    # no Anna's Archive, no Z-Library — so there is nothing here to exclude and
+    # the stack's posture holds automatically at this layer. LazyLibrarian's OWN
+    # built-in providers are the place that matters, and setup-arr-config.py
+    # writes those off.
+    "EBookBay",          # Ebooks + audiobooks + comics, public, no account
 ]
 
 # Newznab-compatible usenet indexers.

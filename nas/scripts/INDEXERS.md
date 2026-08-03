@@ -65,6 +65,7 @@ The wizard adds all three to Prowlarr at install time. Together they cover ~80% 
 | **EZTV** | https://eztv.re | TV (English) | TV-only catalogue, RSS-friendly. |
 | **Knaben** | https://knaben.org | General (Scandinavian-flavoured) | Norwegian-run general index with surprisingly good worldwide coverage; well-categorised. |
 | **ShowRSS** | https://showrss.info | TV (English) | Curated RSS feeds for TV shows — handy as a Sonarr "always-on" feed for popular shows. |
+| **EBookBay** | https://ebookbay.li | Ebooks, audiobooks, comics | The one dedicated books source in Prowlarr's whole catalogue that is public and English. Feeds LazyLibrarian (books + audiobooks) and Mylar3 (comics). Worth knowing: 1337x, The Pirate Bay and Knaben already carry those categories too, so this widens coverage rather than unlocking it. |
 
 The wizard adds all of these to Prowlarr automatically. You'll get them on a fresh install with no extra config.
 
@@ -182,6 +183,7 @@ A non-exhaustive list of indexers we deliberately don't ship + the reason:
 | **Newzleech** | Public free usenet indexer that's been intermittently down for years. Not stable enough to default-add. |
 | **NZBIndex.com** | Freemium, but free tier is heavily ad-loaded + has download-count limits. Doesn't add coverage AnimeTosho doesn't already provide. |
 | **Solidtorrents / BitSearch** | Removed from Prowlarr's upstream indexer DB (renamed / discontinued). Adding them produces "indexer not found" errors at install. |
+| **TheRARBG** | On Prowlarr's permanent exclusion list, so the definition is gone for good. It was silently skipped rather than erroring, which is why it sat in the catalog so long. |
 | **Anidex** | Currently slow + sparsely-populated. Nyaa covers what it offers. |
 | **Pantheon, Tracker01, ...** | Long tail of private trackers without strong English-language onboarding. Out of scope for a turnkey installer. |
 | **MyAnonamouse** | The best ebook/audiobook tracker there is, and genuinely useful if you run LazyLibrarian or Audiobookshelf. Not auto-added because it's invite-only with an interview-based signup, so there's nothing a wizard can do for you. Add it in Prowlarr yourself once you have an account. |

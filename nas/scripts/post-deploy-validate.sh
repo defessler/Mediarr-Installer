@@ -811,8 +811,11 @@ if is_enabled ENABLE_HOMEPAGE; then
         is_optin_enabled ENABLE_KAVITA && EXPECTED_TILES+=("ENABLE_KAVITA:Kavita")
         is_optin_enabled ENABLE_MYLAR  && EXPECTED_TILES+=("ENABLE_MYLAR:Mylar3")
         is_optin_enabled ENABLE_AUDIOBOOKSHELF && EXPECTED_TILES+=("ENABLE_AUDIOBOOKSHELF:Audiobookshelf")
-        # LazyLibrarian has NO Homepage widget upstream, so it gets a plain
-        # bookmark tile rather than a service tile — nothing to assert here.
+        # LazyLibrarian has no Homepage WIDGET upstream (so no live stats), but
+        # it does get an ordinary tile with a status dot — and this check is
+        # about the tile existing, not about widget stats. It was being skipped
+        # on reasoning that didn't apply.
+        is_optin_enabled ENABLE_LAZYLIBRARIAN && EXPECTED_TILES+=("ENABLE_LAZYLIBRARIAN:LazyLibrarian")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

@@ -272,8 +272,7 @@ export interface EnvFormValues {
   X1337_NO_KEY?: string
   THEPIRATEBAY_NO_KEY?: string
   EZTV_NO_KEY?: string
-  THERARBG_NO_KEY?: string
-  BITSEARCH_NO_KEY?: string
+  EBOOKBAY_NO_KEY?: string
   YTS_NO_KEY?: string
 
   // ── Additional private trackers (TV / movies / music / general)
@@ -968,20 +967,12 @@ export const PUBLIC_TRACKERS: IndexerDef[] = [
     tags: ['tv', 'no-signup'],
   },
   {
-    id: 'THERARBG_NO_KEY', name: 'TheRARBG',
-    href: 'https://therarbg.com',
-    note: 'RARBG community successor. General-purpose, no account.',
+    id: 'EBOOKBAY_NO_KEY', name: 'EBookBay',
+    href: 'https://ebookbay.li',
+    note: 'Ebooks, audiobooks and comics. No account. Feeds LazyLibrarian and Mylar3.',
     fields: [],
     category: 'tracker-public',
-    tags: ['general', 'no-signup'],
-  },
-  {
-    id: 'BITSEARCH_NO_KEY', name: 'BitSearch',
-    href: 'https://bitsearch.to',
-    note: 'Federated torrent search engine. No account.',
-    fields: [],
-    category: 'tracker-public',
-    tags: ['general', 'no-signup'],
+    tags: ['books', 'no-signup'],
   },
   // ── Specialty public ──────────────────────────────────────────
   {
