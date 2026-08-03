@@ -82,40 +82,48 @@ def section(title):
 # ACCOUNT_PROVIDERS: enabled only if credentials are in .env.
 # Each entry: (display_name, provider_id, settings_key, {field: env_var, ...})
 
+# Only providers that are (a) still in Bazarr's own registry and (b) need no
+# account. Verified against morpheus65535/bazarr frontend/.../Providers/list.ts:
+# a key that is absent there is a provider Bazarr has removed, and configuring
+# it does nothing useful.
+#
+# REMOVED and why — keep this list, it is the reason not to re-add them:
+#   Subscene    — site shut down 2024-05-03; Bazarr dropped it in v1.4.3.
+#   Podnapisi   — Bazarr dropped it in v1.6.0 (2026-06-29) and podnapisi.net
+#                 no longer resolves. We were still configuring it.
+#   BSPlayer    — never add. Its key still EXISTS in Bazarr so it configures
+#                 without error, but Bazarr's own description says it "will
+#                 always return no subtitles". A silent no-op is worse than
+#                 a loud failure.
+#   Subdivx     — Bazarr dropped it in v1.5.6.
 FREE_PROVIDERS = [
-    ("YIFY Subtitles",  "yifysubtitles"),
-    ("Podnapisi",       "podnapisi"),
+    # Local-only: reads subtitle tracks already muxed into the file via ffprobe.
+    # No network, no account, nothing to break — the single most reliable
+    # provider available, and it costs nothing to have on.
+    ("Embedded Subtitles", "embeddedsubtitles"),
+    ("Gestdown",        "gestdown"),       # Addic7ed's content, no account
     ("TVSubtitles",     "tvsubtitles"),
-    # Subscene shut down in mid-2024. Adding it to Bazarr's enabled list
-    # either errors or no-ops and breaks the all-providers POST that
-    # saves the rest of the batch. Subf2m is the community successor.
-    ("Subf2m",          "subf2m"),
-    ("Gestdown",        "gestdown"),       # Addic7ed mirror, no account needed
-    ("SuperSubtitles",  "supersubtitles"),
+    ("Subf2m",          "subf2m"),         # the Subscene successor
+    ("YIFY Subtitles",  "yifysubtitles"),
 ]
 
 ACCOUNT_PROVIDERS = [
-    # OpenSubtitles.com is the modern API (v2); .org's legacy XMLRPC is
-    # being phased out by Bazarr upstream and accounts are NOT shared
-    # between the two sites. Prefer .com — only register .org as a
-    # fallback for users who still have legacy creds.
+    # OpenSubtitles.com is the ONLY credentialed provider worth prompting for.
+    #
+    # OpenSubtitles.ORG was removed: OpenSubtitles posted a final shutdown
+    # notice on 2026-01-29 ending .org API access for every third-party app,
+    # and Bazarr deleted the provider the next day (v1.5.5). Its key is gone
+    # from Bazarr's registry entirely, so we were configuring nothing.
+    #
+    # Addic7ed was removed as a DEFAULT, not because it is dead: Bazarr's own
+    # description says it "Requires Anti-Captcha Provider or cookies", which is
+    # a support burden for a household installer. Gestdown above serves the same
+    # Addic7ed content with no account at all, so the content is not lost.
     (
         "OpenSubtitles.com",
         "opensubtitlescom",
         "opensubtitlescom",
         {"username": "OPENSUBTITLESCOM_USER", "password": "OPENSUBTITLESCOM_PASS"},
-    ),
-    (
-        "OpenSubtitles.org (legacy)",
-        "opensubtitles",
-        "opensubtitles",
-        {"username": "OPENSUBTITLES_USER", "password": "OPENSUBTITLES_PASS"},
-    ),
-    (
-        "Addic7ed",
-        "addic7ed",
-        "addic7ed",
-        {"username": "ADDIC7ED_USER", "password": "ADDIC7ED_PASS"},
     ),
 ]
 

@@ -277,6 +277,7 @@ export interface EnvFormValues {
 
   // ── Additional private trackers (TV / movies / music / general)
   BTN_API_KEY?: string
+  MYANONAMOUSE_MAM_ID?: string
   MTV_API_KEY?: string
   PTP_USER?: string
   PTP_KEY?: string
@@ -687,6 +688,7 @@ export function renderEnv(v: EnvFormValues): string {
     line('RUTRACKER_USER', v.RUTRACKER_USER),
     line('RUTRACKER_PASS', v.RUTRACKER_PASS),
     line('BTN_API_KEY', v.BTN_API_KEY),
+    line('MYANONAMOUSE_MAM_ID', v.MYANONAMOUSE_MAM_ID),
     line('MTV_API_KEY', v.MTV_API_KEY),
     line('PTP_USER', v.PTP_USER),
     line('PTP_KEY', v.PTP_KEY),
@@ -859,13 +861,6 @@ export const USENET_INDEXERS: IndexerDef[] = [
     tags: ['general', 'paid'],
   },
   {
-    id: 'NZBCAT_API_KEY', name: 'NZB.cat',
-    href: 'https://nzb.cat', note: 'Paid account.',
-    fields: [{ key: 'NZBCAT_API_KEY', label: 'API key' }],
-    category: 'usenet-paid',
-    tags: ['general', 'paid'],
-  },
-  {
     id: 'DRUNKENSLUG_API_KEY', name: 'DrunkenSlug',
     href: 'https://drunkenslug.com', note: 'Invite-only.',
     fields: [{ key: 'DRUNKENSLUG_API_KEY', label: 'API key' }],
@@ -896,7 +891,7 @@ export const USENET_INDEXERS: IndexerDef[] = [
     tags: ['general', 'paid'],
   },
   {
-    id: 'NZBSU_API_KEY', name: 'NZB.su',
+    id: 'NZBSU_API_KEY', name: 'NZB.life (was NZB.su)',
     href: 'https://nzb.su',
     note: 'Paid account. General-purpose, long-running indexer.',
     fields: [{ key: 'NZBSU_API_KEY', label: 'API key' }],
@@ -1017,7 +1012,7 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
     tags: ['anime', 'invite-only'],
   },
   {
-    id: 'ANIMETORRENTS_USER', name: 'AnimeTorrents', href: 'https://animetorrents.me',
+    id: 'ANIMETORRENTS_USER', name: 'AnimeZ (was AnimeTorrents)', href: 'https://animez.to',
     note: 'Anime (application-based).',
     fields: [
       { key: 'ANIMETORRENTS_USER', label: 'Username' },
@@ -1046,7 +1041,7 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
     tags: ['general', 'paid'],
   },
   {
-    id: 'HDTORRENTS_USER', name: 'HD-Torrents', href: 'https://hd-torrents.org',
+    id: 'HDTORRENTS_USER', name: 'HD-Torrents', href: 'https://hdts.ru',
     note: 'High-definition movies + TV, private tracker.',
     fields: [
       { key: 'HDTORRENTS_USER', label: 'Username' },
@@ -1076,6 +1071,14 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
     fields: [{ key: 'BTN_API_KEY', label: 'API key' }],
     category: 'tracker-private',
     tags: ['tv', 'invite-only'],
+  },
+  {
+    id: 'MYANONAMOUSE_MAM_ID', name: 'MyAnonamouse (books, audiobooks, comics)',
+    href: 'https://www.myanonamouse.net',
+    note: 'The one private tracker that covers all three reading services. Auth is a session ID, not a password: Preferences → Security → mam_id. Invite-only with an interview.',
+    fields: [{ key: 'MYANONAMOUSE_MAM_ID', label: 'mam_id session' }],
+    category: 'tracker-private',
+    tags: ['books', 'torrent', 'application'],
   },
   {
     id: 'MTV_API_KEY', name: 'MoreThanTV (MTV)', href: 'https://www.morethantv.me',
@@ -1118,29 +1121,11 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
 // misleading "usenet" pill. 'subtitles' derives the accurate kind + 'free'.
 export const BAZARR_PROVIDERS: IndexerDef[] = [
   {
-    id: 'OPENSUBTITLES_USER', name: 'OpenSubtitles.org',
-    href: 'https://www.opensubtitles.org', note: 'Free account.',
-    fields: [
-      { key: 'OPENSUBTITLES_USER', label: 'Username' },
-      { key: 'OPENSUBTITLES_PASS', label: 'Password', password: true },
-    ],
-    category: 'subtitles',
-  },
-  {
     id: 'OPENSUBTITLESCOM_USER', name: 'OpenSubtitles.com',
     href: 'https://www.opensubtitles.com', note: 'Free account; larger DB.',
     fields: [
       { key: 'OPENSUBTITLESCOM_USER', label: 'Username' },
       { key: 'OPENSUBTITLESCOM_PASS', label: 'Password', password: true },
-    ],
-    category: 'subtitles',
-  },
-  {
-    id: 'ADDIC7ED_USER', name: 'Addic7ed',
-    href: 'https://www.addic7ed.com', note: 'Free account.',
-    fields: [
-      { key: 'ADDIC7ED_USER', label: 'Username' },
-      { key: 'ADDIC7ED_PASS', label: 'Password', password: true },
     ],
     category: 'subtitles',
   },

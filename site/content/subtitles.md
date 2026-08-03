@@ -35,7 +35,9 @@ The installer enables some free providers out of the box. For a much higher hit 
 2. Find **OpenSubtitles.com** (not .org, they are separate) and click the pencil icon.
 3. Enter your username and password and save.
 
-You can also add **Addic7ed** and **OpenSubtitles.org** the same way. The installer's Configure screen has a **Bazarr subtitle providers** section where you can enter these credentials up front if you'd prefer to supply them during a re-run.
+The installer's Configure screen has a **Bazarr subtitle providers** section where you can enter that credential up front if you'd prefer to supply it during a re-run.
+
+OpenSubtitles.org and Addic7ed used to be offered here and no longer are. OpenSubtitles shut the .org API down for third-party apps in January 2026 and Bazarr removed the provider outright, so there was nothing left to configure. Addic7ed still works but needs an anti-captcha service or hand-copied cookies, which is a lot of setup for content you already get through Gestdown with no account at all.
 
 ## Grabbing subs for existing media
 

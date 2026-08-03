@@ -176,14 +176,23 @@ USENET_INDEXERS = [
     ("NZBFinder",      "https://www.nzbfinder.ws",         "NZBFINDER_API_KEY",     None),
     ("DrunkenSlug",    "https://api.drunkenslug.com",      "DRUNKENSLUG_API_KEY",   None),
     ("NZBPlanet",      "https://api.nzbplanet.net",        "NZBPLANET_API_KEY",     None),
-    ("NZBcat",         "https://nzb.cat",                  "NZBCAT_API_KEY",        None),
+    # NZBcat REMOVED — the domain's nameservers answer nothing (Google DNS and
+    # Cloudflare both SERVFAIL; Cloudflare returns the explicit
+    # "No Reachable Authority at delegation nzb.cat"). Prowlarr still ships an
+    # NZBCat preset pointing at the dead host, so do NOT read that as a sign it
+    # came back. NZBCAT_API_KEY stays a valid .env key so an existing profile
+    # still validates; it is simply never used.
     ("DogNZB",         "https://api.dognzb.cr",            "DOGNZB_API_KEY",        None),
     ("NinjaCentral",   "https://www.ninjacentral.co.za",   "NINJACZENTRAL_API_KEY", None),
     ("Tabula Rasa",    "https://www.tabula-rasa.pw",       "TABULARASA_API_KEY",    None),
     # NZB.su — long-running general-purpose paid indexer. Added by
     # name (Prowlarr ships a definition) using the standard Newznab
     # template; the env var holds the user's API key.
-    ("NZB.su",         "https://nzb.su",                   "NZBSU_API_KEY",         None),
+    # nzb.life is the current name — Prowlarr renamed the preset from nzb.su in
+    # 2025-09. Both hostnames still answer and serve the same backend (identical
+    # caps, same contact address), but match Prowlarr's URL so the definition
+    # lookup keeps working.
+    ("NZB.su",         "https://api.nzb.life",             "NZBSU_API_KEY",         None),
 ]
 
 # Private torrent trackers — added only if credentials are set in .env.
@@ -196,7 +205,12 @@ PRIVATE_TORRENT_INDEXERS = [
                                             "pid":      "AVISTAZ_PID"}),
     ("HHD",             "HHD",             {"apiKey":   "HHD_API_KEY"}),
     # Anime
-    ("AnimeTorrents",   "AnimeTorrents",   {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS"}),
+    # AnimeZ — formerly AnimeTorrents. Prowlarr deleted AnimeTorrents.cs and
+    # replaced it with AnimeZ.cs (March 2026) after the site rebranded to
+    # animez.to; the old config returned 404s. Configuring the literal name
+    # "AnimeTorrents" fails on any current Prowlarr. Env keys keep their old
+    # names so existing .env files keep working.
+    ("AnimeZ",          "AnimeZ",          {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS"}),
     ("AnimeBytes",      "AnimeBytes",      {"username": "ANIMEBYTES_USER",    "password": "ANIMEBYTES_PASS"}),
     # General-purpose. Cookie-based auth (no username/password) — user
     # logs in via browser, copies the entire session cookie, pastes it
@@ -214,6 +228,15 @@ PRIVATE_TORRENT_INDEXERS = [
     # BroadcasTheNet — premier TV-only private tracker. API key from
     # Profile → Edit → Authentication keys.
     ("BroadcasTheNet",  "BroadcasTheNet",  {"apiKey":   "BTN_API_KEY"}),
+    # ── Books / comics / audiobooks ─────────────────────────────────
+    # MyAnonamouse — the one private tracker that genuinely serves the reading
+    # services: ebooks, audiobooks AND comics (its cat 61 "Ebooks -
+    # Comics/Graphic novels" maps to BooksComics). Auth is a session cookie
+    # (mam_id) from Preferences → Security, not a username/password. Invite-only
+    # with an interview, so it can never be auto-added — but offering the field
+    # means someone who HAS an account can wire it up during install instead of
+    # discovering afterwards that we never asked.
+    ("MyAnonamouse",    "MyAnonamouse",    {"mamId":    "MYANONAMOUSE_MAM_ID"}),
     # MoreThanTV — TV-focused; API key from Settings → Access.
     ("MoreThanTV",      "MoreThanTV",      {"apiKey":   "MTV_API_KEY"}),
     # ── Movies-focused private ──────────────────────────────────────

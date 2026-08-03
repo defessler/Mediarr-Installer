@@ -186,6 +186,6 @@ A non-exhaustive list of indexers we deliberately don't ship + the reason:
 | **TheRARBG** | On Prowlarr's permanent exclusion list, so the definition is gone for good. It was silently skipped rather than erroring, which is why it sat in the catalog so long. |
 | **Anidex** | Currently slow + sparsely-populated. Nyaa covers what it offers. |
 | **Pantheon, Tracker01, ...** | Long tail of private trackers without strong English-language onboarding. Out of scope for a turnkey installer. |
-| **MyAnonamouse** | The best ebook/audiobook tracker there is, and genuinely useful if you run LazyLibrarian or Audiobookshelf. Not auto-added because it's invite-only with an interview-based signup, so there's nothing a wizard can do for you. Add it in Prowlarr yourself once you have an account. |
+| **MyAnonamouse** | The best ebook/audiobook tracker there is, and it serves comics too (its "Ebooks - Comics/Graphic novels" category maps to BooksComics), so it covers all three reading services. Still invite-only with an interview, so it is never auto-added — but the wizard now has a field for its `mam_id` session so you can wire it up during install if you already have an account. |
 
 If you need an indexer not on this list, you can always add it directly in Prowlarr's UI after install — the wizard's auto-add is a sensible default, not a hard limit.

@@ -284,6 +284,7 @@ export const envObject = z.object({
   RUTRACKER_USER: optStr,
   RUTRACKER_PASS: optStr,
   BTN_API_KEY: optStr,
+  MYANONAMOUSE_MAM_ID: optStr,
   MTV_API_KEY: optStr,
   PTP_USER: optStr,
   PTP_KEY: optStr,
