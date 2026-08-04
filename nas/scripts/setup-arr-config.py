@@ -1758,15 +1758,34 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
     if schema:
         schema['name'] = app_name
         schema['syncLevel'] = 'fullSync'
-        fm = {f['name']: i for i, f in enumerate(schema.get('fields', []))}
+        # Case-INSENSITIVE field match, for the same reason setup-indexers.py's
+        # _set_field_case_insensitive exists: Prowlarr's schemas don't agree with
+        # themselves about casing across implementations. A case-sensitive index
+        # silently drops any field whose real name is spelled differently, and a
+        # dropped apiKey/baseUrl is invisible here — the POST is still well-formed,
+        # so Prowlarr answers 400 from its reachability test ("cannot connect")
+        # and every layer downstream reports a connectivity problem for what is
+        # actually an empty field. Track what we missed and say so.
+        fm = {f.get('name', '').lower(): i
+              for i, f in enumerate(schema.get('fields', []))}
+        missed = []
         for fname, fval in {
             'prowlarrUrl':    'http://prowlarr:9696',
             'baseUrl':        app_internal_url,
             'apiKey':         app_key,
             'syncCategories': sync_categories,
         }.items():
-            if fname in fm:
-                schema['fields'][fm[fname]]['value'] = fval
+            idx = fm.get(fname.lower())
+            if idx is None:
+                missed.append(fname)
+            else:
+                schema['fields'][idx]['value'] = fval
+        if missed:
+            names = [f.get('name', '?') for f in schema.get('fields', [])]
+            warn(f"Prowlarr app {app_name}: schema has no field(s) "
+                 f"{', '.join(missed)} — the app will be saved with those unset "
+                 f"and is likely to fail its connection test.")
+            info(f"  Schema fields Prowlarr offered: {', '.join(names)}")
         data = schema
     else:
         data = {
@@ -1808,16 +1827,34 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
             return True
     # Last resort: skip the connectivity test so the app is at least registered;
     # Prowlarr pushes its indexers to it on the next sync once it's reachable.
-    if POST(prowlarr_base, prowlarr_key, "/api/v1/applications?forceSave=true", data):
+    #
+    # POST_status, not POST: when even forceSave fails we want the HTTP code to
+    # say WHY. forceSave bypasses the reachability test, so a failure here is
+    # never "the app is down" — it's 401 (our Prowlarr key is wrong), 400 (a
+    # body Prowlarr rejects, e.g. a field we never populated) or None (Prowlarr
+    # itself unreachable). Those need completely different fixes, and the old
+    # message sent everyone to "add it by hand" regardless.
+    forced, code = POST_status(prowlarr_base, prowlarr_key,
+                               "/api/v1/applications?forceSave=true", data)
+    if forced is not None:
         info(f"Prowlarr app: {app_name} (saved with forceSave — Prowlarr will sync "
              f"indexers to it once {app_name} is reachable)")
-        return
+        return True
+    # Previously a bare `return`, which handed back None. The contract here is
+    # True/False, and the LazyLibrarian caller branches on it to decide whether
+    # to warn that the app has no search sources at all — so a None from the
+    # SUCCESS path read as failure and printed the scary zero-providers warning
+    # about an app that had just been wired up fine.
+    detail = {401: "Prowlarr rejected our API key (401)",
+              400: "Prowlarr rejected the request body (400)",
+              404: "Prowlarr has no such application type (404)"}.get(
+                  code, f"HTTP {code}" if code else "no response from Prowlarr")
     if optional:
-        warn(f"Prowlarr app: {app_name} — not wired up. The rest of the stack is "
-             f"fine; open Prowlarr → Settings → Apps to add it by hand, or re-run "
-             f"once {app_name} is serving.")
+        warn(f"Prowlarr app: {app_name} — not wired up ({detail}). The rest of "
+             f"the stack is fine; open Prowlarr → Settings → Apps to add it by "
+             f"hand, or re-run once {app_name} is serving.")
     else:
-        fail(f"Prowlarr app: {app_name}")
+        fail(f"Prowlarr app: {app_name} ({detail})")
     return False
 
 def _get_or_create_tag(prowlarr_base, prowlarr_key, label):
@@ -5199,9 +5236,15 @@ def main():
         # Torznab/Newznab lane at all, so it stays a documented standalone
         # recipe rather than an app here.
         if MYLAR_KEY:
-            add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Mylar3", "Mylar",
-                             "MylarSettings", "http://mylar3:8090", MYLAR_KEY,
-                             [7030], optional=True)
+            if not add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Mylar3", "Mylar",
+                                    "MylarSettings", "http://mylar3:8090", MYLAR_KEY,
+                                    [7030], optional=True):
+                # Same shape as the LazyLibrarian warning below. Mylar3 keeps its
+                # own providers, so this isn't the total-blackout case, but with
+                # no Prowlarr link it searches nothing the rest of the stack can
+                # see and its UI gives no hint why results come back empty.
+                warn("Mylar3 has no indexers: the Prowlarr sync above did not "
+                     "land, so comic searches will find nothing until it does.")
         if LAZYLIB_KEY:
             wired = add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
                                      "LazyLibrarianSettings", "http://lazylibrarian:5299",
