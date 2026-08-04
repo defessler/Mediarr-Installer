@@ -803,6 +803,7 @@ const FIELD_LABELS: Record<string, string> = {
   DISPATCHARR_ADMIN_USER: 'Live TV admin username',
   DISPATCHARR_ADMIN_PASS: 'Live TV admin password',
   LIVETV_CHANNEL_PACKS: 'Live TV channel packs',
+  MYLAR_COMICVINE_KEY: 'ComicVine API key',
   ENABLE_LIBRARIAN: 'LibrARRian',
   LIBRARIAN_ALLOW_ACTIONS: 'LibrARRian re-grab actions',
   LIBRARIAN_MAX_BATCH: 'LibrARRian batch cap',
@@ -1581,6 +1582,52 @@ export function ConfigureScreen() {
           <p className="text-sm text-slate-500">
             Storage report is off. Enable{' '}
             <span className="font-medium text-slate-300">LibrARRian</span> in the
+            Services group above to configure it.
+          </p>
+        )}
+      </CollapsibleGroup>
+
+      {/* ── Group: Reading ──────────────────────────────────────
+          Mylar3's ComicVine key lives here rather than in the indexer
+          credential catalogue: it isn't a tracker login, it's the metadata
+          source Mylar3 cannot run a search without. The .env key, the
+          schema and the renderer all shipped in v0.31.0 with no input
+          bound to them, so the only way to set it was to hand-edit .env.
+          Mylar3 without a key answers a search with an EMPTY page rather
+          than an error (webserve.py returns bare when COMICVINE_API is
+          None), so the missing field presented as a broken app. */}
+      <CollapsibleGroup
+        id="reading"
+        title="Comics &amp; books"
+        icon={<BookCopy size={20} className="text-orange-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="Mylar3's ComicVine key"
+        open={!!openGroups.reading}
+        onToggle={() => toggleGroup('reading')}
+      >
+        {isOptInEnabled(config.ENABLE_MYLAR as string | undefined) ? (
+          <section className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Mylar3 looks up every comic through{' '}
+              <span className="font-medium text-slate-300">ComicVine</span>, so it needs a
+              free API key to search at all. Without one the search page comes back{' '}
+              <span className="font-medium text-slate-300">completely blank</span>, with
+              no error to explain why, so it's worth setting here.
+            </p>
+            <Field
+              label="ComicVine API key"
+              k="MYLAR_COMICVINE_KEY"
+              placeholder="Optional, but comic search will not work without it"
+            />
+            <p className="text-xs text-slate-500">
+              Grab one free at{' '}
+              <a href="https://comicvine.gamespot.com/api/" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">comicvine.gamespot.com/api</a>.
+              You can also paste it into Mylar3 later under Settings -&gt; ComicVine.
+            </p>
+          </section>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Comic automation is off. Enable{' '}
+            <span className="font-medium text-slate-300">Mylar3</span> in the
             Services group above to configure it.
           </p>
         )}
