@@ -199,6 +199,11 @@ export interface EnvFormValues {
    *  Prowlarr Application, so it uses the indexers already configured here and
    *  hands transfers to SABnzbd/qBittorrent. Needs a free ComicVine key pasted
    *  into its own UI post-install. A missing key counts as OFF. */
+  /** Free ComicVine API key (comicvine.gamespot.com/api). Optional, but
+   *  without it Mylar3's search renders a BLANK PAGE — it returns early with
+   *  no body rather than showing an error — so it is worth collecting up
+   *  front instead of leaving as a post-install step nobody discovers. */
+  MYLAR_COMICVINE_KEY?: string
   ENABLE_MYLAR?: string
   /** Whether to install LazyLibrarian: book automation on ${LAN_IP}:49160, also
    *  a native Prowlarr Application. setup-arr-config.py writes its built-in
@@ -637,6 +642,7 @@ export function renderEnv(v: EnvFormValues): string {
     '# providers built in; the installer writes those OFF and uses the',
     '# Prowlarr-fed path instead.',
     line('ENABLE_MYLAR', isOptInEnabled(v.ENABLE_MYLAR) ? 'true' : 'false'),
+    line('MYLAR_COMICVINE_KEY', v.MYLAR_COMICVINE_KEY),
     line('ENABLE_LAZYLIBRARIAN', isOptInEnabled(v.ENABLE_LAZYLIBRARIAN) ? 'true' : 'false'),
     '',
     '# Audiobooks and podcasts. OPT-IN; off by default, via isOptInEnabled.',

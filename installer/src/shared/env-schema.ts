@@ -66,6 +66,7 @@ export const envObject = z.object({
   // setup-arr-config.py, so there is no credential here to escalate to
   // required. A missing key stays OFF everywhere.
   ENABLE_MYLAR: optStr,
+  MYLAR_COMICVINE_KEY: optStr,
   ENABLE_LAZYLIBRARIAN: optStr,
   // OPT-IN (default off). Library-only, no credentials, no superRefine entry.
   ENABLE_AUDIOBOOKSHELF: optStr,

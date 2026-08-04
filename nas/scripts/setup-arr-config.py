@@ -1750,9 +1750,9 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
     we probe) but Prowlarr's container-to-container call to it does not."""
     existing = GET(prowlarr_base, prowlarr_key, "/api/v1/applications")
     if existing is None:
-        (warn if optional else fail)(f"Prowlarr app {app_name}: can't reach API"); return
+        (warn if optional else fail)(f"Prowlarr app {app_name}: can't reach API"); return False
     if any(a['name'] == app_name for a in existing):
-        skip(f"Prowlarr app: {app_name}"); return
+        skip(f"Prowlarr app: {app_name}"); return True
     schemas = GET(prowlarr_base, prowlarr_key, "/api/v1/applications/schema") or []
     schema  = next((s for s in schemas if s.get('implementation') == implementation), None)
     if schema:
@@ -1784,7 +1784,7 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
     result = POST(prowlarr_base, prowlarr_key, "/api/v1/applications", data)
     if result:
         ok(f"Prowlarr app: {app_name}")
-        return
+        return True
 
     # Prowlarr's POST /applications runs a SYNCHRONOUS reachability test of the
     # arr's baseUrl and returns 400 WITHOUT saving if it fails. Step 7 wires apps
@@ -1801,11 +1801,11 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
         verify = GET(prowlarr_base, prowlarr_key, "/api/v1/applications")
         if verify and any(a['name'] == app_name for a in verify):
             ok(f"Prowlarr app: {app_name} (added on retry {attempt})")
-            return
+            return True
         result = POST(prowlarr_base, prowlarr_key, "/api/v1/applications", data)
         if result:
             ok(f"Prowlarr app: {app_name} (added on retry {attempt})")
-            return
+            return True
     # Last resort: skip the connectivity test so the app is at least registered;
     # Prowlarr pushes its indexers to it on the next sync once it's reachable.
     if POST(prowlarr_base, prowlarr_key, "/api/v1/applications?forceSave=true", data):
@@ -1818,6 +1818,7 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
              f"once {app_name} is serving.")
     else:
         fail(f"Prowlarr app: {app_name}")
+    return False
 
 def _get_or_create_tag(prowlarr_base, prowlarr_key, label):
     """Get or create a Prowlarr tag by label. Returns the tag id or None.
@@ -5104,6 +5105,7 @@ def main():
     _install_dir = env.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
     if is_optin_enabled(env, 'ENABLE_MYLAR'):
         section("Mylar3")
+        _cv_key = (env.get('MYLAR_COMICVINE_KEY') or '').strip()
         MYLAR_KEY = reading_app_api_setup(
             "Mylar3", "mylar3",
             # lsio's mylar3 launches with `--datadir /config/mylar` (see its
@@ -5111,14 +5113,28 @@ def main():
             # the bind mount. Polling the shallower path just timed out.
             os.path.join(_install_dir, 'mylar3', 'config', 'mylar', 'config.ini'),
             'API', 'api_enabled', 'api_key',
-            probe_url=f"http://{LAN_IP}:49159/api?apikey={{key}}&cmd=getVersion")
+            probe_url=f"http://{LAN_IP}:49159/api?apikey={{key}}&cmd=getVersion",
+            # [CV] comicvine_api — NOT comicvine_api_key, which is what every
+            # guide guesses. Verified against mylar3's own config.py.
+            extra=([('CV', 'comicvine_api', _cv_key)] if _cv_key else []))
         # ComicVine is deliberately NOT set here. It's the user's own free key
         # from comicvine.gamespot.com, there is no env var for it, and Mylar3
         # validates it on save — so it stays a documented post-install step in
         # Mylar3's own UI. Without it Mylar3 runs but can't look up series.
-        if MYLAR_KEY:
-            info("Mylar3 needs a free ComicVine API key pasted into its own "
-                 "Settings before it can look up comics")
+        if MYLAR_KEY and _cv_key:
+            ok("Mylar3: ComicVine key written")
+        elif MYLAR_KEY:
+            # Worth a warn rather than an info because of HOW Mylar3 fails
+            # without it: webserve.searchit() hits the missing-key branch and
+            # does a bare `return`, so CherryPy sends an empty body and the
+            # browser shows a BLANK WHITE PAGE with nothing in the UI to
+            # suggest a missing key. Naming that symptom here is the only
+            # place anyone gets told.
+            warn("Mylar3: no ComicVine API key set — searching will show a "
+                 "BLANK PAGE until you add one.")
+            warn("Mylar3: get a free key at https://comicvine.gamespot.com/api/ "
+                 "then put it in MYLAR_COMICVINE_KEY and re-run, or paste it "
+                 "into Mylar3 → Settings → ComicVine.")
     if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
         section("LazyLibrarian")
         # Provider posture, written explicitly rather than left at defaults.
@@ -5187,9 +5203,24 @@ def main():
                              "MylarSettings", "http://mylar3:8090", MYLAR_KEY,
                              [7030], optional=True)
         if LAZYLIB_KEY:
-            add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
-                             "LazyLibrarianSettings", "http://lazylibrarian:5299",
-                             LAZYLIB_KEY, [3030, 7000, 7020], optional=True)
+            wired = add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
+                                     "LazyLibrarianSettings", "http://lazylibrarian:5299",
+                                     LAZYLIB_KEY, [3030, 7000, 7020], optional=True)
+            if not wired:
+                # This one needs spelling out. We deliberately switch OFF
+                # LazyLibrarian's built-in direct providers so it matches the
+                # rest of the stack's posture, which means Prowlarr is its ONLY
+                # source. When the sync fails it is left with zero providers and
+                # every search returns nothing at all, forever, with no error in
+                # its UI to explain why. Left to its defaults it would at least
+                # have had its own providers, so our posture choice is what
+                # turns a failed sync into a silently useless app.
+                warn("LazyLibrarian has NO search sources right now: its built-in "
+                     "providers are switched off by design and the Prowlarr sync "
+                     "above did not land, so searches will find nothing.")
+                warn("Fix either way: add the app in Prowlarr → Settings → Apps, "
+                     "or re-enable its own providers in LazyLibrarian → Settings "
+                     "→ Providers.")
         # Prowlarr doesn't have a /config/mediamanagement endpoint
         # (no media files of its own), but it DOES have the same Bind
         # Address pitfall as the arrs — Sync Apps tests fail if

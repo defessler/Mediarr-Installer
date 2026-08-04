@@ -43,11 +43,15 @@ Unlike Sonarr and Radarr, these two aren't fully configured for you, and it's be
 
 - **Point each one at a download client.** Open Mylar3 or LazyLibrarian's own settings and add SABnzbd (`sabnzbd:8080`) or qBittorrent (`gluetun:49156`). The installer creates the matching SABnzbd `comics` and `books` categories for you, so you just pick them from the list.
 - **Set the library folder.** `/comics` in Mylar3, `/books` in LazyLibrarian. Those are the paths the containers see.
-- **Mylar3 needs a ComicVine key.** It's [free](https://comicvine.gamespot.com/api/) and goes in Mylar3's own Settings. There's no way to pass it from the installer, and without it Mylar3 runs but can't look anything up.
+- **Mylar3 needs a ComicVine key.** It's [free](https://comicvine.gamespot.com/api/). Put it in `MYLAR_COMICVINE_KEY` and the installer writes it straight into Mylar3 for you.
+
+  Do supply it, because of how Mylar3 fails without one: **the search page comes back completely blank.** Mylar3 returns an empty response instead of an error, so there's nothing on screen to tell you a key is missing. If you've already installed without one, paste it into Mylar3 → Settings → ComicVine and searching starts working.
 
 One more honest caveat: comic coverage on general-purpose indexers is thinner than TV or movies, so expect a lower hit rate than Sonarr gives you. That's the cost of using your own indexers rather than a comics-specific source.
 
 On LazyLibrarian we should be straight with you: it ships with several direct-download providers built in, including Anna's Archive, Z-Library, and IRC. The installer writes those off and configures the Prowlarr-fed path instead, so it behaves like the rest of your stack out of the box. The settings are still there in its own UI. What you do with them is your call.
+
+One consequence worth knowing. With those providers off, Prowlarr is LazyLibrarian's only source. If the Prowlarr link doesn't get set up, LazyLibrarian has nothing to search and every search comes back empty with no error explaining why. The installer checks for this and warns you, and the fix is either to add the app under Prowlarr → Settings → Apps, or to turn its own providers back on.
 
 ### Manga: Not Automated, and That's Not an Oversight
 
