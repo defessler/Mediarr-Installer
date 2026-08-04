@@ -96,11 +96,17 @@ def section(title):
 #                 always return no subtitles". A silent no-op is worse than
 #                 a loud failure.
 #   Subdivx     — Bazarr dropped it in v1.5.6.
+#   Embedded  — NOT auto-enabled, and this was a mistake worth recording. It
+#               reads subtitle tracks already muxed into the file, which sounds
+#               like the most reliable provider possible. But it does nothing
+#               until you ALSO turn off "Treat Embedded Subtitles as Downloaded"
+#               in Bazarr's Settings -> Subtitles, which no installer can decide
+#               for you, and it carries required settings of its own. Adding it
+#               to this single batched POST put a provider that can fail in the
+#               same request as five that cannot, and a 500 there briefly drops
+#               Bazarr's API and takes the English-profile save down with it.
+#               Enable it by hand in Bazarr if you want it.
 FREE_PROVIDERS = [
-    # Local-only: reads subtitle tracks already muxed into the file via ffprobe.
-    # No network, no account, nothing to break — the single most reliable
-    # provider available, and it costs nothing to have on.
-    ("Embedded Subtitles", "embeddedsubtitles"),
     ("Gestdown",        "gestdown"),       # Addic7ed's content, no account
     ("TVSubtitles",     "tvsubtitles"),
     ("Subf2m",          "subf2m"),         # the Subscene successor

@@ -309,6 +309,7 @@ export interface EnvFormValues {
    *  the add without it). The old wizard collected user + pass but
    *  NOT pid, so AvistaZ always silently skipped. */
   AVISTAZ_PID?: string
+  ANIMETORRENTS_PID?: string
   HHD_API_KEY?: string
   ANIMEBYTES_USER?: string
   ANIMEBYTES_PASS?: string
@@ -676,6 +677,7 @@ export function renderEnv(v: EnvFormValues): string {
     line('AVISTAZ_USER', v.AVISTAZ_USER),
     line('AVISTAZ_PASS', v.AVISTAZ_PASS),
     line('AVISTAZ_PID',  v.AVISTAZ_PID),
+    line('ANIMETORRENTS_PID', v.ANIMETORRENTS_PID),
     line('HHD_API_KEY', v.HHD_API_KEY),
     line('ANIMEBYTES_USER', v.ANIMEBYTES_USER),
     line('ANIMEBYTES_PASS', v.ANIMEBYTES_PASS),
@@ -1016,8 +1018,7 @@ export const PRIVATE_TRACKERS: IndexerDef[] = [
     note: 'Anime (application-based).',
     fields: [
       { key: 'ANIMETORRENTS_USER', label: 'Username' },
-      { key: 'ANIMETORRENTS_PASS', label: 'Password', password: true },
-    ],
+      { key: 'ANIMETORRENTS_PASS', label: 'Password', password: true }, { key: 'ANIMETORRENTS_PID', label: 'PID / Passkey' }],
     category: 'tracker-private',
     tags: ['anime', 'application'],
   },

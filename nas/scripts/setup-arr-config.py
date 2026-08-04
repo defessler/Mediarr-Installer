@@ -788,12 +788,26 @@ def reading_app_api_setup(label, container, ini_path, api_section,
                               headers={'User-Agent': 'setup-arr-config/1.0'})
                 with urlopen(req, timeout=10) as resp:
                     body = (resp.read(400) or b'').decode('utf-8', 'replace')
-                # Both apps answer a disabled API with a plain "API not enabled"
-                # rather than an HTTP error, so a 200 alone proves nothing.
-                if 'not enabled' not in body.lower():
+                # A 200 proves nothing here: these apps answer a REJECTED call
+                # with HTTP 200 and a JSON failure body. Mylar3 in particular
+                # returns {"success": false, ...} for BOTH "API not enabled"
+                # AND "Incorrect API key" — so testing only for the first
+                # string reported success on a key the app was rejecting, and
+                # Prowlarr then failed on a connection we had just called good.
+                # Require an affirmative pass instead of the absence of one
+                # known error.
+                low = body.lower()
+                bad = ('"success": false' in low.replace(' ', '')
+                       or '"success":false' in low.replace(' ', '')
+                       or 'not enabled' in low
+                       or 'incorrect api key' in low
+                       or 'invalid apikey' in low)
+                if not bad:
                     ok(f"{label}: API enabled and answering")
                     return api_key
-                last = body.strip()[:120]
+                # Collapse whitespace so a multi-line JSON error reads as one
+                # line in the warn below.
+                last = ' '.join(body.split())[:160]
             except HTTPError as e:
                 last = f"HTTP {e.code}"
             except (URLError, OSError) as e:
@@ -802,8 +816,9 @@ def reading_app_api_setup(label, container, ini_path, api_section,
         # Deliberately a warn, not a fail: these are optional services, and the
         # rest of the stack installed fine. Returning None also makes the caller
         # SKIP the Prowlarr app rather than register one that can't authenticate.
-        warn(f"{label}: API still not answering after 2min ({last}) — "
-             f"enable the API in its own Settings, then re-run to wire Prowlarr")
+        warn(f"{label}: API did not accept our key after 2min. It said: {last}")
+        warn(f"{label}: open its Settings and check the API is enabled, then "
+             f"re-run step 7 to wire Prowlarr. Nothing else is affected.")
         return None
 
     if not changed:

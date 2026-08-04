@@ -272,6 +272,7 @@ export const envObject = z.object({
   AVISTAZ_USER: optStr,
   AVISTAZ_PASS: optStr,
   AVISTAZ_PID:  optStr,
+  ANIMETORRENTS_PID: optStr,
   HHD_API_KEY: optStr,
   ANIMEBYTES_USER: optStr,
   ANIMEBYTES_PASS: optStr,

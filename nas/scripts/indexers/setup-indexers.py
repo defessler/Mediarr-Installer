@@ -210,7 +210,13 @@ PRIVATE_TORRENT_INDEXERS = [
     # animez.to; the old config returned 404s. Configuring the literal name
     # "AnimeTorrents" fails on any current Prowlarr. Env keys keep their old
     # names so existing .env files keep working.
-    ("AnimeZ",          "AnimeZ",          {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS"}),
+    # AnimeZ extends Prowlarr's AvistazBase, so like AvistaZ it needs a THIRD
+    # field — the site's "pid" — on top of username/password. Without it
+    # Prowlarr's validator rejects the save with "'Pid' must not be empty."
+    # Find it on the site under your profile. Env key keeps the ANIMETORRENTS_
+    # prefix so an existing .env stays coherent after the rebrand.
+    ("AnimeZ",          "AnimeZ",          {"username": "ANIMETORRENTS_USER", "password": "ANIMETORRENTS_PASS",
+                                            "pid":      "ANIMETORRENTS_PID"}),
     ("AnimeBytes",      "AnimeBytes",      {"username": "ANIMEBYTES_USER",    "password": "ANIMEBYTES_PASS"}),
     # General-purpose. Cookie-based auth (no username/password) — user
     # logs in via browser, copies the entire session cookie, pastes it
