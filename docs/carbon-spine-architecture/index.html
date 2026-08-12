@@ -954,6 +954,28 @@ blockquote p { margin: 0; font-size: inherit; }
 
 .milestone { display: grid; gap: 1px; background: var(--line-soft); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 
+.gates { display: grid; gap: 10px; }
+
+.gate {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid color-mix(in srgb, var(--derived) 55%, transparent);
+  border-radius: 0 6px 6px 0;
+  background: var(--surface);
+}
+.gate .g-n {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--derived);
+  font-variant-numeric: tabular-nums;
+}
+.gate p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+
 .ms {
   display: flex;
   gap: 12px;
@@ -1078,15 +1100,22 @@ blockquote p { margin: 0; font-size: inherit; }
   <section>
     <div class="sec-head">
       <div class="kicker">The mental model</div>
-      <h2>Five stacked layers</h2>
-      <p>Each layer is derived from the one above it. Only the top layer is authoritative. Everything below can be deleted and rebuilt.</p>
+      <h2>Six stacked layers, and a feedback path</h2>
+      <p>Each layer is derived from the one above it. Only Layer 1 is authoritative. Everything below can be deleted and rebuilt &mdash; and everything the runtime discovers comes back up through intent, never as a parallel write.</p>
     </div>
     <div class="layer-stack">
+      <div class="layer-row" data-tone="durable">
+        <div class="layer-num">0</div>
+        <div>
+          <h3>Source / creation</h3>
+          <p>Authoring tools, validated durable templates, creation recipes. Clone and materialization produce <em>detached durable proposals</em>: fresh BUIDs, BaseId provenance, references remapped. This is upstream of the Coordinator, which owns generic structural legality and nothing about what a Zombie is made of.</p>
+        </div>
+      </div>
       <div class="layer-row" data-tone="durable">
         <div class="layer-num">1</div>
         <div>
           <h3>Durable facts</h3>
-          <p>ECS entities carrying durable Carbon components: BUID identity, parentage, payload, provenance, Representation Markers, generation metadata. This is the only authority. Nothing below is required to recover it.</p>
+          <p>ECS entities carrying durable Carbon components: BUID identity, parentage, payload, durable references, provenance, Representation Markers. This is the only authority. Generation stamps live here too, but as rebuildable acceleration metadata rather than authoritative meaning.</p>
         </div>
       </div>
       <div class="layer-row" data-tone="durable">
@@ -1099,33 +1128,34 @@ blockquote p { margin: 0; font-size: inherit; }
       <div class="layer-row" data-tone="derived">
         <div class="layer-num">3</div>
         <div>
-          <h3>Control</h3>
-          <p>Coordinator, Publication, Watcher, Orchestrator. Mutation, settlement, localization, and desired-state derivation. These systems hold no authority of their own; they move truth and describe it.</p>
+          <h3>Control / derivation</h3>
+          <p>Coordinator &rarr; Publication &rarr; Watcher, and alongside them Driver demand &rarr; Residency Solver &rarr; Context Scope host &rarr; concern Filter &rarr; Orchestrator. Mutation, settlement, localization, eligibility, runtime-scope lifetime, and complete Desired derivation. None of it holds authority of its own.</p>
         </div>
       </div>
       <div class="layer-row" data-tone="derived">
         <div class="layer-num">4</div>
         <div>
           <h3>Contextual working state</h3>
-          <p>Scope-owned systems, caches, target sets, binding buckets, dirty sets, pending operations. All of it disposable, all of it owned by the Context Scope that gives it meaning.</p>
+          <p>Scope-owned systems, caches, target sets, binding buckets, retirement barriers, transient link and service caches. All of it disposable. Owned by the Context Scope where those lifetime semantics align &mdash; and by an explicit concern-local partition key where they do not.</p>
         </div>
       </div>
       <div class="layer-row" data-tone="derived">
         <div class="layer-num">5</div>
         <div>
           <h3>Projection</h3>
-          <p>Reconcilers, delivery packages, manifests, presenters, GameObjects, Scenes, physics, audio, rendering. Expensive, asynchronous, stateful, useful &mdash; and never durable.</p>
+          <p>Reconcilers, Warehouse leases, delivery packages, manifests, presenters, GameObjects, Scenes, physics, audio, rendering. Expensive, asynchronous, stateful, useful &mdash; and never durable.</p>
         </div>
       </div>
     </div>
 
     <blockquote class="pullquote"><strong>Durable truth says what exists and where.</strong> Everything else discovers, interprets, caches, simulates, or represents that truth.</blockquote>
     <blockquote class="pullquote"><strong>Runtime consequences are derived from durable change</strong> rather than being manually orchestrated by the endpoint that requested the change.</blockquote>
+    <blockquote class="pullquote"><strong>And the loop closes upward through intent.</strong> Payload outcomes return by targeted sanctioned writeback; structural facts the engine observes become domain intent for the Coordinator. Neither becomes a second write path.</blockquote>
   </section>
 
   <section>
     <div class="sec-head">
-      <div class="kicker">&sect;31</div>
+      <div class="kicker">&sect;32</div>
       <h2>Failure semantics</h2>
       <p>A functional system needs an explicit answer for each of these. The common thread: a projection failure never rewrites durable truth.</p>
     </div>
@@ -1134,7 +1164,7 @@ blockquote p { margin: 0; font-size: inherit; }
 
   <section>
     <div class="sec-head">
-      <div class="kicker">&sect;36</div>
+      <div class="kicker">&sect;37</div>
       <h2>Implementation order</h2>
       <p>Build bottom-up. Each phase is provable on its own before the next one has anything to stand on.</p>
     </div>
@@ -1143,15 +1173,24 @@ blockquote p { margin: 0; font-size: inherit; }
 
   <section>
     <div class="sec-head">
-      <div class="kicker">&sect;37</div>
+      <div class="kicker">&sect;38</div>
       <h2>Definition of the first milestone</h2>
       <p>The architecture is functionally proven when this demonstration works end to end. Tick them off as you build.</p>
     </div>
     <div class="milestone" id="milestone"></div>
     <div class="ms-foot">
-      <span class="kicker" id="msCount">0 of 19 complete</span>
+      <span class="kicker" id="msCount">&mdash;</span>
       <button class="btn" id="msClear">Clear all</button>
     </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="kicker">&sect;38.1</div>
+      <h2>Extended flow-completeness gates</h2>
+      <p>The milestone above deliberately proves one mostly local vertical slice. These are what stand between that and a general runtime architecture &mdash; each one is a scenario the first slice is allowed to defer, but not to design out.</p>
+    </div>
+    <div class="gates" id="gates"></div>
   </section>
 
   <section>
@@ -1159,7 +1198,8 @@ blockquote p { margin: 0; font-size: inherit; }
       <div class="kicker">Colophon</div>
       <h2>About this page</h2>
     </div>
-    <p class="colophon">Built from <code>CARBON-SPINE-TO-PROJECTION-FUNCTIONAL-ARCHITECTURE.md</code>, an implementation-oriented synthesis of the Carbon/Marrow architecture discussions and KB decisions. Section markers throughout the panels point back to that document. Where it specifies concrete C# structs, native container choices, target-partition buffers, binding handles or system types, those are <em>recommended minimum functional implementation choices</em>, not canonical decisions &mdash; the open ones are listed in &sect;35 of the source.</p>
+    <p class="colophon">Built from <code>CARBON-SPINE-TO-PROJECTION-FUNCTIONAL-ARCHITECTURE-FLOW-AUDITED-V2.md</code>, audited 2026-08-12 against the August 10 canonical master and August 11 owner clarification, with a second end-to-end flow-completeness audit. Section markers throughout the panels point back to that document. Where it specifies concrete C# structs, native container choices, target-partition buffers, binding handles, the constrained first-slice pairing, or exact system types, those are <em>recommended minimum functional implementation choices</em>, not canonical decisions &mdash; the open ones are listed in &sect;36 of the source.</p>
+    <p class="colophon">The audit corrected several things this page previously showed the old way: <code>DeliveryKey</code> is now <strong>Barcode</strong>; <strong>BaseId</strong> is immediate-source provenance rather than an asset slot ID; <strong>Actual is not Ready</strong>, and begins the moment an occurrence is materially acquired; generation stamps are rebuildable acceleration metadata; Region is not automatically a Context Scope; and Desired going empty is not automatically permission to release.</p>
     <p class="colophon">Colour in the diagram is meaningful: warm sand marks durable authority, cool cyan marks derived and disposable state, and the travelling pulse changes temperature at the exact moment durable truth becomes runtime projection. Keyboard: <code>Space</code> plays and pauses, <code>&rarr;</code> steps, <code>&larr;</code> steps back, <code>Esc</code> clears the selection.</p>
   </section>
 
@@ -1170,7 +1210,8 @@ blockquote p { margin: 0; font-size: inherit; }
    DATA
    ================================================================ */
 
-const CANVAS = { w: 900, h: 1345 };
+
+const CANVAS = { w: 950, h: 1490 };
 
 const MAIN_X = 430, MAIN_W = 250, MAIN_H = 62;
 const SAT_W = 200, SAT_H = 52;
@@ -1179,322 +1220,426 @@ const LEFT_X = 155, RIGHT_X = 705;
 /* durability: durable | derived | input   —   kind: state | system | external */
 const NODES = [
   {
-    id: 'intent', label: 'Semantic Intent', kick: 'L1 · caller', x: MAIN_X, y: 70,
-    dur: 'input', kind: 'external', layer: 1, ref: '§8, §9, §25',
+    id: 'authoring', label: 'Authoring / Templates', kick: 'L0 · source', x: LEFT_X, y: 70, sat: true,
+    dur: 'input', kind: 'external', layer: 0, ref: '§0, §8.8, §19.1',
+    lede: 'Prefabs, Scenes and tool data compiled and validated into durable template/source data, Barcode markers, and manifest pairing metadata — before anything runs.',
+    body: [
+      { h: 'What compilation produces', pre: 'Prefab / Scene / tool data\n        ↓ validate / compile\ndurable template/source data\n+ Barcode markers\n+ manifest pairing metadata' },
+      { h: 'The manifest is authored, not discovered at runtime', p: 'The runtime Reconciler must not invent stable pairing metadata by scanning names or paths after instantiation. Authoring, build or import produces and validates the [[manifest|Component Manifest]] and its stable participant metadata before runtime use.', pre: 'discover declared Carbon-managed presenters\n        ↓\nassign/validate stable authored participant identity\n        ↓\nemit Component Manifest on delivery container\n        ↓\nvalidate mapping against durable template expectations' },
+      { h: 'Trusted source validity lives here', p: 'Template validity belongs primarily to authoring, ingestion, migration and repair validation. The live commit still checks current facts — destination existence, coherence compatibility, cycle legality, stale preconditions, BUID collision — but it does not re-audit the template.' },
+      { h: 'An empty manifest is not required', p: 'If a delivery container has zero Carbon-managed participants for the concern, it does not need a fake empty manifest for conceptual purity.' }
+    ],
+    links: ['creation', 'delivery', 'warehouse']
+  },
+  {
+    id: 'intent', label: 'Semantic Intent', kick: 'L0 · caller', x: MAIN_X, y: 70,
+    dur: 'input', kind: 'external', layer: 0, ref: '§9, §26, §28.1',
     lede: 'A domain or gameplay system decides what structural result it wants. It does not spawn anything, does not instantiate anything, and does not register itself anywhere.',
     body: [
-      { h: 'What it says', p: '"Add this thing here." "Move that thing there." "Delete this." The caller states a desired <em>structural result</em>, not a sequence of runtime effects. Everything downstream is derived.' },
       { h: 'The inversion', pre: 'OLD\n"spawn this object now and\n manually register it everywhere"\n\nNEW\n"add/move/change this durable thing here"\n        ↓\nall contextual/runtime consequences\nare derived downstream' },
-      { h: 'Not everything comes through here', p: 'Carbon has two materially different write paths. Structural verbs (Add, Move, Delete) go to the [[coordinator]]. Ordinary durable payload — Health, Inventory, AI state — is written directly to ECS during the sanctioned mutation interval. Both have to be visible correctly by the next [[revision|coherent publication]].' },
-      { h: 'Why the indirection is worth it', ul: ['Structural intent can be batched and collapsed before anything is committed', 'Concerns stay independent — nobody has to know who else cares', 'Reload, import, and server-driven state all arrive the same way', 'The manual registration-order problem disappears'] }
+      { h: 'Two shapes of intent', ul: ['<strong>Creation intent</strong> — "create a Zombie under Chunk A" goes to the [[creation|creation/clone materializer]] first, because Coordinator owns no semantic recipe for what a Zombie is made of', '<strong>Explicit structural intent</strong> — Move, Delete, or a simple Add goes straight to the [[coordinator]]'] },
+      { h: 'Not everything comes through here', p: 'Carbon has two materially different write paths. Structural verbs go through the Coordinator. Ordinary durable payload — Health, Inventory, AI state — is written directly to ECS during the sanctioned mutation interval. If several accepted payload writes affect the same fact in one publication, their result-affecting order must be deterministic; accidental parallel ECS iteration order must not become semantic authority.' },
+      { h: 'Runtime facts arrive here too', p: 'A Unity trigger, a physics result or a zone crossing may originate a structural fact. It becomes intent, not a mutation. The runtime projection never reparents, deletes or creates durable Bones as a side effect.', pre: 'Unity/runtime observation\n        ↓\ndomain interprets semantic consequence\n        ↓\nRequestMove / RequestDelete / creation request\n        ↓\nCoordinator\n        ↓\nnext coherent durable publication' }
     ],
-    links: ['coordinator', 'ecs']
+    links: ['creation', 'coordinator', 'unity']
   },
   {
-    id: 'load', label: 'Load / Import / Repair', kick: 'privileged', x: LEFT_X, y: 162, sat: true,
-    dur: 'input', kind: 'external', layer: 1, ref: '§6, §8.7, §29, §30',
-    lede: 'Bootstrap, save load, migration, server state and repair tooling need narrow privileged primitives that write durable structural records directly, without going through the Coordinator.',
+    id: 'creation', label: 'Creation / Clone', kick: 'L0 · system', x: MAIN_X, y: 162,
+    dur: 'durable', kind: 'system', layer: 0, ref: '§8.8, §26',
+    lede: 'The phrase "Add durable Zombie" hides a critical responsibility boundary. Coordinator owns generic structural legality and commit — not the semantic recipe for constructing a Zombie’s Body, Weapon, Inventory, markers, payload and durable references.',
     body: [
-      { h: 'Why this path exists', p: 'The [[spine]] must be reconstructible from durable data alone. If the Coordinator were the only way structure could ever appear, a loaded save would have to be replayed as a request stream — which would make the Coordinator a second authority over history. It is not. The Coordinator is the <em>normal</em> mutation path, not a precondition for structure existing.' },
-      { h: 'The obligation it still carries', p: 'Privileged writes are engine infrastructure, not a second ordinary public mutation model. Their output must satisfy every Spine invariant before coherent publication: unique BUIDs, legal parents, no cycles, no illegal cross-coherence parentage.' },
-      { h: 'Load sequence', pre: 'load staging World\nvalidate Spine invariants\ninstall/replace durable Carbon set\nrebuild indexes\npublish new coherent state\nrederive runtime projections' },
-      { h: 'One practical warning', p: 'Do not clear an entire live ECS World if it also holds runtime and system infrastructure. Replace only the durable Carbon population, or use a controlled staging and swap mechanism.' }
+      { h: 'Composite creation is not Coordinator logic', p: 'A distinct creation/clone materialization responsibility selects a trusted durable source set, clones it detached, mints fresh identities, and hands Coordinator a plain generic structural proposal.' },
+      { h: 'Canonical clone preparation', pre: 'domain requests creation from a trusted source/template\n        ↓\nselect explicit source set/subtree\n        ↓\nclone detached from live Spine\n        ↓\nmint fresh BUID for every cloned occurrence\n        ↓\nbuild source-BUID → clone-BUID map\n        ↓\nrecord each clone’s immediate-source BaseId provenance\n        ↓\ncopy durable payload + Representation Markers\n        ↓\nremap durable references whose targets are inside the cloned set\npreserve durable references whose targets are outside it\n        ↓\nproduce proposed parentage / payload / initial archetype data\n        ↓\nCoordinator checks current facts and commits atomically' },
+      { h: 'Staging is not truth', p: 'A multi-Bone creation proposal may contain several Add operations plus initial payload writes that must publish as <strong>one coherent semantic result</strong>. Intermediate detached clone records are staging data, not live durable truth.' },
+      { h: 'The distinction that is easy to lose', q: 'Resolving a Prefab delivery product is not the same operation as creating durable Carbon state — even when both are associated with the same Barcode.' },
+      { h: 'Where the source comes from', p: 'This responsibility may resolve a durable template through the [[warehouse|Asset Warehouse]], a dedicated template store, or another validated source mechanism. The exact class or system name is implementation freedom.' }
     ],
-    links: ['ecs', 'spine']
+    links: ['authoring', 'intent', 'coordinator', 'baseid']
   },
   {
-    id: 'coordinator', label: 'Coordinator', kick: 'L3 · system', x: MAIN_X, y: 162,
-    dur: 'durable', kind: 'system', layer: 3, ref: '§8, §9',
-    lede: 'The single normal sanctioned path for structural mutation. It owns exactly three verbs — Add, Move, Delete — and no gameplay meaning at all.',
+    id: 'load', label: 'Load / Import / Migrate', kick: 'L1 · privileged', x: LEFT_X, y: 346, sat: true,
+    dur: 'input', kind: 'external', layer: 1, ref: '§6, §8.7, §30, §31.1',
+    lede: 'Bootstrap, save load, migration, server state and repair tooling write durable structural records directly, without going through the Coordinator — and must satisfy schema and Spine validation before anything is published.',
     body: [
-      { h: 'The division of labour', p: 'A domain system decides <em>what structural result it wants</em>. The Coordinator decides whether that result is structurally legal, and commits it coherently. It is not a universal data god-system; ordinary payload writes bypass it entirely.' },
-      { h: 'The pass', pre: 'collect structural requests\n        ↓\nnormalize\n        ↓\ncollapse redundant/conflicting intent\n        ↓\nvalidate proposed final structure\n        ↓\nenter sanctioned mutation interval\n        ↓\ncommit Add / Move / Delete\n        ↓\nupdate/rebuild affected Spine indexes\n        ↓\nadvance structural generation stamps\n        ↓\nrecord structural change summary\n        ↓\ncoherent publication' },
-      { h: 'Intake', code: 'public enum StructuralOp : byte\n{\n    Add,\n    Move,\n    Delete\n}\n\npublic struct StructuralRequest : IBufferElementData\n{\n    public StructuralOp Op;\n    public BUID Subject;\n    public BUID Parent;\n    public ulong Sequence;\n}' },
-      { h: 'Collapse, not replay', p: 'Requests collapse to the minimal final valid result. Intermediate states are not architecture history and no observer should ever see one.', pre: 'Add → Remove before publication\n    ⇒ no final durable occurrence\n\nAdd → Move\n    ⇒ Add at final parent\n\nMove → Delete\n    ⇒ Delete\n\nmultiple Moves\n    ⇒ final Move target' },
-      { h: 'Add', ul: ['Mints the [[buid]] according to Carbon identity rules', 'Creates the ECS entity with its complete initial archetype where practical, rather than adding components one at a time afterwards', 'Sets legal parentage', 'Updates hierarchy, index and generation state'] },
-      { h: 'Move', p: 'Semantically structural, physically cheap. If parentage is ordinary component data then <code>BoneParent.Parent = newParentBuid</code> does not necessarily cause an ECS archetype migration. The Carbon work is the expensive part: cycle validation, child-index surgery on both parents, ancestry generation propagation, and downstream Context Scope reevaluation. <strong>Move preserves BUID. Move means reevaluate, not reprovision.</strong>' },
-      { h: 'Delete', ul: ['Terminates durable identity', 'Captures the deleted BUID and its former context before reclamation', 'Updates surviving parent and ancestor generations and indexes', 'Destroys the durable ECS record', 'Never means runtime unload or pool release'] },
+      { h: 'Why this path exists', p: 'The [[spine]] must be reconstructible from durable data alone. If the Coordinator were the only way structure could ever appear, a loaded save would have to be replayed as a request stream, which would make the Coordinator a second authority over history. It is not.' },
+      { h: 'Schema identity is separate from occurrence identity', code: 'TypeKey\n    stable persisted type/schema identity\nSchemaVersion\n    version of the encoded durable shape', p: '<code>TypeKey</code> must not depend architecturally on a C# class name, namespace, or assembly-qualified runtime type name.' },
+      { h: 'Migration gate', pre: 'stored TypeKey + SchemaVersion\n        ↓\nknown current type?\n    yes          → migrate older supported version deterministically\n    no, optional → preserve opaque data where safely possible\n    no, required → block coherent publication\nmigration failure for required data → block coherent publication' },
+      { h: 'Load sequence', pre: 'load candidate durable state into staging\n        ↓\nresolve TypeKey/schema versions, migrate, preserve, reject\n        ↓\nvalidate Spine/coherence invariants\n        ↓\ninstall/replace durable set, establish coherent publication\n        ↓\nrebuild Spine indexes\n        ↓\nrebuild scope systems, catalogs, reference caches' },
+      { h: 'Two practical warnings', ul: ['Do not clear an entire live ECS World if it also holds runtime and system infrastructure. Replace only the durable Carbon population, or use a controlled staging and swap mechanism.', 'After any privileged replacement, <strong>force a full Spine index rebuild before coherent publication</strong>. That is the safest first implementation; shadow comparison is a diagnostic backstop, not the normal authority.'] }
+    ],
+    links: ['ecs', 'spine', 'publication']
+  },
+  {
+    id: 'coordinator', label: 'Coordinator', kick: 'L3 · system', x: MAIN_X, y: 254,
+    dur: 'durable', kind: 'system', layer: 3, ref: '§8, §9, §23.4',
+    lede: 'The single normal sanctioned path for structural mutation. It owns generic structural legality and commit — three verbs, and no gameplay meaning at all.',
+    body: [
+      { h: 'The division of labour', p: 'A domain system decides what structural result it wants. The [[creation|creation materializer]] decides what a composite thing is made of. The Coordinator decides whether the proposed result is structurally legal, and commits it coherently.' },
+      { h: 'The pass', pre: 'collect structural requests\n        ↓\nnormalize\n        ↓\ncollapse redundant/conflicting intent\n        ↓\nvalidate proposed final structure\n        ↓\nhost/cadence opens sanctioned mutation interval\n        ↓\ncommit Add / Move / Delete\n(stage destructive work when runtime outcomes must survive)\n        ↓\nupdate/rebuild affected Spine indexes\n        ↓\nadvance structural generation stamps\n        ↓\nrecord structural change summary\n        ↓\ncoherent publication' },
+      { h: 'Intake', code: 'public enum StructuralOp : byte\n{\n    Add,\n    Move,\n    Delete,\n    // non-terminal normalization intent only —\n    // NOT public identity termination\n    InternalRemove\n}\n\npublic struct StructuralRequest : IBufferElementData\n{\n    public StructuralOp Op;\n    public BUID Subject;\n    public BUID Parent;\n    public ulong Sequence;\n}' },
+      { h: 'Collapse, not replay', p: 'Requests collapse to the minimal final valid result. No observer sees an invalid intermediate state. Note that internal Remove and true Delete are different operations, and the collapse table is where that difference becomes visible.', pre: 'Add → internal Remove before publication\n    ⇒ no durable result\n\ninternal Remove → Add at same place,\nidentity never terminated\n    ⇒ no-op\n\ninternal Remove → Add elsewhere\nwith valid continuity\n    ⇒ Move\n\nAdd → Move\n    ⇒ Add at final parent\n\nMove → Delete\n    ⇒ Delete\n\ntrue Delete → Add\n    ⇒ a new occurrence, new BUID' },
+      { h: 'Move', p: 'Semantically structural, physically cheap. If parentage is ordinary component data then <code>BoneParent.Parent = newParentBuid</code> may not even cause an ECS archetype migration. The Carbon work is what costs: cycle validation, child-index surgery on both parents, ancestry generation propagation, downstream Context Scope reevaluation. <strong>Move preserves BUID. Move means reevaluate, not reprovision.</strong>' },
+      { h: 'Delete, and staging it', p: 'Delete terminates durable identity, captures the deleted BUID and its former context before reclamation, updates surviving ancestors, and destroys the record. It never means runtime unload or pool release. Where a Delete would reclaim an occurrence before required runtime outcomes are secured, the Coordinator may <strong>stage</strong> the destructive result, let [[writeback|targeted writeback]] integrate what must survive, and finalize only under the selected success policy.' },
       { h: 'Subtree disposition is explicit', p: 'Deletion of a subtree must have a stated contract. Do not leave child disposition implicit.' }
     ],
-    links: ['intent', 'ecs', 'spine', 'dehydrate']
+    links: ['creation', 'intent', 'ecs', 'spine', 'writeback']
   },
   {
-    id: 'ecs', label: 'Durable ECS State', kick: 'L1 · authority', x: MAIN_X, y: 254,
+    id: 'ecs', label: 'Durable ECS State', kick: 'L1 · authority', x: MAIN_X, y: 346,
     dur: 'durable', kind: 'state', layer: 1, ref: '§1.1, §3',
     lede: 'The authoritative dataset. It contains the complete reconstructable facts needed to recover Carbon state, and nothing outside it is ever required to do so.',
     body: [
-      { h: 'What lives here', ul: ['[[buid]] identity', 'Structural parentage', 'Durable metadata and gameplay payload', 'Durable references and provenance / template identity', '[[marker|Representation Markers]]', '[[generation|Generation]] and change metadata for the observation contract'] },
+      { h: 'What lives here', ul: ['[[buid]] identity', 'Structural parentage', 'Durable metadata and gameplay payload', 'Durable references and provenance / template identity', '[[marker|Representation Markers]] and other durable representation declarations'] },
       { h: 'The test that defines authority', q: 'If deleting all runtime caches makes the world unrecoverable, those caches have accidentally become a second authority.' },
-      { h: 'What is never required to recover state', p: 'A GameObject, a MonoBehaviour, a Scene, a Reconciler journal, a binding registry, a native index, or a callback history. Not one of them.' },
       { h: 'The minimal structural schema', code: 'public struct BoneTag : IComponentData\n{\n}\n\npublic struct BoneIdentity : IComponentData\n{\n    public BUID Buid;\n}\n\npublic struct BoneParent : IComponentData\n{\n    public BUID Parent;\n}' },
-      { h: 'Change stamps', code: 'public struct BoneGenerations : IComponentData\n{\n    public uint Structure;   // my own structural state changed\n    public uint Data;        // my durable payload changed\n    public uint Subtree;     // something beneath me changed\n}' , p: 'These are equality and change stamps, not ordered history counters. An ordered <em>[[revision|coherence revision]]</em> is a separate concept.' },
-      { h: 'Provenance, for composite pairing', code: 'public struct BoneProvenance : IComponentData\n{\n    public BUID BaseId;\n}' },
-      { h: 'What is not Spine core data', p: 'These may sit on Bone entities but do not define the hierarchy: Representation Markers, Health, Inventory, AI state, physics configuration, asset metadata, save metadata, simulation participation. <strong>The structural tree exists with only identity plus parentage.</strong>' }
+      { h: 'Change stamps are not authority', code: 'public struct BoneGenerations : IComponentData\n{\n    public ulong Structure;  // my own structural state changed\n    public ulong Data;       // my durable payload changed\n    public ulong Subtree;    // something beneath me changed\n}', p: '<code>ulong</code> is the preferred width because these are equality stamps and false equality after wrap must be operationally irrelevant. <strong>[[generation|Generation stamps]] are rebuildable acceleration metadata, not authoritative meaning.</strong> Durable state must stay correct if they are regenerated, and load correctness must not depend on preserving their historical numeric values.' },
+      { h: 'Provenance', code: 'public struct BoneProvenance : IComponentData\n{\n    public BUID BaseId;   // immediate durable source occurrence\n}', p: '[[baseid|BaseId]] preserves immediate-source provenance. It is not a generic asset-local presenter slot ID.' },
+      { h: 'What is not Spine core data', p: 'These may sit on Bone entities but do not define the hierarchy: Representation Markers, Health, Inventory, AI state, physics configuration, asset metadata, save metadata, simulation participation. <strong>The structural tree exists with only identity plus parentage.</strong>' },
+      { h: 'Durable is not the same as "lives in the ECS World"', p: 'Target-partition entities, pending-operation records, dirty and request buffers, reconciliation state and derived child buffers must never become persisted authority merely because they share a Unity ECS World with durable data. Exclude them from the snapshot, or strip and rebuild them on load.' }
     ],
-    links: ['spine', 'markers', 'coordinator', 'dehydrate']
+    links: ['spine', 'markers', 'coordinator', 'writeback', 'refs']
   },
   {
-    id: 'markers', label: 'Representation Markers', kick: 'L1 · durable data', x: RIGHT_X, y: 254, sat: true,
-    dur: 'durable', kind: 'state', layer: 1, ref: '§14, §28',
-    lede: 'Durable, concern-specific projection intent carried on a durable root. It says roughly: for this representation concern, this root wants this logical delivery package.',
+    id: 'markers', label: 'Representation Markers', kick: 'L1 · durable data', x: RIGHT_X, y: 346, sat: true,
+    dur: 'durable', kind: 'state', layer: 1, ref: '§15, §29',
+    lede: 'Durable, concern-specific projection intent carried on a durable root. It says roughly: for this representation concern, this root wants the delivery content behind this Barcode.',
     body: [
-      { h: 'What a marker does not define', p: 'Identity. Context Scope. Residency. Coherence. Persistence. It declares intent for exactly one [[concern|representation concern]] and nothing else.' },
-      { h: 'Shape', code: 'public struct PrefabRepresentation : IComponentData\n{\n    public DeliveryKey Package;\n}\n\npublic struct SceneRepresentation : IComponentData\n{\n    public DeliveryKey Package;\n}' },
+      { h: 'What a marker does not define', p: 'Identity. Context Scope. Residency. Coherence. Persistence. It declares intent for exactly one [[concern|representation concern]] and nothing else. Durable presence of a marker does not by itself request the projection — the applicable Driver, Residency and Filter policy decides that.' },
+      { h: 'Shape', code: 'public struct PrefabRepresentation : IComponentData\n{\n    public Barcode DeliveryBarcode;\n}\n\npublic struct SceneRepresentation : IComponentData\n{\n    public Barcode DeliveryBarcode;\n}', p: 'A marker carries or resolves a [[barcode|Barcode]]. Do not introduce <code>DeliveryKey</code> or <code>PackageId</code> as a competing architectural name.' },
       { h: 'Delivery groups', p: 'A marked root may define one composite delivery group spanning selected descendants. One prefab can contain presenters for several durable Bones.', pre: 'ZombieRoot [PrefabRepresentation: ZombieMale]\n├── Body\n├── Weapon\n├── Inventory\n└── Brain' },
-      { h: 'Nesting closes the search', p: 'A nested marker for the same concern starts a nested child delivery group, and prevents accidental arbitrary hierarchy search beyond the group boundary.' },
-      { h: 'Many to many', p: 'Do not assume one Bone equals one prefab. One delivery package may cover many BUIDs, and one BUID may have several concern-specific packages. That is exactly why the Reconciler needs both delivery-instance records and participant-to-Bone bindings.' },
-      { h: 'The same mechanism at every layer', pre: 'World Bone  [SceneRepresentation: WorldScene]\nRegion Bone [SceneRepresentation: RegionScene]\nChunk Bone  [SceneRepresentation: ChunkScene]', p: 'A Region can exist durably with no loaded Region Scene. Representation intent, residency, durable existence and Context Scope stay separate axes.' }
+      { h: 'Nesting closes the search', p: 'A nested marker for the same concern starts a nested child delivery group and prevents accidental arbitrary hierarchy search beyond the group boundary.' },
+      { h: 'Many to many', p: 'Do not assume one Bone equals one prefab. One delivery package may cover many BUIDs, and one BUID may have several concern-specific packages. That is why the Reconciler needs both delivery-instance records and participant-to-Bone bindings.' },
+      { h: 'The same mechanism at every layer', pre: 'World Bone  [SceneRepresentation: WorldScene]\nRegion Bone [SceneRepresentation: RegionScene]\nChunk Bone  [SceneRepresentation: ChunkScene]', p: 'Putting a Scene marker on a Region does <strong>not</strong> make every Region a [[scope|Context Scope]], and durable Region presence does not itself request the Region Scene.' }
     ],
     links: ['orchestrator', 'warehouse', 'ecs']
   },
   {
-    id: 'spine', label: 'Spine', kick: 'L2 · hierarchy + indexes', x: MAIN_X, y: 346,
+    id: 'spine', label: 'Spine', kick: 'L2 · hierarchy + indexes', x: MAIN_X, y: 438,
     dur: 'durable', kind: 'system', layer: 2, ref: '§2, §4, §6, §7',
-    lede: 'Carbon’s authoritative logical hierarchy over ECS-backed Bones, where durable identity and parentage define structure, rebuildable indexes provide efficient traversal, and normal structural mutation is committed through the Coordinator.',
+    lede: 'Carbon’s logical hierarchy and query contract over authoritative ECS-backed Bones. Durable BUID identity and parentage define structure, rebuildable indexes provide efficient traversal, and normal structural mutation is committed through the Coordinator.',
     body: [
-      { h: 'Why a hierarchy layer at all', p: 'Hierarchy and flat component selection are different access patterns. The Spine answers containment questions; ECS queries answer dense throughput questions. Using either one for the other’s job is the mistake.', pre: 'Spine / tree\n    hierarchy, ancestry, containment, scope, pruning\n\nECS queries\n    component/archetype selection, dense hot processing' },
-      { h: 'The intended hot path', pre: 'Spine/context selection\n        ↓\nselected ECS population\n        ↓\ncomponent/archetype filtering\n        ↓\nIJobEntity / IJobChunk / SystemAPI.Query' },
-      { h: 'One authoritative direction', q: 'Parentage is authoritative. Child membership is derived.', p: 'Never persist a second authoritative child list that can disagree with parentage.' },
-      { h: 'Child acceleration — the MVP choice', code: 'NativeParallelHashMap<BUID, Entity>      _byBuid;\nNativeParallelMultiHashMap<BUID, Entity> _children;', p: 'Simple, obviously rebuildable, no second durable relationship, easy to inspect and fuzz-test, easy to replace after profiling. Benchmark it against a derived <code>DynamicBuffer&lt;BoneChild&gt;</code> or packed adjacency arrays before locking physical storage.' },
-      { h: 'The rebuild pass', pre: 'query all entities with Bone structural components\n        ↓\nclear/rebuild BUID → Entity index\n        ↓\nvalidate unique BUIDs\n        ↓\nvalidate parent references\n        ↓\nidentify legal roots\n        ↓\nvalidate no structural cycles\n        ↓\nbuild Parent → Children index\n        ↓\noptionally build scope/root accelerators\n        ↓\nSpine becomes queryable' },
-      { h: 'Orphans are not roots', pre: 'Parent == EMPTY\n    = intentional root\n\nParent == X but BUID X does not exist\n    = invalid/orphan structural record', p: 'An invalid orphan must never silently become a root. Report it, and refuse coherent publication unless an explicit repair mode is active.' },
+      { h: 'A working name, not a new authority', p: '<em>Spine</em> is the current working name for the logical durable hierarchy over [[bone|Bones]]. The underlying logical-tree contract is architectural; the code name may still change without changing that contract. Adopting it does not create a second kind of identity or state.' },
+      { h: 'Why a hierarchy layer at all', pre: 'Spine / tree\n    hierarchy, ancestry, containment, scope, pruning\n\nECS queries\n    component/archetype selection, dense hot processing', p: 'Hierarchy and flat component selection are different access patterns. Using either one for the other’s job is the mistake.' },
+      { h: 'One authoritative direction', q: 'Parentage is authoritative. Child membership is derived.', p: 'Never persist a second authoritative child list that can disagree with parentage. If a derived <code>DynamicBuffer&lt;BoneChild&gt;</code> is ever used as the accelerator, it must remain rebuildable and be excluded or rebuilt rather than persisted as structural authority.' },
+      { h: 'Child acceleration — the MVP choice', code: 'NativeParallelHashMap<BUID, Entity>      _byBuid;\nNativeParallelMultiHashMap<BUID, Entity> _children;', p: 'Simple, obviously rebuildable, no second durable relationship, easy to fuzz-test, easy to replace after profiling.' },
+      { h: 'The rebuild pass', pre: 'query all entities with Bone structural components\n        ↓\nclear/rebuild BUID → Entity index\n        ↓\nvalidate unique BUIDs\n        ↓\nvalidate parent references\n        ↓\nidentify legal roots\n        ↓\nvalidate no structural cycles\n        ↓\nbuild Parent → Children index\n        ↓\nSpine becomes queryable' },
+      { h: 'Orphans, roots, and boundaries', pre: 'Parent == EMPTY\n    = intentional root\n\nParent == X, X required to be in scope,\nX does not exist\n    = invalid/orphan structural record\n\nBoundary reference == X, X legally outside\nthe materialized coherence scope\n    = potentially valid unresolved/cold relationship', p: 'An invalid orphan must never silently become a root. Equally, the validator must not misclassify an explicitly legal cross-coherence or cold boundary reference as an orphan merely because the target is absent from the current local BUID index. For a single-coherence first slice, keep it simple: every non-root parent must resolve locally.' },
+      { h: 'Hierarchy and coherence are separate axes', p: 'Most ordinary parentage and <em>all</em> ordinary runtime Moves stay within one coherence scope. But the generic Spine contract must not encode "every parent is in my coherence scope" as a universal invariant — composition above or between World scopes is legal when explicitly modeled. Do reject an ordinary Move that tries to cross a coherence boundary without the required higher-level semantics.' },
       { h: 'The hard architecture test', q: 'Delete every transient Spine cache, index and view. Given only the durable ECS-backed Bone records, reconstruct exactly the same logical hierarchy.' },
       { h: 'Query surface', code: 'public interface ISpineRead\n{\n    bool Exists(BUID buid);\n    bool TryResolve(BUID buid, out Entity entity);\n\n    BUID GetParent(BUID buid);\n\n    ChildEnumerable   GetChildren(BUID buid);\n    AncestorEnumerable GetAncestors(BUID buid);\n    SubtreeEnumerable  GetSubtree(BUID root);\n\n    bool IsAncestorOf(BUID ancestor, BUID descendant);\n    bool IsDescendantOf(BUID descendant, BUID ancestor);\n\n    bool TryFindNearestContextScope(BUID start, out BUID scope);\n}' },
-      { h: 'Shared access, one owner', p: 'Coordinator, Watcher, Orchestrator and Reconcilers must not each rebuild a private copy. Use one World-local runtime owner that holds the native containers and hands trusted Carbon systems lightweight read-only <em>views</em> of them — handles, not copied hierarchy data. This is one World-level service, not one managed object per Bone, so it does not reintroduce the allocation pattern that motivated removing the managed Node tree.' },
-      { h: 'The out-of-band backstop', p: 'Keep a derived shadow of <code>BUID → last indexed ParentBUID</code>. If current <code>BoneParent</code> ever differs from the shadow without a matching Coordinator commit — a privileged load, an import, a repair — move the child between derived buckets, update the shadow, and record the out-of-band change. The shadow stays disposable; <code>BoneParent</code> stays authority.' }
+      { h: 'One owner, one ordering boundary', p: 'Coordinator, Watcher, Orchestrator and Reconcilers must not each rebuild a private copy. Use one runtime owner per chosen Unity ECS World that holds the native containers and hands trusted systems read-only <em>views</em> — handles, not copied data. It must also define <strong>one dependency and ordering boundary for index mutation</strong>: topology commits must not run concurrently with jobs reading the indexes. Keep commits on the main-thread phase, complete outstanding reader dependencies before mutating, then expose read-only views for the settled phase.' },
+      { h: 'Unity ECS World is not Carbon World', pre: 'Unity.Entities.World\n    ECS container + entity/system execution context\n\nCarbon World Bone / coherence scope\n    durable game-state hierarchy/coherence concept', p: 'The first slice may host one Carbon World inside one Unity ECS World because that is simple. It is not a 1:1 architectural invariant. ECS <code>Entity</code> handles stay local to their owning Unity ECS World; BUID stays Carbon durable identity.' }
     ],
     links: ['ecs', 'coordinator', 'publication', 'orchestrator', 'pairing']
   },
   {
-    id: 'publication', label: 'Coherent Publication', kick: 'L3 · system', x: MAIN_X, y: 438,
-    dur: 'derived', kind: 'system', layer: 3, ref: '§10',
+    id: 'publication', label: 'Coherent Publication', kick: 'L3 · system', x: MAIN_X, y: 530,
+    dur: 'derived', kind: 'system', layer: 3, ref: '§10, §23.3',
     lede: 'Carbon exposes settled coherent truth on purpose, instead of making downstream systems infer consistency from arbitrary Unity callback timing.',
     body: [
-      { h: 'The epoch', pre: 'collect intent / completed async integration\n        ↓\nopen sanctioned mutation/integration interval\n        ↓\nstructural commit + direct payload writes\n        ↓\ntargeted prepare-for-publication work\n        ↓\nclose mutation interval\n        ↓\nadvance coherent publication revision\n        ↓\nWatcher observes settled truth\n        ↓\nOrchestrator / downstream derivation' },
-      { h: 'Two different clocks', pre: 'Generation\n    did this thing/branch change since my watermark?\n\nRevision\n    which coherent published state is this?', code: 'public struct CarbonCoherence : IComponentData\n{\n    public ulong Revision;\n}' },
+      { h: 'The epoch', pre: 'collect intent / completed async integration\n        ↓\nopen sanctioned mutation/integration interval\n        ↓\ndirect payload writes + structural commit preparation\n(stage destructive work when runtime outcomes must survive)\n        ↓\ntargeted prepare-for-publication work when required\n        ↓\nfinalize staged destructive work under the success policy\n        ↓\nclose mutation interval\n        ↓\nestablish coherent publication + ordered revision\n        ↓\nWatcher observes settled truth\n        ↓\ndownstream derivation' },
+      { h: 'Two different clocks', pre: 'Generation\n    did this thing/branch change since my watermark?\n    (rebuildable acceleration metadata)\n\nRevision\n    which coherent published state is this?\n    (ordered, per coherence domain)', code: 'public struct CarbonCoherence : IComponentData\n{\n    public ulong Revision;\n}' },
       { h: 'Catching direct payload writes', code: 'public struct BoneDataDirty : IComponentData, IEnableableComponent\n{\n}', p: 'Sanctioned writers enable it on a meaningful durable payload write. Publication then collects dirty Bones, advances DataGen, propagates SubtreeGen to affected ancestors, and disables the marker.' },
-      { h: 'The honest limitation', p: 'A dirty marker only catches writers that participate in the contract. ECS chunk and component change versions can serve as a conservative broad-phase or recovery mechanism, but they are not exact per-entity semantic change truth.' }
+      { h: 'The honest limitation', p: 'A dirty marker only catches writers that participate in the contract. ECS chunk and component change versions can serve as a conservative broad phase or recovery mechanism, but they are not exact per-entity semantic change truth.' },
+      { h: 'Coherence is not automatically global', p: 'A general save may bundle <em>independently coherent scope snapshots</em> rather than forcing one global revision across everything.' }
     ],
-    links: ['watcher', 'spine', 'dehydrate']
+    links: ['watcher', 'spine', 'writeback']
   },
   {
-    id: 'watcher', label: 'Watcher', kick: 'L3 · system', x: MAIN_X, y: 530,
-    dur: 'derived', kind: 'system', layer: 3, ref: '§11',
+    id: 'watcher', label: 'Watcher', kick: 'L3 · system', x: MAIN_X, y: 622,
+    dur: 'derived', kind: 'system', layer: 3, ref: '§11, §14.2, §31.3',
     lede: 'Observe settled durable truth and identify and localize what changed, regardless of where that change came from.',
     body: [
       { h: 'Why it cannot just listen to the Coordinator', ul: ['Load and reload replace durable data outright', 'Server, import and repair paths update data', 'Direct payload writes exist and never touch the Coordinator', 'Correctness has to derive from current truth, not from having personally witnessed every request'] },
-      { h: 'Inputs and accelerators', ul: ['[[revision|Coherence revision]]', 'Structure / Data / Subtree [[generation|generation stamps]]', 'Trusted structural commit summaries', 'BUID and parent indexes', 'Conservative ECS change-version broad phase'] },
       { h: 'Output', code: 'public struct ChangedBone\n{\n    public BUID Buid;\n    public ChangeKinds Kinds;\n}\n\npublic struct StructuralMove\n{\n    public BUID Buid;\n    public BUID OldParent;\n    public BUID NewParent;\n}\n\npublic struct StructuralDelete\n{\n    public BUID Buid;\n    public BUID FormerParent;\n}' },
-      { h: 'It is an accelerator, not a log', p: 'The changed set exists to prune rederivation work. It is not authoritative history, and no downstream system may depend on having received every one of them. Missing an update is survivable; the next complete target set converges anyway.' }
+      { h: 'An accelerator, not a required event stream', p: 'The changed set exists to prune rederivation work. <strong>A new or restarted consumer baselines from current coherent truth</strong> — it does not wait for a Watcher delta to discover durable state that already exists. Correctness must never require receiving every change summary in sequence.' },
+      { h: 'Two different artifacts', pre: 'PublicationDelta / ChangeSet\n    localizes what changed in one publication\n    optional accelerator\n    loss is recoverable from current truth\n\nCarbonPatch\n    semantic durable state transition/transport\n    may carry BaseRevision / TargetRevision\n    for networking, tooling, merge, external sync', p: 'A network, server or editor patch enters through validated sanctioned durable integration and then rejoins the ordinary publication → observation → Desired → reconciliation flow. It never becomes a parallel runtime authority path.' }
     ],
     links: ['publication', 'orchestrator']
   },
   {
-    id: 'demand', label: 'Residency / Demand', kick: 'L4 · input', x: RIGHT_X, y: 622, sat: true,
-    dur: 'input', kind: 'external', layer: 4, ref: '§13.1, §26 step 5, §28',
-    lede: 'The runtime decides which World, Region or Chunk is currently active and resident. This is an independent axis: it is not durable identity and it changes on its own schedule.',
+    id: 'drivers', label: 'Drivers / Demand', kick: 'L3 · input', x: RIGHT_X, y: 530, sat: true,
+    dur: 'input', kind: 'external', layer: 3, ref: '§13.1',
+    lede: 'Drivers and observers express current runtime demand, not durable identity. Player and camera demand, server simulation demand, editor viewport demand, spectator and tool demand, other host policy.',
     body: [
-      { h: 'Four separate axes', ul: ['<strong>Durable existence</strong> — the Bone is in the dataset', '<strong>Representation intent</strong> — a marker says it wants a package', '<strong>Residency / demand</strong> — the runtime currently wants this region realized', '<strong>Context Scope</strong> — which hierarchy location owns the transient state'] },
-      { h: 'Why keeping them separate matters', p: 'A Chunk may exist durably while its runtime projection is unloaded. A Region may exist durably with no loaded Region Scene. Collapsing any two of these axes into one is how "unload" quietly starts meaning "delete".' },
-      { h: 'What changing it does', p: 'Nothing directly. Demand is an <em>input</em> to the [[orchestrator]]. Removing demand for a Chunk simply makes that Chunk’s [[desired|Desired]] set empty, and the Reconciler converges by retiring everything in it.' }
+      { h: 'Union, do not duplicate', p: 'For one representation concern, multiple demand reasons normally union and deduplicate rather than creating duplicate projection occurrences. Two Drivers wanting the same Chunk is one Chunk.' },
+      { h: 'Four separate axes', ul: ['<strong>Durable existence</strong> — the Bone is in the dataset', '<strong>Representation intent</strong> — a marker names a Barcode', '<strong>Residency / demand</strong> — the runtime currently wants this realized', '<strong>Context Scope</strong> — which hierarchy location owns transient state'] },
+      { h: 'Why keeping them separate matters', p: 'A Chunk may exist durably while its runtime projection is unloaded. A Region may exist durably with no loaded Region Scene. Collapsing any two of these axes is how "unload" quietly starts meaning "delete".' },
+      { h: 'It changes Desired without a durable revision', p: 'Demand changes can force Desired rederivation with no new Carbon coherence revision at all. Target derivation therefore has to react to non-durable inputs, not only to publication.' }
     ],
-    links: ['orchestrator', 'buckets']
+    links: ['residency', 'orchestrator']
   },
   {
-    id: 'orchestrator', label: 'Orchestrator', kick: 'L3 · system', x: MAIN_X, y: 622,
-    dur: 'derived', kind: 'system', layer: 3, ref: '§13',
-    lede: 'Compose settled durable truth, changed subsets, operating context, scope and demand, residency and provider state, and Reconciler interest into the current complete Desired population for each concern and partition.',
+    id: 'residency', label: 'Residency Solver', kick: 'L3 · system', x: RIGHT_X, y: 622, sat: true,
+    dur: 'derived', kind: 'system', layer: 3, ref: '§13.2',
+    lede: 'Converts Driver demand into an eligible durable population. Residency is transient and completely separate from durable existence.',
     body: [
-      { h: 'Calling it "the router" is not enough', p: 'It is not forwarding events. It is <em>composing</em> a target population from five independent inputs and publishing the exact complete answer.' },
-      { h: 'Selection pipeline', pre: 'coherent durable Spine/ECS state\n        +\nWatcher changed subset / generation pruning\n        +\ncurrent Context Scope / operating mode\n        +\nresidency / observer demand\n        +\nReconciler interest contract\n        ↓\nselected hierarchy population\n        ↓\nconcern-specific ECS marker/component filter\n        ↓\nexact complete Desired set\n        ↓\nReconciler' },
+      { h: 'The Marrow-specific rule', q: 'Chunk is the default practical residency/streaming selection unit for entity residency.', p: 'That is a <strong>Marrow</strong> rule. Do not hard-code it into generic Carbon.' },
+      { h: 'A minimal transient representation', code: 'public struct RuntimeResident : IComponentData,\n                                IEnableableComponent\n{\n}', p: 'Alternatively the resident set may live entirely in a host-owned or coherence-partitioned native container. The semantic contract matters more than the storage.' },
+      { h: 'It also drives scope activation', p: 'Residency selection triggers [[scopehost|runtime Context Scope activation and retirement]] where the selected scope kind installs transient scoped systems. That scope transition is a parallel integration prerequisite, not durable membership truth.' },
+      { h: 'The ordering rule', p: 'Do not start concern work that requires a Chunk runtime context until that context has been baselined and enabled.' }
+    ],
+    links: ['drivers', 'scopehost', 'orchestrator']
+  },
+  {
+    id: 'scopehost', label: 'Context Scope Host', kick: 'L4 · system', x: RIGHT_X, y: 714, sat: true,
+    dur: 'derived', kind: 'system', layer: 4, ref: '§12.3, §24.1',
+    lede: 'A durable Context Scope location and an active runtime scope instance are different things. A transient host owns the active instances, creates and rebuilds them, and disposes them only after safe retirement.',
+    body: [
+      { h: 'The distinction', pre: 'durable Chunk Bone exists\n        ≠\nChunk runtime scope/system instances currently exist' },
+      { h: 'Activation', pre: 'residency / host policy selects durable scope\n        ↓\nensure coherent durable scope state exists\n        ↓\ncreate/register configured scope instance + systems\n        ↓\nrebuild/baseline disposable working state from Spine/ECS\n        ↓\nenable scope-local work\n        ↓\nallow concern Desired/realization that needs that context' },
+      { h: 'Retirement', pre: 'mark runtime scope retiring\n        ↓\nstop accepting new scope-local work\n        ↓\ninvalidate/cancel pending work that cannot survive\n        ↓\nallow Reconcilers into pending-retirement/writeback paths\n        ↓\nwait until required dirty outcomes and owned occurrences\n        are safely resolved\n        ↓\ndispose scoped systems/caches/handles/registrations' },
+      { h: 'Composition decides which scopes exist', p: 'World and Chunk are established Marrow Context Scopes. <strong>Region becomes one only if application composition explicitly needs region-local systems or working memory</strong> — hierarchy level alone does not make every Region a Context Scope. Composition declares which transient system types exist at each scope kind; do not invent a durable plugin registry merely to install runtime scope systems.', code: 'public struct ContextScopeTag : IComponentData {}' },
+      { h: 'It is not membership authority', p: 'Durable ancestry still answers what belongs to the scope. The host only owns the transient runtime lifetime for the currently active context, and any state that must survive disposal belongs in durable Carbon data.' },
+      { h: 'It must not dispose early', p: 'The host must not dispose scope-local scratch while a required Reconciler [[retire|retirement or writeback barrier]] is unresolved. Policy may retry, block teardown, or explicitly degrade only where the higher integration contract allows it.' }
+    ],
+    links: ['residency', 'orchestrator', 'buckets', 'retire']
+  },
+  {
+    id: 'orchestrator', label: 'Orchestrator + Filter', kick: 'L3 · system', x: MAIN_X, y: 760,
+    dur: 'derived', kind: 'system', layer: 3, ref: '§13.3, §14',
+    lede: 'Compose settled durable truth, changed subsets, operating context, eligible population, provider state and concern interest into the current complete Desired population for each concern and partition.',
+    body: [
+      { h: 'The full semantic pipeline', pre: 'Driver / observer demand\n        ↓\nResidency Solver\n        ↓\neligible durable population\n        ↓\nconcern-specific marker/data Filter or query\n        ↓\none complete unioned/deduplicated Desired set\n        ↓\nReconciler', p: 'The Orchestrator coordinates and composes this pipeline and cross-concern sequencing. It does not need to own every residency algorithm internally.' },
       { h: 'What it is not', ul: ['Gameplay authority', 'Structural mutation authority', 'Durable authority', 'The owner of any Reconciler’s Actual inventory', 'A hardcoded switch over every possible representation type'] },
-      { h: 'Complete means replacement', p: 'For an explicit partition — <code>World X / Chunk A / Prefab concern / Revision 41</code> — the Desired set is the complete current target. A Reconciler that missed prior updates converges naturally on the next target set, because there is nothing to replay.' }
+      { h: 'Baseline, do not wait for a delta', p: 'A newly installed concern, a reloaded scope, or a consumer that lost its watermark performs a <strong>baseline derivation from current coherent truth</strong>. Watcher summaries only accelerate later localization.' },
+      { h: 'Non-durable inputs also move Desired', p: 'Driver and residency demand, or Warehouse and provider state, can change the target set with <strong>no new durable Carbon revision at all</strong>. Derivation must react to those inputs too.' },
+      { h: 'Concern installation', p: 'Application composition installs concern systems and their interest contract. Minimum information per concern: identity/type, required marker and component roles, operating-mode compatibility, partitioning policy, prerequisite declarations, and the Reconciler endpoint. Concern installation creates no durable state and needs no global closed enum of representation types.' }
     ],
-    links: ['watcher', 'desired', 'markers', 'demand', 'spine']
+    links: ['watcher', 'residency', 'scopehost', 'desired', 'markers']
   },
   {
-    id: 'desired', label: 'Desired', kick: 'L4 · target partition', x: MAIN_X, y: 714,
-    dur: 'derived', kind: 'state', layer: 4, ref: '§13.2, §13.3',
+    id: 'desired', label: 'Desired', kick: 'L4 · target partition', x: MAIN_X, y: 852,
+    dur: 'derived', kind: 'state', layer: 4, ref: '§14.2, §14.3, §20.3',
     lede: 'The complete current target population for one Reconciler concern and one explicit partition. Not a delta. Not a queue. A replacement.',
     body: [
-      { h: 'A concrete partition', pre: 'Concern     = Prefab\nScope       = Chunk A\nRevision    = 42\nTargetToken = 991\nDesired     = [MarkerRoot 100, MarkerRoot 800, MarkerRoot 900]' },
-      { h: 'Transport, functional MVP', code: 'public struct ReconcilerTargetPartition : IComponentData\n{\n    public BUID Scope;\n    public ulong Revision;\n    public ulong TargetToken;\n}\n\npublic struct DesiredProjectionRecord : IBufferElementData\n{\n    public BUID MarkerRoot;\n    public DeliveryKey Package;\n}' },
-      { h: 'The rule the transport must satisfy', p: 'One partition entity per concern and scope, or any equivalent structure with <strong>unambiguous replacement semantics</strong>. The transport can later become native containers, chunked arrays or direct system handoff; the semantics cannot change.' },
-      { h: 'Desired versus Actual', p: '[[desired|Desired]] is what should exist. [[actual|Actual]] is what the Reconciler currently owns. Actual is not necessarily Ready — an async load in flight is neither.' },
-      { h: 'The projection key', pre: '(BUID, Concern)', p: 'One BUID may carry several concern-specific representations. Inside a single Reconciler the concern is implicit and need not be repeated in every local record.' }
+      { h: 'A concrete partition', pre: 'Concern     = Prefab\nPartition   = Chunk A\nRevision    = 42\nTargetToken = 991\nDesired     = [MarkerRoot 100, MarkerRoot 800, MarkerRoot 900]' },
+      { h: 'Transport, functional MVP', code: 'public struct ReconcilerTargetPartition : IComponentData\n{\n    public BUID PartitionRoot;\n    public ulong Revision;\n    public ulong TargetToken;\n}\n\npublic struct DesiredProjectionRecord : IBufferElementData\n{\n    public BUID MarkerRoot;\n    public Barcode DeliveryBarcode;\n}' },
+      { h: 'Target token is not the coherence revision', p: 'A MarkerRoot may stay Desired while its [[barcode|Barcode]] resolution, provider version, pairing metadata or another concern-relevant target field changes. [[token|TargetToken]] exists to distinguish those target generations and reject stale async work. It is not automatically the same thing as the durable revision.' },
+      { h: 'Desired versus Actual', p: '[[desired|Desired]] is what should currently exist. [[actual|Actual]] is what the Reconciler currently owns. <strong>Actual is not Ready</strong>, and Desired going empty is not automatically permission to release Actual immediately.' },
+      { h: 'The projection key', pre: '(BUID, Concern)', p: 'One BUID may carry several concern-specific representations. Inside a single Reconciler the concern is implicit.' },
+      { h: 'A partition is not automatically a Context Scope', p: 'They often coincide at Chunk. But a Region Scene Reconciler may use the Region BUID as a concern-local partition key for Desired and Actual cleanup <em>without</em> Region being configured as a [[scope|Context Scope]].' }
     ],
-    links: ['orchestrator', 'reconciler', 'token']
+    links: ['orchestrator', 'reconciler', 'buckets']
   },
   {
-    id: 'buckets', label: 'Scope Buckets', kick: 'L4 · scratch', x: LEFT_X, y: 806, sat: true,
-    dur: 'derived', kind: 'state', layer: 4, ref: '§12, §23',
-    lede: 'Transient working state should be owned by the Context Scope that gives that state meaning. This is one of the strongest consequences of the whole architecture.',
+    id: 'buckets', label: 'Partition Buckets', kick: 'L4 · scratch', x: LEFT_X, y: 944, sat: true,
+    dur: 'derived', kind: 'state', layer: 4, ref: '§12, §24',
+    lede: 'Transient working state should be owned by the partition that makes cleanup cheap — preferably the owning Context Scope, where those lifetime semantics genuinely align.',
     body: [
-      { h: 'Shape', pre: 'PrefabReconcilerSystem\n├── WorldScopeBucket(World A)\n├── RegionScopeBucket(Region 1)\n├── ChunkScopeBucket(Chunk 10)\n├── ChunkScopeBucket(Chunk 11)\n└── ChunkScopeBucket(Chunk 12)' },
-      { h: 'What a bucket owns', ul: ['[[projection-entry|Projection entries]]', '[[binding|Participant bindings]]', 'Dirty participants', 'Pending async operations', 'Local target watermark', 'Local managed runtime references'] },
-      { h: 'Cleanup becomes ownership-shaped', p: 'Without scope ownership, teardown is search-driven — find every presenter, every binding, every dirty callback, every pending load, every cache entry belonging to Chunk A.', pre: 'tear down Chunk A runtime scope\n        ↓\nall Chunk A transient ownership\nis already known' },
-      { h: 'The bucket is not membership', q: 'This runtime working state currently exists because this Context Scope is active.', p: 'Durable ancestry remains authoritative membership. Delete the bucket and it must be rebuildable.' },
-      { h: 'Chunk unload', pre: 'stop accepting/starting Chunk A local work\n        ↓\nflush required dirty runtime outcomes\n        ↓\nDesired for Chunk A becomes empty\n        ↓\nretire all Chunk A projections\n        ↓\nunbind presenters\n        ↓\nrelease/pool Unity objects\n        ↓\ncancel/invalidate pending target-token work\n        ↓\nclear Chunk A bucket wholesale', p: 'Durable Chunk and Bone data remains unless a separate durable Delete occurred.' }
+      { h: 'Shape', pre: 'PrefabReconcilerSystem\n├── WorldPartition(World A / scope-backed)\n├── RegionProjectionPartition(Region 1 / if needed)\n├── ChunkScopeBucket(Chunk 10)\n├── ChunkScopeBucket(Chunk 11)\n└── ChunkScopeBucket(Chunk 12)', p: 'Note the mixed naming: some partitions are backed by a real [[scope|Context Scope]], others are purely concern-local partition keys. Both are legitimate.' },
+      { h: 'What a bucket owns', ul: ['[[projection-entry|Projection entries]]', '[[binding|Participant bindings]]', 'Dirty participants and retirement barriers', 'Pending async operations and Warehouse leases', 'Local target watermark', 'Local managed runtime references'] },
+      { h: 'Cleanup becomes ownership-shaped', p: 'Without partition ownership, teardown is search-driven — find every presenter, every binding, every dirty callback, every pending load, every cache entry belonging to Chunk A.', pre: 'tear down Chunk A runtime partition\n        ↓\nall Chunk A transient ownership\nis already known' },
+      { h: 'The bucket is not membership', q: 'This runtime working state currently exists because this partition is active.', p: 'Durable ancestry remains authoritative membership. Delete the bucket and it must be rebuildable.' },
+      { h: 'Context-dependent services', p: 'When a consumer needs a context-dependent service, resolve the applicable provider on bind or context transition, cache it for the hot path, and <strong>re-resolve after a Move that changes relevant context</strong>. That <code>SystemHandle&lt;T&gt;</code>-style relationship answers "which contextual service should I use here?" — quite separately from a durable [[refs|BUID reference]], which answers "which durable occurrence does this relationship target?"' }
     ],
-    links: ['reconciler', 'dehydrate', 'demand']
+    links: ['reconciler', 'scopehost', 'retire', 'refs']
   },
   {
-    id: 'reconciler', label: 'Reconciler', kick: 'L5 · system', x: MAIN_X, y: 806,
-    dur: 'derived', kind: 'system', layer: 5, ref: '§16, §17, §19',
+    id: 'reconciler', label: 'Reconciler', kick: 'L5 · system', x: MAIN_X, y: 944,
+    dur: 'derived', kind: 'system', layer: 5, ref: '§17, §18, §20',
     lede: 'Converge transient runtime Actual state toward the Desired population for one concern. It does not replay events; it closes a gap.',
     body: [
-      { h: 'The diff', pre: 'Desired − Actual\n    = realize\n\nDesired ∩ Actual\n    = retain / refresh / verify\n\nActual − Desired\n    = retire' },
-      { h: 'Realize', pre: 'read Representation Marker\n        ↓\nresolve Delivery Package through Warehouse\n        ↓\nload/instantiate/reuse delivery container\n        ↓\nrecord Pending until the operation completes\n        ↓\ninspect Component Manifest\n        ↓\ndetermine durable delivery group\n        ↓\npair manifest participants to durable BUIDs\n        ↓\ncreate participant binding records\n        ↓\nBind each presenter to BUID/context\n        ↓\nHydrate required presenters\n        ↓\nstitch presenter relationships/services\n        ↓\nestablish readiness\n        ↓\nactivate\n        ↓\nrecord Actual from observed completion', p: '<strong>Do not mark something Actual or Ready merely because an async request was dispatched.</strong>' },
-      { h: 'Retain', ul: ['Verify the delivery package target has not changed', 'Inspect [[token|target token]] and revision', 'Inspect relevant generation invalidation', 'Hydrate only the affected participants', 'Reevaluate Context Scope and service bindings after a Move', 'Repair divergence if a runtime object disappeared unexpectedly'] },
-      { h: 'Retire', pre: 'ensure runtime-owned durable outcomes are synchronized\n        ↓\ndeactivate\n        ↓\nUnbind participant presenters\n        ↓\ninvalidate participant handles\n        ↓\nrelease/pool/unload delivery container\n        ↓\nremove Actual entry\n        ↓\nrelease bucket-local scratch records', p: 'Cleanup is a downstream effect. Never rely on teardown as the only opportunity to save required durable truth.' },
-      { h: 'Two-level runtime model', pre: 'Scope Bucket\n    ↓\nProjection Entries\n    ↓\nParticipant Bindings', code: 'struct ProjectionEntry\n{\n    BUID MarkerRoot;\n    DeliveryKey Package;\n    int BindingStart;\n    int BindingCount;\n}\n\nstruct ParticipantBinding\n{\n    BUID Bone;\n    int PresenterIndex;\n    ulong LastHydratedDataGen;\n}', p: 'The binding <em>relationship</em> is required. A managed binding heap object per bind is not — that would just re-create the managed Node tree under a new name.' },
-      { h: 'ISystem or SystemBase', p: 'Use <code>SystemBase</code> where the system owns managed references: GameObjects, MonoBehaviours, asset and scene handles, managed async integration. Prefab and Scene Reconcilers are the natural candidates. Use <code>ISystem</code> where state is unmanaged and Burst-heavy work dominates: Spine topology, Coordinator, Watcher, most Orchestrator selection. A later optimization can split a Reconciler into an unmanaged diff core plus a managed Unity adapter, but that split is not required for the first slice.' }
+      { h: 'The diff', pre: 'Desired − Actual\n    = realize\n\nDesired ∩ Actual\n    = retain / refresh / verify\n\nActual − Desired\n    = retire (safely, not always immediately)' },
+      { h: 'Diff target state, not just membership', p: 'The diff must compare <strong>desired target state</strong>, not only marker-root membership. A MarkerRoot that stays Desired but changes Barcode, provider resolution or required pairing metadata may need refresh or replacement even though the occurrence key is unchanged.' },
+      { h: 'Realize', pre: 'read Representation Marker / Barcode\n        ↓\nresolve delivery through Warehouse (acquire lease)\n        ↓\nrequest load/instantiate/reuse\n        ↓\nPending while no owned runtime occurrence exists\n        ↓\noccurrence materially acquired/instantiated/adopted\n        ↓\nrecord Actual immediately\n        ↓\ninspect Component Manifest\n        ↓\npair participants to durable BUIDs\n        ↓\ncreate participant bindings\n        ↓\nBind each presenter to BUID/context\n        ↓\nHydrate required presenters\n        ↓\nstitch relationships/services\n        ↓\nestablish concern-specific Ready when prerequisites hold\n        ↓\nactivate when the concern requires it' },
+      { h: 'Actual is not Ready', q: 'Dispatching an async acquisition only creates Pending work. Actual begins when the Reconciler materially owns or adopts the runtime occurrence, even if binding, Hydrate and readiness work is still incomplete.' },
+      { h: 'Retain', p: 'Verify the package target has not changed, inspect [[token|target token]] and revision, inspect generation invalidation, Hydrate only affected participants, reevaluate Context Scope and service bindings after a Move, repair divergence. For first-slice correctness, precise changed-BUID routing is optional: on a relevant update, simply compare each binding’s <code>LastHydratedDataGen</code> against the Bone’s current <code>DataGen</code> and Hydrate only the mismatches.' },
+      { h: 'Two-level runtime model', pre: 'Partition Bucket\n    ↓\nProjection Entries\n    ↓\nParticipant Bindings', code: 'struct ProjectionEntry\n{\n    BUID MarkerRoot;\n    Barcode DeliveryBarcode;\n    int BindingStart;\n    int BindingCount;\n}\n\nstruct ParticipantBinding\n{\n    BUID Bone;\n    int PresenterIndex;\n    ulong LastHydratedDataGen;\n}', p: 'The binding <em>relationship</em> is required. A managed binding object per bind is not — that would re-create the managed Node tree under a new name.' },
+      { h: 'Cross-concern prerequisites', p: 'A Prefab projection may genuinely require its Scene projection. Encode that prerequisite and let the Orchestrator sequence it, rather than relying on incidental Unity callback order. Each Reconciler owns its own concern-local Pending/Actual/Ready state; coherent durable publication stays valid regardless of downstream readiness; <code>SimulationReady</code> and similar belong to host policy, not durable Carbon.' },
+      { h: 'Scene adoption', p: 'Scene delivery may produce Carbon-managed presenters that already physically exist rather than needing instantiation. The Reconciler <strong>adopts</strong> them into Actual, then pairs, binds, hydrates and readies. A scene-authored GameObject does not become durable authority merely because it existed before binding.' },
+      { h: 'ISystem or SystemBase', p: 'Use <code>SystemBase</code> where the system owns managed references: GameObjects, MonoBehaviours, asset and scene handles, managed async integration. Use <code>ISystem</code> where state is unmanaged and Burst-heavy work dominates. A later optimization can split a Reconciler into an unmanaged diff core plus a managed Unity adapter.' }
     ],
-    links: ['desired', 'buckets', 'delivery', 'unity']
+    links: ['desired', 'buckets', 'delivery', 'retire', 'unity']
   },
   {
-    id: 'warehouse', label: 'Asset Warehouse', kick: 'L5 · service', x: RIGHT_X, y: 898, sat: true,
-    dur: 'input', kind: 'external', layer: 5, ref: '§15',
-    lede: 'Resolves a Representation Marker’s stable logical delivery intent into immutable, versioned source material.',
+    id: 'warehouse', label: 'Asset Warehouse', kick: 'L5 · service', x: RIGHT_X, y: 1036, sat: true,
+    dur: 'input', kind: 'external', layer: 5, ref: '§16',
+    lede: 'Resolves a Barcode — the canonical stable logical lookup identity for reusable delivery content — into immutable, versioned source material.',
     body: [
       { h: 'Owns', ul: ['Prefab, scene and package lookup', 'Immutable source caches', 'Provider and version translation', 'Detached templates and content references'] },
       { h: 'Does not own', ul: ['Active durable state', '[[buid]] identity', 'Gameplay authority', 'Active Reconciler inventory'] },
-      { h: 'A deliberately small first API', code: 'DeliveryHandle Resolve(DeliveryKey key);' },
-      { h: 'When the asset is missing', p: 'Durable truth remains valid. The Reconciler records a projection failure or divergence and may retry or substitute according to concern policy. <strong>Do not delete or rewrite durable Carbon because a prefab is missing.</strong>' }
+      { h: 'A deliberately small first API', code: 'DeliveryHandle Resolve(Barcode key);' },
+      { h: 'Lease lifetime is part of convergence', pre: 'Reconciler resolves Barcode\n        ↓\nWarehouse/provider returns delivery handle or lease\n        ↓\nReconciler owns that lease while Pending/Actual needs it\n        ↓\nrelease when stale, retired, cancelled, or replaced', p: 'The first slice may use static synchronous assets with no eviction, but the lifetime seam must stay visible so a later async provider does not become a hidden authority or leak resources.' },
+      { h: 'Provider version is separate from Barcode', p: 'A provider update, eviction, invalidation, address change or compatible replacement may require a <strong>new Desired target token even though durable Carbon data and the coherence revision did not change</strong>. A stale acquisition completion is released unless it still satisfies the newest target.' },
+      { h: 'When the asset is missing', p: 'Durable truth remains valid. The Reconciler records failure or divergence and may retry or substitute per concern policy. A projection declared <em>required</em> by integration may block or degrade a higher readiness condition; an optional one need not. <strong>Do not delete or rewrite durable Carbon because a prefab is missing.</strong>' }
     ],
-    links: ['delivery', 'markers']
+    links: ['delivery', 'markers', 'reconciler']
   },
   {
-    id: 'delivery', label: 'Delivery + Manifest', kick: 'L5 · derived', x: MAIN_X, y: 898,
-    dur: 'derived', kind: 'state', layer: 5, ref: '§14.1, §18',
-    lede: 'The delivered runtime container — a Prefab instance, a loaded Scene — plus the Component Manifest that indexes the Carbon presenters inside it.',
+    id: 'delivery', label: 'Delivery + Manifest', kick: 'L5 · derived', x: MAIN_X, y: 1036,
+    dur: 'derived', kind: 'state', layer: 5, ref: '§15.1, §19',
+    lede: 'The delivered runtime container — a Prefab instance, a loaded Scene — plus the Component Manifest that deterministically indexes the Carbon presenters inside it.',
     body: [
       { h: 'What the manifest is', p: 'A generated and validated index on a structured delivery container that gives the Reconciler deterministic references to Carbon-managed presenters and their authored binding metadata. <strong>It is not durable authority.</strong>' },
-      { h: 'What it solves and what it does not', p: 'The manifest solves <em>discovery</em>: which presenters exist in this asset, and what did the author declare about them. Pairing each presenter to a durable Bone is a separate, explicit, deterministic step.' },
-      { h: 'Pending is not Actual', p: 'The instantiate or scene-load operation stays Pending until completion is actually observed. Dispatching an async request is not a projection.' },
+      { h: 'Discovery and pairing are separate', p: 'The manifest solves <em>deterministic discovery</em>: which presenters exist and what the author declared about them. Pairing them to durable parts is a separate contract, and the architecture must not pretend [[baseid|BaseId]] is a universal asset slot ID.' },
+      { h: 'Pending, then Actual', p: 'Work is Pending while no owned runtime occurrence exists. The moment the GameObject or Scene is materially instantiated, acquired or adopted, it is recorded as <strong>Actual immediately</strong> — even though it is not Ready yet.' },
       { h: 'Optional decoration stays optional', p: 'Presentation-only GameObjects inside a delivered asset need no fake durable Bone merely because they exist. Not everything in the prefab is a participant.' }
     ],
-    links: ['reconciler', 'warehouse', 'pairing']
+    links: ['reconciler', 'warehouse', 'pairing', 'authoring']
   },
   {
-    id: 'pairing', label: 'Manifest Pairing', kick: 'L5 · system', x: MAIN_X, y: 990,
-    dur: 'derived', kind: 'system', layer: 5, ref: '§18',
+    id: 'pairing', label: 'Manifest Pairing', kick: 'L5 · system', x: MAIN_X, y: 1128,
+    dur: 'derived', kind: 'system', layer: 5, ref: '§19',
     lede: 'Answers the one question a composite delivery creates: which presenter inside this asset represents which durable Bone?',
     body: [
-      { h: 'The MVP rule', pre: 'presenter authored AssetId\n        ↓\nmatch durable descendant BaseId\ninside this delivery group\n        ↓\nresolve that descendant’s live BUID\n        ↓\nbind presenter to live BUID' },
-      { h: 'Worked example', pre: 'Zombie prefab\n├── BodyPresenter      AssetId BODY\n├── WeaponPresenter    AssetId WEAPON\n└── InventoryPresenter AssetId INVENTORY\n\nDurable group\nZombieRoot BUID 100 BaseId ROOT\n├── Body      BUID 101 BaseId BODY\n├── Weapon    BUID 102 BaseId WEAPON\n└── Inventory BUID 103 BaseId INVENTORY\n\n⇒ BodyPresenter      → BUID 101\n⇒ WeaponPresenter    → BUID 102\n⇒ InventoryPresenter → BUID 103' },
-      { h: 'The search is bounded', p: 'The Reconciler searches only the declared delivery group. It must not arbitrarily walk outside it — which is precisely why a nested marker for the same concern closes the group boundary.' },
-      { h: 'The presenter binds to the BUID', p: 'Not to the [[baseid|BaseId]]. BaseId is authored template-local identity, useful for finding the right live occurrence. Once resolved, the binding is to the live [[buid]].' },
+      { h: 'The corrected rule', p: 'BaseId is the <strong>immediate durable source occurrence</strong>, not an asset-local slot name. The pairing therefore goes through the authored template’s own BUIDs.', pre: 'presenter AssetId\n        ↓ identifies authored/template source part\nsource/template BUID\n        ↓ match live clone whose immediate BaseId\n          == that source BUID\nlive BUID\n        ↓\nBind presenter to live BUID' },
+      { h: 'Three identities that must not blur', pre: 'BUID    = this durable occurrence\nBaseId  = immediate durable source/provenance\nBarcode = reusable delivery-content lookup identity' },
+      { h: 'Worked example', pre: 'Authored/template source\nBody source BUID      = T_BODY\nWeapon source BUID    = T_WEAPON\nInventory source BUID = T_INVENTORY\n\nPrefab manifest\nBodyPresenter      AssetId = T_BODY\nWeaponPresenter    AssetId = T_WEAPON\nInventoryPresenter AssetId = T_INVENTORY\n\nDirect live clone\nBody      BUID 101 BaseId T_BODY\nWeapon    BUID 102 BaseId T_WEAPON\nInventory BUID 103 BaseId T_INVENTORY' },
+      { h: 'This is a first-slice constraint', p: 'It is acceptable for a prefab cloned <em>directly from one authored template</em>. It is <strong>not</strong> the final universal mapping rule. Clone-of-clone provenance, non-Unity authoring sources and more complex composite mappings need an explicit stable authoring-slot contract that stays reconstructible from durable and imported facts.' },
+      { h: 'The search is bounded', p: 'The Reconciler searches only the declared delivery group and must not arbitrarily walk outside it. Explicit durable BUID references may intentionally resolve outside, according to their own resolver semantics. Runtime pairing must never depend on mutable hierarchy names.' },
       { h: 'When pairing fails', p: 'The projection cannot become Ready. Keep the failure explicit, roll back or release partial runtime acquisition where appropriate, and leave durable truth unchanged.' }
     ],
-    links: ['delivery', 'bind', 'spine']
+    links: ['delivery', 'bind', 'authoring', 'creation']
   },
   {
-    id: 'bind', label: 'Bind', kick: 'L5 · system', x: MAIN_X, y: 1082,
-    dur: 'derived', kind: 'system', layer: 5, ref: '§20',
+    id: 'bind', label: 'Bind + Stitch', kick: 'L5 · system', x: MAIN_X, y: 1220,
+    dur: 'derived', kind: 'system', layer: 5, ref: '§21',
     lede: 'The old architecture had Bind(Node context), and that managed Node was both hierarchy object and lifecycle rendezvous point. That object is gone.',
     body: [
       { h: 'The replacement', q: 'Reconciler-owned runtime pairing plus presenter-held BUID and value metadata.' },
       { h: 'Three things that must not happen', ul: ['The presenter does not register itself into the Bone', 'The durable Bone does not store a presenter reference', 'The ECS entity does not become presenter identity'] },
       { h: 'Shape', code: 'internal void Bind(\n    BUID buid,\n    ParticipantHandle handle)\n{\n    _boundBuid = buid;\n    _participant = handle;\n    OnBound(buid);\n}' },
-      { h: 'Presenter-local state', p: 'The presenter is already a MonoBehaviour, so it can hold the tiny amount of binding state it needs without allocating another object.', code: 'public abstract class CarbonBehaviour : MonoBehaviour\n{\n    private BUID _boundBuid;\n    private ParticipantHandle _participant;\n    private ulong _lastHydratedGen;\n}\n\npublic readonly struct ParticipantHandle\n{\n    public readonly int Index;\n    public readonly uint Version;\n}' , p2: 'The version protects against stale pooled or reused bindings. A simpler MVP may store BUID plus an owner reference and do a dictionary lookup; introduce the packed handle only when it earns its place.' },
-      { h: 'Never store a raw Entity durably', pre: 'BUID\n    ↓\nSpine BUID → Entity index\n    ↓\ncurrent ECS Entity', p: 'Resolving on demand keeps BUID identity separate from World-local ECS handles, and makes reload and World replacement straightforward.' }
+      { h: 'Presenter-local state', code: 'public abstract class CarbonBehaviour : MonoBehaviour\n{\n    private BUID _boundBuid;\n    private ParticipantHandle _participant;\n    private ulong _lastHydratedGen;\n}\n\npublic readonly struct ParticipantHandle\n{\n    public readonly int Index;\n    public readonly uint Version;\n}', p: 'The version protects against stale pooled or reused bindings. A simpler MVP may store BUID plus an owner reference and do a dictionary lookup.' },
+      { h: 'Never store a raw Entity durably', pre: 'BUID\n    ↓\nSpine BUID → Entity index\n    ↓\ncurrent ECS Entity', p: 'Resolving on demand keeps BUID identity separate from World-local ECS handles, and makes reload and World replacement straightforward.' },
+      { h: 'Binding is not stitching', p: 'Binding a presenter to its own BUID is not the same as resolving every relationship it needs. Internal delivery-group links can be satisfied directly from manifest and BUID pairing; cross-group or cold links go through the [[refs|durable reference resolver]] according to the relationship’s semantics.' }
     ],
-    links: ['pairing', 'hydrate', 'spine']
+    links: ['pairing', 'hydrate', 'refs', 'spine']
   },
   {
-    id: 'hydrate', label: 'Hydrate', kick: 'L5 · system', x: MAIN_X, y: 1174,
-    dur: 'derived', kind: 'system', layer: 5, ref: '§21',
+    id: 'refs', label: 'Reference Resolver', kick: 'L4 · service', x: RIGHT_X, y: 1220, sat: true,
+    dur: 'derived', kind: 'system', layer: 4, ref: '§21.3, §31.2',
+    lede: 'A persisted durable reference is fundamentally a BUID. Resolving it — locally, or against a cold target that is not currently materialized — is its own seam with its own failure semantics.',
+    body: [
+      { h: 'Resolution layers', pre: 'durable BUID reference\n        ↓\nlocal Spine/BUID resolver when target is materialized\n        ↓\noptional Persistence Catalog lookup when target is cold\n        ↓\nqueued/deduplicated/cancellable materialization if policy allows\n        ↓\nephemeral runtime pointer/handle cache' },
+      { h: 'What the relationship schema defines', ul: ['Expected durable type/role where relevant', 'Whether local or cross-coherence resolution is legal', 'Whether unresolved or cold state is acceptable', 'Whether failure blocks a higher integration condition'] },
+      { h: 'Rules', ul: ['Move preserves the durable BUID reference', 'Runtime unload does not invalidate a valid durable reference', 'Delete leaves references to the terminated BUID unresolved and broken', '<strong>Carbon never silently retargets a durable reference to a replacement occurrence</strong>', 'Runtime resolved pointers are disposable caches, invalidated and re-resolved across reload or relevant context changes'] },
+      { h: 'The Persistence Catalog', pre: 'BUID → persistence document / shard / location', p: 'Derived, rebuildable storage metadata. It is not identity, and it does not grant permission to resolve an otherwise illegal relationship. It exists so a valid reference stays meaningful when its target is not currently materialized.' },
+      { h: 'Not the same as SystemHandle', p: '<code>SystemHandle&lt;T&gt;</code> answers "which contextual service should I use here?" A durable BUID reference answers "which durable occurrence does this relationship target?" Keep the two resolvers separate.' },
+      { h: 'Deferrable, but not removable', p: 'The first one-Prefab slice can defer cold materialization entirely if all required links are local. The architecture must still preserve the seam, and persistence code must not assume every valid BUID target is always loaded.' }
+    ],
+    links: ['bind', 'ecs', 'buckets']
+  },
+  {
+    id: 'hydrate', label: 'Hydrate', kick: 'L5 · system', x: MAIN_X, y: 1312,
+    dur: 'derived', kind: 'system', layer: 5, ref: '§22',
     lede: 'Targeted synchronization from coherent durable ECS state into runtime and engine-facing state. Which durable data must this presenter copy into local state right now?',
     body: [
       { h: 'Typical work', ul: ['Configure a Rigidbody', 'Set Animator state or configuration', 'Update mesh and material presentation', 'Set audio properties', 'Refresh a Unity-only cache'] },
       { h: 'The pass', pre: 'ParticipantBinding → BUID\n        ↓\nresolve current Entity\n        ↓\nread BoneGenerations.Data\n        ↓\nif unchanged and no explicit refresh requirement\n    skip\nelse\n    read required durable components\n    apply to runtime representation\n    update participant hydration watermark' },
-      { h: 'Hydrate less than you think', p: 'Do not Hydrate data merely because it exists. If the presenter reads it directly from ECS and keeps no separate representation, there is nothing to copy. Hydrate exists for the cases where the engine needs its own copy.' },
-      { h: 'Targeting is the point', p: 'The Reconciler can Hydrate only the one participant whose Bone data actually changed, rather than refreshing an entire prefab group. That is what the per-Bone Data generation stamp is for.' }
+      { h: 'Hydrate less than you think', p: 'Do not Hydrate data merely because it exists. If the presenter reads it directly from ECS and keeps no separate representation, there is nothing to copy.' },
+      { h: 'It is a read-side pass', p: 'This runs against settled durable truth and <strong>must not casually mutate authoritative ECS payload</strong>. Normal post-publication provisioning gains no permission to write durable data. Copy-back is [[writeback|a separate write-side integration]] inside the sanctioned interval.' }
     ],
-    links: ['bind', 'unity', 'ecs']
+    links: ['bind', 'unity', 'ecs', 'writeback']
   },
   {
-    id: 'unity', label: 'Unity Projection', kick: 'L5 · transient', x: MAIN_X, y: 1266,
-    dur: 'derived', kind: 'state', layer: 5, ref: '§1.3, §27',
-    lede: 'GameObjects, MonoBehaviours, prefab instances, loaded Scenes, Rigidbody and Animator state, pooled objects, Reconciler inventories. Expensive, asynchronous, stateful, useful &mdash; and never durable authority.',
+    id: 'unity', label: 'Unity Projection', kick: 'L5 · transient', x: MAIN_X, y: 1404,
+    dur: 'derived', kind: 'state', layer: 5, ref: '§1.3, §28',
+    lede: 'GameObjects, MonoBehaviours, prefab instances, loaded Scenes, Rigidbody and Animator state, pooled objects, Reconciler inventories. Expensive, asynchronous, stateful, useful — and never durable authority.',
     body: [
-      { h: 'What runs here', p: 'A presenter may use Unity physics, animate, render, play audio, and maintain derived local state. Meanwhile ECS-native AI and gameplay systems read and write durable components directly, with no Hydrate or Dehydrate ceremony at all for data that never leaves ECS.' },
+      { h: 'What runs here', p: 'A presenter may use Unity physics, animate, render, play audio and maintain derived local state. Meanwhile ECS-native AI and gameplay systems read and write durable components directly, with no Hydrate or Dehydrate ceremony for data that never leaves ECS.' },
       { h: 'Durable data changed externally', pre: 'publication\n    ↓\nWatcher\n    ↓\nOrchestrator / Reconciler invalidation\n    ↓\ntargeted Hydrate' },
-      { h: 'Unity produced something worth keeping', pre: 'presenter MarkDirty\n    ↓\nReconciler local dirty set\n    ↓\nDehydrate during sanctioned synchronization\n    ↓\ndurable ECS write\n    ↓\nnext coherent publication' },
-      { h: 'The unload / delete distinction', p: 'Runtime unload does not terminate a [[buid]]. Releasing every GameObject in a Chunk changes nothing about what durably exists. Only a Coordinator Delete terminates durable identity.' }
+      { h: 'Runtime produced something worth keeping', pre: 'presenter MarkDirty\n    ↓\nReconciler local dirty set\n    ↓\ntargeted writeback in the sanctioned interval\n    ↓\ndurable ECS write\n    ↓\nnext coherent publication' },
+      { h: 'Runtime structural facts close the loop through intent', p: 'A trigger detecting a Chunk crossing, gameplay deciding an occurrence should be destroyed, an interaction requesting a new occurrence — all of these are <em>observations</em>. They become [[intent|domain intent]], never a direct mutation.', pre: 'engine callback\n    may originate intent\n\ndurable commit\n    establishes truth\n\nReconciler\n    manifests the resulting truth' },
+      { h: 'The unload / delete distinction', p: 'Runtime unload does not terminate a [[buid]]. Releasing every GameObject in a Chunk changes nothing about what durably exists.' },
+      { h: 'Divergence', p: 'If a Unity object or Scene is externally destroyed while durable truth still requires it: record divergence, remove or repair the invalid Actual ownership record, and reconverge from the newest Desired. <strong>This is not a durable Delete.</strong> If the destroyed object held the only copy of an uncommitted required outcome, surface a hard diagnostic rather than pretending Carbon reconstructed data it never received.' }
     ],
-    links: ['hydrate', 'dehydrate', 'reconciler']
+    links: ['hydrate', 'retire', 'writeback', 'intent', 'reconciler']
   },
   {
-    id: 'dehydrate', label: 'Dehydrate', kick: 'L5→L1 · copy-back', x: LEFT_X, y: 1174, sat: true,
-    dur: 'durable', kind: 'system', layer: 5, ref: '§22',
-    lede: 'Targeted synchronization of a restoration-relevant outcome that currently lives only in runtime state, back into authorized durable ECS data.',
+    id: 'retire', label: 'Retirement Barrier', kick: 'L5 · system', x: LEFT_X, y: 1404, sat: true,
+    dur: 'derived', kind: 'system', layer: 5, ref: '§20.8, §24.1',
+    lede: 'A complete Desired set is authoritative for what should currently exist. It is not automatically permission to release what already exists.',
     body: [
-      { h: 'When it is needed at all', p: 'Most ECS-native simulation data is already durable and needs no copy-back. Dehydrate exists for the narrow cases where Unity temporarily owns a restoration-relevant outcome: a Rigidbody result that must survive unload or save, a ConfigurableJoint outcome, another engine-owned value not otherwise represented durably.' },
-      { h: 'Dirty registration is concern-local', p: 'Do not create a global universal dirty registry. The owning Reconciler maintains its own dirty participant sets, partitioned by Context Scope.', pre: 'presenter\n    ↓ ParticipantHandle\nReconciler\n    ↓\nChunk A dirty set += participant 37' },
-      { h: 'The pass', pre: 'dirty participant\n    ↓\nparticipant binding → BUID\n    ↓\nresolve current ECS Entity\n    ↓\nread runtime-owned result\n    ↓\nwrite authorized durable ECS components\n    ↓\nmark durable Data dirty / publish generation visibility\n    ↓\nclear runtime dirty state only after success' },
-      { h: 'Failure preserves the dirty state', p: 'If the write fails, the pending and dirty state stays. Retry, block, fail or degrade according to explicit policy. <strong>Never silently discard the only copy of a required durable outcome.</strong>' },
-      { h: 'Prepare-for-publication handshake', p: 'It is not enough to say "Dehydrate happens sometime." Before a transition would discard the only runtime copy of a required outcome — a durable Delete, a save promising latest outcomes, a scope unload, a reload — Carbon must run an ordered prepare-for-publication phase.', code: 'public struct RuntimeSyncRequest : IBufferElementData\n{\n    public ulong RequestId;\n    public BUID ScopeOrSubject;\n    public RuntimeSyncReason Reason;\n}\n\npublic struct RuntimeSyncResult : IBufferElementData\n{\n    public ulong RequestId;\n    public RuntimeSyncStatus Status;\n}' },
-      { h: 'Order', pre: 'host identifies a transition needing fresh outcomes\n        ↓\npublish RuntimeSyncRequest before destructive commit\n        ↓\nReconciler scope buckets flush matching dirty participants\n        ↓\nwrite durable ECS outcomes during sanctioned interval\n        ↓\nreport success/failure\n        ↓\nonly on permitted success policy:\n    commit Delete / snapshot / release scope', p: 'This machinery may be deferred for the earliest prototype if the test presenters hold no unique restoration-relevant state. It becomes mandatory the moment the slice claims Dehydrate, save freshness or destructive-unload correctness.' }
+      { h: 'Why this exists', p: 'Desired can drop an occurrence for a purely non-durable reason: residency disappears, a provider target changes, a projection is being replaced, host policy disables a concern, a newer target token supersedes the delivery. If the old runtime occurrence owns restoration-relevant dirty state, releasing it immediately would discard the only copy.' },
+      { h: 'The barrier', pre: 'Desired no longer contains old target\n        ↓\nmark occurrence PendingRetire / RetireBlocked\n        ↓\nstop new work that would extend the old target\n        ↓\nissue targeted runtime-sync/writeback request\n        ↓\nnext sanctioned interval commits required outcomes\n        ↓\non success:\n    Unbind / release / remove Actual\non failure:\n    preserve dirty + Actual ownership\n    follow retry/block/degrade policy' },
+      { h: 'The problem it solves', q: 'Non-durable residency changes do not need to lie about Desired just to keep an object alive long enough to save required outcomes. Desired may truthfully become empty while Actual remains temporarily owned until safe release.' },
+      { h: 'Retirement can be cancelled', p: 'If the newest Desired target becomes valid again before release, and the current Actual occurrence still satisfies it, the Reconciler may cancel retirement and retain the existing occurrence rather than churn it.' },
+      { h: 'It gates scope disposal', p: '<code>PendingRetire</code> is an example concern-local journal state, not a universal Carbon lifecycle enum. But the [[scopehost|Context Scope host]] must wait on it: runtime-scope disposal cannot assume <code>Desired == empty</code> means every runtime object can be destroyed immediately.' }
     ],
-    links: ['unity', 'ecs', 'buckets', 'coordinator']
+    links: ['reconciler', 'writeback', 'scopehost', 'unity']
+  },
+  {
+    id: 'writeback', label: 'Dehydrate / Writeback', kick: 'L5→L1 · copy-back', x: LEFT_X, y: 1312, sat: true,
+    dur: 'durable', kind: 'system', layer: 5, ref: '§23',
+    lede: 'Targeted synchronization of a restoration-relevant outcome that currently lives only in runtime state, back into authorized durable ECS data — inside the sanctioned mutation interval, never during the read-side reconciliation pass.',
+    body: [
+      { h: 'When it is needed at all', p: 'Most ECS-native simulation data is already durable and needs no copy-back. This exists for the narrow cases where the engine temporarily owns a restoration-relevant outcome: a Rigidbody result that must survive unload or save, a ConfigurableJoint outcome, another engine-owned value not otherwise represented durably.' },
+      { h: 'Dirty registration is concern-local', pre: 'presenter\n    ↓ ParticipantHandle\nReconciler\n    ↓\nChunk A dirty set += participant 37', p: 'Do not create a global universal dirty registry.' },
+      { h: 'The physical bridge', pre: 'Prefab/Scene Reconciler systems\n    own dirty registries + runtime object references\n            ↓\nCarbonPrepareForPublicationSystem : SystemBase\n    runs inside the sanctioned mutation/integration interval\n    asks only relevant partitions to flush\n            ↓\ntargeted Dehydrate writes authorized durable payload\n            ↓\nBoneDataDirty / generation visibility recorded\n            ↓\npublication may proceed', p: 'The writeback system is an integration adapter, not a second owner of projection or durable truth. A host-driven callback into the Reconciler systems during the same interval is equally acceptable if simpler.' },
+      { h: 'Failure preserves the dirty state', p: 'If the write fails, pending and dirty state stays. Retry, block, fail or degrade according to explicit policy. <strong>Never silently discard the only copy of a required durable outcome.</strong>' },
+      { h: 'Two timing cases — do not merge them', ul: ['<strong>Known durable destructive transition before publication</strong> (Delete, reload replacement): stage and fence the destructive commit, integrate required outcomes before the publication that would remove the target.', '<strong>Derived runtime retirement after publication</strong> (residency loss, provider replacement): Desired may empty immediately, and the [[retire|retirement barrier]] holds Actual until the next sanctioned writeback succeeds.'] },
+      { h: 'Handshake', code: 'public struct RuntimeSyncRequest : IBufferElementData\n{\n    public ulong RequestId;\n    public BUID ScopeOrSubject;\n    public RuntimeSyncReason Reason;\n}\n\npublic struct RuntimeSyncResult : IBufferElementData\n{\n    public ulong RequestId;\n    public RuntimeSyncStatus Status;\n}', p: 'This machinery may be deferred for the earliest prototype if test presenters hold no unique restoration-relevant state. It becomes mandatory the moment the slice claims Dehydrate, save freshness or destructive-unload correctness.' },
+      { h: 'Save ordering', p: 'Do <strong>not</strong> Dehydrate after choosing a revision and then serialize that older revision as if it included the writeback. The saved revision must identify the coherent durable state actually being serialized.' }
+    ],
+    links: ['unity', 'ecs', 'retire', 'coordinator', 'publication']
   }
 ];
 
 /* lx/ly/la override the auto-placed edge label where the midpoint would collide */
 const EDGES = [
-  { from: 'intent',      to: 'coordinator', dur: 'input',   label: 'request' },
-  { from: 'load',        to: 'ecs',         dur: 'input',   label: 'privileged', dash: true,
-    path: 'M 255 162 C 290 162 282 218 305 234', lx: 300, ly: 209, la: 'end' },
+  { from: 'authoring',   to: 'creation',    dur: 'input',   label: 'templates', dash: true, path: 'M 255 70 C 290 70 282 126 305 142', lx: 300, ly: 117, la: 'end' },
+  { from: 'intent',      to: 'creation',    dur: 'input',   label: 'create' },
+  { from: 'creation',    to: 'coordinator', dur: 'durable', label: 'proposal' },
+  /* no label: the 50-unit gap cannot hold one, and the node kicker already says "privileged" */
+  { from: 'load',        to: 'ecs',         dur: 'input',   label: '', dash: true, path: 'M 255 346 L 305 346' },
   { from: 'coordinator', to: 'ecs',         dur: 'durable', label: 'commit' },
-  { from: 'ecs',         to: 'markers',     dur: 'durable', label: 'carries', dash: true, path: 'M 555 254 L 605 254', ly: 246 },
+  { from: 'ecs',         to: 'markers',     dur: 'durable', label: 'carries', dash: true, path: 'M 555 346 L 605 346', ly: 338 },
   { from: 'ecs',         to: 'spine',       dur: 'durable', label: 'interpreted as' },
   /* the second write channel: direct payload writes never touch the Coordinator
      or the Spine, but still have to settle by the next publication */
   { from: 'ecs',         to: 'publication', dur: 'durable', label: 'payload dirty', dash: true,
-    path: 'M 555 275 C 582 275 582 300 582 380 C 582 425 570 450 555 450', lx: 590, ly: 358, la: 'start' },
+    path: 'M 555 367 C 582 367 582 392 582 462 C 582 500 570 542 555 542', lx: 590, ly: 448, la: 'start' },
   { from: 'spine',       to: 'publication', dur: 'durable', label: 'settles' },
   { from: 'publication', to: 'watcher',     dur: 'derived', label: 'revision n' },
-  { from: 'watcher',     to: 'orchestrator',dur: 'derived', label: 'changed set' },
+  { from: 'watcher',     to: 'orchestrator',dur: 'derived', label: 'changed set', path: 'M 430 653 L 430 729' },
   { from: 'markers',     to: 'orchestrator',dur: 'durable', label: 'projection intent', dash: true,
-    path: 'M 805 254 C 856 254 862 300 862 470 C 862 556 830 606 555 606', lx: 862, ly: 380, la: 'middle' },
-  { from: 'demand',      to: 'orchestrator',dur: 'input',   label: 'residency', path: 'M 605 630 C 585 630 582 638 555 638', lx: 580, ly: 622, la: 'middle' },
+    path: 'M 805 346 C 856 346 862 392 862 560 C 862 680 830 744 555 744', lx: 862, ly: 460, la: 'middle' },
+  { from: 'drivers',     to: 'residency',   dur: 'input',   label: 'demand', path: 'M 705 556 L 705 596', lx: 715, ly: 580, la: 'start' },
+  { from: 'residency',   to: 'scopehost',   dur: 'derived', label: 'activate', path: 'M 705 648 L 705 688', lx: 715, ly: 672, la: 'start' },
+  { from: 'scopehost',   to: 'orchestrator',dur: 'derived', label: 'context ready', path: 'M 605 740 C 585 740 582 760 555 762', lx: 596, ly: 728, la: 'end' },
   { from: 'orchestrator',to: 'desired',     dur: 'derived', label: 'publishes' },
   { from: 'desired',     to: 'reconciler',  dur: 'derived', label: 'complete target' },
-  { from: 'reconciler',  to: 'buckets',     dur: 'derived', label: 'owns', dash: true, path: 'M 305 806 L 255 806', ly: 798 },
+  { from: 'reconciler',  to: 'buckets',     dur: 'derived', label: 'owns', dash: true, path: 'M 305 944 L 255 944', ly: 936 },
   { from: 'reconciler',  to: 'delivery',    dur: 'derived', label: 'realize' },
-  { from: 'warehouse',   to: 'delivery',    dur: 'input',   label: 'resolves', path: 'M 605 898 L 555 898', ly: 890 },
+  { from: 'warehouse',   to: 'delivery',    dur: 'input',   label: 'lease', path: 'M 605 1036 L 555 1036', ly: 1028 },
   { from: 'delivery',    to: 'pairing',     dur: 'derived', label: 'manifest' },
   { from: 'pairing',     to: 'bind',        dur: 'derived', label: 'live buid' },
+  { from: 'bind',        to: 'refs',        dur: 'derived', label: 'stitch', dash: true, path: 'M 555 1220 L 605 1220', ly: 1212 },
   { from: 'bind',        to: 'hydrate',     dur: 'derived', label: '' },
-  { from: 'hydrate',     to: 'unity',       dur: 'derived', label: 'activate' },
-  { from: 'unity',       to: 'dehydrate',   dur: 'derived', label: 'dirty', dash: true,
-    path: 'M 305 1280 C 268 1280 262 1218 255 1196', lx: 292, ly: 1244, la: 'end' },
-  { from: 'dehydrate',   to: 'ecs',         dur: 'durable', label: 'durable write',
-    path: 'M 55 1174 C 24 1174 24 1146 24 1108 L 24 330 C 24 292 56 272 305 272', lx: 34, ly: 700, la: 'start' }
+  { from: 'hydrate',     to: 'unity',       dur: 'derived', label: 'ready / activate' },
+  { from: 'unity',       to: 'retire',      dur: 'derived', label: 'retire', dash: true, path: 'M 305 1404 L 255 1404', ly: 1396 },
+  { from: 'retire',      to: 'writeback',   dur: 'derived', label: 'flush', path: 'M 155 1378 L 155 1338', lx: 165, ly: 1362, la: 'start' },
+  { from: 'writeback',   to: 'ecs',         dur: 'durable', label: 'sanctioned write',
+    path: 'M 55 1312 C 24 1312 24 1284 24 1246 L 24 422 C 24 384 56 364 305 364', lx: 34, ly: 800, la: 'start' },
+  { from: 'unity',       to: 'intent',      dur: 'input',   label: 'runtime fact → domain intent', dash: true,
+    path: 'M 555 1420 C 900 1420 908 1380 908 1240 L 908 130 C 908 88 880 70 555 70', lx: 898, ly: 690, la: 'end' }
 ];
 
 const SCENARIOS = [
   {
     id: 'manifest',
     name: 'First manifestation',
-    blurb: 'A durable Add becomes a live GameObject. This is the vertical slice that proves the architecture works at all.',
+    blurb: 'A creation request becomes a live GameObject. This is the full vertical slice, from authored template through durable commit to an active presenter.',
     steps: [
-      { n: 'intent', t: 'A system asks for a structural result', b: 'Gameplay code does not call <code>SpawnZombie()</code>. It states what it wants to be true: a new Zombie occurrence under Chunk A. No prefab is named here, no system is registered, no runtime object is touched.' },
-      { n: 'coordinator', t: 'Validate, collapse, commit', b: 'The Coordinator gathers every structural request for this interval, collapses redundant and conflicting intent into the minimal final valid result, and validates the proposed structure before touching anything. If this Add were followed by a Remove in the same interval, no durable occurrence would ever exist.' },
-      { n: 'ecs', t: 'Add commits durable truth', b: 'A [[buid]] is minted, the ECS entity is created with its complete initial archetype, legal parentage is set, and structural generation stamps advance. From this instant the Zombie <em>exists</em> — with no runtime representation whatsoever, and that is a perfectly valid state.' },
-      { n: 'spine', t: 'Indexes update incrementally', b: 'The BUID→Entity and Parent→Children indexes take the new record. Nothing here is a new authority: every one of these structures could be dropped and rebuilt from <code>BoneParent</code> alone.' },
-      { n: 'publication', t: 'Close the interval, advance the revision', b: 'The mutation window closes, dirty payload is consolidated, SubtreeGen propagates to affected ancestors, and the coherence revision advances. Downstream systems never have to infer consistency from Unity callback timing — they are handed a settled state.' },
-      { n: 'watcher', t: 'Localize what changed', b: 'The Watcher compares settled truth against its watermarks and emits a changed population. It does not care that the Coordinator was the source; a privileged load would have produced the same observation.' },
-      { n: 'orchestrator', t: 'Compose the complete Desired', b: 'Now five inputs combine: current Spine truth, the changed subset, the active Context Scope, residency and demand, and the Prefab Reconciler’s interest contract. The Zombie root carries a Prefab [[marker|Representation Marker]] and its Chunk is resident, so it selects.', also: ['markers', 'demand'] },
-      { n: 'desired', t: 'One exact, complete target partition', b: 'Not "a Zombie was added" — the full answer for <code>Prefab / Chunk A / Revision 42</code>. A Reconciler that missed the last ten updates still converges on this, because there is no history to replay.' },
-      { n: 'reconciler', t: 'Diff Desired against Actual', b: 'Desired contains the Zombie root. Actual does not. That single set difference is the entire instruction: realize it. No event told the Reconciler to spawn anything.' },
-      { n: 'delivery', t: 'Resolve the package, instantiate, read the manifest', b: 'The marker’s DeliveryKey resolves through the [[warehouse|Asset Warehouse]] to an immutable prefab source. The instantiate stays <strong>Pending</strong> until completion is observed — dispatching is not delivering. Then the Component Manifest exposes the Carbon presenters inside.', also: ['warehouse'] },
-      { n: 'pairing', t: 'AssetId → BaseId → live BUID', b: 'One prefab holds several presenters, and the durable group holds several Bones. Authored AssetId matches durable [[baseid|BaseId]] inside the declared delivery group only, which resolves to the live BUID for each participant.' },
-      { n: 'bind', t: 'Presenters bind to a BUID', b: 'Each presenter receives its live BUID and a participant handle. No managed Bone object is created, the Bone stores no presenter reference, and no raw <code>Entity</code> is durably held.' },
-      { n: 'hydrate', t: 'Copy only what the engine needs', b: 'Rigidbody configuration, Animator state, materials. Data the presenter reads straight from ECS is not copied at all. The hydration watermark records which Data generation each participant has seen.' },
-      { n: 'unity', t: 'Stitch, activate, then record Actual', b: 'Presenter relationships and services resolve, readiness is established, the instance activates — and only now is it recorded as Actual. The durable Zombie has manifested, and every single step between the request and this object was derived.' }
+      { n: 'intent', t: 'A system asks for a structural result', b: 'Gameplay code does not call <code>SpawnZombie()</code>. It states what it wants to be true: a Zombie occurrence under Chunk A. No prefab is named here, no system is registered, no runtime object is touched.' },
+      { n: 'creation', t: 'Clone a trusted template, detached', b: 'This is <strong>not</strong> Coordinator work. A creation materializer selects a trusted durable source set and clones it away from the live Spine: fresh [[buid|BUIDs]] for every occurrence, a source→clone map, immediate [[baseid|BaseId]] provenance recorded, payload and markers copied, internal durable references remapped while external ones are preserved.', also: ['authoring'] },
+      { n: 'coordinator', t: 'Validate, collapse, commit', b: 'Coordinator receives a plain generic structural proposal — several Adds plus initial payload — and checks only current facts: destination exists, coherence is compatible, no cycle, no BUID collision, no stale precondition. It has no idea what a Zombie is.' },
+      { n: 'ecs', t: 'The whole group commits as one result', b: 'Multi-Bone creation publishes as <strong>one coherent semantic result</strong>. The detached clone records were staging, never live truth. From this instant the Zombie exists — with no runtime representation whatsoever, which is a perfectly valid state.' },
+      { n: 'spine', t: 'Indexes update incrementally', b: 'The BUID→Entity and Parent→Children indexes take the new records. Nothing here is a new authority: every one of these structures could be dropped and rebuilt from <code>BoneParent</code> alone.' },
+      { n: 'publication', t: 'Close the interval, advance the revision', b: 'The mutation window closes, dirty payload consolidates, SubtreeGen propagates to affected ancestors, and the coherence revision advances. Downstream systems are handed a settled state rather than inferring one from callback timing.' },
+      { n: 'watcher', t: 'Localize what changed', b: 'The Watcher compares settled truth against its watermarks and emits a changed population. It does not care that the Coordinator was the source — a privileged load would have produced the same observation.' },
+      { n: 'drivers', t: 'Meanwhile, demand is expressed separately', b: 'A player, camera, server simulation or editor viewport wants a region of the world realized. Multiple Drivers wanting the same Chunk union and deduplicate into one demand. This axis is completely independent of what durably exists.', trace: false },
+      { n: 'residency', t: 'Demand becomes an eligible population', b: 'The Residency Solver converts demand into eligible durable population. For current Marrow, <strong>Chunk is the default practical entity residency unit</strong> — a Marrow rule, not a generic Carbon one.' },
+      { n: 'scopehost', t: 'Activate the runtime scope first', b: 'A durable Chunk Bone existing is not the same as Chunk runtime systems existing. The host creates the configured scope instance, rebuilds its scratch from Spine and ECS, and enables scope-local work. <strong>Concern work that needs this context must not start before it is baselined.</strong>' },
+      { n: 'orchestrator', t: 'Compose the complete Desired', b: 'Eligible population, plus Spine population beneath it, plus the Prefab [[marker|Representation Marker]] filter, plus the concern’s interest contract. The result is one complete unioned and deduplicated target set.', also: ['markers'] },
+      { n: 'desired', t: 'One exact, complete target partition', b: 'Not "a Zombie was added" — the full answer for <code>Prefab / Chunk A / Revision 42 / Token 991</code>. A Reconciler that missed the last ten updates still converges on this, because there is no history to replay.' },
+      { n: 'reconciler', t: 'Diff Desired against Actual', b: 'Desired contains the Zombie root. Actual does not. That single set difference is the entire instruction. No event told the Reconciler to spawn anything.' },
+      { n: 'delivery', t: 'Resolve the Barcode, acquire, then record Actual', b: 'The marker’s [[barcode|Barcode]] resolves through the [[warehouse|Warehouse]] to an immutable source, and the Reconciler takes a lease. Work is <strong>Pending</strong> while no owned occurrence exists. The moment the GameObject is materially instantiated, it is <strong>Actual immediately</strong> — not Ready, but owned.', also: ['warehouse'] },
+      { n: 'pairing', t: 'AssetId → template BUID → live BaseId', b: 'The manifest was authored, not discovered by scanning names. Presenter AssetId identifies an authored template part, which is a source BUID, which matches the live clone whose immediate BaseId is that source. This constrained direct-template rule is a first-slice proof, not the universal mapping contract.' },
+      { n: 'bind', t: 'Bind by BUID, then stitch', b: 'Each presenter receives its live BUID and a participant handle. No managed Bone object, no presenter reference on the Bone, no durable raw <code>Entity</code>. Stitching then resolves relationships — internal group links from the manifest, cross-group or cold links through the [[refs|reference resolver]].', also: ['refs'] },
+      { n: 'hydrate', t: 'Copy only what the engine needs', b: 'Rigidbody configuration, Animator state, materials. Data the presenter reads straight from ECS is not copied at all. This is a read-side pass and must not mutate durable payload.' },
+      { n: 'unity', t: 'Prerequisites met, Ready, activate', b: 'Concern prerequisites are satisfied, the occurrence becomes concern-locally Ready, and the instance activates. The durable Zombie has manifested — and every step between the request and this object was derived.' }
     ]
   },
   {
@@ -1503,24 +1648,24 @@ const SCENARIOS = [
     blurb: 'Durable payload changes. Nothing is rebuilt, nothing is respawned, and exactly one presenter updates.',
     steps: [
       { n: 'ecs', t: 'A sanctioned writer changes durable payload', b: 'Health, or any ordinary durable component. This never goes through the Coordinator — payload is the second, direct write channel. The writer enables <code>BoneDataDirty</code> so publication can see it.' },
-      { n: 'publication', t: 'DataGen advances, SubtreeGen propagates', b: 'Publication collects dirty Bones, advances the Data generation stamp on each, propagates Subtree stamps to affected ancestors, disables the dirty marker, and advances the coherence revision.' },
-      { n: 'watcher', t: 'A changed population, not a replay log', b: 'The Watcher emits <code>ChangedBone { Buid, Kinds }</code>. Structural kind: none. Data kind: yes. That distinction is what lets everything downstream skip the expensive paths.' },
-      { n: 'orchestrator', t: 'Desired is unchanged', b: 'Nothing structural moved, no marker changed, demand is the same. The composed target partition for this Chunk is identical to last revision. This is the common case and it must be cheap.' },
-      { n: 'reconciler', t: 'Retain — do not rebuild', b: 'Desired ∩ Actual means retain. The package target has not changed, the target token matches, so there is nothing to realize and nothing to retire. Only generation invalidation is inspected.', trace: ['orchestrator>desired', 'desired>reconciler'] },
-      { n: 'hydrate', t: 'Hydrate one participant', b: 'The binding’s <code>LastHydratedDataGen</code> is behind the Bone’s current <code>BoneGenerations.Data</code>. That one presenter reads the components it needs and updates its watermark. The rest of the prefab group is untouched.', trace: false },
-      { n: 'unity', t: 'Engine-facing state catches up', b: 'The Rigidbody, Animator or material now reflects durable truth. No object was destroyed, no asset reloaded, no binding invalidated.' }
+      { n: 'publication', t: 'DataGen advances, SubtreeGen propagates', b: 'Publication collects dirty Bones, advances the Data stamp on each, propagates Subtree stamps to affected ancestors, disables the marker, and advances the coherence revision. Remember the stamps are rebuildable acceleration metadata, not authority.' },
+      { n: 'watcher', t: 'A changed population, not a replay log', b: '<code>ChangedBone { Buid, Kinds }</code>. Structural kind: none. Data kind: yes. That distinction is what lets everything downstream skip the expensive paths.' },
+      { n: 'orchestrator', t: 'Desired is unchanged', b: 'Nothing structural moved, no marker changed, demand and provider state are the same. The composed target partition is identical to last revision, same target token. This is the common case and it must be cheap.' },
+      { n: 'reconciler', t: 'Retain — do not rebuild', b: 'Desired ∩ Actual means retain. The Barcode resolution has not changed and the target token matches, so there is nothing to realize and nothing to retire.', trace: ['orchestrator>desired', 'desired>reconciler'] },
+      { n: 'hydrate', t: 'Hydrate the mismatched participants', b: 'For first-slice correctness precise changed-BUID routing is optional: compare each binding’s <code>LastHydratedDataGen</code> against the Bone’s current <code>DataGen</code> and Hydrate only the mismatches. The rest of the prefab group is untouched.', trace: false },
+      { n: 'unity', t: 'Engine-facing state catches up', b: 'The Rigidbody, Animator or material now reflects durable truth. No object destroyed, no asset reloaded, no binding invalidated, no durable write performed.' }
     ]
   },
   {
     id: 'dehydrate',
-    name: 'Dehydrate a runtime outcome',
-    blurb: 'Unity temporarily owns something worth keeping. Getting it back into durable data is an explicit, ordered handshake.',
+    name: 'Writeback a runtime outcome',
+    blurb: 'Unity temporarily owns something worth keeping. Getting it back into durable data is write-side integration, not something the reconciliation pass may do on its own.',
     steps: [
-      { n: 'unity', t: 'The engine produces a restoration-relevant result', b: 'A settled Rigidbody position, a ConfigurableJoint outcome — a value that currently exists only in engine state and must survive unload or save. The presenter calls <code>MarkDirty()</code>.' },
-      { n: 'dehydrate', t: 'The dirty set is concern-local and scope-partitioned', b: 'There is no global dirty registry. The handle identifies the participant binding, which lands in the owning Reconciler’s dirty set for that Context Scope — <code>Chunk A dirty set += participant 37</code>.', also: ['buckets'] },
-      { n: 'ecs', t: 'Write the outcome into authorized durable components', b: 'Binding → BUID → resolve current Entity → read the runtime result → write durable components during the sanctioned interval. The runtime dirty state clears <strong>only after success</strong>; a failed write keeps it pending.' },
-      { n: 'publication', t: 'It becomes visible at the next revision', b: 'The Dehydrate write marks durable Data dirty like any other payload write, so it flows through the same generation and publication machinery. There is no privileged back channel.' },
-      { n: 'coordinator', t: 'Destructive transitions must wait for this', b: 'Before a Delete, a save promising latest outcomes, or a scope unload, the host publishes a <code>RuntimeSyncRequest</code> and waits for the result. Only on the permitted success policy does the destructive commit proceed.', also: ['dehydrate'], trace: false }
+      { n: 'unity', t: 'The engine produces a restoration-relevant result', b: 'A settled Rigidbody position, a ConfigurableJoint outcome — a value that exists only in engine state and must survive unload or save. The presenter calls <code>MarkDirty()</code>.' },
+      { n: 'writeback', t: 'The dirty set is concern-local and partitioned', b: 'There is no global dirty registry. The handle identifies the participant binding, which lands in the owning Reconciler’s dirty set for that partition — <code>Chunk A dirty set += participant 37</code>.', also: ['buckets'], trace: false },
+      { n: 'ecs', t: 'Write inside the sanctioned interval', b: 'The crucial correction: the normal Reconciler provisioning and Hydrate pass runs against settled truth and <strong>gains no permission to mutate durable payload</strong>. Writeback goes through a prepare-for-publication bridge that runs inside the bounded mutation interval. The runtime dirty state clears only after success.' },
+      { n: 'publication', t: 'It becomes visible at the next revision', b: 'The write marks durable Data dirty like any other payload write, so it flows through the same generation and publication machinery. There is no privileged back channel.' },
+      { n: 'coordinator', t: 'Destructive transitions fence on this', b: 'Before a Delete or a save promising latest outcomes, the host issues a <code>RuntimeSyncRequest</code> inside the interval and stages the destructive commit. Only on the permitted success policy does it finalize. Do not confuse this with the <em>other</em> timing case — a post-publication retirement — which uses a barrier instead.', also: ['writeback'], trace: false }
     ]
   },
   {
@@ -1528,46 +1673,72 @@ const SCENARIOS = [
     name: 'Move between Chunks',
     blurb: 'The operation that proves the architecture. One durable field changes and every contextual consequence rederives itself.',
     steps: [
-      { n: 'intent', t: 'Move Zombie X from Chunk A to Chunk B', b: 'The caller does not unregister anything from Chunk A or register anything with Chunk B. It states the new structural truth and stops.' },
-      { n: 'coordinator', t: 'Cycle validation and index surgery', b: 'Physically this may be one field write, since <code>BoneParent.Parent</code> is ordinary component data and may not even cause an archetype migration. The Carbon work is what costs: cycle validation, removing from the old parent’s child index, inserting into the new one, propagating ancestry generations on both paths.' },
-      { n: 'ecs', t: 'BoneParent changes A → B, BUID unchanged', b: 'This is the whole durable delta. Identity is preserved by definition: Move preserves [[buid]]. Nothing about the Zombie’s payload, markers or provenance is touched.' },
-      { n: 'spine', t: 'Old and new ancestry both invalidate', b: 'Subtree generations advance up both the old and new ancestor chains, because containment answers changed on both sides.' },
+      { n: 'intent', t: 'Move Zombie X from Chunk A to Chunk B', b: 'The caller does not unregister anything from Chunk A or register anything with Chunk B. It states the new structural truth and stops. Note this bypasses the creation materializer entirely — Move is explicit structural intent.', trace: false },
+      { n: 'coordinator', t: 'Cycle validation and index surgery', b: 'Physically this may be one field write, since <code>BoneParent.Parent</code> is ordinary component data and may not even cause an archetype migration. The Carbon work is what costs: cycle validation, child-index surgery on both parents, ancestry generation propagation.', trace: false },
+      { n: 'ecs', t: 'BoneParent changes A → B, BUID unchanged', b: 'This is the whole durable delta. Identity is preserved by definition. Payload, markers, provenance and every durable [[refs|BUID reference]] pointing at this occurrence remain exactly as they were.' },
+      { n: 'spine', t: 'Old and new ancestry both invalidate', b: 'Subtree generations advance up both the old and new ancestor chains, because containment answers changed on both sides. An ordinary Move stays within one coherence scope; crossing a coherence boundary requires higher-level semantics and is rejected here.' },
       { n: 'watcher', t: 'A localized structural move', b: '<code>StructuralMove { Buid, OldParent, NewParent }</code>. Enough for downstream selection to prune work, and deliberately not a replay log.', trace: ['spine>publication', 'publication>watcher'] },
-      { n: 'orchestrator', t: 'Two partitions change at once', b: 'Chunk A’s composed Desired no longer contains the Zombie. Chunk B’s now does. Both are published as complete target sets for their partitions.' },
-      { n: 'reconciler', t: 'Move the binding, or reprovision', b: 'If representation eligibility and the delivery package are unchanged, this is a bucket transfer, not a teardown. If eligibility changed — a different scope means a different package — the Reconciler retires and realizes instead.', trace: ['orchestrator>desired', 'desired>reconciler'] },
-      { n: 'buckets', t: 'Ownership transfers between scope buckets', b: 'Projection entry, participant bindings, dirty entries and pending work move from the Chunk A bucket to the Chunk B bucket. Context Scope and service bindings are reevaluated for the new location.' },
-      { n: 'unity', t: 'The GameObject may never be touched', b: 'Navigation caches rebind their Chunk provider, audio re-resolves its context, AI scoped systems transfer their local record — each concern discovering the new truth independently. <strong>Move does not mean "call every system and unregister/register manually."</strong>', trace: false }
+      { n: 'orchestrator', t: 'Two partitions change at once', b: 'Chunk A’s composed Desired no longer contains the Zombie. Chunk B’s now does. Both publish as complete target sets for their partitions.' },
+      { n: 'reconciler', t: 'Move the binding, or reprovision', b: 'If eligibility and the Barcode resolution are unchanged, this is a bucket transfer, not a teardown. If the target state actually changed — a different scope resolving a different delivery — the Reconciler retires and realizes instead.', trace: ['orchestrator>desired', 'desired>reconciler'] },
+      { n: 'buckets', t: 'Ownership transfers between partitions', b: 'Projection entry, participant bindings, dirty entries and pending work move from the Chunk A bucket to the Chunk B bucket. Any <code>SystemHandle&lt;T&gt;</code>-style contextual provider is <strong>re-resolved</strong> for the new location, while durable BUID references are simply preserved.' },
+      { n: 'unity', t: 'The GameObject may never be touched', b: 'Navigation rebinds its Chunk provider, audio re-resolves its context, AI scoped systems transfer their local record — each concern discovering the new truth independently. <strong>Move does not mean "call every system and unregister/register manually."</strong>', trace: false }
     ]
   },
   {
     id: 'unload',
     name: 'Chunk unload',
-    blurb: 'Runtime state disappears. Durable state does not. Cleanup is ownership-shaped instead of search-shaped.',
+    blurb: 'Runtime state disappears, durable state does not — and Desired going empty is not permission to release immediately.',
     steps: [
-      { n: 'demand', t: 'Chunk A becomes nonresident', b: 'The runtime decides this Chunk is no longer wanted. This is a demand change, not a durable change, and not a Delete. Nothing about what exists has changed.' },
-      { n: 'orchestrator', t: 'Desired for Chunk A becomes empty', b: 'No special "unload" instruction is invented. The Orchestrator simply composes a target set for a scope that is no longer resident, and that set is empty.' },
-      { n: 'desired', t: 'An empty complete target partition', b: 'Replacement semantics do all the work. Empty is a perfectly ordinary target, not a signal.' },
-      { n: 'reconciler', t: 'Actual − Desired = retire everything', b: 'The whole bucket falls into the retire set. First, required runtime-owned durable outcomes are flushed — cleanup is a downstream effect, never the last chance to save truth.', also: ['dehydrate'] },
-
-      { n: 'buckets', t: 'Clear the bucket wholesale', b: 'This is the payoff of scope-owned scratch memory. Instead of searching for every presenter, binding, dirty callback, pending load and cache entry belonging to Chunk A, the ownership is already known. Deactivate, unbind, invalidate handles, release or pool the containers, cancel pending target-token work, drop the bucket.' },
-      { n: 'unity', t: 'Objects released or pooled', b: 'Every GameObject in the Chunk is gone. In-flight async work is cancelled by target token so a late completion cannot adopt itself into a dead partition.', trace: false },
-      { n: 'ecs', t: 'Durable truth is completely untouched', b: 'Every Bone under Chunk A still exists, still has its BUID, still has its parentage and payload and markers. <strong>Runtime unload does not terminate a BUID.</strong> Restore demand and the identical projection rebuilds from durable data.', trace: false }
+      { n: 'drivers', t: 'Chunk A is no longer demanded', b: 'The runtime decides this Chunk is no longer wanted. A demand change, not a durable change, and not a Delete. Nothing about what exists has changed.' },
+      { n: 'residency', t: 'It drops out of the eligible population', b: 'The solver recomputes. No special "unload" instruction is invented anywhere — a Chunk simply stops being resident.' },
+      { n: 'orchestrator', t: 'Desired for Chunk A becomes empty', b: 'The Orchestrator composes a target set for a partition that is no longer resident, and that set is empty. Replacement semantics do all the work; empty is an ordinary target, not a signal.', trace: ['residency>scopehost', 'scopehost>orchestrator'] },
+      { n: 'reconciler', t: 'Actual − Desired = retire', b: 'The whole bucket falls into the retire set, and stale pending target-token work is cancelled so a late completion cannot adopt itself into a dead partition.', trace: ['orchestrator>desired', 'desired>reconciler'] },
+      { n: 'retire', t: 'Undesired is not yet releasable', b: 'This is the correction that matters. If occurrences own restoration-relevant dirty state, they are marked <code>PendingRetire</code> and kept <strong>owned but quiesced</strong> while writeback is requested. Desired may truthfully be empty while Actual is still held — no need to lie about Desired just to keep an object alive long enough to save it.', also: ['buckets'], trace: false },
+      { n: 'writeback', t: 'Flush during the sanctioned interval', b: 'Targeted writeback commits the required outcomes. On success, unbind presenters, release or pool the Unity objects <em>and the Warehouse leases</em>, and remove the Actual, pending and binding records. On failure, ownership and dirty state are preserved.' },
+      { n: 'scopehost', t: 'Only now may the scope be disposed', b: 'The Context Scope host has been marking the scope retiring throughout. It must not dispose scope-local scratch while any Reconciler barrier is unresolved. Once every barrier clears, the buckets clear and the runtime scope instance is disposed wholesale.', trace: false },
+      { n: 'ecs', t: 'Durable truth is completely untouched', b: 'Every Bone under Chunk A still exists, with its BUID, parentage, payload and markers. <strong>Runtime unload does not terminate a BUID.</strong> Restore demand and the identical projection rebuilds from durable data.', trace: false }
     ]
   },
   {
     id: 'delete',
     name: 'Delete a represented Bone',
-    blurb: 'Durable identity terminates, and every downstream representation disappears as a consequence rather than as a cleanup call.',
+    blurb: 'Durable identity terminates. The destructive commit is staged so required runtime outcomes survive it.',
     steps: [
-      { n: 'intent', t: 'Delete, with an explicit subtree contract', b: 'Deletion of a subtree must state what happens to children. Do not leave child disposition implicit — that ambiguity is how orphans get created.' },
-      { n: 'coordinator', t: 'Prepare for publication before committing', b: 'This is a destructive transition, so the ordered handshake runs first. A <code>RuntimeSyncRequest</code> is published <em>before</em> the destructive commit, not after.' },
-      { n: 'dehydrate', t: 'Flush anything the runtime still owns', b: 'Relevant scope buckets flush matching dirty participants and write their durable outcomes. Success or failure is reported back. Only on the permitted success policy does the Delete proceed — never silently discard the only copy.', trace: false },
-      { n: 'ecs', t: 'Terminate the BUID and destroy the record', b: 'The deleted BUID and its relevant former context are captured before reclamation. Surviving parent and ancestor generations and indexes update. Identity is terminated — unlike unload, this one is permanent.' },
+      { n: 'intent', t: 'Delete, with an explicit subtree contract', b: 'Deletion of a subtree must state what happens to children. Do not leave child disposition implicit — that ambiguity is how orphans get created.', trace: false },
+      { n: 'coordinator', t: 'Stage the destructive result', b: 'This is the pre-publication timing case. Coordinator validates and collapses, then <strong>stages</strong> the Delete rather than reclaiming immediately. Note the collapse table distinguishes an internal non-terminal Remove from a true Delete: <code>true Delete → Add</code> produces a new BUID, while <code>internal Remove → Add</code> can collapse to a no-op or a Move.', trace: false },
+      { n: 'writeback', t: 'Integrate anything the runtime still owns', b: 'A <code>RuntimeSyncRequest</code> goes out before the destructive commit. Relevant partitions flush matching dirty participants and write their durable outcomes. Success or failure is reported back, and only the permitted success policy lets the Delete finalize.', trace: false },
+      { n: 'ecs', t: 'Terminate the BUID and destroy the record', b: 'The deleted BUID and its former context are captured before reclamation. Surviving ancestor generations and indexes update. Identity is terminated — unlike unload, this one is permanent, and durable references to it are now legitimately broken rather than retargeted.' },
       { n: 'spine', t: 'Indexes and ancestry settle', b: 'The child index entry is removed from the former parent, and structural generation stamps advance up the surviving ancestor chain.' },
       { n: 'watcher', t: 'StructuralDelete { Buid, FormerParent }', b: 'The former parent is included precisely because the Bone no longer exists to be asked. Downstream selection needs to know where the hole is.', trace: ['spine>publication', 'publication>watcher'] },
-      { n: 'orchestrator', t: 'The Bone is simply not selected', b: 'No delete instruction is routed anywhere. The composed Desired for that partition just no longer contains it, because it no longer exists to select.' },
+      { n: 'orchestrator', t: 'The Bone is simply not selected', b: 'No delete instruction is routed anywhere. The composed Desired for that partition no longer contains it, because it no longer exists to select.' },
       { n: 'reconciler', t: 'Actual − Desired = retire', b: 'The identical retire path as an unload. The Reconciler does not know or care whether this projection is disappearing because of a Delete, an unload or a demand change.', trace: ['orchestrator>desired', 'desired>reconciler'] },
-      { n: 'unity', t: 'The projection disappears', b: 'Deactivate, unbind, invalidate handles, release the container, drop the entry, release bucket-local scratch. Downstream representation vanished without any endpoint ever calling a destroy method on it.', trace: false }
+      { n: 'unity', t: 'The projection disappears', b: 'Deactivate, unbind, invalidate handles, release the container and lease, drop the entry, release bucket-local scratch. Downstream representation vanished without any endpoint calling a destroy method on it.', trace: false }
+    ]
+  },
+  {
+    id: 'provider',
+    name: 'Provider invalidation',
+    blurb: 'The Barcode never changes, durable data never changes, no revision advances — and the projection still has to converge onto new content.',
+    steps: [
+      { n: 'warehouse', t: 'The provider replaces or evicts content', b: 'A content update, an eviction, an address change, a compatible replacement. <strong>Provider version is separate from Barcode.</strong> The marker still names exactly the same logical delivery content it always did.' },
+      { n: 'orchestrator', t: 'Desired changes with no durable revision', b: 'This is why target derivation cannot listen only to publication. Warehouse and provider state are derivation inputs in their own right, and they move the target set while durable Carbon data sits perfectly still.', trace: false },
+      { n: 'desired', t: 'A new target token, same marker root', b: 'The MarkerRoot is unchanged, so membership alone would report "nothing to do". [[token|TargetToken]] is what distinguishes target generations — and it is deliberately not the same thing as the coherence revision.' },
+      { n: 'reconciler', t: 'Diff target state, not membership', b: 'The diff must compare desired <em>target state</em>. A root that stays Desired but resolves to different content needs refresh or replacement even though the occurrence key never moved.' },
+      { n: 'delivery', t: 'Acquire the new product, release the old lease', b: 'The Reconciler owns the lease for as long as Pending or Actual needs the product, and releases it when the work is stale, retired, cancelled or replaced. Any in-flight acquisition carrying the old token is now stale.' },
+      { n: 'unity', t: 'Stale completions are rejected, not adopted', b: 'When an async acquisition finally lands, its token is compared against the newest target. Matching, it is adopted. Not matching, it is released or cancelled. Without that check, a slow load manifests into a partition that no longer wants it.', trace: ['delivery>pairing', 'pairing>bind', 'bind>hydrate', 'hydrate>unity'] }
+    ]
+  },
+  {
+    id: 'feedback',
+    name: 'Runtime structural feedback',
+    blurb: 'A physics trigger notices something. The loop closes through intent, never through a direct mutation.',
+    steps: [
+      { n: 'unity', t: 'The engine observes a semantic fact', b: 'A trigger detects that an entity crossed into another Chunk. Gameplay decides an occurrence should be destroyed. An interaction requests a new occurrence. These are <strong>observations</strong>, and the runtime projection must not reparent, delete or create durable Bones as a side effect.' },
+      { n: 'intent', t: 'The domain interprets the consequence', b: 'Marrow or the domain decides what the observation <em>means</em> structurally, and issues <code>RequestMove</code>, <code>RequestDelete</code> or a creation request. The engine callback may originate intent; it never establishes truth.' },
+      { n: 'coordinator', t: 'The ordinary sanctioned path, no shortcuts', b: 'It arrives as a completely normal structural request and is validated, collapsed and committed exactly like one issued by any other caller. There is no privileged runtime channel.', trace: false },
+      { n: 'ecs', t: 'Truth is established', b: 'Only now is the fact durable. Everything the engine observed before this point was a proposal.' },
+      { n: 'publication', t: 'Visible only after publication', b: 'The change becomes observable at the next coherent revision. No observer ever sees a runtime-originated fact in a half-committed state.', trace: ['ecs>publication'] },
+      { n: 'reconciler', t: 'Downstream rederives as usual', b: 'Watcher localizes, Orchestrator recomposes, and the Reconciler converges — completely unaware that this particular change started life as a collision callback.', trace: false }
     ]
   },
   {
@@ -1576,84 +1747,123 @@ const SCENARIOS = [
     blurb: 'The defining test. Delete every transient index, binding and projection, then recover equivalent state from durable records alone.',
     wipe: true,
     steps: [
-      { n: 'unity', t: 'Discard every projection', b: 'All GameObjects, Scenes, presenters and pooled objects, gone. First flush any required runtime-owned durable outcome — after this point that copy no longer exists anywhere.', wipeFrom: true },
-      { n: 'buckets', t: 'Buckets, bindings and pending operations: gone', b: 'Every scope bucket, every participant binding, every dirty set, every pending async operation, every target watermark, every managed reference. None of it is authority, so none of it may be missed.', trace: false },
+      { n: 'unity', t: 'Cancel async work, then discard every projection', b: 'First cancel or invalidate pending async work that cannot survive, and flush any required runtime-owned durable outcome. After this point that copy no longer exists anywhere. Then all GameObjects, Scenes, presenters and pooled objects go.', wipeFrom: true },
+      { n: 'buckets', t: 'Buckets, bindings and leases: gone', b: 'Every partition bucket, participant binding, dirty set, retirement barrier, pending operation, Warehouse lease, target watermark and managed reference. None of it is authority, so none of it may be missed.', trace: false },
       { n: 'spine', t: 'Delete every index', b: 'BUID→Entity, Parent→Children, the parent shadow, the scope accelerators. The hierarchy itself does not disappear when you do this, because the hierarchy was never stored in the indexes.', trace: false },
-      { n: 'ecs', t: 'Only durable records remain', b: 'Entities carrying BoneIdentity, BoneParent, generations, provenance, markers and payload. If the world is unrecoverable from exactly this, then something transient had quietly become a second authority.', trace: false },
-      { n: 'load', t: 'Optionally replace state through a validated path', b: 'A reload goes further and swaps the durable population itself: load a staging World, validate Spine invariants, install or replace the durable Carbon set. Note it replaces the population, not the entire live World — the runtime infrastructure has to survive.', trace: false },
-      { n: 'spine', t: 'Full rebuild pass', b: 'Query all Bone structural entities, rebuild BUID→Entity, validate unique BUIDs, validate parent references, identify legal roots, validate no cycles, build Parent→Children. An orphan whose parent does not exist is <em>not</em> a root — it refuses publication instead.', trace: ['load>ecs', 'ecs>spine'] },
-      { n: 'publication', t: 'A new coherent baseline', b: 'The coherence revision is established for the rebuilt state. Nothing downstream reads anything until this settles.' },
-      { n: 'watcher', t: 'Establish new watermarks', b: 'The Watcher takes a fresh baseline rather than trying to reconcile against pre-wipe watermarks that describe a world that no longer exists.' },
-      { n: 'orchestrator', t: 'Rederive Desired from current truth', b: 'Exactly the same composition as the very first run. The Orchestrator has no memory to lose, because it never held authority in the first place.' },
-      { n: 'reconciler', t: 'Reconstruct projection from scratch', b: 'Desired − Actual, where Actual is empty. The realize path runs again: resolve, instantiate, manifest, pair, bind, hydrate, activate.', trace: ['orchestrator>desired', 'desired>reconciler'] },
-      { n: 'unity', t: 'Equivalent runtime state, nothing survived', b: 'The same objects, the same bindings, the same live BUIDs — and not one managed Bone wrapper, presenter binding or Reconciler record carried across the gap. That is the whole architecture, demonstrated in a single scenario.', trace: ['reconciler>delivery', 'delivery>pairing', 'pairing>bind', 'bind>hydrate', 'hydrate>unity'] }
+      { n: 'ecs', t: 'Only durable records remain', b: 'Entities carrying BoneIdentity, BoneParent, provenance, markers and payload. Note what does <em>not</em> count as durable even though it shares the World: target-partition entities, pending-operation records, dirty buffers, reconciliation state and derived child buffers.', trace: false },
+      { n: 'load', t: 'Migrate before you publish', b: 'A reload goes further and swaps the durable population itself. Resolve every <code>TypeKey</code> and <code>SchemaVersion</code> in staging: migrate supported older data deterministically, preserve unknown optional data where safe, and <strong>block coherent publication</strong> on unknown or failed required data.', trace: false },
+      { n: 'spine', t: 'Full rebuild pass', b: 'Query all Bone structural entities, rebuild BUID→Entity, validate unique BUIDs and parent references, identify legal roots, validate no cycles, build Parent→Children. An orphan whose required local parent is missing is not a root — but a legal cold boundary reference is not an orphan either.', trace: ['load>ecs', 'ecs>spine'] },
+      { n: 'publication', t: 'A new coherent baseline', b: 'The coherence revision is established for the rebuilt state. Generation stamps may be reinitialized freely — they are acceleration metadata, and load correctness never depended on their historical values.' },
+      { n: 'watcher', t: 'Establish new watermarks', b: 'A fresh baseline, rather than reconciling against pre-wipe watermarks that describe a world which no longer exists.' },
+      { n: 'orchestrator', t: 'Rederive from current truth, not from a delta', b: 'Exactly the same composition as the very first run. <strong>A consumer that lost its watermark baselines from current coherent truth</strong> — it never waits for a Watcher delta to discover state that already exists.' },
+      { n: 'reconciler', t: 'Reconstruct projection from scratch', b: 'Desired − Actual, where Actual is empty. The realize path runs again: resolve, acquire, record Actual, manifest, pair, bind, hydrate, ready, activate.', trace: ['orchestrator>desired', 'desired>reconciler'] },
+      { n: 'unity', t: 'Equivalent runtime state, nothing survived', b: 'The same objects, the same bindings, the same live BUIDs — and not one managed Bone wrapper, presenter binding, resolved pointer or Reconciler record carried across the gap.', trace: ['reconciler>delivery', 'delivery>pairing', 'pairing>bind', 'bind>hydrate', 'hydrate>unity'] }
+    ]
+  },
+  {
+    id: 'shutdown',
+    name: 'Shutdown and restart',
+    blurb: 'The reverse of bootstrap. Nothing may rely on Unity destruction callbacks to preserve truth.',
+    steps: [
+      { n: 'drivers', t: 'Stop accepting new work', b: 'Freeze or invalidate new Desired and acquisition work as host policy requires. Nothing new enters the pipeline from here on.' },
+      { n: 'reconciler', t: 'Cancel or stale every async operation', b: 'Cancel pending work, or advance target tokens so late completions are unambiguously stale. An in-flight load must not be able to leak into the next scope or session.', trace: false },
+      { n: 'writeback', t: 'Integrate provisional outcomes before their owners disappear', b: 'Restoration-relevant runtime-owned values are written back <em>while the objects holding them still exist</em>. This is the whole reason shutdown is an ordered contract rather than a teardown.', trace: false },
+      { n: 'publication', t: 'Establish final coherent truth if policy requires a save', b: 'And choose the save freshness policy explicitly. Do not write back after selecting a revision and then serialize the older revision as though it included the writeback.', trace: false },
+      { n: 'reconciler', t: 'Release projections and leases', b: 'Reconcilers release or cancel runtime projections and their Warehouse leases, now that nothing depends on them.', trace: false },
+      { n: 'scopehost', t: 'Dispose scopes, detach handles', b: 'Dispose Context Scope runtime instances and scratch memory, then detach every <code>SystemHandle</code>, subscription, pool and registration that could point into old scope state.', trace: false },
+      { n: 'ecs', t: 'Only durable truth is left standing', b: 'If shutdown policy intentionally abandons unsaved state, that is explicit host policy — and must never be confused with successful durable synchronization.', trace: false },
+      { n: 'load', t: 'Restart is just the bootstrap path', b: 'Restart follows the normal bootstrap and reload path from durable truth. No stale async completion, runtime pointer, scope registration or presenter binding from the previous instance may be trusted.', trace: false }
     ]
   }
 ];
 
 const GLOSSARY = [
-  { k: 'bone', t: 'Bone', d: 'One durable Carbon structural occurrence. Not necessarily a C# object — fundamentally an ECS entity carrying the required Carbon structural components.' },
-  { k: 'spine', t: 'Spine', d: 'Carbon’s authoritative logical hierarchy over ECS-backed Bones, where durable identity and parentage define structure, rebuildable indexes provide efficient traversal, and normal structural mutation is committed through the Coordinator.' },
-  { k: 'buid', t: 'BUID', d: 'Canonical durable occurrence identity. Move preserves it. Delete terminates it. Runtime unload does not. An ECS Entity is not a substitute for it — an Entity handle may be cached as an acceleration handle, but it is never durable identity.' },
-  { k: 'baseid', t: 'BaseId', d: 'Stable template or asset-local identity that relates a cloned durable occurrence back to an authored part. Used to pair Component Manifest participants to the correct live BUID inside a composite delivery group. A presenter binds to the resolved BUID, never permanently to the BaseId.' },
-  { k: 'scope', t: 'Context Scope', d: 'A meaningful hierarchy location that owns contextual runtime lifetime and working state — typically World, Region, Chunk in Marrow. Separate from durable identity, the persistence-file boundary, representation concern, residency and coherence scope.' },
-  { k: 'marker', t: 'Representation Marker', d: 'Durable concern-specific projection intent on a durable root: "for this representation concern, this root wants this logical delivery package." It defines no identity, scope, residency, coherence or persistence.' },
-  { k: 'concern', t: 'Representation Concern', d: 'The category of derived runtime representation managed by one Reconciler — prefab representation, scene representation, editor visualization, map icon, debug view. One BUID may have several. The conceptual global projection key is (BUID, Concern).' },
-  { k: 'package', t: 'Delivery Package', d: 'The logical content package selected by a Representation Marker and resolved through the Asset Warehouse. May produce a Prefab, a Scene, or another future delivery container.' },
-  { k: 'manifest', t: 'Component Manifest', d: 'A generated and validated index on a structured delivery container giving a Reconciler deterministic references to Carbon-managed presenters and their authored binding metadata. Not durable authority.' },
-  { k: 'desired', t: 'Desired', d: 'The complete current target population for one Reconciler concern and one explicit partition. Replacement semantics, not a delta stream.' },
-  { k: 'actual', t: 'Actual', d: 'The runtime occurrences a Reconciler actually owns or has adopted right now. Actual is not necessarily Ready — an async operation in flight is neither.' },
-  { k: 'hydrate', t: 'Hydrate', d: 'Targeted synchronization from coherent durable ECS state into runtime and engine-facing state. Only for data the engine needs its own copy of.' },
-  { k: 'dehydrate', t: 'Dehydrate', d: 'Targeted synchronization of a restoration-relevant outcome that currently lives only in runtime state back into authorized durable ECS data.' },
-  { k: 'revision', t: 'Coherence revision', d: 'An ordered counter per coherence domain answering "which coherent published state is this?" Distinct from generation stamps, which answer "did this branch change since my watermark?"' },
-  { k: 'generation', t: 'Generation stamp', d: 'Per-Bone equality stamps: Structure (my own structural state changed), Data (my durable payload changed), Subtree (something authoritative beneath me changed). Change stamps, not ordered history counters.' },
-  { k: 'token', t: 'Target token', d: 'A version carried by every async operation. On completion, if the token no longer matches the current target the result is released or cancelled rather than adopted. Without it, a slow load can manifest into a partition that no longer wants it.' },
-  { k: 'binding', t: 'Participant binding', d: 'One presenter-to-durable-Bone association, owned by the Reconciler: { BUID Bone, int PresenterIndex, ulong LastHydratedDataGen }. The relationship is required; a managed binding object per bind is not.' },
-  { k: 'projection-entry', t: 'Projection entry', d: 'One delivered runtime container or group: marker root, delivery key, and the range of participant bindings it covers. Managed companion data may hold the GameObject root, scene handle, asset lease and pending operation state.' }
+  { k: 'bone', t: 'Bone', d: 'The current working name for one durable Carbon structural occurrence — fundamentally an ECS entity carrying the required Carbon structural components. Adopting the name does not create a second kind of identity or state.' },
+  { k: 'spine', t: 'Spine', d: 'The current working name for Carbon’s logical hierarchy and query contract over authoritative ECS-backed Bones. Durable BUID identity and parentage define structure, rebuildable indexes provide traversal, and normal structural mutation commits through the Coordinator. The underlying logical-tree contract is architectural; the code name may still change.' },
+  { k: 'buid', t: 'BUID', d: 'Canonical durable occurrence identity. Move preserves it. Delete terminates it. Runtime unload does not. An ECS Entity is not a substitute — an Entity handle may be cached as an acceleration handle, never as durable identity, and it stays local to its owning Unity ECS World.' },
+  { k: 'baseid', t: 'BaseId', d: 'The immediate-source / provenance BUID for a durable occurrence: which durable source occurrence did this one derive from. It is NOT a generic asset-local presenter slot ID. CarbonBehaviour.AssetId is useful authoring evidence, but the general stable presenter-to-durable-part mapping remains an open implementation contract.' },
+  { k: 'barcode', t: 'Barcode', d: 'The canonical stable logical lookup identity for reusable delivery content, carried or resolved by a Representation Marker and resolved by the Asset Warehouse to a Delivery Package. Do not introduce DeliveryKey or PackageId as competing names. Provider/content version is separate from the Barcode.' },
+  { k: 'scope', t: 'Context Scope', d: 'A hierarchy location that owns contextual runtime lifetime and working state. World and Chunk are established Marrow examples; a Region is one only if application composition explicitly needs region-local systems. A durable Context Scope location and an active runtime scope instance are different things.' },
+  { k: 'marker', t: 'Representation Marker', d: 'Durable concern-specific projection intent on a durable root, carrying a Barcode. It defines no identity, scope, residency, coherence or persistence — and its presence alone does not request the projection.' },
+  { k: 'concern', t: 'Representation Concern', d: 'The category of derived runtime representation managed by one Reconciler — prefab, scene, editor visualization, map icon, debug view. One BUID may have several. The conceptual global projection key is (BUID, Concern).' },
+  { k: 'package', t: 'Delivery Package', d: 'The content product the Asset Warehouse resolves a Barcode into. May be a Prefab, a Scene, or another future delivery container.' },
+  { k: 'manifest', t: 'Component Manifest', d: 'A generated and validated index on a delivery container giving a Reconciler deterministic references to Carbon-managed presenters and their authored binding metadata. Produced or validated at authoring/build/import time, not by scanning names at runtime. Not durable authority.' },
+  { k: 'desired', t: 'Desired', d: 'The complete current target population for one Reconciler concern and one explicit partition. Replacement semantics, not a delta stream. It can change from non-durable inputs — demand or provider state — with no new coherence revision.' },
+  { k: 'actual', t: 'Actual', d: 'The runtime occurrences a Reconciler materially owns or has adopted right now. Actual begins the moment the occurrence is acquired, instantiated or adopted — before binding, Hydrate or readiness. Actual is NOT Ready. Dispatching an async request creates only Pending work.' },
+  { k: 'hydrate', t: 'Hydrate', d: 'Targeted synchronization from coherent durable ECS state into runtime and engine-facing state. A read-side pass: it gains no permission to mutate durable payload.' },
+  { k: 'dehydrate', t: 'Dehydrate', d: 'Targeted writeback of a restoration-relevant outcome that lives only in runtime state, into authorized durable ECS data. Write-side integration that runs inside the sanctioned mutation interval, not during the reconciliation pass.' },
+  { k: 'revision', t: 'Coherence revision', d: 'An ordered counter per coherence domain answering "which coherent published state is this?" A general save may bundle independently coherent scope snapshots rather than forcing one global revision.' },
+  { k: 'generation', t: 'Generation stamp', d: 'Per-Bone equality stamps — Structure, Data, Subtree — preferably ulong so false equality after wrap is operationally irrelevant. They are rebuildable acceleration metadata, NOT authoritative meaning; durable state must remain correct if they are regenerated.' },
+  { k: 'token', t: 'Target token', d: 'A version distinguishing target generations for a partition. A stale async completion whose token no longer matches is released rather than adopted. It is deliberately not the same thing as the durable coherence revision — provider changes move it without any new revision.' },
+  { k: 'binding', t: 'Participant binding', d: 'One presenter-to-durable-Bone association owned by the Reconciler: { BUID Bone, int PresenterIndex, ulong LastHydratedDataGen }. The relationship is required; a managed binding object per bind is not.' },
+  { k: 'projection-entry', t: 'Projection entry', d: 'One delivered runtime container or group: marker root, delivery Barcode, and the range of participant bindings it covers. Managed companion data may hold the GameObject root, scene handle, asset lease and pending operation state.' },
+  { k: 'typekey', t: 'TypeKey', d: 'Stable persisted type/schema identity for a durable payload kind, paired with a SchemaVersion. It must not depend architecturally on a C# class name, namespace or assembly-qualified runtime type name. Separate from BUID occurrence identity.' },
+  { k: 'catalog', t: 'Persistence Catalog', d: 'Derived, rebuildable storage metadata mapping BUID to a persistence document, shard or location. It is not identity and does not grant permission to resolve an otherwise illegal relationship. It lets a valid durable reference stay meaningful when its target is not currently materialized.' }
 ];
 
 const FAILURES = [
-  { t: 'Invalid Spine state', tone: 'fail', d: 'Duplicate BUID, missing parent, structural cycle, illegal cross-coherence parentage. Fail coherent materialization and publication, surface diagnostics, optionally enter explicit repair tooling. Never silently reinterpret invalid records — and never let an orphan become a root.' },
-  { t: 'Missing delivery asset', tone: 'warn', d: 'Durable truth remains valid. The Reconciler records projection failure or divergence and may retry or substitute per concern policy. Do not delete or rewrite durable Carbon because a prefab is missing.' },
+  { t: 'Invalid Spine state', tone: 'fail', d: 'Duplicate BUID, missing required local parent, structural cycle, illegal cross-coherence parentage. Fail coherent materialization and publication, surface diagnostics, optionally enter repair tooling. Never silently reinterpret invalid records — and never let an orphan become a root, nor misclassify a legal cold boundary reference as an orphan.' },
+  { t: 'Missing delivery asset', tone: 'warn', d: 'Durable truth remains valid. The Reconciler records failure or divergence and may retry or substitute per concern policy. A projection declared required by integration may block or degrade a higher readiness condition; an optional one need not. That policy never retroactively invalidates the coherent durable publication.' },
   { t: 'Manifest pairing failure', tone: 'warn', d: 'The projection cannot become Ready. Keep the failure explicit, roll back or release partial runtime acquisition where appropriate, and leave durable truth unchanged.' },
-  { t: 'Async target changed mid-load', tone: 'warn', d: 'Every async operation carries a target token. On completion: token matches the current target, adopt the result; token does not match, release or cancel the stale result.' },
-  { t: 'Dehydrate failure', tone: 'fail', d: 'Do not clear dirty or pending state. If an unload, delete or save requires the result, follow explicit policy — retry, block, fail or degrade. Never silently discard the only copy of a required durable outcome.' },
-  { t: 'Out-of-band structural change', tone: 'warn', d: 'A privileged load or repair changed BoneParent without a Coordinator commit. The parent shadow catches the divergence: move the child between derived buckets, update the shadow, record the diagnosis, and advance the appropriate invalidation state.' }
+  { t: 'Async target changed mid-load', tone: 'warn', d: 'Every async operation carries a target token. On completion: token matches the newest target, adopt the result; token does not match, release or cancel the stale result. Provider invalidation moves the token without any durable revision.' },
+  { t: 'Writeback failure', tone: 'fail', d: 'Do not clear dirty or pending state. If an unload, delete or save requires the result, follow explicit policy — retry, block, fail or degrade. Never silently discard the only copy of a required durable outcome.' },
+  { t: 'Durable reference resolution failure', tone: 'warn', d: 'A cold or unresolved BUID reference does not become a different identity. An optional relation may stay unresolved; a required one may block a higher readiness condition; a deleted target stays broken; a wrong-type or illegal cross-coherence resolution produces structured failure. Never silently retarget.' },
+  { t: 'Schema / migration failure', tone: 'fail', d: 'Required unknown data, or a failed required migration, prevents coherent publication of the affected durable scope. Unknown optional data should be preserved and round-tripped where safely possible rather than silently discarded.' },
+  { t: 'Runtime divergence', tone: 'warn', d: 'A Unity object externally destroyed while durable truth still requires it: record divergence, remove or repair the invalid Actual ownership record, reconverge from newest Desired. This is not a durable Delete. If it held the only copy of an uncommitted required outcome, surface a hard diagnostic instead of pretending Carbon recovered it.' },
+  { t: 'Scope retirement failure', tone: 'fail', d: 'A Context Scope runtime host must not dispose scope-local scratch while a required Reconciler retirement or writeback barrier is unresolved. Policy may retry, block teardown, or explicitly degrade only where the higher integration contract allows it.' },
+  { t: 'Out-of-band structural change', tone: 'warn', d: 'A privileged load or repair changed BoneParent without a Coordinator commit. The primary rule is to force a full Spine index rebuild before publication; a derived parent shadow is a diagnostic backstop for detecting divergence, never the normal mutation authority.' }
 ];
 
 const PHASES = [
   { l: 'A', t: 'Spine proof', items: ['Define BUID-compatible Bone structural components', 'SpineTopologySystem full rebuild', 'BUID → Entity lookup', 'Parent → Children index', 'Roots, ancestry, children, subtree traversal', 'Structural invariant validator', 'Randomized hierarchy and fuzz tests', 'Prove every index deletes and rebuilds identically'] },
-  { l: 'B', t: 'Structural mutation', items: ['Coordinator request intake', 'Add', 'Move', 'Explicit Delete semantics', 'Cycle and legal-parent validation', 'Request collapse', 'Incremental topology maintenance', 'StructureGen / SubtreeGen updates'] },
+  { l: 'B', t: 'Structural mutation', items: ['Coordinator request intake', 'Add', 'Move', 'Explicit Delete semantics', 'Cycle and legal-parent validation', 'Request collapse, distinguishing internal Remove from true Delete', 'Incremental topology maintenance', 'StructureGen / SubtreeGen updates', 'Detached creation/clone materialization proof before treating live creation as solved'] },
   { l: 'C', t: 'Coherent observation', items: ['Payload dirty seam and DataGen', 'Coherence revision', 'Structural and payload publication summary', 'Watcher baseline plus changed population'] },
-  { l: 'D', t: 'Scope and desired state', items: ['Context Scope metadata and runtime scope registry', 'One concern-specific Representation Marker', 'Simple residency and demand input', 'Orchestrator selection for that concern', 'Publish exact complete target partitions'] },
-  { l: 'E', t: 'First manifestation', items: ['Minimal Asset Warehouse lookup', 'PrefabReconcilerSystem : SystemBase', 'Scope-local Actual bucket', 'Instantiate one prefab from one marker', 'Component Manifest discovery', 'AssetId / BaseId / BUID pairing', 'Presenter Bind', 'Hydrate', 'Activate and prove it appears', 'Remove demand and prove clean release'] },
-  { l: 'F', t: 'Runtime synchronization', items: ['Presenter dirty registration', 'Targeted Dehydrate', 'Move a represented Bone and prove bucket reevaluation', 'Unload a Chunk and prove teardown without durable Delete', 'Delete and prove identity termination plus downstream release'] },
-  { l: 'G', t: 'Resilience', items: ['Async target tokens and cancellation', 'Missing-asset and manifest-failure handling', 'Reload from durable ECS with full projection reconstruction', 'Persistence snapshot', 'Architecture-conformance and performance benchmarks'] }
+  { l: 'D', t: 'Scope, demand, residency', items: ['Context Scope metadata and scoped-system composition', 'Transient Context Scope runtime host with active + retiring behaviour', 'One Representation Marker carrying a Barcode', 'Driver demand input', 'Chunk-based Residency Solver', 'Create the Chunk runtime scope before enabling scope-dependent work', 'Orchestrator plus concern Filter selection', 'Publish complete unioned target partitions with target tokens'] },
+  { l: 'E', t: 'First manifestation', items: ['Warehouse Barcode lookup with Reconciler-owned lease lifetime', 'PrefabReconcilerSystem : SystemBase', 'Scope-local Desired/Pending/Actual/provisioning state', 'Materially acquire one Prefab from one marker', 'Record the acquired occurrence as Actual before Ready', 'Component Manifest discovery', 'Constrained direct-template AssetId → source BUID → live BaseId pairing', 'Presenter Bind', 'Hydrate', 'Stitch, establish Ready, activate, prove it appears', 'Remove demand and prove the safe pending-retirement path'] },
+  { l: 'F', t: 'Runtime synchronization', items: ['Presenter dirty registration', 'Targeted Dehydrate', 'Concern-local pending-retirement / writeback barrier', 'Close the runtime structural-feedback loop through Coordinator intent', 'Move a represented Bone and prove bucket reevaluation', 'Unload a Chunk and prove safe scope retirement without durable Delete', 'Delete and prove pre-publication outcome handling plus identity termination'] },
+  { l: 'G', t: 'Resilience', items: ['Async target tokens, cancellation, provider/lease invalidation', 'Missing-asset, manifest-failure and runtime-divergence repair', 'Reload with schema migration plus full projection reconstruction', 'Persistence snapshot with per-coherence-scope composition', 'Durable BUID reference resolver seam and Persistence Catalog', 'Shutdown/restart fencing', 'Structured diagnostics for every failure class', 'Architecture-conformance and performance benchmarks'] }
 ];
 
 const MILESTONE = [
   'Start with an empty Unity ECS World',
-  'Install Carbon systems',
+  'Install Carbon systems and runtime services',
   'Create a World → Region → Chunk → Zombie durable Bone hierarchy',
   'Rebuild Spine indexes from ECS records',
   'Query that hierarchy correctly',
-  'Put a Prefab Representation Marker on the Zombie root',
-  'Mark the Chunk as runtime-eligible and resident',
-  'Orchestrator publishes the Zombie in Prefab Desired',
-  'Prefab Reconciler resolves a package and instantiates a prefab',
-  'Manifest pairs several presenters to several durable Bones',
-  'Presenters Bind by BUID and Hydrate from current ECS data',
-  'The runtime object becomes active in the Unity scene',
+  'Put a Prefab Representation Marker carrying a Barcode on the Zombie root',
+  'Supply Driver demand that makes the Zombie’s Chunk required',
+  'Residency Solver selects that Chunk as eligible for current Marrow policy',
+  'Orchestrator and the Prefab Filter publish the Zombie in the complete Desired set',
+  'Prefab Reconciler resolves the Barcode and starts acquisition as Pending work',
+  'Once materially acquired, the occurrence becomes Actual while provisioning continues',
+  'Component Manifest discovers several presenters in that Prefab',
+  'The constrained first-slice mapping pairs those presenters to live durable Bones',
+  'Presenters Bind by live BUID and Hydrate from current ECS data',
+  'Stitching completes, the occurrence becomes Ready, and the object activates',
   'Change durable ECS data and observe targeted Hydrate',
-  'Produce one runtime-owned dirty result and Dehydrate it to ECS',
+  'Produce one runtime-owned dirty result and successfully Dehydrate it to ECS',
   'Move the Zombie to another Chunk and observe scope reevaluation without changing BUID',
-  'Unload the destination Chunk and release all its runtime scratch while durable data remains',
+  'Unload the destination Chunk and release its runtime scratch while durable data remains',
   'Reload the Chunk and reconstruct the same runtime representation from durable truth',
   'Delete the Zombie and confirm BUID termination plus downstream disappearance',
   'Delete every transient cache, rebuild from durable ECS, and recover equivalent state'
 ];
 
+const GATES = [
+  'Normal live composite creation clones a trusted multi-Bone source, mints fresh BUIDs and BaseIds, remaps internal refs, preserves external refs, and commits through Coordinator without directly instantiating presentation',
+  'Entering a resident Chunk creates scope-local runtime systems only after coherent durable state exists',
+  'A demand or provider change removes a dirty occurrence from Desired; the Reconciler keeps it quiesced and owned until writeback succeeds, then releases it',
+  'A Unity physics or zone event produces domain structural intent, visible only after sanctioned durable publication',
+  'Barcode stays constant while the provider target changes; the target token changes, stale completions are rejected, and the Reconciler converges with no durable revision',
+  'An externally destroyed runtime object is detected and re-realized from current Desired without deleting durable truth',
+  'Older supported schema migrates before publication; unknown optional data round-trips; required migration failure blocks publication',
+  'Move preserves a BUID reference, Delete leaves it broken, and a cold target stays validly unresolved or materializes through the Persistence Catalog',
+  'Outstanding async work cannot leak into the next scope or session, and restart reconstructs entirely from durable truth',
+  'A validated network, server or editor patch joins the same sanctioned mutation and publication path rather than mutating runtime projection in parallel'
+];
+
 const LAYERS = [
+  { n: 0, name: 'Source', tone: 'durable' },
   { n: 1, name: 'Durable facts', tone: 'durable' },
   { n: 2, name: 'Spine', tone: 'durable' },
   { n: 3, name: 'Control', tone: 'derived' },
@@ -1979,13 +2189,23 @@ panels.rules.innerHTML =
     ['Durable truth is the only authority', 'A GameObject, MonoBehaviour, Scene, Reconciler journal, binding registry, native index or callback history is never required to recover authoritative world state.'],
     ['Parentage is authoritative, children are derived', 'Never persist a second authoritative child list that can disagree with parentage.'],
     ['Every index must be deletable', 'Delete every transient cache, index and view. Given only durable Bone records, the same logical hierarchy must reconstruct exactly.'],
-    ['An orphan is not a root', 'Parent == EMPTY is an intentional root. Parent == X where X does not exist is an invalid record, and must refuse publication rather than silently reinterpret itself.'],
-    ['Move preserves BUID', 'Move means reevaluate, not reprovision. Delete terminates identity. Runtime unload does not.'],
-    ['Desired is complete, never a delta', 'A Reconciler that missed prior updates converges on the next target set, because there is nothing to replay.'],
-    ['Pending is not Actual', 'Never record something as Actual or Ready merely because an async request was dispatched.'],
-    ['Every async operation carries a target token', 'On completion, a token that no longer matches the current target means release the result, not adopt it.'],
-    ['The delivery group bounds the search', 'A Reconciler pairs presenters only within the declared group. A nested marker for the same concern closes the boundary.'],
-    ['Teardown is never the only chance to save', 'Required runtime-owned durable outcomes are flushed through an ordered prepare-for-publication handshake before any destructive transition.'],
+    ['Generation stamps are not meaning', 'They are rebuildable acceleration metadata. Durable state must stay correct if they are regenerated, and load correctness must not depend on their historical numeric values. The ordered coherence revision is a separate concept.'],
+    ['An orphan is not a root — and a boundary is not an orphan', 'Parent == EMPTY is an intentional root. A missing required local parent is an invalid record that must refuse publication. But a legal cross-coherence or cold boundary reference must not be misclassified as corruption merely because the target is absent from the local index.'],
+    ['Move preserves BUID', 'Move means reevaluate, not reprovision. Delete terminates identity. Runtime unload does not. Internal non-terminal Remove is not Delete.'],
+    ['Three identities, never blurred', 'BUID is this durable occurrence. BaseId is its immediate durable source. Barcode is reusable delivery-content lookup identity. BaseId is not an asset-local presenter slot ID, and DeliveryKey is not a competing name for Barcode.'],
+    ['Desired is complete, never a delta', 'A Reconciler that missed prior updates converges on the next target set. And a new or restarted consumer baselines from current coherent truth rather than waiting for a Watcher delta to discover state that already exists.'],
+    ['Desired moves without a revision', 'Driver demand, residency, and Warehouse provider state are derivation inputs in their own right. They can change the target set with no new durable coherence revision at all.'],
+    ['Actual is not Ready', 'Dispatching an async acquisition creates only Pending work. Actual begins when the Reconciler materially owns or adopts the occurrence — before binding, Hydrate and readiness are finished.'],
+    ['Undesired is not always releasable', 'When Desired drops an occurrence for a non-durable reason and that occurrence owns dirty state, it is held quiesced behind a retirement barrier until writeback succeeds. Desired may truthfully be empty while Actual is still owned.'],
+    ['Every async operation carries a target token', 'On completion, a token that no longer matches the newest target means release the result, not adopt it. The token is not the coherence revision.'],
+    ['Diff target state, not membership', 'A marker root that stays Desired but resolves to a different Barcode, provider version or pairing metadata still needs refresh or replacement.'],
+    ['The delivery group bounds the search', 'A Reconciler pairs presenters only within the declared group, and never by mutable hierarchy names. A nested marker for the same concern closes the boundary. Explicit durable references may resolve outside it on their own terms.'],
+    ['Writeback is write-side integration', 'The reconciliation and Hydrate pass runs against settled truth and gains no permission to mutate durable payload. Copy-back happens inside the sanctioned mutation interval, through an explicit bridge.'],
+    ['Teardown is never the only chance to save', 'Required runtime-owned outcomes are integrated through an ordered handshake before any destructive transition — and a scope host must not dispose scratch while a retirement barrier is unresolved.'],
+    ['A partition is not automatically a Context Scope', 'They often coincide at Chunk. A Region projection partition may exist as a concern-local cleanup key without Region being configured as a Context Scope at all.'],
+    ['Composition decides which scopes exist', 'World and Chunk are established Marrow Context Scopes. Region is one only if application composition explicitly needs region-local systems. Hierarchy level alone does not create a scope.'],
+    ['Unity ECS World is not Carbon World', 'Colocating one of each in the first slice is convenient, not an architectural invariant. Entity handles stay local to their owning ECS World; BUID stays Carbon durable identity.'],
+    ['Runtime facts close the loop through intent', 'A trigger, a physics result or a gameplay decision may originate structural intent. It never reparents, deletes or creates durable Bones as a side effect.'],
     ['No managed object per Bone', 'And no managed binding object per presenter. Value-type handles, BUIDs and Reconciler-owned tables instead — that allocation pattern is exactly what the refactor removed.'],
     ['Tree for hierarchy, ECS for throughput', 'Do not walk the Spine for what is naturally a dense component query, and do not flatten every structural question into a global ECS search.']
   ].map(([t, d]) => `<div class="rule-card"><h5>${t}</h5><p>${d}</p></div>`).join('') +
@@ -2050,9 +2270,11 @@ LAYERS.forEach(l => {
   rail.appendChild(d);
 });
 
+/* `num` is null when no step is active — layer 0 is a real layer, so it
+   cannot double as the "nothing lit" sentinel */
 function litLayer(num) {
   rail.querySelectorAll('.rail-item').forEach(el => {
-    el.dataset.live = String(Number(el.dataset.layer) === num ? 1 : 0);
+    el.dataset.live = String(num !== null && Number(el.dataset.layer) === num ? 1 : 0);
   });
 }
 
@@ -2169,7 +2391,7 @@ function goToStep(i, opts = {}) {
   Object.values(nodeEls).forEach(el => el.classList.remove('is-active', 'is-also', 'dimmed'));
 
   if (i < 0) {
-    litLayer(0);
+    litLayer(null);
     applyWipe(-1);
     progress.textContent = '——';
     renderStepPanel();
@@ -2307,6 +2529,9 @@ document.addEventListener('keydown', e => {
 document.getElementById('failGrid').innerHTML = FAILURES.map(f =>
   `<div class="card"><span class="chip t-${f.tone}">${f.tone === 'fail' ? 'Stack-breaker' : 'Needs action'}</span><h3>${f.t}</h3><p>${f.d}</p></div>`).join('');
 
+document.getElementById('gates').innerHTML = GATES.map((g, i) =>
+  `<div class="gate"><span class="g-n">${String(i + 1).padStart(2, '0')}</span><p>${g}</p></div>`).join('');
+
 document.getElementById('phaseGrid').innerHTML = PHASES.map(p =>
   `<div class="phase">
      <div class="phase-hd"><span class="phase-let">${p.l}</span><h3>${p.t}</h3></div>
@@ -2315,7 +2540,9 @@ document.getElementById('phaseGrid').innerHTML = PHASES.map(p =>
 
 const msWrap = document.getElementById('milestone');
 const msCount = document.getElementById('msCount');
-const MS_KEY = 'carbon-milestone-v1';
+/* v2: the audited milestone list renumbered, so saved v1 indexes no longer
+   describe the same items — bump rather than silently mis-tick them */
+const MS_KEY = 'carbon-milestone-v2';
 
 function readMs() {
   try { return JSON.parse(localStorage.getItem(MS_KEY)) || []; } catch (_) { return []; }
