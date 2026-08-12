@@ -954,6 +954,199 @@ blockquote p { margin: 0; font-size: inherit; }
 
 .milestone { display: grid; gap: 1px; background: var(--line-soft); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 
+/* sticky in-page nav for the reference half */
+.refnav {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: color-mix(in srgb, var(--ground) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  margin: 0 calc(-1 * clamp(16px, 3vw, 30px));
+  padding: 0 clamp(16px, 3vw, 30px);
+}
+
+.refnav-inner {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 8px 0;
+}
+.refnav-inner::-webkit-scrollbar { display: none; }
+
+.rn {
+  flex: 0 0 auto;
+  appearance: none;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color .15s, background .15s;
+}
+.rn:hover { color: var(--ink); background: var(--surface-2); }
+.rn[data-here="1"] { color: var(--ink); background: var(--surface); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+
+.ref section { scroll-margin-top: 52px; }
+
+/* identity table */
+.idtable { display: grid; gap: 1px; background: var(--line-soft); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+
+.idrow {
+  display: grid;
+  grid-template-columns: 168px 190px 1fr;
+  gap: 16px;
+  padding: 13px 16px;
+  background: var(--surface);
+  align-items: baseline;
+}
+.idrow .id-k { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.idrow[data-tone="durable"] .id-k { color: var(--durable); }
+.idrow[data-tone="derived"] .id-k { color: var(--derived); }
+.idrow .id-w { font-size: 14.5px; color: var(--ink); }
+.idrow .id-d { font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+.idrow .id-l {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  display: block;
+  margin-top: 3px;
+}
+@media (max-width: 720px) {
+  .idrow { grid-template-columns: 1fr; gap: 5px; }
+}
+
+/* system set */
+.syslist { display: grid; gap: 1px; background: var(--line-soft); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.sysrow { padding: 13px 16px; background: var(--surface); }
+.sysrow h3 {
+  margin: 0 0 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+.sysrow .sys-t {
+  font-size: 9.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--derived);
+  font-weight: 500;
+}
+.sysrow p { margin: 0; font-size: 14.5px; color: var(--ink-2); line-height: 1.55; }
+
+.grouplist { display: grid; gap: 8px; margin-top: 20px; }
+.grouprow {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  padding: 10px 14px;
+  border-left: 2px solid color-mix(in srgb, var(--derived) 45%, transparent);
+  background: var(--surface-2);
+  border-radius: 0 4px 4px 0;
+  align-items: baseline;
+}
+.grouprow .grp { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+.grouprow ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.grouprow li { font-size: 14px; color: var(--ink-2); }
+@media (max-width: 720px) { .grouprow { grid-template-columns: 1fr; gap: 5px; } }
+
+/* diagnostics */
+.diaglist { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 7px; }
+.diag {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 13px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 14px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.diag::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--derived);
+  transform: translateY(-2px);
+}
+
+/* open decisions */
+.openlist { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.opengrp {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px 16px;
+  background: var(--surface);
+}
+.opengrp h3 {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.opengrp ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.opengrp li {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.45;
+  padding-left: 15px;
+  position: relative;
+}
+.opengrp li::before {
+  content: "?";
+  position: absolute;
+  left: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* audit changelog */
+.auditlist { display: grid; gap: 8px; }
+.auditrow {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 14px;
+  padding: 12px 15px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  align-items: start;
+}
+.auditrow h3 { margin: 0 0 4px; font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+.auditrow p { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+@media (max-width: 560px) { .auditrow { grid-template-columns: 1fr; gap: 7px; } }
+
+/* glossary category heads */
+.gcat {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 18px 0 2px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.gcat:first-of-type { margin-top: 10px; }
+
 .gates { display: grid; gap: 10px; }
 
 .gate {
@@ -1097,7 +1290,11 @@ blockquote p { margin: 0; font-size: inherit; }
 
 <div class="ref">
 
-  <section>
+  <nav class="refnav" aria-label="Reference sections">
+    <div class="refnav-inner" id="refnav"></div>
+  </nav>
+
+  <section id="s-layers" data-nav="Layers">
     <div class="sec-head">
       <div class="kicker">The mental model</div>
       <h2>Six stacked layers, and a feedback path</h2>
@@ -1153,7 +1350,16 @@ blockquote p { margin: 0; font-size: inherit; }
     <blockquote class="pullquote"><strong>And the loop closes upward through intent.</strong> Payload outcomes return by targeted sanctioned writeback; structural facts the engine observes become domain intent for the Coordinator. Neither becomes a second write path.</blockquote>
   </section>
 
-  <section>
+  <section id="s-identity" data-nav="Identities">
+    <div class="sec-head">
+      <div class="kicker">&sect;2</div>
+      <h2>Seven things that are not each other</h2>
+      <p>Most of what the audit corrected was identity blur. Four of these are identities, three only look like them &mdash; and confusing any pair of them produces a bug that looks like something else entirely.</p>
+    </div>
+    <div class="idtable" id="idTable"></div>
+  </section>
+
+  <section id="s-failure" data-nav="Failures">
     <div class="sec-head">
       <div class="kicker">&sect;32</div>
       <h2>Failure semantics</h2>
@@ -1162,7 +1368,36 @@ blockquote p { margin: 0; font-size: inherit; }
     <div class="grid-2" id="failGrid"></div>
   </section>
 
-  <section>
+  <section id="s-diagnostics" data-nav="Diagnostics">
+    <div class="sec-head">
+      <div class="kicker">&sect;32</div>
+      <h2>Structured diagnostics minimum</h2>
+      <p>A cold-start implementation should make failures traceable without depending on ad hoc log strings. The format is implementation freedom; the required property is that structural rejection, publication failure, unresolved references, stale async work, projection divergence and writeback failure can all be correlated back to the state that produced them.</p>
+    </div>
+    <div class="diaglist" id="diagList"></div>
+  </section>
+
+  <section id="s-systems" data-nav="Systems">
+    <div class="sec-head">
+      <div class="kicker">&sect;34, &sect;27</div>
+      <h2>The system set, and what runs when</h2>
+      <p>An optimization-oriented target shape, not a requirement to begin with. For the first working implementation it is acceptable &mdash; arguably safer &mdash; to use <code>SystemBase</code> for several core systems so they can share the Spine runtime owner through plain managed references, while still scheduling Burst jobs over native data. Convert to <code>ISystem</code> once the data contracts and dependency boundaries are proven.</p>
+    </div>
+    <div class="syslist" id="sysList"></div>
+    <div class="grouplist" id="groupList"></div>
+    <p class="colophon" style="margin-top:18px">During bootstrap, systems that depend on coherent Spine state should stay <strong>inert or suspended</strong> until the initial durable records are validated, indexes are built, and the coherent baseline is established. Installing system instances before durable reification is fine; letting them act on a half-built hierarchy is not.</p>
+  </section>
+
+  <section id="s-perf" data-nav="Performance">
+    <div class="sec-head">
+      <div class="kicker">&sect;33</div>
+      <h2>Performance guidance</h2>
+      <p>Six rules, and the first two are the reason the managed Node tree was removed in the first place.</p>
+    </div>
+    <div class="grid-2" id="perfGrid"></div>
+  </section>
+
+  <section id="s-order" data-nav="Build order">
     <div class="sec-head">
       <div class="kicker">&sect;37</div>
       <h2>Implementation order</h2>
@@ -1171,7 +1406,7 @@ blockquote p { margin: 0; font-size: inherit; }
     <div class="phase-grid" id="phaseGrid"></div>
   </section>
 
-  <section>
+  <section id="s-milestone" data-nav="Milestone">
     <div class="sec-head">
       <div class="kicker">&sect;38</div>
       <h2>Definition of the first milestone</h2>
@@ -1184,7 +1419,7 @@ blockquote p { margin: 0; font-size: inherit; }
     </div>
   </section>
 
-  <section>
+  <section id="s-gates" data-nav="Gates">
     <div class="sec-head">
       <div class="kicker">&sect;38.1</div>
       <h2>Extended flow-completeness gates</h2>
@@ -1193,7 +1428,25 @@ blockquote p { margin: 0; font-size: inherit; }
     <div class="gates" id="gates"></div>
   </section>
 
-  <section>
+  <section id="s-open" data-nav="Still open">
+    <div class="sec-head">
+      <div class="kicker">&sect;36</div>
+      <h2>Still open</h2>
+      <p>The architecture is settled enough for a functional prototype. These are the choices it deliberately does not make for you &mdash; and none of them require reintroducing a managed Bone tree or changing the authority model.</p>
+    </div>
+    <div class="openlist" id="openList"></div>
+  </section>
+
+  <section id="s-audit" data-nav="Audit">
+    <div class="sec-head">
+      <div class="kicker">&sect;0.1, &sect;0.2</div>
+      <h2>What the audit changed</h2>
+      <p>A conformance pass over the first compiled handoff, plus a second end-to-end flow simulation. Thirteen corrections and eight additions &mdash; none of which changed the central Spine, Coordinator, Watcher, Orchestrator and Reconciler architecture. They tighten identity, sequencing and implementation boundaries.</p>
+    </div>
+    <div class="auditlist" id="auditList"></div>
+  </section>
+
+  <section id="s-colophon" data-nav="Colophon">
     <div class="sec-head">
       <div class="kicker">Colophon</div>
       <h2>About this page</h2>
@@ -1321,7 +1574,9 @@ const NODES = [
       { h: 'A working name, not a new authority', p: '<em>Spine</em> is the current working name for the logical durable hierarchy over [[bone|Bones]]. The underlying logical-tree contract is architectural; the code name may still change without changing that contract. Adopting it does not create a second kind of identity or state.' },
       { h: 'Why a hierarchy layer at all', pre: 'Spine / tree\n    hierarchy, ancestry, containment, scope, pruning\n\nECS queries\n    component/archetype selection, dense hot processing', p: 'Hierarchy and flat component selection are different access patterns. Using either one for the other’s job is the mistake.' },
       { h: 'One authoritative direction', q: 'Parentage is authoritative. Child membership is derived.', p: 'Never persist a second authoritative child list that can disagree with parentage. If a derived <code>DynamicBuffer&lt;BoneChild&gt;</code> is ever used as the accelerator, it must remain rebuildable and be excluded or rebuilt rather than persisted as structural authority.' },
-      { h: 'Child acceleration — the MVP choice', code: 'NativeParallelHashMap<BUID, Entity>      _byBuid;\nNativeParallelMultiHashMap<BUID, Entity> _children;', p: 'Simple, obviously rebuildable, no second durable relationship, easy to fuzz-test, easy to replace after profiling.' },
+      { h: 'Three credible child indexes', ul: ['<strong>A — native parallel multimap.</strong> <code>BUID → Entity</code> plus <code>ParentBUID → child Entity(s)</code>', '<strong>B — ECS DynamicBuffer.</strong> A derived <code>DynamicBuffer&lt;BoneChild&gt;</code> on parent entities, analogous to Unity’s own transform hierarchy pattern', '<strong>C — packed adjacency arrays.</strong> Scope-local packed parent record, child start, child count, packed child array. Potentially faster for large stable trees, more complex to maintain incrementally'] },
+      { h: 'Child acceleration — the MVP choice', code: 'NativeParallelHashMap<BUID, Entity>      _byBuid;\nNativeParallelMultiHashMap<BUID, Entity> _children;', p: 'Option A first: simple, obviously rebuildable, no second durable relationship, easy to inspect and fuzz-test, easy to replace after profiling. Benchmark it against a derived child buffer before locking physical storage.' },
+      { h: 'The lesson from Unity’s transform hierarchy', pre: 'authoritative parent relationship\n        ↓\nsystem-maintained reverse child adjacency\n        ↓\nfast downward hierarchy traversal', p: 'Copy the <em>pattern</em>, not the semantics. Unity’s hierarchy is spatial and propagates continuously; Carbon’s is semantic and should update only when structure changes or a query demands work. Carbon can therefore use similar adjacency techniques at much lower recurring cost.', q: 'ECS does not eliminate the cost of hierarchy. It gives better control over storage, allocation, parallelism and derived indexes. The winning design is still authoritative parentage plus efficient derived downward adjacency.' },
       { h: 'The rebuild pass', pre: 'query all entities with Bone structural components\n        ↓\nclear/rebuild BUID → Entity index\n        ↓\nvalidate unique BUIDs\n        ↓\nvalidate parent references\n        ↓\nidentify legal roots\n        ↓\nvalidate no structural cycles\n        ↓\nbuild Parent → Children index\n        ↓\nSpine becomes queryable' },
       { h: 'Orphans, roots, and boundaries', pre: 'Parent == EMPTY\n    = intentional root\n\nParent == X, X required to be in scope,\nX does not exist\n    = invalid/orphan structural record\n\nBoundary reference == X, X legally outside\nthe materialized coherence scope\n    = potentially valid unresolved/cold relationship', p: 'An invalid orphan must never silently become a root. Equally, the validator must not misclassify an explicitly legal cross-coherence or cold boundary reference as an orphan merely because the target is absent from the current local BUID index. For a single-coherence first slice, keep it simple: every non-root parent must resolve locally.' },
       { h: 'Hierarchy and coherence are separate axes', p: 'Most ordinary parentage and <em>all</em> ordinary runtime Moves stay within one coherence scope. But the generic Spine contract must not encode "every parent is in my coherence scope" as a universal invariant — composition above or between World scopes is legal when explicitly modeled. Do reject an ordinary Move that tries to cross a coherence boundary without the required higher-level semantics.' },
@@ -1778,27 +2033,27 @@ const SCENARIOS = [
 ];
 
 const GLOSSARY = [
-  { k: 'bone', t: 'Bone', d: 'The current working name for one durable Carbon structural occurrence — fundamentally an ECS entity carrying the required Carbon structural components. Adopting the name does not create a second kind of identity or state.' },
-  { k: 'spine', t: 'Spine', d: 'The current working name for Carbon’s logical hierarchy and query contract over authoritative ECS-backed Bones. Durable BUID identity and parentage define structure, rebuildable indexes provide traversal, and normal structural mutation commits through the Coordinator. The underlying logical-tree contract is architectural; the code name may still change.' },
-  { k: 'buid', t: 'BUID', d: 'Canonical durable occurrence identity. Move preserves it. Delete terminates it. Runtime unload does not. An ECS Entity is not a substitute — an Entity handle may be cached as an acceleration handle, never as durable identity, and it stays local to its owning Unity ECS World.' },
-  { k: 'baseid', t: 'BaseId', d: 'The immediate-source / provenance BUID for a durable occurrence: which durable source occurrence did this one derive from. It is NOT a generic asset-local presenter slot ID. CarbonBehaviour.AssetId is useful authoring evidence, but the general stable presenter-to-durable-part mapping remains an open implementation contract.' },
-  { k: 'barcode', t: 'Barcode', d: 'The canonical stable logical lookup identity for reusable delivery content, carried or resolved by a Representation Marker and resolved by the Asset Warehouse to a Delivery Package. Do not introduce DeliveryKey or PackageId as competing names. Provider/content version is separate from the Barcode.' },
-  { k: 'scope', t: 'Context Scope', d: 'A hierarchy location that owns contextual runtime lifetime and working state. World and Chunk are established Marrow examples; a Region is one only if application composition explicitly needs region-local systems. A durable Context Scope location and an active runtime scope instance are different things.' },
-  { k: 'marker', t: 'Representation Marker', d: 'Durable concern-specific projection intent on a durable root, carrying a Barcode. It defines no identity, scope, residency, coherence or persistence — and its presence alone does not request the projection.' },
-  { k: 'concern', t: 'Representation Concern', d: 'The category of derived runtime representation managed by one Reconciler — prefab, scene, editor visualization, map icon, debug view. One BUID may have several. The conceptual global projection key is (BUID, Concern).' },
-  { k: 'package', t: 'Delivery Package', d: 'The content product the Asset Warehouse resolves a Barcode into. May be a Prefab, a Scene, or another future delivery container.' },
-  { k: 'manifest', t: 'Component Manifest', d: 'A generated and validated index on a delivery container giving a Reconciler deterministic references to Carbon-managed presenters and their authored binding metadata. Produced or validated at authoring/build/import time, not by scanning names at runtime. Not durable authority.' },
-  { k: 'desired', t: 'Desired', d: 'The complete current target population for one Reconciler concern and one explicit partition. Replacement semantics, not a delta stream. It can change from non-durable inputs — demand or provider state — with no new coherence revision.' },
-  { k: 'actual', t: 'Actual', d: 'The runtime occurrences a Reconciler materially owns or has adopted right now. Actual begins the moment the occurrence is acquired, instantiated or adopted — before binding, Hydrate or readiness. Actual is NOT Ready. Dispatching an async request creates only Pending work.' },
-  { k: 'hydrate', t: 'Hydrate', d: 'Targeted synchronization from coherent durable ECS state into runtime and engine-facing state. A read-side pass: it gains no permission to mutate durable payload.' },
-  { k: 'dehydrate', t: 'Dehydrate', d: 'Targeted writeback of a restoration-relevant outcome that lives only in runtime state, into authorized durable ECS data. Write-side integration that runs inside the sanctioned mutation interval, not during the reconciliation pass.' },
-  { k: 'revision', t: 'Coherence revision', d: 'An ordered counter per coherence domain answering "which coherent published state is this?" A general save may bundle independently coherent scope snapshots rather than forcing one global revision.' },
-  { k: 'generation', t: 'Generation stamp', d: 'Per-Bone equality stamps — Structure, Data, Subtree — preferably ulong so false equality after wrap is operationally irrelevant. They are rebuildable acceleration metadata, NOT authoritative meaning; durable state must remain correct if they are regenerated.' },
-  { k: 'token', t: 'Target token', d: 'A version distinguishing target generations for a partition. A stale async completion whose token no longer matches is released rather than adopted. It is deliberately not the same thing as the durable coherence revision — provider changes move it without any new revision.' },
-  { k: 'binding', t: 'Participant binding', d: 'One presenter-to-durable-Bone association owned by the Reconciler: { BUID Bone, int PresenterIndex, ulong LastHydratedDataGen }. The relationship is required; a managed binding object per bind is not.' },
-  { k: 'projection-entry', t: 'Projection entry', d: 'One delivered runtime container or group: marker root, delivery Barcode, and the range of participant bindings it covers. Managed companion data may hold the GameObject root, scene handle, asset lease and pending operation state.' },
-  { k: 'typekey', t: 'TypeKey', d: 'Stable persisted type/schema identity for a durable payload kind, paired with a SchemaVersion. It must not depend architecturally on a C# class name, namespace or assembly-qualified runtime type name. Separate from BUID occurrence identity.' },
-  { k: 'catalog', t: 'Persistence Catalog', d: 'Derived, rebuildable storage metadata mapping BUID to a persistence document, shard or location. It is not identity and does not grant permission to resolve an otherwise illegal relationship. It lets a valid durable reference stay meaningful when its target is not currently materialized.' }
+  { k: 'bone', c: 'Structure', t: 'Bone', d: 'The current working name for one durable Carbon structural occurrence — fundamentally an ECS entity carrying the required Carbon structural components. Adopting the name does not create a second kind of identity or state.' },
+  { k: 'spine', c: 'Structure', t: 'Spine', d: 'The current working name for Carbon’s logical hierarchy and query contract over authoritative ECS-backed Bones. Durable BUID identity and parentage define structure, rebuildable indexes provide traversal, and normal structural mutation commits through the Coordinator. The underlying logical-tree contract is architectural; the code name may still change.' },
+  { k: 'buid', c: 'Identity', t: 'BUID', d: 'Canonical durable occurrence identity. Move preserves it. Delete terminates it. Runtime unload does not. An ECS Entity is not a substitute — an Entity handle may be cached as an acceleration handle, never as durable identity, and it stays local to its owning Unity ECS World.' },
+  { k: 'baseid', c: 'Identity', t: 'BaseId', d: 'The immediate-source / provenance BUID for a durable occurrence: which durable source occurrence did this one derive from. It is NOT a generic asset-local presenter slot ID. CarbonBehaviour.AssetId is useful authoring evidence, but the general stable presenter-to-durable-part mapping remains an open implementation contract.' },
+  { k: 'barcode', c: 'Identity', t: 'Barcode', d: 'The canonical stable logical lookup identity for reusable delivery content, carried or resolved by a Representation Marker and resolved by the Asset Warehouse to a Delivery Package. Do not introduce DeliveryKey or PackageId as competing names. Provider/content version is separate from the Barcode.' },
+  { k: 'scope', c: 'Structure', t: 'Context Scope', d: 'A hierarchy location that owns contextual runtime lifetime and working state. World and Chunk are established Marrow examples; a Region is one only if application composition explicitly needs region-local systems. A durable Context Scope location and an active runtime scope instance are different things.' },
+  { k: 'marker', c: 'Representation', t: 'Representation Marker', d: 'Durable concern-specific projection intent on a durable root, carrying a Barcode. It defines no identity, scope, residency, coherence or persistence — and its presence alone does not request the projection.' },
+  { k: 'concern', c: 'Representation', t: 'Representation Concern', d: 'The category of derived runtime representation managed by one Reconciler — prefab, scene, editor visualization, map icon, debug view. One BUID may have several. The conceptual global projection key is (BUID, Concern).' },
+  { k: 'package', c: 'Representation', t: 'Delivery Package', d: 'The content product the Asset Warehouse resolves a Barcode into. May be a Prefab, a Scene, or another future delivery container.' },
+  { k: 'manifest', c: 'Representation', t: 'Component Manifest', d: 'A generated and validated index on a delivery container giving a Reconciler deterministic references to Carbon-managed presenters and their authored binding metadata. Produced or validated at authoring/build/import time, not by scanning names at runtime. Not durable authority.' },
+  { k: 'desired', c: 'Convergence', t: 'Desired', d: 'The complete current target population for one Reconciler concern and one explicit partition. Replacement semantics, not a delta stream. It can change from non-durable inputs — demand or provider state — with no new coherence revision.' },
+  { k: 'actual', c: 'Convergence', t: 'Actual', d: 'The runtime occurrences a Reconciler materially owns or has adopted right now. Actual begins the moment the occurrence is acquired, instantiated or adopted — before binding, Hydrate or readiness. Actual is NOT Ready. Dispatching an async request creates only Pending work.' },
+  { k: 'hydrate', c: 'Synchronization', t: 'Hydrate', d: 'Targeted synchronization from coherent durable ECS state into runtime and engine-facing state. A read-side pass: it gains no permission to mutate durable payload.' },
+  { k: 'dehydrate', c: 'Synchronization', t: 'Dehydrate', d: 'Targeted writeback of a restoration-relevant outcome that lives only in runtime state, into authorized durable ECS data. Write-side integration that runs inside the sanctioned mutation interval, not during the reconciliation pass.' },
+  { k: 'revision', c: 'Synchronization', t: 'Coherence revision', d: 'An ordered counter per coherence domain answering "which coherent published state is this?" A general save may bundle independently coherent scope snapshots rather than forcing one global revision.' },
+  { k: 'generation', c: 'Synchronization', t: 'Generation stamp', d: 'Per-Bone equality stamps — Structure, Data, Subtree — preferably ulong so false equality after wrap is operationally irrelevant. They are rebuildable acceleration metadata, NOT authoritative meaning; durable state must remain correct if they are regenerated.' },
+  { k: 'token', c: 'Convergence', t: 'Target token', d: 'A version distinguishing target generations for a partition. A stale async completion whose token no longer matches is released rather than adopted. It is deliberately not the same thing as the durable coherence revision — provider changes move it without any new revision.' },
+  { k: 'binding', c: 'Convergence', t: 'Participant binding', d: 'One presenter-to-durable-Bone association owned by the Reconciler: { BUID Bone, int PresenterIndex, ulong LastHydratedDataGen }. The relationship is required; a managed binding object per bind is not.' },
+  { k: 'projection-entry', c: 'Convergence', t: 'Projection entry', d: 'One delivered runtime container or group: marker root, delivery Barcode, and the range of participant bindings it covers. Managed companion data may hold the GameObject root, scene handle, asset lease and pending operation state.' },
+  { k: 'typekey', c: 'Identity', t: 'TypeKey', d: 'Stable persisted type/schema identity for a durable payload kind, paired with a SchemaVersion. It must not depend architecturally on a C# class name, namespace or assembly-qualified runtime type name. Separate from BUID occurrence identity.' },
+  { k: 'catalog', c: 'Persistence', t: 'Persistence Catalog', d: 'Derived, rebuildable storage metadata mapping BUID to a persistence document, shard or location. It is not identity and does not grant permission to resolve an otherwise illegal relationship. It lets a valid durable reference stay meaningful when its target is not currently materialized.' }
 ];
 
 const FAILURES = [
@@ -1860,6 +2115,109 @@ const GATES = [
   'Move preserves a BUID reference, Delete leaves it broken, and a cold target stays validly unresolved or materializes through the Persistence Catalog',
   'Outstanding async work cannot leak into the next scope or session, and restart reconstructs entirely from durable truth',
   'A validated network, server or editor patch joins the same sanctioned mutation and publication path rather than mutating runtime projection in parallel'
+];
+
+/* §2 — the identity separations the audit spent most of its ink on */
+const IDENTITIES = [
+  { k: 'BUID', w: 'This durable occurrence', l: 'Durable', d: 'Minted on Add, preserved by Move, terminated by Delete. Runtime unload does not touch it.', tone: 'durable' },
+  { k: 'BaseId', w: 'Immediate durable source', l: 'Durable', d: 'Which durable source occurrence this one derived from. Recorded at clone time. Not an asset-local slot name.', tone: 'durable' },
+  { k: 'Barcode', w: 'Reusable delivery content', l: 'Authored', d: 'Carried or resolved by a Representation Marker, resolved by the Warehouse to a package. Provider version is a separate axis.', tone: 'durable' },
+  { k: 'TypeKey', w: 'Persisted type / schema', l: 'Authored', d: 'Paired with SchemaVersion. Must not depend on a C# class name, namespace or assembly-qualified type name.', tone: 'durable' },
+  { k: 'Entity', w: 'ECS acceleration handle', l: 'Transient', d: 'Local to its owning Unity ECS World. May be cached for speed. Never durable identity, never presenter identity.', tone: 'derived' },
+  { k: 'SystemHandle<T>', w: 'Contextual service', l: 'Transient', d: 'Answers "which provider should I use here?" — a completely different question from "which durable occurrence does this target?"', tone: 'derived' },
+  { k: 'Catalog entry', w: 'Storage location', l: 'Derived', d: 'BUID → document, shard or location. Rebuildable metadata. Grants no permission to resolve an otherwise illegal relationship.', tone: 'derived' }
+];
+
+/* §27 step 1 — suggested group order for the first slice */
+const GROUPS = [
+  { g: 'CarbonMutationGroup', s: ['CoordinatorSystem / structural staging', 'CarbonPrepareForPublicationSystem (targeted writeback only)'] },
+  { g: 'CarbonPublicationGroup', s: ['Generation and coherence publication'] },
+  { g: 'CarbonObservationGroup', s: ['WatcherSystem'] },
+  { g: 'CarbonResidencyGroup', s: ['Driver / ResidencySolverSystem'] },
+  { g: 'CarbonDerivationGroup', s: ['OrchestratorSystem / concern Filter selection'] },
+  { g: 'CarbonReconciliationGroup', s: ['SceneReconcilerSystem', 'PrefabReconcilerSystem'] }
+];
+
+/* §34 — an optimization-oriented target shape, not a requirement to begin with */
+const SYSTEMS = [
+  { n: 'SpineRuntimeSystem', t: 'SystemBase now, possibly ISystem later', d: 'Owns the BUID and child indexes, rebuilds and maintains topology, and hands trusted Carbon systems read-only native views. Also owns the one dependency and ordering boundary for index mutation.' },
+  { n: 'CoordinatorSystem', t: 'SystemBase or ISystem', d: 'Structural request intake, validation, collapse, and commit of Add / Move / Delete. May stage destructive results that need pre-publication runtime integration. Updates topology and generation summaries.' },
+  { n: 'CarbonPrepareForPublicationSystem', t: 'SystemBase', d: 'Runs only inside the sanctioned mutation interval. Bridges to concern Reconciler dirty registries for targeted writeback, and lets staged destructive work finalize under the selected success policy.' },
+  { n: 'CarbonPublicationSystem', t: 'ISystem', d: 'Consolidates dirty generations, advances the coherence revision, finalizes published change metadata.' },
+  { n: 'WatcherSystem', t: 'ISystem', d: 'Observes settled revision, generations and change summaries, and publishes the changed working set.' },
+  { n: 'MarrowResidencySolverSystem', t: 'ISystem or SystemBase', d: 'Consumes Driver and observer demand and selects transient eligible Chunk and population sets. Deliberately Marrow-specific rather than generic Carbon semantics.' },
+  { n: 'ContextScopeRuntimeHost', t: 'SystemBase or host service', d: 'Creates and registers transient runtime scope instances, rebuilds scope-local scratch from coherent durable state, marks scopes retiring, and disposes scoped systems only when every barrier is clear.' },
+  { n: 'OrchestratorSystem', t: 'ISystem', d: 'Combines current and changed durable truth, eligible population and concern Filters into exact target partitions per concern.' },
+  { n: 'PrefabReconcilerSystem', t: 'SystemBase', d: 'Owns the managed Prefab runtime inventory, partition buckets, bindings, dirty sets and pending work. Resolves Warehouse packages, then manifests, pairs, binds, hydrates and releases.' },
+  { n: 'SceneReconcilerSystem', t: 'SystemBase', d: 'The same convergence model for Scene delivery, including adoption of presenters that already physically exist in a loaded Scene.' },
+  { n: 'CreationCloneMaterializer', t: 'Host / domain service or ECS subsystem', d: 'Resolves trusted durable template data, prepares detached multi-Bone clone plans with fresh BUIDs, BaseId provenance and reference remapping, and submits a generic proposal for Coordinator commit.' },
+  { n: 'DurableReferenceResolver / PersistenceCatalog', t: 'Later service, once cold refs are enabled', d: 'Resolves BUID relationships locally or through persistence location and materialization. Maintains only rebuildable runtime lookup state.' }
+];
+
+/* §32 — structured diagnostics minimum */
+const DIAGNOSTICS = [
+  'BUID / subject identity',
+  'Coherence scope and coherence revision',
+  'Structural request or operation ID',
+  'Representation Concern',
+  'Marker root',
+  'Barcode',
+  'Desired target token / pending operation token',
+  'Context Scope or partition key',
+  'Reconciler provisioning stage',
+  'TypeKey plus stored and target schema version, for migration failures',
+  'Failure or rejection reason, and a causal correlation ID'
+];
+
+/* §33 */
+const PERF = [
+  { t: 'Avoid one managed object per Bone', d: 'The whole reason the managed Node tree was removed: managed allocations and pointer-heavy traversal that scale with every durable occurrence. Prefer durable ECS records plus unmanaged, rebuildable indexes.' },
+  { t: 'Avoid one managed binding object per presenter', d: 'The presenter is already a MonoBehaviour. Use its own state plus value-type handles and BUIDs in Reconciler-owned tables.' },
+  { t: 'Keep hierarchy work incremental', d: 'Support both modes and use the right one: full rebuild for startup, reload, repair and testing; incremental maintenance for normal Add, Move and Delete. Do not rebuild the whole child index every frame for a handful of changes.' },
+  { t: 'Partition transient work', d: 'Scope-backed and concern-local partitions improve cleanup, locality, cancellation, parallel planning, dirty-set size, debugging and ownership clarity all at once.' },
+  { t: 'Tree for hierarchy, ECS for throughput', d: 'Do not walk the Spine for what is naturally a dense component query. Do not flatten every structural question into a global ECS search.' },
+  { t: 'Carbon structural change is not ECS structural change', d: 'Move is semantically structural but changing BoneParent data may not alter archetype composition. Add, Delete and component add/remove are real ECS structural changes with sync and chunk-movement costs. Batch those deliberately.' }
+];
+
+/* §36 — settled architecture, unsettled implementation */
+const OPEN = [
+  { t: 'Spine storage', i: ['Whether BoneTag is necessary at all', 'Exact BoneIdentity packing', 'NativeParallelMultiHashMap vs dynamic child buffers vs packed adjacency', 'Exact root encoding', 'Exact scope accelerator layout'] },
+  { t: 'Generation mechanics', i: ['Stamp type and width', 'Ancestor propagation strategy', 'Direct-write dirty API', 'Conservative ECS change-version fallback'] },
+  { t: 'Coordinator', i: ['Exact structural request layout', 'BUID mint timing for Add', 'DeleteLeaf vs DeleteSubtree naming', 'Cycle-validation algorithm', 'Request result and failure reporting', 'ECB vs direct EntityManager commit split'] },
+  { t: 'Creation / clone materialization', i: ['How a domain request selects a source, template or recipe', 'Where detached clone staging lives', 'Representation of the source→clone remap table', 'How multi-Bone Add plus initial payload staging is handed to Coordinator', 'How trusted template validation results are cached and reused', 'How generic clone machinery composes with Marrow emission and spawn semantics'] },
+  { t: 'Orchestrator', i: ['Exact interest-contract encoding', 'Exact target-set transport', 'Residency and demand provider interface', 'Target partition key'] },
+  { t: 'Context Scopes', i: ['Generic ContextScopeTag vs game-specific role components', 'Exact runtime scope host and registry representation', 'Exact active and retiring scope state representation', 'Higher-scope recursive bucket teardown', 'How scoped-system retirement waits on multiple Reconciler barriers', 'Whether partition-bucket allocators or arenas are used'] },
+  { t: 'Representation / Manifest', i: ['Exact Representation Marker component types', 'Exact Barcode encoding and type', 'Exact manifest slot schema', 'The stable authored presenter-slot → durable-part mapping beyond the constrained direct-template proof', 'Optional participant semantics', 'Cross-Chunk composite delivery policy'] },
+  { t: 'Reconciler', i: ['Exact Actual, Pending and Ready state data', 'Exact concern-local pending-retirement and release-barrier representation', 'Retry and cancellation policy', 'Pooling policy', 'Divergence repair', 'Managed / unmanaged split', 'Participant-handle layout', 'Target token implementation', 'Warehouse lease and provider version tracking'] },
+  { t: 'Dehydrate', i: ['Exact dirty participant registry', 'Exact prepare-for-publication integration before Delete, save and unload', 'Failure policy per integration case'] },
+  { t: 'Persistence', i: ['Exact snapshot file format', 'Staging World lifecycle', 'Atomic replacement implementation', 'TypeKey encoding and registry layout', 'Schema migration dispatch and opaque unknown-data preservation format', 'Persistence Catalog storage and index layout', 'CarbonPatch serialization and transport'] },
+  { t: 'Durable references', i: ['Exact relationship schema API', 'Local vs cold resolver cache layout', 'Materialization request queue, deduplication and cancellation', 'Runtime pointer invalidation and re-resolution strategy', 'Structured unresolved and broken-link diagnostics'] },
+  { t: 'Diagnostics / shutdown', i: ['Structured diagnostic transport and correlation IDs', 'Exact shutdown fencing and cancellation mechanism', 'Timeout and degrade policy for unresolved retirement barriers'] }
+];
+
+/* §0.1 and §0.2 — what the 2026-08-12 audit changed */
+const AUDIT = [
+  { k: 'fix', t: 'Barcode is the canonical delivery identity', d: 'Do not introduce DeliveryKey or PackageId as a competing architectural name. A Representation Marker carries or resolves a Barcode.' },
+  { k: 'fix', t: 'BaseId is provenance, not a slot ID', d: 'It is the immediate-source BUID, not generically an asset-local presenter slot. CarbonBehaviour.AssetId is useful authoring evidence, but stable presenter-to-part pairing remains an implementation contract.' },
+  { k: 'fix', t: 'Actual is not Ready', d: 'An occurrence becomes Actual as soon as the Reconciler materially acquires, instantiates or adopts it. Binding, Hydrate, readiness and activation may all follow afterward.' },
+  { k: 'fix', t: 'Generation stamps are acceleration metadata', d: 'Not authoritative meaning. Durable state must remain correct if they are regenerated.' },
+  { k: 'fix', t: 'Drivers and the Residency Solver are explicit', d: 'They belong in the manifestation timeline. Chunk is the default practical entity residency unit for current Marrow — and that rule is Marrow-specific, not generic Carbon.' },
+  { k: 'fix', t: 'Region is not automatically a Context Scope', d: 'World and Chunk are established. Application composition decides which scope kinds install scoped systems; hierarchy level alone does not.' },
+  { k: 'fix', t: 'Cross-coherence persistence is not one global revision', d: 'A general save may bundle independently coherent scope snapshots.' },
+  { k: 'fix', t: 'The AssetId/BaseId pairing shortcut is constrained', d: 'Acceptable for a direct authored-template clone proof. Clone-of-clone and general composite authoring need a stable mapping contract instead.' },
+  { k: 'fix', t: 'Unity.Entities.World is not a Carbon World', d: 'The first slice may colocate one of each. The architecture does not require a 1:1 mapping.' },
+  { k: 'fix', t: 'A Reconciler partition is not automatically a Context Scope', d: 'They often coincide at Chunk. A Region projection partition may exist even when Region is not configured as a Context Scope.' },
+  { k: 'fix', t: 'Cross-coherence hierarchy is legal when modelled', d: 'Ordinary Move stays within one coherence scope, but the generic validator must not ban all boundary relationships between independently coherent domains.' },
+  { k: 'fix', t: 'New consumers baseline from current truth', d: 'They do not wait for a Watcher delta to discover durable state that already exists.' },
+  { k: 'fix', t: 'Writeback is write-side integration', d: 'Normal post-publication provisioning and Hydrate gain no permission to mutate durable payload. Targeted writeback runs inside the sanctioned interval.' },
+  { k: 'add', t: 'Composite creation is not Coordinator logic', d: 'A domain creation responsibility selects a trusted source, clones it detached, mints fresh BUIDs, records provenance, remaps internal references, preserves external ones, then submits a generic proposal.' },
+  { k: 'add', t: 'Residency is not an active runtime scope', d: 'A transient scope host creates, rebuilds and safely disposes the configured scoped systems and scratch for newly active scopes.' },
+  { k: 'add', t: 'Becoming undesired is not permission to release', d: 'A concern-local pending-retirement barrier may hold an occurrence while restoration-relevant outcomes are written back.' },
+  { k: 'add', t: 'Runtime simulation closes the loop through intent', d: 'Triggers, physics and runtime logic may originate domain facts that lead to Add, Move or Delete — but never as a competing authority path.' },
+  { k: 'add', t: 'Durable BUID links need a resolution seam', d: 'Local resolution, cold targets, Persistence Catalog lookup, broken references and pointer caching are all separate from SystemHandle contextual service resolution.' },
+  { k: 'add', t: 'Load correctness includes schema migration', d: 'TypeKey, schema version, unknown optional data preservation and required migration failure must be handled before coherent publication.' },
+  { k: 'add', t: 'Shutdown and teardown need ordered quiescence', d: 'Stop new work, cancel async, integrate required provisional outcomes, release projection, dispose scope scratch, detach stale handles.' },
+  { k: 'add', t: 'Warehouse lifetime is part of convergence', d: 'A Reconciler owns the lease for an Actual or Pending delivery. Provider invalidation can change Desired with no Carbon durable revision.' }
 ];
 
 const LAYERS = [
@@ -2171,13 +2529,16 @@ function showTab(name, keepScroll) {
 
 Object.keys(tabs).forEach(k => tabs[k].addEventListener('click', () => showTab(k)));
 
-/* glossary */
+/* glossary, grouped by category in source order */
 panels.gloss.innerHTML =
-  `<div class="doc-eyebrow"><span class="chip">Vocabulary</span></div>
+  `<div class="doc-eyebrow"><span class="chip">Vocabulary</span><span class="chip">${GLOSSARY.length} terms</span></div>
    <h3 class="doc-title">Core vocabulary</h3>
-   <p class="doc-lede">The words below carry precise contracts. Most bugs in a system like this are two people using one of them to mean two different things.</p>
+   <p class="doc-lede">These words carry precise contracts. Most bugs in a system like this are two people using one of them to mean two different things.</p>
    <dl>` +
-  GLOSSARY.map(g => `<div class="gitem" id="g-${g.k}"><dt>${g.t}</dt><dd>${g.d}</dd></div>`).join('') +
+  GLOSSARY.map((g, i) => {
+    const head = i === 0 || GLOSSARY[i - 1].c !== g.c ? `<div class="gcat">${g.c}</div>` : '';
+    return head + `<div class="gitem" id="g-${g.k}"><dt>${g.t}</dt><dd>${g.d}</dd></div>`;
+  }).join('') +
   `</dl>`;
 
 /* rules */
@@ -2529,6 +2890,34 @@ document.addEventListener('keydown', e => {
 document.getElementById('failGrid').innerHTML = FAILURES.map(f =>
   `<div class="card"><span class="chip t-${f.tone}">${f.tone === 'fail' ? 'Stack-breaker' : 'Needs action'}</span><h3>${f.t}</h3><p>${f.d}</p></div>`).join('');
 
+document.getElementById('idTable').innerHTML = IDENTITIES.map(r =>
+  `<div class="idrow" data-tone="${r.tone}">
+     <span class="id-k">${esc(r.k)}<span class="id-l">${r.l}</span></span>
+     <span class="id-w">${r.w}</span>
+     <span class="id-d">${r.d}</span>
+   </div>`).join('');
+
+document.getElementById('diagList').innerHTML = DIAGNOSTICS.map(d =>
+  `<div class="diag">${d}</div>`).join('');
+
+document.getElementById('sysList').innerHTML = SYSTEMS.map(s =>
+  `<div class="sysrow"><h3>${esc(s.n)} <span class="sys-t">${esc(s.t)}</span></h3><p>${s.d}</p></div>`).join('');
+
+document.getElementById('groupList').innerHTML = GROUPS.map(g =>
+  `<div class="grouprow"><span class="grp">${g.g}</span><ul>${g.s.map(x => `<li>${x}</li>`).join('')}</ul></div>`).join('');
+
+document.getElementById('perfGrid').innerHTML = PERF.map(p =>
+  `<div class="card"><h3>${p.t}</h3><p>${p.d}</p></div>`).join('');
+
+document.getElementById('openList').innerHTML = OPEN.map(o =>
+  `<div class="opengrp"><h3>${o.t}</h3><ul>${o.i.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('');
+
+document.getElementById('auditList').innerHTML = AUDIT.map(a =>
+  `<div class="auditrow">
+     <span class="chip ${a.k === 'fix' ? 't-warn' : 't-good'}">${a.k === 'fix' ? 'Corrected' : 'Added'}</span>
+     <div><h3>${a.t}</h3><p>${a.d}</p></div>
+   </div>`).join('');
+
 document.getElementById('gates').innerHTML = GATES.map((g, i) =>
   `<div class="gate"><span class="g-n">${String(i + 1).padStart(2, '0')}</span><p>${g}</p></div>`).join('');
 
@@ -2578,6 +2967,38 @@ document.getElementById('msClear').addEventListener('click', () => {
   msWrap.querySelectorAll('input').forEach(i => { i.checked = false; });
   syncMsCount();
 });
+
+/* ---------- reference nav + scroll spy ---------- */
+const refnav = document.getElementById('refnav');
+const refSections = [...document.querySelectorAll('.ref section[id]')];
+
+refnav.innerHTML = refSections.map(sec =>
+  `<a class="rn" href="#${sec.id}" data-sec="${sec.id}">${sec.dataset.nav || sec.querySelector('h2').textContent}</a>`).join('');
+
+const rnById = Object.fromEntries([...refnav.querySelectorAll('.rn')].map(a => [a.dataset.sec, a]));
+
+/* nearest section whose top has passed the sticky bar wins, so the highlight
+   tracks what you are reading rather than whatever happens to be intersecting */
+let spyTick = null;
+function spy() {
+  spyTick = null;
+  let here = refSections[0];
+  for (const sec of refSections) {
+    if (sec.getBoundingClientRect().top <= 72) here = sec;
+  }
+  Object.values(rnById).forEach(a => a.removeAttribute('data-here'));
+  const active = rnById[here.id];
+  if (active) {
+    active.dataset.here = '1';
+    const nav = refnav.getBoundingClientRect();
+    const r = active.getBoundingClientRect();
+    if (r.left < nav.left || r.right > nav.right) {
+      refnav.scrollTo({ left: active.offsetLeft - 20, behavior: reduceMotion ? 'auto' : 'smooth' });
+    }
+  }
+}
+addEventListener('scroll', () => { if (!spyTick) spyTick = requestAnimationFrame(spy); }, { passive: true });
+spy();
 
 /* ---------- boot ---------- */
 window.addEventListener('resize', () => {
