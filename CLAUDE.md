@@ -1,124 +1,198 @@
 # Mediarr Installer
 
-This page is meant as a quick reference on working in this repo and the conventions that apply here. It's aimed at Claude Code sessions, but it's just as useful for a human picking the project up.
-
-Mediarr Installer is an Electron wizard that installs a Docker Compose media stack onto a NAS over SSH. The wizard collects settings, renders a `.env`, uploads a payload of bash and Python scripts, and runs them on the NAS. Almost every interesting bug lives in the seam between those two halves.
+An Electron wizard that installs a Docker Compose media stack onto a NAS over SSH. It
+collects settings, renders a `.env`, uploads a payload of bash and Python, then runs
+`setup.sh` on the NAS to bring up Plex or Jellyfin plus the Arr services.
 
 ## The Two Halves
 
-Understanding the split explains most of the layout:
+`installer/` is the Electron app (TypeScript, React) and runs on your Windows machine.
+`nas/` is the payload and runs on the NAS. A syntax error in the payload surfaces as a
+failed install on someone else's hardware rather than as a red squiggle in your editor,
+which is why the cross-language tests exist.
 
-- `installer/` - the Electron app (TypeScript, React). Runs on the user's Windows machine. Collects config, renders `.env`, drives the SSH session.
-- `nas/scripts/` - the payload (bash, Python). Runs on the NAS. Everything here is uploaded and executed remotely, so a syntax error surfaces as a failed install on someone else's hardware rather than as a red squiggle in your editor.
-- `site/` - the docs site (Hugo), published to dougfessler.com/Mediarr-Installer. This is canonical for user-facing docs. Edit `site/content/*.md`, not the old wiki.
-- `docs/` - dev-facing docs and research notes. These stay in the repo.
+`site/` is the docs site, published to dougfessler.com/Mediarr-Installer. It's a
+hand-rolled `build.mjs` with two deps (marked, highlight.js), no framework and no watch
+server. Edit `site/content/*.md`. `docs/` holds dev-facing research notes and audits.
+Those deliberately stay out of the published site.
 
-The `installer/scripts/copy-nas-payload.mjs` step copies `nas/scripts/` into the app bundle at build time. That's why `npm run dev` and `npm run build` both run `copy-payload` first.
+Be straight about rough edges on a site page rather than papering over them. A page that
+admits comic coverage is thinner than TV coverage is more useful than one that implies
+parity and lets the reader find out on their own. `site/content/reading.md` does exactly
+that today. Keep it that way.
 
-## Code Conventions
+## Commands
 
-Measured from the tree, not assumed. Match what's already there:
+There is no root `package.json`. Every npm command runs from `installer/` or from
+`site/`. The root `node_modules/` holds only a stray `.vite/` cache. Don't read it as a
+workspace.
 
-- TypeScript - two-space indent, single quotes, no trailing semicolons, no tabs anywhere.
-- Python - four-space indent, standard PEP 8. Targets whatever Python the NAS ships, so stay conservative with syntax.
-- Bash - the payload runs under the NAS's `sh`/`bash`. `bash -n` it before you ship it.
+From `installer/`:
 
-We comment heavily in the payload scripts, and that's deliberate rather than clutter. A comment there usually records a live failure that cost real debugging time. When you fix something subtle, write down what the symptom looked like, not just what the fix does. The next person to read it is debugging at 1am against a NAS they can't attach a debugger to.
+```
+npm run dev:mock     # whole wizard end to end, no NAS needed
+npm run dev          # same wizard against a real NAS
+npm run test:run     # vitest, 202 tests across 22 files
+npm run typecheck    # tsc over both tsconfigs
+npm run copy-payload # refresh resources/nas-payload/ from nas/
+npm run build:win    # the Windows artifact
+```
+
+`dev:mock` sets `INSTALLER_MOCK=1`, which swaps ssh-service, sftp-service, env-detector
+and vpn-service for fakes that emit realistic streamed output.
+
+From `site/`, `npm run build` exits non-zero on a dead internal link or a page missing
+its frontmatter title. `npm run serve` previews locally.
+
+From the repo root, to reproduce CI's shell lint:
+
+```
+shellcheck --severity=warning -e SC2086,SC2155 \
+  nas/scripts/*.sh nas/scripts/playlistsync/*.sh nas/migration/*.sh
+```
+
+`bash -n` alone won't clear CI. SC2086 and SC2155 are suppressed stack-wide on purpose.
+Don't "fix" them repo-wide. SC2164, SC2064, SC2178/SC2128 and SC2221/SC2222 still block
+the merge.
+
+## The Payload Snapshot
+
+`installer/scripts/copy-nas-payload.mjs` wipes and rewrites
+`installer/resources/nas-payload/` from the whole `nas/` tree before every build, which
+is why `dev`, `dev:mock` and `build` all run `copy-payload` first. It skips `.env`,
+`migration/`, `node_modules` and `__pycache__`, and stamps `.payload-sha` and
+`stack-version` under `scripts/`.
+
+IMPORTANT: `installer/resources/nas-payload/` is generated and gitignored. It's a
+38-file duplicate of `nas/`. A plain `grep` over the repo returns every payload file
+twice. An edit made in the nas-payload copy is thrown away by the next build. Always
+edit `nas/`. Use `git grep` and the copy drops out on its own.
+
+Two more consequences. `nas/migration/` never ships, even though CI still shellchecks
+and py_compiles it. And the wizard uploads the payload from its own build. A fix
+committed after a tag isn't in that release. Worth checking first when a fix "didn't
+work" on a live run.
 
 ## Adding an Opt-In Service
 
-This is the most common structural change, and it's the easiest one to half-finish. A new service touches roughly 18 wiring sites, and missing any single one produces a partial install that looks fine until someone toggles the feature.
-
-The chain, in order:
-
-1. `ENABLE_<SERVICE>` in `nas/scripts/.env.example`
-2. A `profiles:` entry in `docker-compose.yml`
-3. `COMPOSE_PROFILES` assembly in `setup.sh`
-4. `boot-orchestrator.sh`, `setup-folders.sh`, `stop-all.sh`, `setup-firewall.sh` (the firewall one gets forgotten, and the service then works only from the NAS itself)
-5. `post-deploy-validate.sh` and `relocate-stack.sh`
-6. Homepage wiring in `setup-arr-config.py`
-7. `env-schema.ts` and `env-render.ts` in the installer
-8. `ConfigureScreen.tsx`, `DoneScreen.tsx`, and both embedded bash builders in `UpdateRunScreen.tsx`
-9. `wizard.ts`, plus the affected test files
-
-IMPORTANT: `UpdateRunScreen.tsx` contains two separate embedded bash builders. Missing them means enabling the service through Update appears to succeed and starts nothing.
-
-### The Default-On Trap
-
-There are two enable-check helpers and they have opposite defaults:
-
-is_enabled - missing or empty counts as ENABLED. For services that have always been part of the stack.
-is_optin_enabled - only an explicit `true`/`1`/`yes`/`on` counts. Everything new uses this.
-
-An opt-in service checked with `is_enabled` turns itself on for every existing install that upgrades, because their `.env` has no such key. The same pair exists in four places and they all have to agree: `is_optin_enabled` in `setup.sh` and `setup-arr-config.py`, `isOptInEnabled()` in `env-render.ts`, and the explicit-true check in `env-schema.ts`.
-
-### Key Parity
-
-`.env.example`, `env-schema.ts`, and `env-render.ts` have to list the same keys. CI fails if they drift, which is the intended behavior. A new key needs registering in all three.
+The most common structural change and the easiest one to half-finish. A service touches
+roughly 18 sites across `nas/`, `installer/` and `site/`. Missing one gives you a partial
+install that looks fine until someone toggles the feature. New services check their flag
+with `is_optin_enabled` (only an explicit `true`/`1`/`yes`/`on` counts), never
+`is_enabled`, which treats a missing key as on. The full site list, the enable-check
+helpers that all have to agree, and the key-parity tests are in
+`docs/opt-in-checklist.md`.
 
 ## Testing
 
-Run the suite from `installer/`:
+Two directories are named `test/` and they mean different things. `installer/test/` is
+the vitest suite. The repo-root `test/` is a Docker fake-NAS harness (`Dockerfile`,
+`classify.sh`, `run-e2e.sh`) driven by the `e2e-detect` job, which asserts synology,
+ugreen, asustor, terramaster, zimaos and generic each classify correctly.
 
-```
-npm run test:run     # vitest, 197 tests across 20 files
-npm run typecheck    # tsc on both tsconfigs
-```
+Inside `installer/test/`:
 
-Two kinds of test live here, and the second is the interesting one:
+- `unit/` - ordinary unit tests over the TypeScript.
+- `cross-lang/` - runs the REAL bash and Python from `nas/scripts/` and asserts the
+  installer's TypeScript agrees with it. Nothing else catches the halves drifting.
 
-- `test/unit/` - ordinary unit tests over the TypeScript.
-- `test/cross-lang/` - runs the REAL bash and Python from `nas/scripts/` and asserts the installer's TypeScript agrees with it. These exist because the two halves are written in different languages against the same contract, and nothing else catches them drifting apart.
+`installer/test/helpers/shell.ts` is the seam every cross-language test goes through
+(`REPO_ROOT`, `NAS_SCRIPTS`, `BASH`, `PYTHON`, `extractShellFunc`, `extractPythonFunc`,
+`runBash`, `runPython`, `withEnvFile`). Start there when writing a new oracle. Those
+tests extract a function out of the shipped script rather than importing the module,
+since these scripts do real work at import time. Renaming a function then breaks the
+test loudly instead of passing against nothing.
 
-The cross-language tests extract a function out of the shipped script rather than importing the module, since these scripts do real work at import time. A nice side effect is that renaming a function breaks the test loudly instead of quietly passing against nothing.
+`describe.skipIf(!BASH)` and `!PYTHON` guard the suites so a dev box missing an
+interpreter doesn't fail the run. Don't delete `_interpreters.test.ts`. It's the
+sentinel that stops every skipIf suite going silently green under CI. It sits in its
+own file on purpose so it can't be edited away as a side effect of touching one
+oracle.
 
-`describe.skipIf(!PYTHON)` and `!BASH` guard the suites so a dev box without an interpreter on PATH doesn't fail the run. Don't delete `_interpreters.test.ts`, it's the guard that stops all the skipIf suites silently skipping in CI.
+Note: the cross-lang suites spawn real bash and Python subprocesses. On Windows they can
+flake under parallel load. A single red in a full run that passes when re-run on its own
+is usually that (observed 2026-08-05 in optin-render-gate), not a real failure.
+
+CI triggers are narrow. installer-ci.yml only fires on `installer/**`, `nas/**`,
+`test/**` or its own file. A change touching only `site/` or `docs/` never runs the
+suite.
 
 ## Verifying a Fix
 
-The house rule: before a green check counts, say what would turn it red. If that answer doesn't name what you just changed, it isn't verification.
+Before a green check counts, say what would turn it red. If that answer doesn't name
+what you just changed, it isn't verification. Prefer an executable oracle under
+`installer/test/cross-lang/` over a note in a doc. Two worked cases from this tree, and
+why 14 files live there, are in `docs/verifying-a-fix.md`.
 
-In practice that means breaking the fix again and watching the test fail. Several bugs in this repo shipped with passing tests that couldn't have failed. The Prowlarr field-casing bug is the clearest example, since the test passed against camelCase either way and only a PascalCase case could ever have caught it.
+## Log Levels and the Glyph Contract
 
-Prefer an executable oracle over a note in a doc. A note gets read by whoever already knows to look. A test in `test/cross-lang/` meets the next session whether or not they thought to ask.
+The payload helpers share five levels. The distinction is a user-facing promise rather
+than cosmetic.
+
+ok - it worked.
+skip - already configured, nothing to do.
+info - FYI, not actionable.
+warn - needs action, surfaced in the Issues panel.
+fail - a stack-breaker, like Prowlarr being unreachable.
+
+A single dead indexer is a `warn`, never a `fail`.
+
+The glyph is the contract. `RunScreen.tsx` parses the cross mark as fail, the warning
+triangle as warn and `!` as note, and deliberately does NOT match the information sign
+(U+2139), because surfacing info made successful installs look broken. Python's
+`warn()` emits `!` while bash's emits the triangle. The same word lands at two
+severities. Change a glyph and the parser stops seeing the line.
 
 ## Provider and Indexer Catalogs
 
 IMPORTANT: pruning our catalog must never prune a user's install.
 
-The catalogs in `setup-indexers.py` and `setup-bazarr-providers.py` get trimmed as sources die. That's fine for a fresh install, the dropped entry just stops being added. What must never happen is a re-run removing a provider the user has, whether they added it by hand or it came from an older catalog.
+The catalogs under `nas/scripts/indexers/` get trimmed as sources die. That's fine for
+a fresh install. The dropped entry just stops being added. A re-run must never remove a
+provider the user already has.
 
-Bazarr makes this easy to get wrong. Its `enabled_providers` is an array key, so the posted list is authoritative and posting only what we know about would delete the rest. `enable_providers()` guards this by posting the union of enabled and pending. `test/cross-lang/provider-additive.test.ts` pins it, because the failure is silent and shows up months later on someone else's box as "my subtitle providers keep getting reset".
-
-## Log Levels on the NAS
-
-The payload scripts share a set of helpers, and the distinction is a user-facing promise rather than cosmetic:
-
-ok - it worked.
-skip - already configured, nothing to do.
-info - FYI, not actionable. The wizard's issue parser ignores these.
-warn - needs action, surfaced in the Issues panel. A dead or unconfigurable indexer belongs here.
-fail - a stack-breaker. Reserved for things that genuinely stop the install, like Prowlarr being unreachable.
-
-A single dead indexer is a `warn`, never a `fail`. Errors are for stack-breakers, and reddening a healthy install over one optional source misrepresents what happened.
+Bazarr makes this easy to get wrong. Its `enabled_providers` is an array key, which
+makes the posted list authoritative. Posting only what we know about would delete the
+rest. `enable_providers()` posts the union of enabled and pending, which
+`test/cross-lang/provider-additive.test.ts` pins. The function also has to stay
+form-encoded. An earlier JSON POST was silently dropped, because Bazarr's settings
+endpoint reads `request.form` and `save_settings()` then wrote nothing.
 
 ## Releases
 
-Release notes are generated from the tagged commit message, so write version commits as clean changelogs. Say what broke and what the user will see differently, not just which files moved.
+Tags must be prefixed `installer-v`. A bare `v0.31.2` tag builds and publishes nothing,
+since installer-release.yml both triggers and gates its publish on that prefix.
 
-The wizard uploads the payload from its own build. A fix committed after a tag isn't in that release, so an install running the older wizard still runs the older scripts. Worth checking when a fix "didn't work" on a live run.
+```
+git tag installer-v0.31.2 && git push origin installer-v0.31.2
+```
+
+The tagged commit's message IS the public release notes. The workflow feeds the subject
+plus body straight into the GitHub release. Write version commits as clean changelogs.
+Say what broke and what the user will see differently, not which files moved.
+
+## Conventions
+
+Measured across the tree at time of writing. There's no eslint, prettier or
+editorconfig anywhere. `npm run typecheck` is the only automated gate that comes near
+style.
+
+- TypeScript - two-space indent, single quotes, no trailing semicolons. 5728 two-space
+  lines and zero tabs across `installer/src`, and zero double-quoted imports.
+- Python - four-space indent, PEP 8, `snake_case`. 5052 four-space lines, zero tabs.
+  Targets whatever Python the NAS ships, so stay conservative with syntax.
+- Bash - four-space indent, not the two spaces common in shell. 2453 four-space lines,
+  zero tabs.
+- Line endings - LF. `.gitattributes` forces it for `*.sh`, `*.py`, `*.yml`, `*.yaml`
+  and `.env*` because those run on Linux. TypeScript, JSON and Markdown aren't covered
+  and lean on `core.autocrlf=input`.
+
+We comment heavily in the payload scripts. That's deliberate rather than clutter. A
+comment there usually records a live failure that cost real debugging time. Write down
+what the symptom looked like, not just what the fix does.
 
 ## Gotchas Worth Knowing Up Front
 
-- Prowlarr's schemas don't agree with themselves about field-name casing across implementations. Always match schema fields case-insensitively. Both `setup-indexers.py` and `setup-arr-config.py` have helpers for this, and each one exists because of a bug that presented as a connectivity failure.
-- Prowlarr supports exactly seven application types. Manga has none, which is why there's no manga automation.
-- Writing a config file under a running container mostly won't stick. Mylar3 and LazyLibrarian hold config in memory and write it back on shutdown, so a restart lands their save after ours. Stop, write, start.
-- Both of those apps also lowercase every option name through their own writers. A case-sensitive lookup adds a second key beside the existing one, and their strict reader then raises `DuplicateOptionError` and refuses to start. That failure only appears on the second run, which is about as delayed as a bug gets.
-- Generating bash from a Python heredoc eats backslashes. A literal `\n` in the output passes `bash -n` and then fails at runtime. Use `chr(92)`/`chr(10)`, or just use the Edit tool.
-- `INSTALL_DIR` is not a module global in `setup-arr-config.py`. Resolve it as `env.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT`, the way the rest of the file does.
-
-## Writing
-
-Docs and commit messages follow the `smartvoice` profile, which mostly comes down to plain words, contractions, no em dashes, and no semicolons in prose. Write like you're explaining it to a teammate.
-
-Be straight about rough edges rather than papering over them. A doc that admits comic coverage is thinner than TV coverage is more useful than one that implies parity and leaves the reader to discover it.
+Twelve of them, most recording a live failure that cost real debugging time, in
+`docs/gotchas.md`. Read it before touching `setup-arr-config.py`, the Prowlarr wiring,
+Mylar3 or LazyLibrarian config, the Windows self-updater, or README's platform claim.
