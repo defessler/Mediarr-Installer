@@ -73,9 +73,16 @@ jobs:
           n = 0
           for p in pathlib.Path(sys.argv[1]).rglob("*.html"):
               s = p.read_bytes()
-              i = s.lower().find(b"</head>")
-              if i < 0 or ga in s:
+              if ga in s:
                   continue
+              low = s.lower()
+              i = low.find(b"</head>")
+              if i < 0:  # head-less fragment page: tag it right after </title> instead
+                  j = low.find(b"</title>")
+                  if j < 0:
+                      print(f"::warning::{p}: no </head> or </title>, not tagged")
+                      continue
+                  i = j + 8
               p.write_bytes(s[:i] + tag + s[i:])
               n += 1
           print(f"GA tag injected into {n} page(s)")
