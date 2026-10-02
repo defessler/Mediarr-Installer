@@ -60,6 +60,29 @@ jobs:
       - name: Build
         run: npm run build
 
+      # GA4 tag (dougfessler.com property), injected into the built pages rather than the
+      # source so local builds and previews never report to Analytics.
+      - name: Inject Google Analytics tag
+        run: |
+          python3 - _site <<'PY'
+          import pathlib, sys
+          ga = b"G-YQB4BCN1CH"
+          tag = (b'<script async src="https://www.googletagmanager.com/gtag/js?id=' + ga + b'"></script>'
+                 b"<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}"
+                 b"gtag('js',new Date());gtag('config','" + ga + b"');</script>")
+          n = 0
+          for p in pathlib.Path(sys.argv[1]).rglob("*.html"):
+              s = p.read_bytes()
+              i = s.lower().find(b"</head>")
+              if i < 0 or ga in s:
+                  continue
+              p.write_bytes(s[:i] + tag + s[i:])
+              n += 1
+          print(f"GA tag injected into {n} page(s)")
+          if not n:
+              sys.exit("no pages were tagged")
+          PY
+
       - name: Upload artifact
         if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4
