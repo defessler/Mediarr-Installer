@@ -69,7 +69,8 @@ jobs:
           ga = b"G-YQB4BCN1CH"
           tag = (b'<script async src="https://www.googletagmanager.com/gtag/js?id=' + ga + b'"></script>'
                  b"<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}"
-                 b"gtag('js',new Date());gtag('config','" + ga + b"');</script>")
+                 b"gtag('js',new Date());gtag('config','" + ga + b"');</script>"
+                 b'<script src="/js/insights.js" defer></script>')
           n = 0
           for p in pathlib.Path(sys.argv[1]).rglob("*.html"):
               s = p.read_bytes()
