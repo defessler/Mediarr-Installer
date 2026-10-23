@@ -13,7 +13,9 @@ which is why the cross-language tests exist.
 
 `site/` is the docs site, published to dougfessler.com/Mediarr-Installer. It's a
 hand-rolled `build.mjs` with two deps (marked, highlight.js), no framework and no watch
-server. Edit `site/content/*.md`. `docs/` holds dev-facing research notes and audits.
+server. Edit `site/content/*.md`. It deploys through `pages.yml` from a subpath, so
+keep every asset path relative. Ported pages carry hand-written contents lists with
+GitHub-style anchors, so don't tidy the slugger in `build.mjs`. `docs/` holds dev-facing research notes and audits.
 Those deliberately stay out of the published site.
 
 Be straight about rough edges on a site page rather than papering over them. A page that
