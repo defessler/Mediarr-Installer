@@ -11,9 +11,9 @@ collects settings, renders a `.env`, uploads a payload of bash and Python, then 
 failed install on someone else's hardware rather than as a red squiggle in your editor,
 which is why the cross-language tests exist.
 
-`site/` is the docs site, published to dougfessler.com/Mediarr-Installer. It's a
+`site/` is the docs site, published to dougfessler.com/projects/mediarr/. It's a
 hand-rolled `build.mjs` with two deps (marked, highlight.js), no framework and no watch
-server. Edit `site/content/*.md`. It deploys through `pages.yml` from a subpath, so
+server. Edit `site/content/*.md`. It publishes through `pages.yml` (the publish-project action) to a subpath, so
 keep every asset path relative. Ported pages carry hand-written contents lists with
 GitHub-style anchors, so don't tidy the slugger in `build.mjs`. `docs/` holds dev-facing research notes and audits.
 Those deliberately stay out of the published site.

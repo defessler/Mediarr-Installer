@@ -2129,7 +2129,7 @@ def render_text(report):
 # .format template) so the CSS needs no brace-doubling.
 
 CSS = """
-/* Monokai, matching the docs site at dougfessler.com/Mediarr-Installer
+/* Monokai, matching the docs site at dougfessler.com/projects/mediarr
    and the portfolio it takes its cues from. The two sidecar pages and
    the dashboard share this so the whole stack reads as one hand rather
    than three separate tools that happen to be installed together.

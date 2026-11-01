@@ -118,7 +118,7 @@ const ITEMS: TItem[] = [
     cause:
       'You don\'t need to — the wizard handles all of that. There\'s a full beginner\'s walkthrough on the documentation site that covers everything from enabling SSH on your NAS through adding your first show in Sonarr/Radarr.',
     fix:
-      'Open https://dougfessler.com/Mediarr-Installer/installation/ in your browser. It walks through the whole install with ASCII mockups of each wizard screen, what to type in each field, and what to do once each service is running. The same site has an architecture page with diagrams if you want to understand what the wizard actually built.',
+      'Open https://dougfessler.com/projects/mediarr/installation/ in your browser. It walks through the whole install with ASCII mockups of each wizard screen, what to type in each field, and what to do once each service is running. The same site has an architecture page with diagrams if you want to understand what the wizard actually built.',
   },
 
   // ── Install failures ────────────────────────────────────────────────
@@ -937,7 +937,7 @@ export function TroubleshootingModal({ installDir, nasFamily, dataRoot, puid, pg
             </span>
             <a
               className="text-emerald-300 hover:text-emerald-200 underline underline-offset-2 inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 rounded"
-              href="https://dougfessler.com/Mediarr-Installer/installation/"
+              href="https://dougfessler.com/projects/mediarr/installation/"
               target="_blank"
               rel="noreferrer"
               aria-label="Open the beginner's Installation walkthrough on the documentation site in a new tab"

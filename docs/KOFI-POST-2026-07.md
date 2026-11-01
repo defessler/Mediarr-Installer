@@ -21,7 +21,7 @@ Two things landed this month that I'm happy with.
 
 There's a proper docs site now:
 
-**https://dougfessler.com/Mediarr-Installer/**
+**https://dougfessler.com/projects/mediarr/**
 
 The guides that used to live on a GitHub wiki moved over, but the part I
 actually wanted to write is new: an **architecture breakdown** with diagrams of

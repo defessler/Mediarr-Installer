@@ -1,16 +1,19 @@
 name: Docs Site
 
-# Builds site/ and publishes it to GitHub Pages.
+# Builds site/ and publishes it to https://dougfessler.com/projects/mediarr/.
 #
-# Source is set to "GitHub Actions" rather than a branch or the /docs
-# folder, deliberately. docs/ in this repo holds development notes,
-# audits and design specs that have no business being a public website,
-# and a gh-pages branch would mean the site's source and the code that
-# it documents drift apart in separate histories. This way the content
-# lives next to the thing it describes and ships from the same commit.
+# Publishing goes through the publish-project action in defessler/defessler.github.io, which
+# copies the built site into projects/mediarr/ on that repo and adds the GA4 tag. It
+# authenticates with the write deploy key in this repo's ROOT_SITE_DEPLOY_KEY secret.
+# This repo is public, so every job stays on a GitHub-hosted runner.
 #
-# Deploys only from master. A pull request gets the build (so a broken
-# link or a missing frontmatter title fails review) without publishing.
+# docs/ in this repo holds development notes, audits and design specs that have no business
+# being a public website, so only site/ is built and published. The content lives next to the
+# thing it describes and ships from the same commit.
+#
+# Publishes only from master (a push or a manual run). A pull request gets the build (so a
+# broken link or a missing frontmatter title fails review) without publishing, and never
+# reaches the deploy-key secret.
 
 on:
   push:
@@ -26,10 +29,8 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Let a running deploy finish rather than cancelling it mid-publish.
+# Let a running publish finish rather than cancelling it mid-push.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -60,51 +61,28 @@ jobs:
       - name: Build
         run: npm run build
 
-      # GA4 tag (dougfessler.com property), injected into the built pages rather than the
-      # source so local builds and previews never report to Analytics.
-      - name: Inject Google Analytics tag
-        run: |
-          python3 - _site <<'PY'
-          import pathlib, sys
-          ga = b"G-YQB4BCN1CH"
-          tag = (b'<script async src="https://www.googletagmanager.com/gtag/js?id=' + ga + b'"></script>'
-                 b"<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}"
-                 b"gtag('js',new Date());gtag('config','" + ga + b"');</script>"
-                 b'<script src="/js/insights.js" defer></script>')
-          n = 0
-          for p in pathlib.Path(sys.argv[1]).rglob("*.html"):
-              s = p.read_bytes()
-              if ga in s:
-                  continue
-              low = s.lower()
-              i = low.find(b"</head>")
-              if i < 0:  # head-less fragment page: tag it right after </title> instead
-                  j = low.find(b"</title>")
-                  if j < 0:
-                      print(f"::warning::{p}: no </head> or </title>, not tagged")
-                      continue
-                  i = j + 8
-              p.write_bytes(s[:i] + tag + s[i:])
-              n += 1
-          print(f"GA tag injected into {n} page(s)")
-          if not n:
-              sys.exit("no pages were tagged")
-          PY
-
-      - name: Upload artifact
+      - name: Upload site
         if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
+          name: site
           path: site/_site
 
-  deploy:
-    name: Deploy to Pages
+  publish:
+    name: Publish to dougfessler.com
     needs: build
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Download site
+        uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site
+
+      - name: Publish to dougfessler.com/projects/mediarr/
+        uses: defessler/defessler.github.io/.github/actions/publish-project@master
+        with:
+          slug: mediarr
+          path: site
+          deploy-key: ${{ secrets.ROOT_SITE_DEPLOY_KEY }}

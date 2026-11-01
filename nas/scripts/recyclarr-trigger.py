@@ -137,7 +137,7 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Recyclarr · TRaSH sync</title>
 <style>
-/* Monokai, matching the docs site at dougfessler.com/Mediarr-Installer
+/* Monokai, matching the docs site at dougfessler.com/projects/mediarr
    and the portfolio it takes its cues from. The two sidecar pages and
    the dashboard share this so the whole stack reads as one hand rather
    than three separate tools that happen to be installed together.

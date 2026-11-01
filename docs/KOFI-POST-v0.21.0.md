@@ -90,7 +90,7 @@ lines.
 
 There's also a docs site now, with an architecture breakdown and diagrams of
 how the whole stack actually fits together:
-<https://dougfessler.com/Mediarr-Installer/>
+<https://dougfessler.com/projects/mediarr/>
 
 ## If you want to help
 

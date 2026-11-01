@@ -493,7 +493,7 @@ async function main() {
       .replaceAll('{{ROOT}}', rootPrefix)
       // Every path on the site is relative, so it works unchanged whether
       // it's served from a domain root or from a project subpath like
-      // /Mediarr-Installer/. On the home page rootPrefix is empty, and a
+      // /projects/mediarr/. On the home page rootPrefix is empty, and a
       // bare href="" is a same-page link rather than a link home, so use
       // an explicit "./" there.
       .replaceAll('{{HOME}}', rootPrefix || './')
