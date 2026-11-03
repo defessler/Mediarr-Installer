@@ -314,25 +314,31 @@ from `git rev-parse HEAD:nas`. The Dashboard screen displays it for support.
 
 ## 7. Phased delivery — 80/20
 
+Note: this was the May 2026 delivery plan. The installer has shipped since, and is at
+installer-v0.31.1 at time of writing. The boxes were ticked on 2026-11-03 against
+`installer/src`. A ticked item may have landed in a different shape than written here.
+For example, the Windows build is a zip rather than NSIS, it uses Tailwind 3 without
+shadcn, and the updater is the app's own rather than electron-updater.
+
 ### Phase 1 — Walking skeleton (MVP) · 20–30h
 
 Goal: from cold start, user clicks through and ends up with a running stack
 on a real NAS.
 
-- [ ] Scaffold with electron-vite + React + TS — 1h
-- [ ] Tailwind v4 + shadcn (Button, Input, Label, Card, Form, Progress) — 2h
-- [ ] IPC plumbing: ssh-service + sftp-service skeletons, preload bridge,
+- [x] Scaffold with electron-vite + React + TS — 1h
+- [x] Tailwind v4 + shadcn (Button, Input, Label, Card, Form, Progress) — 2h
+- [x] IPC plumbing: ssh-service + sftp-service skeletons, preload bridge,
       type-safe `invoke` wrapper — 4h
-- [ ] **One combined config screen** (everything from screens 5–9 on one
+- [x] **One combined config screen** (everything from screens 5–9 on one
       tall scrollable form) — 4h
-- [ ] **SSH connect** (password OR key path, no profile saving) +
+- [x] **SSH connect** (password OR key path, no profile saving) +
       test-connect — 3h
-- [ ] **SFTP upload** of `nas-payload/` recursively, progress events — 3h
-- [ ] Generate `.env` from form values; SFTP-write it — 2h
-- [ ] **Run setup.sh** with live streaming log panel (no stepper, just
+- [x] **SFTP upload** of `nas-payload/` recursively, progress events — 3h
+- [x] Generate `.env` from form values; SFTP-write it — 2h
+- [x] **Run setup.sh** with live streaming log panel (no stepper, just
       `<pre>` with auto-scroll) — 4h
-- [ ] **Service URLs page** (static list, click to open) — 1h
-- [ ] Windows NSIS package + smoke-test on real DS1522+ — 3h
+- [x] **Service URLs page** (static list, click to open) — 1h
+- [x] Windows NSIS package + smoke-test on real DS1522+ — 3h
 
 **Phase-1 cuts:** no PUID/LAN_IP auto-detect, no NordVPN fetcher (user
 pastes their own WireGuard key OR the bundled `setup-nordvpn.sh` runs as
@@ -342,25 +348,25 @@ no dark mode, no ANSI rendering (just strip control codes).
 ### Phase 2 — Full wizard · 25–35h
 
 - [ ] Split combined form into screens 5–9 with zod + react-hook-form — 6h
-- [ ] `env:detect` IPC + screen 3 with PUID/PGID/TZ/LAN_IP auto-detect — 4h
-- [ ] **NordVPN key fetcher** (screen 6) — 3h
-- [ ] **Indexers** (8) and **Bazarr** (9) screens with toggle cards — 4h
-- [ ] **Stepper rail** in screens 12/13 driven by `setup.sh` step markers — 3h
-- [ ] **Run configurators** screen 13 (3 Python scripts in sequence) — 2h
-- [ ] **ANSI rendering** in log panel — 2h
-- [ ] **Post-deploy dashboard** screen 14 — 4h
-- [ ] **Resume mid-wizard** (Zustand persist) — 2h
-- [ ] Polish, error remediation copy, retry buttons — 3h
+- [x] `env:detect` IPC + screen 3 with PUID/PGID/TZ/LAN_IP auto-detect — 4h
+- [x] **NordVPN key fetcher** (screen 6) — 3h
+- [x] **Indexers** (8) and **Bazarr** (9) screens with toggle cards — 4h
+- [x] **Stepper rail** in screens 12/13 driven by `setup.sh` step markers — 3h
+- [x] **Run configurators** screen 13 (3 Python scripts in sequence) — 2h
+- [x] **ANSI rendering** in log panel — 2h
+- [x] **Post-deploy dashboard** screen 14 — 4h
+- [x] **Resume mid-wizard** (Zustand persist) — 2h
+- [x] Polish, error remediation copy, retry buttons — 3h
 
 ### Phase 3 — Niceties · 20–40h, à la carte
 
-- [ ] Connection profile saving, multi-NAS support — 4h
+- [x] Connection profile saving, multi-NAS support — 4h
 - [ ] Dark mode — 2h
 - [ ] **macOS** + **Linux** builds + CI — 6h
 - [ ] Code signing (Windows EV cert; macOS notarization) — 6h
-- [ ] **Re-run a single step** UI — 3h
-- [ ] **Log export** (.txt or .zip with timestamps) — 2h
-- [ ] **Update Stack** mode (skip wizard, `docker-compose pull && up -d`) — 4h
-- [ ] **Auto-update** via electron-updater + GitHub Releases — 4h
-- [ ] **Migration assistant** wrapping `migration/fix-plex-paths.py` etc. — 4h
+- [x] **Re-run a single step** UI — 3h
+- [x] **Log export** (.txt or .zip with timestamps) — 2h
+- [x] **Update Stack** mode (skip wizard, `docker-compose pull && up -d`) — 4h
+- [x] **Auto-update** via electron-updater + GitHub Releases — 4h
+- [x] **Migration assistant** wrapping `migration/fix-plex-paths.py` etc. — 4h
 - [ ] Telemetry (opt-in, anonymous failure reports) — 3h
