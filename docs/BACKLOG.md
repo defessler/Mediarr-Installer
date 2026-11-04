@@ -18,6 +18,31 @@ needs *your* decision: a security default with real breakage risk (M10), a fail-
 check that could false-positive (H5), or internal/platform/polish items that can't be
 verified without the hardware. Pick any and I'll implement it.
 
+## Where each item stands
+
+Checked against the code on 2026-11-03, at installer-v0.31.1. The detail for each item is in
+its own section below. This list is what tracks it now, so tick an item here when it ships.
+
+- [x] **H1.** VPN-off installs fail fast on Compose before 2.20 or podman-compose (v0.10.13).
+- [x] **H2.** The arm64 FlareSolverr gate lives in `setup.sh` (v0.10.4).
+- [x] **H3.** Configure errors expand their group and name the field (v0.10.10, v0.10.12).
+- [x] **H4.** Retry resumes from the failed step (v0.11.0).
+- [ ] **H5.** Periodic VPN leak check in the guardian. The Done screen can re-check a leak, but
+  `qbit-guardian.sh` still never compares the tunnel's exit IP with the host's.
+- [x] **M1** to **M9** and **M11.** Shipped across v0.10.4 to v0.11.0, as listed below.
+- **M10.** Not planned. The `*` default for `HOMEPAGE_ALLOWED_HOSTS` was kept on purpose, and
+  `nas/scripts/docker-compose.yml` explains why and how to override it.
+- [x] **L1.** `.env` written atomically (v0.10.4).
+- [ ] **L2.** The resume checkpoint still hashes the whole `.env` (`compute_env_hash` in
+  `setup.sh`), so a benign rewrite can still force a full replay.
+- [ ] **L3.** Firewall persistence on hosts that aren't DSM. `diagnose-firewall.sh` still only
+  prints guidance.
+- [x] **L4.** Done another way. A lost session now tells you to go Back and reconnect, and
+  the screen re-scans by itself afterwards.
+- [x] **L5.** `globals.css` clamps every animation and transition under reduced motion.
+- [ ] **L6.** Stream redaction still covers only the SSH and sudo passwords, not `.env` values.
+- [x] **L7.** Passphrase floor and PBKDF2 at 600k (v0.10.7).
+
 ---
 
 ## ✅ Shipped (v0.10.3 – v0.10.9)
