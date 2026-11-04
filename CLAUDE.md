@@ -198,3 +198,16 @@ what the symptom looked like, not just what the fix does.
 Twelve of them, most recording a live failure that cost real debugging time, in
 `docs/gotchas.md`. Read it before touching `setup-arr-config.py`, the Prowlarr wiring,
 Mylar3 or LazyLibrarian config, the Windows self-updater, or README's platform claim.
+
+## Roadmap and todos
+
+Open work lives in `docs/BACKLOG.md`, and the installer's own plan in `installer/PLAN.md`. Note: this repo is public, so anything written in them goes public on the next push. A local dashboard shows each project's list in its panel, so a list it can't find is one the user won't see.
+
+- Read the list before you start, if there is one. It carries what earlier sessions left.
+- It holds planned work only: new features, fixes, and one-off jobs that end. Standing process, like "re-render the demo when X changes" or "run the gate before a push", isn't a task. Write it into this file as a rule instead.
+- Write each task as `- [ ] task`, or `- [x] task` once it's done. Only checklist items count toward the open and done numbers. A numbered item (`3. [ ] task`) counts too.
+- Tick an item in the same commit as the work. Add real follow-ups as open items. Leave out wishes and copies of the chat report.
+- Keep the boxes true. Move a long run of ticked items under `## Done` rather than deleting them.
+- The first `# ` heading becomes the panel's title. Save as UTF-8, under 512 KB.
+- Keep secrets, tokens and private hosts out. Code in any workspace can read these files through the dashboard.
+- A new list goes in the root or `docs`, named `TODO.md` for near-term work or `ROADMAP.md` for the longer plan. The dashboard also reads `BACKLOG`, `NEXT` and `PLAN`, but never inside a dot folder or a build or vendor folder.
