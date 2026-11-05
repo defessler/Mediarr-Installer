@@ -8,7 +8,7 @@ over SSH. Wraps the bash + Python automation in `../nas/`.
 **Shipping** (current: `v0.3.16`). Eight-screen wizard with profile management,
 NAS-family auto-detection, install / update / migrate flows, an animated
 visual layer (Motion + Lucide), encrypted profile export/import, and a
-searchable in-app troubleshooting modal. See [`PLAN.md`](./PLAN.md) for
+searchable in-app troubleshooting modal. See [`design.md`](./design.md) for
 architecture.
 
 ### v0.3.x highlights
@@ -126,7 +126,7 @@ Catches typos in nas-payload scripts before they ship.
 
 ```
 installer/
-├── PLAN.md                  architecture & phased roadmap
+├── design.md                architecture & design decisions
 ├── package.json
 ├── electron.vite.config.ts
 ├── electron-builder.yml

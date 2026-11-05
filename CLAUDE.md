@@ -201,13 +201,20 @@ Mylar3 or LazyLibrarian config, the Windows self-updater, or README's platform c
 
 ## Roadmap and todos
 
-Open work lives in `docs/BACKLOG.md`, and the installer's own plan in `installer/PLAN.md`. Note: this repo is public, so anything written in them goes public on the next push. A local dashboard shows each project's list in its panel, so a list it can't find is one the user won't see.
+Open work lives in `TODO.md` (near-term) and `ROADMAP.md` (the longer plan) in the root, with one detail page per item under `docs/todo/` or `docs/roadmap/`. Note: this repo is public, so anything written in them goes public on the next push. A local dashboard shows each list in the project's panel and opens an item's page when you click it.
 
-- Read the list before you start, if there is one. It carries what earlier sessions left.
-- It holds planned work only: new features, fixes, and one-off jobs that end. Standing process, like "re-render the demo when X changes" or "run the gate before a push", isn't a task. Write it into this file as a rule instead.
-- Write each task as `- [ ] task`, or `- [x] task` once it's done. Only checklist items count toward the open and done numbers. A numbered item (`3. [ ] task`) counts too.
-- Tick an item in the same commit as the work. Add real follow-ups as open items. Leave out wishes and copies of the chat report.
-- Keep the boxes true. Move a long run of ticked items under `## Done` rather than deleting them.
-- The first `# ` heading becomes the panel's title. Save as UTF-8, under 512 KB.
-- Keep secrets, tokens and private hosts out. Code in any workspace can read these files through the dashboard.
-- A new list goes in the root or `docs`, named `TODO.md` for near-term work or `ROADMAP.md` for the longer plan. The dashboard also reads `BACKLOG`, `NEXT` and `PLAN`, but never inside a dot folder or a build or vendor folder.
+- Read both lists before you start. They carry what earlier sessions left.
+- A list is a title and items, nothing else: `# <Project> TODO` or `# <Project> roadmap`, optional `## ` group headings, then one line per item, `- [ ] [Short title](docs/todo/<slug>.md)`. No preamble, notes, sub-bullets or plain bullets.
+- Each item's page is `docs/todo/<slug>.md` or `docs/roadmap/<slug>.md`, with a lowercase hyphenated slug. It reads `# <Title>` (the link's words), then `## What`, `## Why` and `## Done when`, and `## Notes` if it needs links or history.
+- Planned work only: new features, fixes, and one-off jobs that end. Operational information never goes in a list or a page. How to build or test, prerequisites, gates and standing process ("run the gate before a push") live in this file. Context for one item only goes in its `## Notes`.
+- Tick an item (`- [x]`) in the same commit as the work. Move ticked items under `## Done` at the bottom, and keep their pages. Remove an item only when it's no longer wanted, with its page, and say so in the commit.
+- Don't start a `BACKLOG`, `NEXT` or `PLAN` list. A design doc isn't a list: link it from the items it explains.
+- Save as UTF-8. Keep secrets, tokens and private hosts out, since code in any workspace can read these files through the dashboard.
+
+## Where the plans and findings live
+
+The findings behind the TODO items are in `docs/remediation-findings.md`, and the installer's architecture is in `installer/design.md`. Neither is a list, so don't tick boxes there.
+
+Items that touch compose or dashboard behavior (the VPN leak check, the resume hash, non-DSM firewall persistence) need a real NAS or a local Docker host to verify. Without one they stay open.
+
+The roadmap boxes were last checked against `installer/src` on 2026-11-03, at installer-v0.31.1. A ticked item may have landed in a different shape than first planned. For example, the Windows build is a zip rather than NSIS, it uses Tailwind 3 without shadcn, and the updater is the app's own rather than electron-updater. The item pages say so where it applies.
