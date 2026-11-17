@@ -199,17 +199,14 @@ Twelve of them, most recording a live failure that cost real debugging time, in
 `docs/gotchas.md`. Read it before touching `setup-arr-config.py`, the Prowlarr wiring,
 Mylar3 or LazyLibrarian config, the Windows self-updater, or README's platform claim.
 
-## Roadmap and todos
+## Roadmap, todos, builds and tests
 
-Open work lives in `TODO.md` (near-term) and `ROADMAP.md` (the longer plan) in the root, with one detail page per item under `docs/todo/` or `docs/roadmap/`. Note: this repo is public, so anything written in them goes public on the next push. A local dashboard shows each list in the project's panel and opens an item's page when you click it.
+These follow the shared rules in BuildPipeline, which aren't copied here. Read `C:\Projects\BuildPipeline\AGENTS.md`:
 
-- Read both lists before you start. They carry what earlier sessions left.
-- A list is a title and items, nothing else: `# <Project> TODO` or `# <Project> roadmap`, optional `## ` group headings, then one line per item, `- [ ] [Short title](docs/todo/<slug>.md)`. No preamble, notes, sub-bullets or plain bullets.
-- Each item's page is `docs/todo/<slug>.md` or `docs/roadmap/<slug>.md`, with a lowercase hyphenated slug. It reads `# <Title>` (the link's words), then `## What`, `## Why` and `## Done when`, and `## Notes` if it needs links or history.
-- Planned work only: new features, fixes, and one-off jobs that end. Operational information never goes in a list or a page. How to build or test, prerequisites, gates and standing process ("run the gate before a push") live in this file. Context for one item only goes in its `## Notes`.
-- Tick an item (`- [x]`) in the same commit as the work. Move ticked items under `## Done` at the bottom, and keep their pages. Remove an item only when it's no longer wanted, with its page, and say so in the commit.
-- Don't start a `BACKLOG`, `NEXT` or `PLAN` list. A design doc isn't a list: link it from the items it explains.
-- Save as UTF-8. Keep secrets, tokens and private hosts out, since code in any workspace can read these files through the dashboard.
+- "Roadmap and todos" for the format of `TODO.md`, `ROADMAP.md` and their pages under `docs/todo/` and `docs/roadmap/`.
+- "Build and test gate" for running builds and tests. Every build and test goes through `C:\Projects\BuildPipeline\docker\gate\gate.ps1`, one run per call.
+
+Note: this repo is public, so anything written in TODO.md, ROADMAP.md or their pages goes public on the next push.
 
 ## Where the plans and findings live
 
