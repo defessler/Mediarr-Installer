@@ -25,6 +25,11 @@ that today. Keep it that way.
 
 ## Commands
 
+Tests, typechecks, builds and the lint run through the BuildPipeline gate, one run per
+call. "Roadmap, todos, builds and tests" near the end has the gate commands. The commands
+below are what a gate run starts. `dev:mock` and `dev` open the wizard for you to use, so
+they take `-Gpu`.
+
 There is no root `package.json`. Every npm command runs from `installer/` or from
 `site/`. The root `node_modules/` holds only a stray `.vite/` cache. Don't read it as a
 workspace.
