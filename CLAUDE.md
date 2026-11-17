@@ -206,6 +206,15 @@ These follow the shared rules in BuildPipeline, which aren't copied here. Read `
 - "Roadmap and todos" for the format of `TODO.md`, `ROADMAP.md` and their pages under `docs/todo/` and `docs/roadmap/`.
 - "Build and test gate" for running builds and tests. Every build and test goes through `C:\Projects\BuildPipeline\docker\gate\gate.ps1`, one run per call.
 
+This project's gate commands. Each runs in a fresh `app` container with no GPU:
+
+```
+pwsh -File C:/Projects/BuildPipeline/docker/gate/gate.ps1 -Project C:/Projects/NAS -Run '$env:PATH = "C:\Program Files\Git\bin;$env:PATH"; Set-Location installer; npm run test:run'
+pwsh -File C:/Projects/BuildPipeline/docker/gate/gate.ps1 -Project C:/Projects/NAS -Run 'Set-Location installer; npm run typecheck; if ($LASTEXITCODE) { exit $LASTEXITCODE }; npm run build'
+```
+
+The `PATH` line puts Git's `bash` where the cross-language suites look for it. Without it they skip, and the run reports 131 of 202. The repo-root `test/` fake-NAS harness starts its own containers, so it takes `-OnHost`.
+
 Note: this repo is public, so anything written in TODO.md, ROADMAP.md or their pages goes public on the next push.
 
 ## Where the plans and findings live
