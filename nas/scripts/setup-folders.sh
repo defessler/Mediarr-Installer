@@ -135,6 +135,9 @@ CONFIG_DIRS=(
     # `mkdir /metadata/streams` and never recover.
     "$INSTALL_DIR/audiobookshelf/config"
     "$INSTALL_DIR/audiobookshelf/metadata"
+    # ROMarr (opt-in). Its entrypoint chowns /config to PUID:PGID itself, but
+    # pre-creating keeps the bind source from starting out root-owned.
+    "$INSTALL_DIR/romarr/config"
 )
 
 # ── Media and download directories ────────────────────────────────────────────
@@ -178,6 +181,12 @@ DATA_DIRS=(
     # its RSS auto-download pulls new episodes, so it is not read-only.
     "$DATA_ROOT/Media/Audiobooks"
     "$DATA_ROOT/Media/Podcasts"
+    # ROMarr (opt-in). It makes the per-platform folders under Games itself.
+    # Its entrypoint chowns only /config, never /data, so Games and the two
+    # download categories have to be PUID:PGID-owned from here.
+    "$DATA_ROOT/Media/Games"
+    "$DATA_ROOT/Downloads/Usenet/complete/romarr"
+    "$DATA_ROOT/Downloads/Torrents/Completed/romarr"
     "$DATA_ROOT/Downloads/Torrents/ToFetch"
     "$DATA_ROOT/Downloads/Torrents/InProgress"
     "$DATA_ROOT/Downloads/Torrents/Completed/tv-sonarr"

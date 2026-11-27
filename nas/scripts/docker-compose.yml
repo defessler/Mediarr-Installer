@@ -1014,6 +1014,54 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # ── Game ROM acquisition ──────────────────────────────────
+  #
+  # ROMarr is an *arr for game ROMs: Wanted list -> Prowlarr search -> qBit or
+  # SABnzbd -> filed under Media/Games/<platform>. It is NOT a Prowlarr
+  # Application (Prowlarr's seven app types have no game one), so the wiring
+  # runs the other way: setup-arr-config.py points ROMarr at Prowlarr and the
+  # download clients over ROMarr's own API.
+  #
+  # Deliberately no PROWLARR_* / QBITTORRENT_* env here, though ROMarr reads
+  # them. It seeds those ONCE, on first boot, and sets a _seeded_clients flag
+  # whatever the values were. On a fresh install PROWLARR_API_KEY is still
+  # blank at `compose up` (setup-arr-config.py discovers it later), so env
+  # seeding would store a Prowlarr indexer with an empty key forever. The API
+  # route has no such trap and re-runs cleanly.
+  romarr:
+    image: ghcr.io/blizzhacker/romarr:latest
+    container_name: romarr
+    profiles: ["romarr"]
+    networks: [media]
+    security_opt: *security
+    # Starts as root and drops to PUID:PGID with su-exec (its entrypoint), so
+    # the usual PUID/PGID pair works and no `user:` line is wanted. Setting
+    # `user:` would make it skip the /config chown and ignore PUID/PGID.
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      # Claims the install before it serves a request. Applied only while no
+      # password is stored, so changing ARR_PASSWORD later doesn't change it.
+      # Left blank, the first visitor to the web UI sets the password.
+      - ROMARR_PASSWORD=${ARR_PASSWORD:-}
+      # A plain folder library. RomM/Gaseous/Retrom are options in its own
+      # Settings -> Libraries if you run one of those yourself.
+      - LIBRARY_KIND=folder
+      - LIBRARY_PATH=/data/Media/Games
+    ports:
+      - ${LAN_IP}:49162:6868
+    volumes:
+      - ${INSTALL_DIR}/romarr/config:/config
+      # Same /data root the arrs get, so completed downloads and the library
+      # sit on one mount and imports can hardlink or move instead of copying.
+      # qBit's /downloads and SABnzbd's /data/complete are remote path
+      # mappings setup-arr-config.py adds, exactly as it does for Sonarr.
+      - ${DATA_ROOT}:/data
+    logging: *logging
+    restart: unless-stopped
+
   unpackerr:
     # ghcr.io path is unpackerr/unpackerr (golift/unpackerr on Docker Hub) —
     # same image, off Docker Hub's rate limit.

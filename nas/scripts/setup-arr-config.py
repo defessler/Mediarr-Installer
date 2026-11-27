@@ -40,7 +40,7 @@ import time
 import xml.etree.ElementTree as ET
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 
 # Container runtime CLI (docker | podman). Honour CONTAINER_RUNTIME from the
@@ -1944,6 +1944,153 @@ def add_flaresolverr_proxy(prowlarr_base, prowlarr_key):
         fail("Flaresolverr proxy: failed to add")
     return tag_id
 
+# ── ROMarr ────────────────────────────────────────────────────────────────────
+
+# Every host name this stack has ever given a client that ROMarr points at.
+# qBittorrent answers as "gluetun" with the VPN on and "qbittorrent" with it
+# off, so a row on either host is ours and gets moved when VPN_ENABLED flips.
+# A row on any other host is one the user added, and we leave it alone.
+_ROMARR_OUR_HOSTS = {
+    'prowlarr':    {'prowlarr'},
+    'qbittorrent': {'gluetun', 'qbittorrent'},
+    'sabnzbd':     {'sabnzbd'},
+}
+
+# Where the two download clients' paths land inside ROMarr, which mounts the
+# whole ${DATA_ROOT} at /data. Same pairs Sonarr gets from
+# add_remote_path_mapping: qBit mounts Downloads/Torrents at /downloads and
+# SABnzbd mounts Downloads/Usenet at /data, so a SABnzbd path starts
+# /data/complete, which inside ROMarr is somewhere else entirely.
+_ROMARR_PATH_MAPPINGS = [
+    {'remote': '/downloads',     'local': '/data/Downloads/Torrents'},
+    {'remote': '/data/complete', 'local': '/data/Downloads/Usenet/complete'},
+]
+
+
+def _romarr_host(row):
+    """The host a stored ROMarr row points at. Indexers store a url, clients
+    store host + port."""
+    if row.get('host'):
+        return str(row['host']).strip().lower()
+    url = str(row.get('url') or '')
+    return (urlparse(url if '//' in url else 'http://' + url).hostname or '').lower()
+
+
+def _romarr_upsert(base, key, path, kind, label, wanted, rows):
+    """Add the row for `kind`, or rewrite the one already pointing at our host.
+
+    Rewritten every run rather than compared, because the secrets come back
+    as `********` and there is no way to tell a stale Prowlarr key from a good
+    one. Re-sending them is how a rotated key or a changed QBITTORRENT_PASS
+    gets fixed by a re-run. Returns True when ROMarr took the row."""
+    ours = _ROMARR_OUR_HOSTS[kind]
+    same_kind = [r for r in rows if str(r.get('type', '')).lower() == kind]
+    mine = next((r for r in same_kind if _romarr_host(r) in ours), None)
+    if mine is None and same_kind:
+        # The user has their own one and it isn't on a host we know. Theirs
+        # wins: adding a second one would split grabs between them.
+        skip(f"ROMarr: {label} (your own, on {_romarr_host(same_kind[0]) or 'another host'})")
+        return True
+    body = dict(wanted)
+    if mine is not None:
+        body['id'] = mine['id']
+    result, code = POST_status(base, key, path, body)
+    if result is None or not result.get('id'):
+        warn(f"ROMarr: could not save {label} (HTTP {code}).")
+        return False
+    ok(f"ROMarr: {label} {'updated' if mine else 'added'}")
+    return True
+
+
+def configure_romarr(base, config_json, prowlarr_key, qb, sab_key):
+    """Point ROMarr at Prowlarr and the stack's download clients.
+
+    ROMarr is the one acquirer here that ISN'T a Prowlarr Application, so
+    nothing can push indexers into it. The link runs the other way: ROMarr
+    holds a Prowlarr indexer entry with Prowlarr's URL and API key.
+
+    Env seeding is no use for this. ROMarr reads PROWLARR_API_KEY and friends
+    once, on first boot, then sets _seeded_clients and never reads them again
+    (romarr/app.py _seed_from_env). On a fresh install Prowlarr's key is still
+    blank at `compose up`, so seeding would store an indexer with an empty key
+    for good. The REST API has no such trap.
+
+    `qb` is (host, port, user, password) or None when qBittorrent is off."""
+    section("ROMarr")
+    # ROMarr writes a generated key into romarr.json on first boot, at
+    # settings._api_key, and saves at once (it's the one credential a script
+    # can use without a password). Poll for it the way the arrs' config.xml is
+    # polled above.
+    rom_key = None
+    deadline = time.time() + 120
+    while True:
+        rom_key = read_json_key(config_json, 'settings', '_api_key')
+        if rom_key or time.time() >= deadline:
+            break
+        time.sleep(3)
+    if not rom_key:
+        warn(f"ROMarr: no API key in {config_json} yet — is the container running?")
+        warn("ROMarr: re-run this step once it's up to link Prowlarr and the download clients.")
+        note_unreachable()
+        return False
+    if not wait_ready("ROMarr", base, rom_key, "/api/v1/config", retries=24):
+        note_unreachable()
+        return False
+
+    cfg = GET(base, rom_key, "/api/v1/config") or {}
+    all_ok = True
+
+    if prowlarr_key:
+        all_ok &= _romarr_upsert(base, rom_key, "/api/v1/indexer", 'prowlarr', "Prowlarr", {
+            'type': 'prowlarr', 'name': 'Prowlarr', 'enable': True,
+            'url': 'http://prowlarr:9696', 'api_key': prowlarr_key,
+        }, cfg.get('indexers') or [])
+    else:
+        all_ok = False
+    if not all_ok:
+        # A warn, not a fail: movies and TV are fine, but this is the case
+        # where ROMarr's UI says nothing at all. Every search just comes back
+        # empty.
+        warn("ROMarr has no Prowlarr link, so game searches will find nothing. "
+             "Re-run this step, or add it in ROMarr → Settings → Indexers.")
+
+    clients = cfg.get('download_clients') or []
+    if qb:
+        qb_host, qb_port, qb_user, qb_pass = qb
+        all_ok &= _romarr_upsert(base, rom_key, "/api/v1/downloadclient", 'qbittorrent', "qBittorrent", {
+            'type': 'qbittorrent', 'name': 'qBittorrent', 'enable': True,
+            'host': qb_host, 'port': qb_port, 'use_ssl': False, 'url_base': '',
+            'username': qb_user, 'password': qb_pass, 'category': 'romarr',
+        }, clients)
+    if sab_key:
+        all_ok &= _romarr_upsert(base, rom_key, "/api/v1/downloadclient", 'sabnzbd', "SABnzbd", {
+            'type': 'sabnzbd', 'name': 'SABnzbd', 'enable': True,
+            'host': 'sabnzbd', 'port': 8080, 'use_ssl': False, 'url_base': '',
+            'api_key': sab_key, 'category': 'romarr',
+        }, clients)
+    if not qb and not sab_key:
+        warn("ROMarr has no download client: qBittorrent and SABnzbd are both off, "
+             "so it can find releases but not fetch them.")
+
+    # Path mappings. Ours are added, anything the user set is kept, and a
+    # remote we already map is never rewritten (they may have fixed it on
+    # purpose).
+    current = [m for m in (cfg.get('remote_path_mappings') or []) if isinstance(m, dict)]
+    have = {str(m.get('remote', '')).rstrip('/') for m in current}
+    missing = [m for m in _ROMARR_PATH_MAPPINGS if m['remote'] not in have]
+    if not missing:
+        skip("ROMarr: download path mappings")
+    elif PUT(base, rom_key, "/api/v1/config",
+             {'remote_path_mappings': current + missing}) is not None:
+        ok("ROMarr: download path mappings → " +
+           ", ".join(f"{m['remote']} = {m['local']}" for m in missing))
+    else:
+        warn("ROMarr: could not save its download path mappings, so finished "
+             "downloads won't import. Add them in ROMarr → Settings → General: " +
+             ", ".join(f"{m['remote']} = {m['local']}" for m in missing))
+        all_ok = False
+    return all_ok
+
 # ── SABnzbd ───────────────────────────────────────────────────────────────────
 
 def configure_sabnzbd(base, key, ini_path, env=None):
@@ -2032,6 +2179,11 @@ def configure_sabnzbd(base, key, ini_path, env=None):
             reading_cats.append(('comics', '/data/complete/comics'))
         if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
             reading_cats.append(('books', '/data/complete/books'))
+        # ROMarr's own default category name. Unlike Mylar3 it IS pointed at
+        # SABnzbd for you (configure_romarr), and an undefined category would
+        # drop its jobs loose in /data/complete.
+        if is_optin_enabled(env, 'ENABLE_ROMARR'):
+            reading_cats.append(('romarr', '/data/complete/romarr'))
     cats_resp = sab_api(base, key, {'mode': 'get_config', 'section': 'categories'})
     existing_cats = {c['name'] for c in
                      (cats_resp or {}).get('config', {}).get('categories', [])}
@@ -4244,6 +4396,11 @@ def render_homepage_services(env, ip):
         automation.append(block("Mylar3", f"http://{ip}:49159", "Comic automation", "mylar.png"))
     if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
         automation.append(block("LazyLibrarian", f"http://{ip}:49160", "Book automation", "mdi-book-search"))
+    # ROMarr is the same watch-and-grab loop for game ROMs, so it sits here too.
+    # mdi- glyph rather than a png: dashboard-icons has no romarr entry at time
+    # of writing, and a missing png renders as a broken image.
+    if is_optin_enabled(env, 'ENABLE_ROMARR'):
+        automation.append(block("ROMarr", f"http://{ip}:49162", "Game ROM automation", "mdi-gamepad-variant"))
     if is_enabled(env, 'ENABLE_BAZARR'):
         automation.append(block("Bazarr",   f"http://{ip}:49153", "Subtitle automation","bazarr.png"))
     automation.append(    block("Prowlarr", f"http://{ip}:49150", "Indexer manager",    "prowlarr.png"))
@@ -5291,6 +5448,18 @@ def main():
     # so the POST passes. Auto-TMM is deliberately NOT pinned — it is not
     # validated at all; it's a user-preference default. See the
     # configure_qbittorrent() comment.
+
+    # ── ROMarr ────────────────────────────────────────────────────────────────
+    # After Prowlarr, because ROMarr needs Prowlarr's key rather than the other
+    # way round, and after SABnzbd so its "romarr" category already exists.
+    if is_optin_enabled(env, 'ENABLE_ROMARR'):
+        configure_romarr(
+            f"http://{LAN_IP}:49162",
+            f"{B}/romarr/config/romarr.json",
+            PROWLARR_KEY,
+            (QB_HOST, QB_PORT, QB_USER, QB_PASS) if is_enabled(env, 'ENABLE_QBITTORRENT') else None,
+            SABNZBD_KEY if is_enabled(env, 'ENABLE_SABNZBD') else None,
+        )
 
     # ── Bazarr ────────────────────────────────────────────────────────────────
 

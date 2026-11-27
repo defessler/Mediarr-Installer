@@ -5,7 +5,7 @@ import {
   Boxes, Award, Shield, HardDrive, UserCircle, KeyRound, Lock, Wrench,
   Newspaper, Users, Captions,
   PlaySquare, Tv, Film, Music, Music2, Download, Package, LayoutDashboard,
-  BookOpen, BookMarked, BookCopy, Library, Headphones,
+  BookOpen, BookMarked, BookCopy, Library, Headphones, Gamepad2,
   Clock, CheckCircle2, XCircle, AlertTriangle, Info, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
@@ -175,7 +175,7 @@ interface ServiceToggle {
 }
 
 type ServiceGroup =
-  | 'watch' | 'tv' | 'music' | 'reading' | 'livetv' | 'downloads' | 'extras'
+  | 'watch' | 'tv' | 'music' | 'reading' | 'games' | 'livetv' | 'downloads' | 'extras'
 
 /** Render order + headings. Media types first (what you want), plumbing
  *  last (what makes it work). */
@@ -184,6 +184,7 @@ export const SERVICE_GROUPS: { id: ServiceGroup; label: string; blurb: string }[
   { id: 'tv',        label: 'Movies & TV',    blurb: 'Find, download and organise video' },
   { id: 'music',     label: 'Music',          blurb: 'Albums, and playlists from SiriusXM' },
   { id: 'reading',   label: 'Books & comics', blurb: 'Plex and Jellyfin cannot serve these at all' },
+  { id: 'games',     label: 'Games',          blurb: 'ROMs, found and filed by platform' },
   { id: 'livetv',    label: 'Live TV',        blurb: 'Free channels and a DVR, no Plex Pass' },
   { id: 'downloads', label: 'Downloading',    blurb: 'How files actually arrive' },
   { id: 'extras',    label: 'Housekeeping',   blurb: 'Quality, tidying and the dashboard' },
@@ -208,6 +209,7 @@ export const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' , beta: true, group: 'reading' },
   { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' , beta: true, group: 'reading' },
   { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' , beta: true, group: 'reading' },
+  { key: 'ENABLE_ROMARR',      label: 'ROMarr',       hint: 'Game ROM automation — the Sonarr of ROMs, uses your indexers', icon: Gamepad2, iconColor: 'text-red-400' , beta: true, group: 'games' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400', group: 'extras' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300', group: 'extras' },
 ]
@@ -216,7 +218,7 @@ export const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_AUDIOBOOKSHELF'])
+export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_AUDIOBOOKSHELF', 'ENABLE_ROMARR'])
 
 function ServicesSection({
   config, update,

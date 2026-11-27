@@ -70,6 +70,9 @@ export const envObject = z.object({
   ENABLE_LAZYLIBRARIAN: optStr,
   // OPT-IN (default off). Library-only, no credentials, no superRefine entry.
   ENABLE_AUDIOBOOKSHELF: optStr,
+  // OPT-IN (default off). Its login reuses ARR_PASSWORD and its API key is one
+  // ROMarr generates itself, so no credentials and no superRefine entry.
+  ENABLE_ROMARR: optStr,
   // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
   // separately from ENABLE_LIBRARIAN on purpose: LibrARRian has no auth,
   // so turning the report on must not also hand everyone on the LAN a

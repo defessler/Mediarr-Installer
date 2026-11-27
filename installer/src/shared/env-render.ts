@@ -218,6 +218,13 @@ export interface EnvFormValues {
    *  podcasts, straight from RSS. A missing key counts as OFF. */
   ENABLE_AUDIOBOOKSHELF?: string
 
+  // ── Game ROMs (ROMarr) — OPT-IN like Soulseek.
+  /** Whether to install ROMarr: game ROM automation on ${LAN_IP}:49162. Not a
+   *  Prowlarr Application, so setup-arr-config.py points it at Prowlarr and the
+   *  download clients through ROMarr's own API instead. A missing key counts
+   *  as OFF. */
+  ENABLE_ROMARR?: string
+
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
   USENET_PORT?: string
@@ -649,6 +656,10 @@ export function renderEnv(v: EnvFormValues): string {
     '# A library and player, not a downloader — podcasts are the one thing it',
     '# fetches itself, straight from RSS with no indexer involved.',
     line('ENABLE_AUDIOBOOKSHELF', isOptInEnabled(v.ENABLE_AUDIOBOOKSHELF) ? 'true' : 'false'),
+    '',
+    '# Game ROM automation (ROMarr). OPT-IN; off by default, via isOptInEnabled.',
+    '# Searches Prowlarr and files ROMs under Media/Games/<platform>.',
+    line('ENABLE_ROMARR', isOptInEnabled(v.ENABLE_ROMARR) ? 'true' : 'false'),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),

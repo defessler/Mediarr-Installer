@@ -48,6 +48,7 @@ const VARIANTS: EnvFormValues[] = [
     ENABLE_MYLAR: 'true',
     ENABLE_LAZYLIBRARIAN: 'true',
     ENABLE_AUDIOBOOKSHELF: 'true',
+    ENABLE_ROMARR: 'true',
   },
   ...(['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom'] as const).map(
     (p): EnvFormValues => ({

@@ -565,6 +565,7 @@ is_optin ENABLE_KAVITA && P+=("kavita")
 is_optin ENABLE_MYLAR && P+=("mylar")
 is_optin ENABLE_LAZYLIBRARIAN && P+=("lazylibrarian")
 is_optin ENABLE_AUDIOBOOKSHELF && P+=("audiobookshelf")
+is_optin ENABLE_ROMARR && P+=("romarr")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 
 echo "[wizard-update] compose files: $FILES"
@@ -781,6 +782,7 @@ is_optin ENABLE_KAVITA && P+=("kavita")
 is_optin ENABLE_MYLAR && P+=("mylar")
 is_optin ENABLE_LAZYLIBRARIAN && P+=("lazylibrarian")
 is_optin ENABLE_AUDIOBOOKSHELF && P+=("audiobookshelf")
+is_optin ENABLE_ROMARR && P+=("romarr")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false
 docker compose $FILES --progress plain --ansi never up -d`

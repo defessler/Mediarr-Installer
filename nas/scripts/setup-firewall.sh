@@ -204,6 +204,11 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_AUDIOBOOKSHELF=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49161 -j ACCEPT ;;
     esac
+    # ROMarr (49162) — OPT-IN, same semantics. LAN web UI only. Its grabs go out
+    # through SABnzbd and qBittorrent, which have their own rules above.
+    case "$(grep -m1 '^ENABLE_ROMARR=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49162 -j ACCEPT ;;
+    esac
     if is_enabled ENABLE_HOMEPAGE; then
         iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 3000 -j ACCEPT
     fi
@@ -284,6 +289,8 @@ remove_rules() {
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49161 -j ACCEPT 2>/dev/null
+    # ROMarr. Unconditional -D.
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49162 -j ACCEPT 2>/dev/null
 
     # Seerr
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 5056 -j ACCEPT 2>/dev/null

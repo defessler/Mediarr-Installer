@@ -555,6 +555,9 @@ is_optin_enabled ENABLE_LAZYLIBRARIAN && PROFILES+=("lazylibrarian")
 # Audiobooks/podcasts (Audiobookshelf) is OPT-IN too. Plain bridge service,
 # no VPN coupling.
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && PROFILES+=("audiobookshelf")
+# Game ROM automation (ROMarr) is OPT-IN too. Plain bridge service that hands
+# work to SABnzbd/qBittorrent, so no "vpn" sidecar.
+is_optin_enabled ENABLE_ROMARR && PROFILES+=("romarr")
 if [ ${#PROFILES[@]} -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     echo "  Services enabled: ${COMPOSE_PROFILES//,/, } (+ prowlarr always on)"
@@ -744,6 +747,7 @@ stop_disabled_services() {
         "mylar3:ENABLE_MYLAR"
         "lazylibrarian:ENABLE_LAZYLIBRARIAN"
         "audiobookshelf:ENABLE_AUDIOBOOKSHELF"
+        "romarr:ENABLE_ROMARR"
     )
     local pair container flag stopped=0
     for pair in "${pairs[@]}"; do
@@ -759,7 +763,7 @@ stop_disabled_services() {
            || [ "$flag" = "ENABLE_DISPATCHARR" ] || [ "$flag" = "ENABLE_LIBRARIAN" ] \
            || [ "$flag" = "ENABLE_KOMGA" ] || [ "$flag" = "ENABLE_KAVITA" ] \
            || [ "$flag" = "ENABLE_MYLAR" ] || [ "$flag" = "ENABLE_LAZYLIBRARIAN" ] \
-           || [ "$flag" = "ENABLE_AUDIOBOOKSHELF" ]; then
+           || [ "$flag" = "ENABLE_AUDIOBOOKSHELF" ] || [ "$flag" = "ENABLE_ROMARR" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -955,6 +959,8 @@ check_port_conflicts() {
     is_optin_enabled ENABLE_MYLAR         && pairs+=("mylar3:49159")
     is_optin_enabled ENABLE_LAZYLIBRARIAN && pairs+=("lazylibrarian:49160")
     is_optin_enabled ENABLE_AUDIOBOOKSHELF && pairs+=("audiobookshelf:49161")
+    # ROMarr (opt-in): published host port 49162 (container 6868).
+    is_optin_enabled ENABLE_ROMARR && pairs+=("romarr:49162")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
     # installed by default on Debian-12 / UGREEN UGOS (net-tools is a
     # separate package), so the old per-port `netstat -lnt 2>/dev/null`
@@ -1104,6 +1110,9 @@ wait_for_services() {
     # a library rather than an acquirer. Same .State.Status readiness signal, and
     # the same rule that this wait must not stall waiting for HTTP.
     is_optin_enabled ENABLE_AUDIOBOOKSHELF && services="$services audiobookshelf"
+    # ROMarr is a Python app on its own image (su-exec entrypoint, not s6).
+    # Same .State.Status signal. Its HTTP readiness is setup-arr-config.py's job.
+    is_optin_enabled ENABLE_ROMARR && services="$services romarr"
 
     echo ""
     echo "  Waiting for containers to become healthy..."

@@ -241,6 +241,9 @@ esac
 case "$(env_val ENABLE_AUDIOBOOKSHELF | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("audiobookshelf") ;;
 esac
+case "$(env_val ENABLE_ROMARR | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("romarr") ;;
+esac
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     export COMPOSE_PROFILES="$(IFS=,; echo "${PROFILES[*]}")"
     log "COMPOSE_PROFILES=$COMPOSE_PROFILES"

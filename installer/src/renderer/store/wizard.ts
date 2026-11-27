@@ -186,6 +186,9 @@ const defaultConfig: Partial<EnvFormValues> = {
   ENABLE_LAZYLIBRARIAN: 'false',
   // Audiobookshelf — OPT-IN, default OFF. Library-only, nothing to seed.
   ENABLE_AUDIOBOOKSHELF: 'false',
+  // ROMarr — OPT-IN, default OFF. setup-arr-config.py reads the API key
+  // ROMarr generates for itself, so nothing to seed.
+  ENABLE_ROMARR: 'false',
   // Write mode is ON once the report itself is on, so enabling LibrARRian
   // gives you the upgrade/shrink buttons out of the box. It keeps its own key
   // so the Configure screen can drop the page back to read-only. Note this is

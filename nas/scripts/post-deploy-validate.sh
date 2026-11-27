@@ -159,6 +159,7 @@ is_optin_enabled ENABLE_KAVITA && CONTAINERS+=(kavita)
 is_optin_enabled ENABLE_MYLAR         && CONTAINERS+=(mylar3)
 is_optin_enabled ENABLE_LAZYLIBRARIAN && CONTAINERS+=(lazylibrarian)
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && CONTAINERS+=(audiobookshelf)
+is_optin_enabled ENABLE_ROMARR && CONTAINERS+=(romarr)
 
 for container in "${CONTAINERS[@]}"; do
     STATUS=$($RT inspect -f '{{.State.Status}}' "$container" 2>/dev/null)
@@ -523,6 +524,11 @@ is_optin_enabled ENABLE_LAZYLIBRARIAN && check_url_lenient "LazyLibrarian" "http
 # never comes up, that ownership is the first thing to check.
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && check_url_lenient "Audiobookshelf" "http://$LAN_IP:49161" \
     "Audiobookshelf sets up its database on first boot. If it stays down, check that ${INSTALL_DIR}/audiobookshelf/{config,metadata} are owned by PUID:PGID."
+# ROMarr (opt-in). /api/health is the one route it serves without a login, and
+# it's what the image's own HEALTHCHECK polls, so a 200 there means it's up even
+# while the UI is still waiting for its first password.
+is_optin_enabled ENABLE_ROMARR && check_url_lenient "ROMarr" "http://$LAN_IP:49162/api/health" \
+    "ROMarr loads its platform catalog on first boot — give it a moment, then re-run."
 
 # ── Plex External Access ──────────────────────────────────────────────────────
 
@@ -811,6 +817,7 @@ if is_enabled ENABLE_HOMEPAGE; then
         is_optin_enabled ENABLE_KAVITA && EXPECTED_TILES+=("ENABLE_KAVITA:Kavita")
         is_optin_enabled ENABLE_MYLAR  && EXPECTED_TILES+=("ENABLE_MYLAR:Mylar3")
         is_optin_enabled ENABLE_AUDIOBOOKSHELF && EXPECTED_TILES+=("ENABLE_AUDIOBOOKSHELF:Audiobookshelf")
+        is_optin_enabled ENABLE_ROMARR && EXPECTED_TILES+=("ENABLE_ROMARR:ROMarr")
         # LazyLibrarian has no Homepage WIDGET upstream (so no live stats), but
         # it does get an ordinary tile with a status dot — and this check is
         # about the tile existing, not about widget stats. It was being skipped
