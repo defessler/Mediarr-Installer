@@ -961,9 +961,39 @@ services:
     logging: *logging
     restart: unless-stopped
 
-  # Shelfmark replaced LazyLibrarian in v0.33.0. It is a search-and-request
-  # page for ebooks and audiobooks rather than an author tracker: you look a
-  # book up, pick a release, and it lands in Media/Books or Media/Audiobooks.
+  # LazyLibrarian (opt-in, NOT recommended). Shelfmark below is the
+  # recommended book service since v0.33.0. LazyLibrarian came back in v0.33.1
+  # for people who want what Shelfmark doesn't do: follow an author and grab
+  # new books as they appear. The cost is that its download client and its
+  # library folder have to be set by hand in its own settings. The installer
+  # only turns on its API, switches its built-in direct-download and IRC
+  # providers off, and adds it to Prowlarr. The wizard shows a modal when both
+  # are ticked, since they'd both write into Media/Books.
+  lazylibrarian:
+    image: lscr.io/linuxserver/lazylibrarian:latest
+    container_name: lazylibrarian
+    profiles: ["lazylibrarian"]
+    networks: [media]
+    security_opt: *security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    ports:
+      - ${LAN_IP}:49160:5299
+    volumes:
+      - ${INSTALL_DIR}/lazylibrarian/config:/config
+      # Writes the ebook library that Kavita reads.
+      - ${DATA_ROOT}/Media/Books:/books
+      - ${DATA_ROOT}:/data
+    logging: *logging
+    restart: unless-stopped
+
+  # Shelfmark replaced LazyLibrarian as the recommended book service in
+  # v0.33.0. It is a search-and-request page for ebooks and audiobooks rather
+  # than an author tracker: you look a book up, pick a release, and it lands
+  # in Media/Books or Media/Audiobooks.
   #
   # The LITE image on purpose. The standard image bundles a Chromium that
   # exists only to get past Cloudflare for Shelfmark's direct-download
@@ -1086,9 +1116,11 @@ services:
       # API key. Lose it and the saved credentials are unreadable.
       - ${INSTALL_DIR}/readmeabook/config:/app/config
       - ${INSTALL_DIR}/readmeabook/cache:/app/cache
-      # Only config is pre-created by setup-folders.sh. pgdata MUST stay owned
-      # by the image's postgres user or PostgreSQL refuses to start, so it is
-      # left for docker to create and the entrypoint to chown.
+      # All four are pre-created by setup-folders.sh, because Synology's Docker
+      # refuses a missing bind source instead of creating it. Only config is
+      # chowned there. pgdata MUST stay owned by the image's postgres user or
+      # PostgreSQL refuses to start, and the entrypoint chowns it, redis and
+      # cache itself on every start. RunScreen's prep step skips pgdata too.
       - ${INSTALL_DIR}/readmeabook/pgdata:/var/lib/postgresql/data
       - ${INSTALL_DIR}/readmeabook/redis:/var/lib/redis
       # The SAME container paths qBittorrent and SABnzbd use, so a finished

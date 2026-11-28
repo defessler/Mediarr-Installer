@@ -7,7 +7,6 @@
 - [ ] [Verify ROMarr on a live NAS](docs/todo/verify-romarr-on-a-live-nas.md)
 - [ ] [Verify Shelfmark on a live NAS](docs/todo/verify-shelfmark-on-a-live-nas.md)
 - [ ] [Verify ReadMeABook on a live NAS](docs/todo/verify-readmeabook-on-a-live-nas.md)
-- [ ] [Remove the retired LazyLibrarian container on Update](docs/todo/reap-lazylibrarian-on-update.md)
 
 ## Done
 

@@ -12,8 +12,7 @@ number below was re-checked against the tree that day.
   automation. Shelfmark, ReadMeABook and ROMarr aren't on the list either. They're
   Prowlarr clients, so the link is written into them and nothing is added to Prowlarr.
 - Writing a config file under a running container mostly won't stick. Mylar3 (and
-  LazyLibrarian, until v0.33.0 removed it) holds config in memory and writes it back on
-  shutdown. A restart lands its save after ours. Stop, write, start. Shelfmark is the
+  LazyLibrarian) holds config in memory and writes it back on shutdown. A restart lands its save after ours. Stop, write, start. Shelfmark is the
   exception: it only writes a settings file when someone saves in its UI, so write and
   restart is enough there.
 - Mylar3 also lowercases every option name through its own writer. A case-sensitive
@@ -26,10 +25,14 @@ number below was re-checked against the tree that day.
   doesn't exist yet at `compose up`. Neither gets its links from compose env for that
   reason.
 - A service that leaves the stack keeps running. `compose up -d` never touches a
-  container whose service is gone from the file. `stop_disabled_services` in `setup.sh`
-  reaps LazyLibrarian by name, and `stop-all.sh` and `relocate-stack.sh` still list it.
-  The Update path doesn't run `setup.sh`, so an install updated that way keeps the old
-  container until a full re-run.
+  container whose service is gone from the file. A retired service needs reaping by name
+  in `stop_disabled_services` in `setup.sh`. The Update path doesn't run `setup.sh`, so an
+  install updated that way keeps the old container until a full re-run. LazyLibrarian
+  was the worked case in v0.33.0 and came back as an opt-in in v0.33.1.
+- Synology's Docker refuses a bind-mount source that doesn't exist, where most other
+  Docker builds create it. Every `${INSTALL_DIR}` and `${DATA_ROOT}` source in compose
+  has to be made by `setup-folders.sh` first. `bind-sources-created.test.ts` pins it,
+  after ReadMeABook's `redis` and `cache` folders stopped v0.33.0 installs at Step 6.
 - Generating bash out of a Python string eats backslashes. The result still passes
   `bash -n` before it fails on a live NAS. The live example is
   `_TAG_BY_INDEXER_TEMPLATE` at `setup-arr-config.py:2789`, a plain triple-quoted (not

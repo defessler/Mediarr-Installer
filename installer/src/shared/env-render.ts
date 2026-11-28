@@ -205,8 +205,14 @@ export interface EnvFormValues {
    *  front instead of leaving as a post-install step nobody discovers. */
   MYLAR_COMICVINE_KEY?: string
   ENABLE_MYLAR?: string
+  /** Whether to install LazyLibrarian: author tracking on ${LAN_IP}:49160,
+   *  also a native Prowlarr Application. Not recommended since v0.33.0, when
+   *  Shelfmark took over. setup-arr-config.py writes its built-in
+   *  direct-download and IRC providers OFF. A missing key counts as OFF. */
+  ENABLE_LAZYLIBRARIAN?: string
   /** Whether to install Shelfmark: a search-and-request page for ebooks and
-   *  audiobooks on ${LAN_IP}:49163. It replaced LazyLibrarian in v0.33.0. A
+   *  audiobooks on ${LAN_IP}:49163. The recommended book service since
+   *  v0.33.0. A
    *  Prowlarr client, not a Prowlarr Application, so setup-arr-config.py
    *  writes Prowlarr's URL and key into it along with both download clients.
    *  Its direct-download sources stay off. A missing key counts as OFF. */
@@ -661,9 +667,11 @@ export function renderEnv(v: EnvFormValues): string {
     '# Mylar3 (comics) and Shelfmark (ebooks and audiobooks) both search the',
     '# indexers you already configured in Prowlarr and hand transfers to',
     '# SABnzbd/qBittorrent. Shelfmark can also search direct-download sites;',
-    '# those ship OFF and the installer leaves them off.',
+    '# those ship OFF and the installer leaves them off. LazyLibrarian (authors,',
+    '# not recommended) is a Prowlarr Application with its direct providers OFF.',
     line('ENABLE_MYLAR', isOptInEnabled(v.ENABLE_MYLAR) ? 'true' : 'false'),
     line('MYLAR_COMICVINE_KEY', v.MYLAR_COMICVINE_KEY),
+    line('ENABLE_LAZYLIBRARIAN', isOptInEnabled(v.ENABLE_LAZYLIBRARIAN) ? 'true' : 'false'),
     line('ENABLE_SHELFMARK', isOptInEnabled(v.ENABLE_SHELFMARK) ? 'true' : 'false'),
     '',
     '# Audiobooks and podcasts. OPT-IN; off by default, via isOptInEnabled.',

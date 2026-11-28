@@ -51,6 +51,7 @@ const SERVICES: {
   { name: 'Kavita',       port: '49157',     note: 'Books',      icon: BookMarked,      iconColor: 'text-indigo-300' },
   { name: 'Komga',        port: '49158',     note: 'Comics',     icon: BookOpen,        iconColor: 'text-orange-300' },
   { name: 'Mylar3',       port: '49159',     note: 'Comics auto', icon: BookCopy,       iconColor: 'text-orange-400' },
+  { name: 'LazyLibrarian', port: '49160',    note: 'Author tracking', icon: Library,  iconColor: 'text-slate-400' },
   { name: 'Shelfmark',    port: '49163',     note: 'Book search', icon: Library,        iconColor: 'text-indigo-400' },
   { name: 'Audiobookshelf', port: '49161',   note: 'Audiobooks', icon: Headphones,      iconColor: 'text-emerald-300' },
   { name: 'ReadMeABook',  port: '49164',     note: 'Audiobooks auto', icon: Headphones, iconColor: 'text-emerald-500' },
@@ -269,6 +270,7 @@ export function DoneScreen() {
     if (s.name === 'Kavita' && !isOptInEnabled(config.ENABLE_KAVITA)) return []
     if (s.name === 'Komga' && !isOptInEnabled(config.ENABLE_KOMGA)) return []
     if (s.name === 'Mylar3' && !isOptInEnabled(config.ENABLE_MYLAR)) return []
+    if (s.name === 'LazyLibrarian' && !isOptInEnabled(config.ENABLE_LAZYLIBRARIAN)) return []
     if (s.name === 'Shelfmark' && !isOptInEnabled(config.ENABLE_SHELFMARK)) return []
     if (s.name === 'Audiobookshelf' && !isOptInEnabled(config.ENABLE_AUDIOBOOKSHELF)) return []
     if (s.name === 'ReadMeABook' && !isOptInEnabled(config.ENABLE_READMEABOOK)) return []

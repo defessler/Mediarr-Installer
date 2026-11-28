@@ -46,6 +46,7 @@ const VARIANTS: EnvFormValues[] = [
     ENABLE_KOMGA: 'true',
     ENABLE_KAVITA: 'true',
     ENABLE_MYLAR: 'true',
+    ENABLE_LAZYLIBRARIAN: 'true',
     ENABLE_SHELFMARK: 'true',
     ENABLE_AUDIOBOOKSHELF: 'true',
     ENABLE_READMEABOOK: 'true',

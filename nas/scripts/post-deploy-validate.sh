@@ -157,6 +157,7 @@ is_optin_enabled ENABLE_LIBRARIAN && CONTAINERS+=(librarian)
 is_optin_enabled ENABLE_KOMGA  && CONTAINERS+=(komga)
 is_optin_enabled ENABLE_KAVITA && CONTAINERS+=(kavita)
 is_optin_enabled ENABLE_MYLAR         && CONTAINERS+=(mylar3)
+is_optin_enabled ENABLE_LAZYLIBRARIAN && CONTAINERS+=(lazylibrarian)
 is_optin_enabled ENABLE_SHELFMARK     && CONTAINERS+=(shelfmark)
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && CONTAINERS+=(audiobookshelf)
 is_optin_enabled ENABLE_READMEABOOK && CONTAINERS+=(readmeabook)
@@ -515,6 +516,8 @@ is_optin_enabled ENABLE_KOMGA && check_url_lenient "Komga" "http://$LAN_IP:49158
 # than fail the install. "Mylar3" matches the DoneScreen SERVICES entry.
 is_optin_enabled ENABLE_MYLAR && check_url_lenient "Mylar3" "http://$LAN_IP:49159" \
     "Mylar3 builds its database on first boot — give it a moment, then re-run."
+is_optin_enabled ENABLE_LAZYLIBRARIAN && check_url_lenient "LazyLibrarian" "http://$LAN_IP:49160" \
+    "LazyLibrarian builds its database on first boot — give it a moment, then re-run."
 # Shelfmark (opt-in). /api/health needs no login and is the route upstream's own
 # compose healthcheck polls. It answers 503 when the download coordinator isn't
 # running, which is the state where every download sits queued forever, so a
@@ -826,9 +829,10 @@ if is_enabled ENABLE_HOMEPAGE; then
         is_optin_enabled ENABLE_MYLAR  && EXPECTED_TILES+=("ENABLE_MYLAR:Mylar3")
         is_optin_enabled ENABLE_AUDIOBOOKSHELF && EXPECTED_TILES+=("ENABLE_AUDIOBOOKSHELF:Audiobookshelf")
         is_optin_enabled ENABLE_ROMARR && EXPECTED_TILES+=("ENABLE_ROMARR:ROMarr")
-        # Neither of these has a Homepage WIDGET upstream (so no live stats), but
+        # None of these has a Homepage WIDGET upstream (so no live stats), but
         # each gets an ordinary tile with a status dot, and this check is about
         # the tile existing, not about widget stats.
+        is_optin_enabled ENABLE_LAZYLIBRARIAN && EXPECTED_TILES+=("ENABLE_LAZYLIBRARIAN:LazyLibrarian")
         is_optin_enabled ENABLE_SHELFMARK && EXPECTED_TILES+=("ENABLE_SHELFMARK:Shelfmark")
         is_optin_enabled ENABLE_READMEABOOK && EXPECTED_TILES+=("ENABLE_READMEABOOK:ReadMeABook")
         MISSING=()

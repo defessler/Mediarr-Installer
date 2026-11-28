@@ -38,6 +38,7 @@ const OPT_IN_FLAGS: { key: keyof EnvFormValues; profile: string }[] = [
   { key: 'ENABLE_KOMGA', profile: 'komga' },
   { key: 'ENABLE_KAVITA', profile: 'kavita' },
   { key: 'ENABLE_MYLAR', profile: 'mylar' },
+  { key: 'ENABLE_LAZYLIBRARIAN', profile: 'lazylibrarian' },
   { key: 'ENABLE_SHELFMARK', profile: 'shelfmark' },
   { key: 'ENABLE_AUDIOBOOKSHELF', profile: 'audiobookshelf' },
   { key: 'ENABLE_READMEABOOK', profile: 'readmeabook' },

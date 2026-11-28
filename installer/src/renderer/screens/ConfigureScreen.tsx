@@ -37,6 +37,8 @@ import { CustomIndexerEditor } from '../components/CustomIndexerEditor.js'
 import { TimezoneSelect } from '../components/TimezoneSelect.js'
 import { SiriusxmSelect } from '../components/SiriusxmSelect.js'
 import { reportError } from '../store/errors.js'
+import { ServiceOverlapModal, type OverlapChoice } from '../components/ServiceOverlapModal.js'
+import { overlapTriggeredBy, type ServiceOverlap } from '../service-overlaps.js'
 
 /** Centered hero header for the Configure screen. Defined at module
  *  scope so it doesn't re-mount per keystroke (same lesson the comment
@@ -152,6 +154,10 @@ interface ServiceToggle {
    *  small Beta chip next to the label so nobody turns one on expecting the
    *  same maturity as the arrs, which have years of installs behind them. */
   beta?: boolean
+  /** Still offered, but another service is the recommended pick for this job.
+   *  Renders an amber "Not recommended" chip, and the value is its tooltip.
+   *  The pair itself lives in SERVICE_OVERLAPS, which drives the modal. */
+  notRecommended?: string
   /** Per-service Lucide icon. Children + scanning users pick a service by
    *  glyph (📺 Sonarr, 🎬 Radarr, 🎵 Lidarr) much faster than by reading
    *  ten near-identical bullet lines. */
@@ -208,6 +214,7 @@ export const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' , beta: true, group: 'reading' },
   { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' , beta: true, group: 'reading' },
   { key: 'ENABLE_SHELFMARK',   label: 'Shelfmark',    hint: 'Search and request ebooks & audiobooks — uses your indexers',  icon: Library, iconColor: 'text-indigo-400' , beta: true, group: 'reading' },
+  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Follows authors and grabs their new books — download client set by hand', icon: Library, iconColor: 'text-slate-400', notRecommended: 'Shelfmark is the recommended book service. Pick LazyLibrarian only if you want author tracking.', group: 'reading' },
   { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' , beta: true, group: 'reading' },
   { key: 'ENABLE_READMEABOOK', label: 'ReadMeABook',  hint: 'Audiobook automation — request books, watch series and authors', icon: Headphones, iconColor: 'text-emerald-500' , beta: true, group: 'reading' },
   { key: 'ENABLE_ROMARR',      label: 'ROMarr',       hint: 'Game ROM automation — the Sonarr of ROMs, uses your indexers', icon: Gamepad2, iconColor: 'text-red-400' , beta: true, group: 'games' },
@@ -219,7 +226,7 @@ export const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_SHELFMARK', 'ENABLE_AUDIOBOOKSHELF', 'ENABLE_READMEABOOK', 'ENABLE_ROMARR'])
+export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_SHELFMARK', 'ENABLE_AUDIOBOOKSHELF', 'ENABLE_READMEABOOK', 'ENABLE_ROMARR'])
 
 function ServicesSection({
   config, update,
@@ -240,8 +247,26 @@ function ServicesSection({
       : isEnabled(config[k] as string | undefined)
   const enabledCount = SERVICE_TOGGLES.filter((t) => isOn(t.key)).length
 
+  // Two services that do the same job, both just switched on. Only a click
+  // opens it (see overlapTriggeredBy), never a loaded profile.
+  const [overlap, setOverlap] = useState<ServiceOverlap | null>(null)
+  const toggle = (k: keyof EnvFormValues, checked: boolean) => {
+    const next = checked ? 'true' : 'false'
+    update(k, next)
+    const hit = overlapTriggeredBy(k, next, config)
+    if (hit) setOverlap(hit)
+  }
+  const resolveOverlap = (choice: OverlapChoice) => {
+    if (overlap && choice === 'recommended-only') update(overlap.other, 'false')
+    if (overlap && choice === 'other-only') update(overlap.recommended, 'false')
+    setOverlap(null)
+  }
+
   return (
     <section className="space-y-4">
+      <AnimatePresence>
+        {overlap && <ServiceOverlapModal overlap={overlap} onChoose={resolveOverlap} />}
+      </AnimatePresence>
       <h2 className="text-xl font-semibold border-b-2 border-slate-800 pb-2 flex items-center gap-2">
         <Boxes size={20} className="text-emerald-400" strokeWidth={1.75} aria-hidden="true" />
         Services
@@ -293,7 +318,7 @@ function ServicesSection({
                 type="checkbox"
                 className="mt-0.5 shrink-0"
                 checked={on}
-                onChange={(e) => update(t.key, e.target.checked ? 'true' : 'false')}
+                onChange={(e) => toggle(t.key, e.target.checked)}
               />
               {/* Per-service icon tile — gives every row a unique visual
                   anchor at a glance. Tinted square preserves the service's
@@ -315,6 +340,14 @@ function ServicesSection({
                   {t.beta && (
                     <span className="text-[10px] leading-none uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border border-sky-600/50 bg-sky-900/30 text-sky-300">
                       Beta
+                    </span>
+                  )}
+                  {t.notRecommended && (
+                    <span
+                      title={t.notRecommended}
+                      className="text-[10px] leading-none uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border border-amber-600/50 bg-amber-900/30 text-amber-300"
+                    >
+                      Not recommended
                     </span>
                   )}
                 </div>

@@ -190,11 +190,14 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_KOMGA=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT ;;
     esac
-    # Reading acquisition: Mylar3 (49159) and Shelfmark (49163), same OPT-IN
-    # semantics. LAN web UIs only — the grabs themselves go out through SABnzbd
-    # and qBittorrent, which have their own rules above.
+    # Reading acquisition: Mylar3 (49159), LazyLibrarian (49160) and Shelfmark
+    # (49163), same OPT-IN semantics. LAN web UIs only — the grabs themselves
+    # go out through SABnzbd and qBittorrent, which have their own rules above.
     case "$(grep -m1 '^ENABLE_MYLAR=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT ;;
+    esac
+    case "$(grep -m1 '^ENABLE_LAZYLIBRARIAN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT ;;
     esac
     case "$(grep -m1 '^ENABLE_SHELFMARK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49163 -j ACCEPT ;;
@@ -289,9 +292,8 @@ remove_rules() {
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT 2>/dev/null
 
-    # Reading acquisition (Mylar3, Shelfmark, ReadMeABook). Unconditional -D.
-    # 49160 was LazyLibrarian's until v0.33.0. Nothing adds that rule any more,
-    # but this -D stays so an install that upgraded gets its old rule cleaned up.
+    # Reading acquisition (Mylar3, LazyLibrarian, Shelfmark, ReadMeABook).
+    # Unconditional -D.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49161 -j ACCEPT 2>/dev/null

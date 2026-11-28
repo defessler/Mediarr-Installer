@@ -66,7 +66,10 @@ export const envObject = z.object({
   // escalate to required. A missing key stays OFF everywhere.
   ENABLE_MYLAR: optStr,
   MYLAR_COMICVINE_KEY: optStr,
-  // OPT-IN (default off). Replaced ENABLE_LAZYLIBRARIAN in v0.33.0. Its
+  // OPT-IN (default off), and NOT recommended since v0.33.0. Its REST key is
+  // generated into config.ini by setup-arr-config.py, like Mylar3's.
+  ENABLE_LAZYLIBRARIAN: optStr,
+  // OPT-IN (default off). The recommended book service since v0.33.0. Its
   // Prowlarr link and download clients are written by setup-arr-config.py
   // from keys the stack already has, so nothing to require here.
   ENABLE_SHELFMARK: optStr,

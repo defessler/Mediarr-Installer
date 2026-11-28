@@ -128,6 +128,7 @@ CONFIG_DIRS=(
     # pre-creating keeps the bind source from starting out root-owned.
     # setup-arr-config.py also writes Shelfmark's settings into config/plugins.
     "$INSTALL_DIR/mylar3/config"
+    "$INSTALL_DIR/lazylibrarian/config"
     "$INSTALL_DIR/shelfmark/config"
     # ReadMeABook (opt-in). Only config goes through apply_perms. Its cache,
     # redis and pgdata dirs are made by the bare-mkdir loop below instead.
@@ -189,6 +190,7 @@ DATA_DIRS=(
     "$DATA_ROOT/Downloads/Torrents/Completed/books"
     "$DATA_ROOT/Downloads/Torrents/Completed/audiobooks"
     "$DATA_ROOT/Downloads/Torrents/Completed/readmeabook"
+    "$DATA_ROOT/Downloads/Torrents/Completed/lazylibrarian"
     # Audiobookshelf libraries (opt-in). Podcasts is written BY the app when
     # its RSS auto-download pulls new episodes, so it is not read-only.
     "$DATA_ROOT/Media/Audiobooks"

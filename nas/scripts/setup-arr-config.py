@@ -652,20 +652,18 @@ def sabnzbd_ini_set(ini_path, keyword, value):
 
 def reading_app_api_setup(label, container, ini_path, api_section,
                           enabled_key, key_key, probe_url=None, extra=()):
-    """Turn on the REST API in Mylar3's config.ini and return its API key, so
-    Prowlarr can be wired to it like any other app.
+    """Turn on the REST API in a Mylar3 / LazyLibrarian config.ini and return
+    its API key, so Prowlarr can be wired to it like any other app.
 
-    Mylar3 ships its API DISABLED with an empty key (API_ENABLED defaults
-    False), and doesn't expose it as an environment variable — it is a
-    config.ini setting or nothing. So unlike the arrs, whose keys we simply
-    HARVEST from config.xml, it has to be configured before there is a key to
-    harvest. LazyLibrarian was the second caller until Shelfmark replaced it in
-    v0.33.0, which is why this takes a label and section names rather than
-    hardcoding Mylar3's.
+    Both apps ship their API DISABLED with an empty key (Mylar3's API_ENABLED
+    defaults False, LazyLibrarian's API_ENABLED defaults 0), and neither
+    exposes it as an environment variable — it is a config.ini setting or
+    nothing. So unlike the arrs, whose keys we simply HARVEST from config.xml,
+    these two have to be configured before there is a key to harvest.
 
     `extra` carries additional (section, key, value) triples — used to write
-    Mylar3's ComicVine key. Returns the API key, or None if the file never
-    appeared or couldn't be written.
+    Mylar3's ComicVine key and LazyLibrarian's provider posture. Returns the
+    API key, or None if the file never appeared or couldn't be written.
 
     Idempotent: an existing non-empty key is reused as-is, and the container is
     only restarted when something actually changed, so a re-run doesn't bounce a
@@ -1734,34 +1732,6 @@ def configure_jellyfin_notification(base, key, api, jf_apikey, jf_host='jellyfin
 
 # ── Prowlarr ──────────────────────────────────────────────────────────────────
 
-def remove_retired_prowlarr_app(prowlarr_base, prowlarr_key):
-    """Take LazyLibrarian's application out of Prowlarr on an upgraded install.
-
-    LazyLibrarian left the stack in v0.33.0 and setup.sh removes its container.
-    The application we added for it would otherwise stay in Prowlarr forever,
-    failing every sync against a host that no longer resolves and showing as a
-    permanent health warning.
-
-    Only the row THIS installer made: implementation LazyLibrarian AND a base
-    URL on the `lazylibrarian` container. Someone running their own
-    LazyLibrarian somewhere else has a different host there, and keeps it."""
-    apps = GET(prowlarr_base, prowlarr_key, "/api/v1/applications")
-    for app in apps or []:
-        if not isinstance(app, dict) or app.get('implementation') != 'LazyLibrarian':
-            continue
-        base_url = next((str(f.get('value') or '') for f in app.get('fields') or []
-                         if str(f.get('name', '')).lower() == 'baseurl'), '')
-        if (urlparse(base_url).hostname or '').lower() != 'lazylibrarian':
-            continue
-        _, code = _safe_request(f"{prowlarr_base}/api/v1/applications/{app.get('id')}",
-                                _arr_headers(prowlarr_key), 'DELETE')
-        if code is not None and 200 <= code < 300:
-            ok("Prowlarr app: LazyLibrarian removed (retired, replaced by Shelfmark)")
-        else:
-            warn("Prowlarr still lists LazyLibrarian, which is no longer installed. "
-                 "Delete it under Prowlarr → Settings → Apps.")
-
-
 def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
                      config_contract, app_internal_url, app_key, sync_categories,
                      optional=False):
@@ -2608,8 +2578,12 @@ def configure_sabnzbd(base, key, ini_path, env=None):
         # Shelfmark is pointed at SABnzbd for you (configure_shelfmark), with
         # these two category names. An undefined category would drop its jobs
         # loose in /data/complete.
-        if is_optin_enabled(env, 'ENABLE_SHELFMARK'):
+        # LazyLibrarian shares 'books'. Its client is set by hand, and this
+        # makes sure the category it'd pick already exists.
+        if (is_optin_enabled(env, 'ENABLE_SHELFMARK')
+                or is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN')):
             reading_cats.append(('books', '/data/complete/books'))
+        if is_optin_enabled(env, 'ENABLE_SHELFMARK'):
             reading_cats.append(('audiobooks', '/data/complete/audiobooks'))
         # ReadMeABook's default category. You pick it in its own wizard, and
         # this makes sure it is there to pick.
@@ -4830,8 +4804,10 @@ def render_homepage_services(env, ip):
     # worked differently, which was misleading.
     if is_optin_enabled(env, 'ENABLE_MYLAR'):
         automation.append(block("Mylar3", f"http://{ip}:49159", "Comic automation", "mylar.png"))
-    # mdi- glyphs for both, same reason as ROMarr below: a png that
+    # mdi- glyphs for these, same reason as ROMarr below: a png that
     # dashboard-icons doesn't carry renders as a broken image.
+    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+        automation.append(block("LazyLibrarian", f"http://{ip}:49160", "Author tracking", "mdi-book-account"))
     if is_optin_enabled(env, 'ENABLE_SHELFMARK'):
         automation.append(block("Shelfmark", f"http://{ip}:49163", "Book search & requests", "mdi-book-search"))
     if is_optin_enabled(env, 'ENABLE_READMEABOOK'):
@@ -5728,10 +5704,11 @@ def main():
         # working run re-applies Lidarr's baseline.
         note_unreachable()
 
-    # ── Reading acquisition (Mylar3) ──────────────────────────────────────────
-    # Prepared BEFORE the Prowlarr section because it needs its API turned on in
-    # config.ini (and the container bounced) before Prowlarr can be pointed at
-    # it — Prowlarr's POST /applications runs a synchronous reachability test.
+    # ── Reading acquisition (Mylar3, LazyLibrarian) ───────────────────────────
+    # Prepared BEFORE the Prowlarr section because both need their API turned
+    # on in config.ini (and the container bounced) before Prowlarr can be
+    # pointed at them — Prowlarr's POST /applications runs a synchronous
+    # reachability test.
     # Shelfmark is the other reading acquirer and goes AFTER Prowlarr, because
     # it is a Prowlarr client and needs Prowlarr's key, not the other way round.
     MYLAR_KEY = None
@@ -5770,6 +5747,40 @@ def main():
             warn("Mylar3: get a free key at https://comicvine.gamespot.com/api/ "
                  "then put it in MYLAR_COMICVINE_KEY and re-run, or paste it "
                  "into Mylar3 → Settings → ComicVine.")
+    # LazyLibrarian (opt-in, not recommended since v0.33.0, when Shelfmark took
+    # over as the book service). Same API-first preparation as Mylar3.
+    LAZYLIB_KEY = None
+    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+        section("LazyLibrarian")
+        # Provider posture, written explicitly rather than left at defaults.
+        # LazyLibrarian ships with direct-download providers (Anna's Archive,
+        # Z-Library, AudioBookBay) and IRC visible, which is a different posture
+        # from the rest of this stack — everything else grabs from indexers the
+        # user configured in Prowlarr. SHOW_DIRECT_PROV and SHOW_IRC_PROV are the
+        # master switches for those groups; SHOW_NEWZ_PROV and SHOW_TORZ_PROV are
+        # the Newznab/Torznab path Prowlarr syncs into, so those stay ON.
+        # This is a DEFAULT, not a lock: the settings remain in LazyLibrarian's
+        # own UI for anyone who decides otherwise.
+        LAZYLIB_KEY = reading_app_api_setup(
+            "LazyLibrarian", "lazylibrarian",
+            os.path.join(_install_dir, 'lazylibrarian', 'config', 'config.ini'),
+            # Section names are CamelCase as LazyLibrarian writes them, but the
+            # option names go in LOWERCASE to match its own writer. It reads
+            # case-insensitively either way.
+            'API', 'api_enabled', 'api_key',
+            probe_url=f"http://{LAN_IP}:49160/api?apikey={{key}}&cmd=getVersion",
+            extra=[
+                ('General', 'show_direct_prov', '0'),
+                ('General', 'show_irc_prov', '0'),
+                ('General', 'show_newz_prov', '1'),
+                ('General', 'show_torz_prov', '1'),
+            ])
+        if LAZYLIB_KEY:
+            # The installer can't do the rest, so say it where it'll be seen.
+            # An info, not a warn: it is a known setup step, not a fault.
+            info("LazyLibrarian: set its download client (qBittorrent or SABnzbd, "
+                 "category 'books') and its library folder (/books) in its own "
+                 "Settings page. The installer doesn't do that part.")
     # ── Prowlarr ──────────────────────────────────────────────────────────────
 
     section("Prowlarr")
@@ -5816,7 +5827,25 @@ def main():
                 # results come back empty.
                 warn("Mylar3 has no indexers: the Prowlarr sync above did not "
                      "land, so comic searches will find nothing until it does.")
-        remove_retired_prowlarr_app(PROWLARR, PROWLARR_KEY)
+        # LazyLibrarian takes Books + EBook + Audiobook so an audiobook-capable
+        # indexer isn't filtered out.
+        if LAZYLIB_KEY:
+            wired = add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
+                                     "LazyLibrarianSettings", "http://lazylibrarian:5299",
+                                     LAZYLIB_KEY, [3030, 7000, 7020], optional=True)
+            if not wired:
+                # This one needs spelling out. We deliberately switch OFF
+                # LazyLibrarian's built-in direct providers so it matches the
+                # rest of the stack's posture, which means Prowlarr is its ONLY
+                # source. When the sync fails it is left with zero providers and
+                # every search returns nothing at all, forever, with no error in
+                # its UI to explain why.
+                warn("LazyLibrarian has NO search sources right now: its built-in "
+                     "providers are switched off by design and the Prowlarr sync "
+                     "above did not land, so searches will find nothing.")
+                warn("Fix either way: add the app in Prowlarr → Settings → Apps, "
+                     "or re-enable its own providers in LazyLibrarian → Settings "
+                     "→ Providers.")
         # Prowlarr doesn't have a /config/mediamanagement endpoint
         # (no media files of its own), but it DOES have the same Bind
         # Address pitfall as the arrs — Sync Apps tests fail if

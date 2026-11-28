@@ -37,13 +37,21 @@ Line numbers above were last checked on 2026-08-16 and have drifted since ROMarr
 Shelfmark and ReadMeABook went in. Search for the array or helper name.
 
 Removing a service is the same list in reverse, plus one thing the list doesn't show. The
-container outlives its compose service, so it needs reaping by name. LazyLibrarian's
-removal in v0.33.0 is the worked case: `stop_disabled_services` in `setup.sh` removes the
-container and warns when the old flag is still on, `remove_retired_prowlarr_app` in
-`setup-arr-config.py` takes its application out of Prowlarr, and its name stays in the
-`stop-all.sh` leftover loop and both `relocate-stack.sh` lists. Its config folder is the
-user's and is never deleted. Give the replacement a new port so the old container can't
-collide with it before it's reaped.
+container outlives its compose service, so it needs reaping by name in
+`stop_disabled_services` in `setup.sh`. A Prowlarr application the installer added has to
+come out of Prowlarr too, or it fails every sync. Keep the name in the `stop-all.sh`
+leftover loop and both `relocate-stack.sh` lists. Its config folder is the user's and is
+never deleted. Give a replacement a new port so the old container can't collide with it
+before it's reaped. LazyLibrarian's removal in v0.33.0 was the worked case, and commit
+43bf253 has it. It came back as an opt-in in v0.33.1, so that code is gone again.
+
+When two services do the same job and one is the recommended pick, give the other a
+`notRecommended` reason in `SERVICE_TOGGLES` and add the pair to `SERVICE_OVERLAPS` in
+`installer/src/renderer/service-overlaps.ts`. That drives the modal on the Configure
+screen. `service-overlaps.test.ts` fails when the chip and the pair disagree.
+
+Every host folder a new service bind-mounts has to be created in `setup-folders.sh`.
+Synology refuses a missing source. `bind-sources-created.test.ts` checks it.
 
 Each service also answers to three spellings that don't interchange. Mylar3 is
 `ENABLE_MYLAR` as the env key, `mylar` as the compose profile, and `mylar3` as the
