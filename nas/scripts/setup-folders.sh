@@ -129,11 +129,8 @@ CONFIG_DIRS=(
     # setup-arr-config.py also writes Shelfmark's settings into config/plugins.
     "$INSTALL_DIR/mylar3/config"
     "$INSTALL_DIR/shelfmark/config"
-    # ReadMeABook (opt-in). ONLY config, on purpose. Its cache, redis and pgdata
-    # dirs sit beside this one and are left for docker to create and the
-    # entrypoint to chown. pgdata in particular must stay owned by the image's
-    # own postgres user (UID 102): listed here, a MEDIARR_FIX_PERMS=1 run would
-    # chown -R it to PUID and PostgreSQL would refuse to start.
+    # ReadMeABook (opt-in). Only config goes through apply_perms. Its cache,
+    # redis and pgdata dirs are made by the bare-mkdir loop below instead.
     "$INSTALL_DIR/readmeabook/config"
     # Audiobookshelf (opt-in). BOTH of these must exist and be PUID:PGID-owned
     # BEFORE first start. It runs non-root via the `user:` directive with no
@@ -258,7 +255,31 @@ apply_perms() {
     fi
 }
 
+# Bind sources that must EXIST but whose ownership belongs to the container.
+# Made with a bare mkdir and never chowned, not even under MEDIARR_FIX_PERMS.
+#
+# ReadMeABook's three. Synology's Docker does not create a missing bind
+# source the way stock Docker does. It refuses the container instead, with
+# "Bind mount failed: '.../readmeabook/redis' does not exist", which stopped a
+# real v0.33.0 install at Step 6. The image's entrypoint runs as root and
+# chowns all three on every start: pgdata to its own postgres user (UID 102),
+# redis and cache to PUID. pgdata is why these stay out of CONFIG_DIRS. A
+# chown -R to PUID there makes PostgreSQL refuse to start.
+SELF_OWNED_DIRS=(
+    "$INSTALL_DIR/readmeabook/cache"
+    "$INSTALL_DIR/readmeabook/redis"
+    "$INSTALL_DIR/readmeabook/pgdata"
+)
+
 echo "Creating config directories..."
+for dir in "${SELF_OWNED_DIRS[@]}"; do
+    if [ ! -d "$dir" ]; then
+        mkdir -p "$dir"
+        echo "  Created: $dir"
+    else
+        echo "  Exists:  $dir"
+    fi
+done
 for dir in "${CONFIG_DIRS[@]}"; do
     if [ ! -d "$dir" ]; then
         mkdir -p "$dir"

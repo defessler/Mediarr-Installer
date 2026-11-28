@@ -809,7 +809,14 @@ export function RunScreen() {
           // irrelevant — so a root-owned lock must NOT trigger the recurse.
           `chown "$OWNER_UID:$OWNER_GID" ${tq}; ` +
           `chmod u+rwX,g+rwX ${tq}; ` +
-          `MISMATCH=$(find ${tq} -mindepth 1 -maxdepth 2 -mount ! -name '.boot-orchestrator.lock' ! -name '.boot-orchestrator.log' \\( ! -uid "$OWNER_UID" -o ! -gid "$OWNER_GID" \\) -print -quit 2>/dev/null); ` +
+          //
+          // EXCLUDE ReadMeABook's pgdata from the scan AND from the walk below.
+          // Its entrypoint keeps it owned by the image's postgres user (UID
+          // 102), so it never matches the SSH user. Counted as a mismatch, it
+          // set off the full-tree recursive chown on every single run, and the
+          // walk then handed a RUNNING PostgreSQL's files to the SSH user, so
+          // it couldn't open them until the container restarted.
+          `MISMATCH=$(find ${tq} -mindepth 1 -maxdepth 2 -mount ! -name '.boot-orchestrator.lock' ! -name '.boot-orchestrator.log' ! -path ${tq}/readmeabook/pgdata \\( ! -uid "$OWNER_UID" -o ! -gid "$OWNER_GID" \\) -print -quit 2>/dev/null); ` +
           `if [ -n "$MISMATCH" ]; then ` +
           `  echo "[prep] some entries need re-chowning (first mismatch: $MISMATCH) — running recursive chown..."; ` +
           // Best-effort (|| true): a running container's SQLite write-ahead
@@ -822,8 +829,11 @@ export function RunScreen() {
           // the AUTHORITATIVE permission gate (a genuine ownership problem
           // still fails there with exit 13), so swallowing the transient-race
           // error here is safe.
-          `  chown -R "$OWNER_UID:$OWNER_GID" ${tq} || true; ` +
-          `  chmod -R u+rwX,g+rwX ${tq} || true; ` +
+          // find with -prune rather than chown -R, so pgdata (see above) is
+          // skipped. -h and `! -type l` keep chown -R's habit of never
+          // following a symlink out of the tree.
+          `  find ${tq} -path ${tq}/readmeabook/pgdata -prune -o -exec chown -h "$OWNER_UID:$OWNER_GID" {} + || true; ` +
+          `  find ${tq} -path ${tq}/readmeabook/pgdata -prune -o ! -type l -exec chmod u+rwX,g+rwX {} + || true; ` +
           `else ` +
           `  echo "[prep] ownership already correct on all children — skipping recursive chown"; ` +
           `fi; ` +
