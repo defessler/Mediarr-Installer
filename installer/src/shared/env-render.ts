@@ -194,7 +194,7 @@ export interface EnvFormValues {
    *  no-credentials, missing-key-is-OFF rules as Komga. */
   ENABLE_KAVITA?: string
 
-  // ── Reading acquisition (Mylar3 + LazyLibrarian) — OPT-IN like Soulseek.
+  // ── Reading acquisition (Mylar3 + Shelfmark) — OPT-IN like Soulseek.
   /** Whether to install Mylar3: comic automation on ${LAN_IP}:49159. A native
    *  Prowlarr Application, so it uses the indexers already configured here and
    *  hands transfers to SABnzbd/qBittorrent. Needs a free ComicVine key pasted
@@ -205,11 +205,12 @@ export interface EnvFormValues {
    *  front instead of leaving as a post-install step nobody discovers. */
   MYLAR_COMICVINE_KEY?: string
   ENABLE_MYLAR?: string
-  /** Whether to install LazyLibrarian: book automation on ${LAN_IP}:49160, also
-   *  a native Prowlarr Application. setup-arr-config.py writes its built-in
-   *  direct-download and IRC providers OFF so it matches the rest of the
-   *  stack's posture. A missing key counts as OFF. */
-  ENABLE_LAZYLIBRARIAN?: string
+  /** Whether to install Shelfmark: a search-and-request page for ebooks and
+   *  audiobooks on ${LAN_IP}:49163. It replaced LazyLibrarian in v0.33.0. A
+   *  Prowlarr client, not a Prowlarr Application, so setup-arr-config.py
+   *  writes Prowlarr's URL and key into it along with both download clients.
+   *  Its direct-download sources stay off. A missing key counts as OFF. */
+  ENABLE_SHELFMARK?: string
 
   // ── Audiobooks + podcasts (Audiobookshelf) — OPT-IN like Soulseek.
   /** Whether to install Audiobookshelf: a library and player for audiobooks
@@ -217,6 +218,11 @@ export interface EnvFormValues {
    *  library rather than a downloader — the one thing it fetches on its own is
    *  podcasts, straight from RSS. A missing key counts as OFF. */
   ENABLE_AUDIOBOOKSHELF?: string
+  /** Whether to install ReadMeABook: audiobook requests and series/author
+   *  watching on ${LAN_IP}:49164, importing into the folder Audiobookshelf
+   *  reads. Configured in its own first-run wizard, not by the installer. A
+   *  missing key counts as OFF. */
+  ENABLE_READMEABOOK?: string
 
   // ── Game ROMs (ROMarr) — OPT-IN like Soulseek.
   /** Whether to install ROMarr: game ROM automation on ${LAN_IP}:49162. Not a
@@ -224,6 +230,15 @@ export interface EnvFormValues {
    *  download clients through ROMarr's own API instead. A missing key counts
    *  as OFF. */
   ENABLE_ROMARR?: string
+  /** ROMarr's metadata providers. All optional. Without one ROMarr still
+   *  finds and files games, but nothing has a cover or a description. RAWG is
+   *  a free key, IGDB is a Twitch application's client id AND secret (both or
+   *  neither), SteamGridDB is a free key that only fills in missing box art.
+   *  setup-arr-config.py writes whichever are set into ROMarr over its API. */
+  ROMARR_RAWG_KEY?: string
+  ROMARR_IGDB_CLIENT_ID?: string
+  ROMARR_IGDB_CLIENT_SECRET?: string
+  ROMARR_STEAMGRIDDB_KEY?: string
 
   // ── SABnzbd usenet provider (optional — added on first install)
   USENET_HOST?: string
@@ -643,23 +658,31 @@ export function renderEnv(v: EnvFormValues): string {
     line('ENABLE_KAVITA', isOptInEnabled(v.ENABLE_KAVITA) ? 'true' : 'false'),
     '',
     '# Reading acquisition. OPT-IN; off by default, emitted via isOptInEnabled.',
-    '# Mylar3 (comics) and LazyLibrarian (books) are both native Prowlarr',
-    '# Applications, so they sync the indexers you already configured and hand',
-    '# transfers to SABnzbd/qBittorrent. LazyLibrarian ships several direct',
-    '# providers built in; the installer writes those OFF and uses the',
-    '# Prowlarr-fed path instead.',
+    '# Mylar3 (comics) and Shelfmark (ebooks and audiobooks) both search the',
+    '# indexers you already configured in Prowlarr and hand transfers to',
+    '# SABnzbd/qBittorrent. Shelfmark can also search direct-download sites;',
+    '# those ship OFF and the installer leaves them off.',
     line('ENABLE_MYLAR', isOptInEnabled(v.ENABLE_MYLAR) ? 'true' : 'false'),
     line('MYLAR_COMICVINE_KEY', v.MYLAR_COMICVINE_KEY),
-    line('ENABLE_LAZYLIBRARIAN', isOptInEnabled(v.ENABLE_LAZYLIBRARIAN) ? 'true' : 'false'),
+    line('ENABLE_SHELFMARK', isOptInEnabled(v.ENABLE_SHELFMARK) ? 'true' : 'false'),
     '',
     '# Audiobooks and podcasts. OPT-IN; off by default, via isOptInEnabled.',
     '# A library and player, not a downloader — podcasts are the one thing it',
     '# fetches itself, straight from RSS with no indexer involved.',
     line('ENABLE_AUDIOBOOKSHELF', isOptInEnabled(v.ENABLE_AUDIOBOOKSHELF) ? 'true' : 'false'),
     '',
+    '# Audiobook automation (ReadMeABook). OPT-IN; off by default, via',
+    '# isOptInEnabled. Set up in its own first-run wizard after install.',
+    line('ENABLE_READMEABOOK', isOptInEnabled(v.ENABLE_READMEABOOK) ? 'true' : 'false'),
+    '',
     '# Game ROM automation (ROMarr). OPT-IN; off by default, via isOptInEnabled.',
     '# Searches Prowlarr and files ROMs under Media/Games/<platform>.',
     line('ENABLE_ROMARR', isOptInEnabled(v.ENABLE_ROMARR) ? 'true' : 'false'),
+    '# ROMarr metadata providers (all optional). IGDB needs both of its keys.',
+    line('ROMARR_RAWG_KEY', v.ROMARR_RAWG_KEY),
+    line('ROMARR_IGDB_CLIENT_ID', v.ROMARR_IGDB_CLIENT_ID),
+    line('ROMARR_IGDB_CLIENT_SECRET', v.ROMARR_IGDB_CLIENT_SECRET),
+    line('ROMARR_STEAMGRIDDB_KEY', v.ROMARR_STEAMGRIDDB_KEY),
     '',
     '# SABnzbd usenet provider (optional)',
     line('USENET_HOST', v.USENET_HOST),
@@ -983,7 +1006,7 @@ export const PUBLIC_TRACKERS: IndexerDef[] = [
   {
     id: 'EBOOKBAY_NO_KEY', name: 'EBookBay',
     href: 'https://ebookbay.li',
-    note: 'Ebooks, audiobooks and comics. No account. Feeds LazyLibrarian and Mylar3.',
+    note: 'Ebooks, audiobooks and comics. No account. Feeds Shelfmark, ReadMeABook and Mylar3.',
     fields: [],
     category: 'tracker-public',
     tags: ['books', 'no-signup'],

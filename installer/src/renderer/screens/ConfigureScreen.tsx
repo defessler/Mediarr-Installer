@@ -207,8 +207,9 @@ export const SERVICE_TOGGLES: ServiceToggle[] = [
   { key: 'ENABLE_KOMGA',       label: 'Komga',        hint: 'Comics & manga reader — Plex and Jellyfin cannot serve these at all', icon: BookOpen, iconColor: 'text-orange-300' , beta: true, group: 'reading' },
   { key: 'ENABLE_KAVITA',      label: 'Kavita',       hint: 'Ebook reader — EPUB/PDF, KOReader sync, send-to-Kindle',        icon: BookMarked, iconColor: 'text-indigo-300' , beta: true, group: 'reading' },
   { key: 'ENABLE_MYLAR',       label: 'Mylar3',       hint: 'Comic automation — the Sonarr of comics, uses your indexers',  icon: BookCopy, iconColor: 'text-orange-400' , beta: true, group: 'reading' },
-  { key: 'ENABLE_LAZYLIBRARIAN', label: 'LazyLibrarian', hint: 'Book automation — tracks authors, uses your indexers',      icon: Library, iconColor: 'text-indigo-400' , beta: true, group: 'reading' },
+  { key: 'ENABLE_SHELFMARK',   label: 'Shelfmark',    hint: 'Search and request ebooks & audiobooks — uses your indexers',  icon: Library, iconColor: 'text-indigo-400' , beta: true, group: 'reading' },
   { key: 'ENABLE_AUDIOBOOKSHELF', label: 'Audiobookshelf', hint: 'Audiobooks & podcasts — own apps, auto-downloads podcasts', icon: Headphones, iconColor: 'text-emerald-300' , beta: true, group: 'reading' },
+  { key: 'ENABLE_READMEABOOK', label: 'ReadMeABook',  hint: 'Audiobook automation — request books, watch series and authors', icon: Headphones, iconColor: 'text-emerald-500' , beta: true, group: 'reading' },
   { key: 'ENABLE_ROMARR',      label: 'ROMarr',       hint: 'Game ROM automation — the Sonarr of ROMs, uses your indexers', icon: Gamepad2, iconColor: 'text-red-400' , beta: true, group: 'games' },
   { key: 'ENABLE_HOMEPAGE',    label: 'Homepage',     hint: 'Dashboard linking all the above',               icon: LayoutDashboard, iconColor: 'text-teal-400', group: 'extras' },
   { key: 'ENABLE_FLARESOLVERR', label: 'FlareSolverr', hint: 'CloudFlare bypass for indexers (auto-off on ARM)', icon: Shield,         iconColor: 'text-amber-300', group: 'extras' },
@@ -218,7 +219,7 @@ export const SERVICE_TOGGLES: ServiceToggle[] = [
 // ENABLE_<NAME> means OFF (isOptInEnabled, not isEnabled). Loading an
 // older .env without these keys must leave them UNCHECKED. Kept as one
 // shared set so the toggle grid and the group badge can't drift apart.
-export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_LAZYLIBRARIAN', 'ENABLE_AUDIOBOOKSHELF', 'ENABLE_ROMARR'])
+export const OPT_IN_SERVICES = new Set<keyof EnvFormValues>(['ENABLE_SOULSEEK', 'ENABLE_PLAYLIST_SYNC', 'ENABLE_DISPATCHARR', 'ENABLE_LIBRARIAN', 'ENABLE_KOMGA', 'ENABLE_KAVITA', 'ENABLE_MYLAR', 'ENABLE_SHELFMARK', 'ENABLE_AUDIOBOOKSHELF', 'ENABLE_READMEABOOK', 'ENABLE_ROMARR'])
 
 function ServicesSection({
   config, update,
@@ -806,6 +807,10 @@ const FIELD_LABELS: Record<string, string> = {
   DISPATCHARR_ADMIN_PASS: 'Live TV admin password',
   LIVETV_CHANNEL_PACKS: 'Live TV channel packs',
   MYLAR_COMICVINE_KEY: 'ComicVine API key',
+  ROMARR_RAWG_KEY: 'RAWG API key (ROMarr)',
+  ROMARR_IGDB_CLIENT_ID: 'IGDB client ID (ROMarr)',
+  ROMARR_IGDB_CLIENT_SECRET: 'IGDB client secret (ROMarr)',
+  ROMARR_STEAMGRIDDB_KEY: 'SteamGridDB API key (ROMarr)',
   ENABLE_LIBRARIAN: 'LibrARRian',
   LIBRARIAN_ALLOW_ACTIONS: 'LibrARRian re-grab actions',
   LIBRARIAN_MAX_BATCH: 'LibrARRian batch cap',
@@ -1630,6 +1635,60 @@ export function ConfigureScreen() {
           <p className="text-sm text-slate-500">
             Comic automation is off. Enable{' '}
             <span className="font-medium text-slate-300">Mylar3</span> in the
+            Services group above to configure it.
+          </p>
+        )}
+      </CollapsibleGroup>
+
+      {/* ── Group: Games ───────────────────────────────────────── */}
+      {/* ROMarr's indexer, download clients and library are written for it.
+          Its metadata providers are the one part that can't be, because each
+          needs a key only the user can get, so they are collected here. */}
+      <CollapsibleGroup
+        id="games"
+        title="Games"
+        icon={<Gamepad2 size={20} className="text-red-400" strokeWidth={1.75} aria-hidden="true" />}
+        subtitle="ROMarr's cover and description sources"
+        open={!!openGroups.games}
+        onToggle={() => toggleGroup('games')}
+      >
+        {isOptInEnabled(config.ENABLE_ROMARR as string | undefined) ? (
+          <section className="space-y-4">
+            <p className="text-sm text-slate-400">
+              ROMarr's search, download clients and library folder are set up for
+              you. What it can't get on its own is{' '}
+              <span className="font-medium text-slate-300">covers, descriptions and ratings</span>,
+              because every source for those needs a key of your own. All of these
+              are optional. Without any, games still download and file correctly,
+              they just show up as bare titles.
+            </p>
+            <Field
+              label="RAWG API key"
+              k="ROMARR_RAWG_KEY"
+              placeholder="Optional. The easy one: free, no approval"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="IGDB client ID" k="ROMARR_IGDB_CLIENT_ID" placeholder="Optional" />
+              <Field label="IGDB client secret" k="ROMARR_IGDB_CLIENT_SECRET" type="password" placeholder="Needs the client ID too" />
+            </div>
+            <Field
+              label="SteamGridDB API key"
+              k="ROMARR_STEAMGRIDDB_KEY"
+              placeholder="Optional. Box art only"
+            />
+            <p className="text-xs text-slate-500">
+              RAWG keys are free at{' '}
+              <a href="https://rawg.io/apiv2" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">rawg.io/apiv2</a>.
+              IGDB uses a Twitch application from{' '}
+              <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">dev.twitch.tv/console/apps</a>,
+              and needs both values. You can also add any of these later in ROMarr
+              under Settings -&gt; Metadata.
+            </p>
+          </section>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Game ROM automation is off. Enable{' '}
+            <span className="font-medium text-slate-300">ROMarr</span> in the
             Services group above to configure it.
           </p>
         )}

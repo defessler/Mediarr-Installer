@@ -11,7 +11,7 @@ Plex has no support for CBZ, CBR, PDF, or EPUB. Jellyfin technically had a books
 
 > **In one sentence:** turn on Komga or Kavita, drop files into a folder, and read them in a browser or on your phone.
 
-All of this is opt-in and off by default. The readers landed in v0.27.0, the automation in v0.28.0.
+All of this is opt-in and off by default. The readers landed in v0.27.0, the automation in v0.28.0, and Shelfmark and ReadMeABook in v0.33.0.
 
 ## Two Readers, Not One
 
@@ -30,28 +30,64 @@ Comics and books can be automated. Manga can't, and it's worth understanding why
 
 ### Comics and Books: Automated
 
-Two more opt-in services, both of which work exactly like Sonarr does:
+Two more opt-in services, both of which search the indexers you already set up in Prowlarr:
 
 - **Mylar3** on `http://<NAS-IP>:49159` for comics. Add a series, it watches for new issues.
-- **LazyLibrarian** on `http://<NAS-IP>:49160` for books. Track an author, it grabs new releases.
+- **Shelfmark** on `http://<NAS-IP>:49163` for ebooks and audiobooks. Look a book up, pick a release, and it lands in your library.
 
-Both are real Prowlarr Applications, so the indexers you already set up get synced into them automatically. They use the same SABnzbd and qBittorrent as the rest of the stack, with no new accounts and no separate download path.
+They use the same SABnzbd and qBittorrent as the rest of the stack, with no new accounts and no separate download path.
 
-### What You Finish By Hand
+Shelfmark replaced LazyLibrarian in v0.33.0. If you're upgrading from an older install, see [Coming From LazyLibrarian](#coming-from-lazylibrarian) below.
 
-Unlike Sonarr and Radarr, these two aren't fully configured for you, and it's better you hear that here than discover it:
+### Shelfmark Is a Search Page, Not a Tracker
 
-- **Point each one at a download client.** Open Mylar3 or LazyLibrarian's own settings and add SABnzbd (`sabnzbd:8080`) or qBittorrent (`gluetun:49156`). The installer creates the matching SABnzbd `comics` and `books` categories for you, so you just pick them from the list.
-- **Set the library folder.** `/comics` in Mylar3, `/books` in LazyLibrarian. Those are the paths the containers see.
+This is the part to know before you turn it on. Mylar3 works like Sonarr. Shelfmark doesn't. You ask for a book and it fetches that book. It doesn't watch an author and grab their next release when it comes out.
+
+Shelfmark's own README calls that a non-goal. The one piece of automation it has is an optional sync from a Hardcover shelf, which you turn on in its own settings. If you want new audiobooks requested for you as a series continues, that's what ReadMeABook does, further down this page.
+
+What you get in exchange is very little setup. The installer writes all of this for you:
+
+- Prowlarr - Linked with Prowlarr's real API key, so every indexer you've added is searchable.
+- qBittorrent and SABnzbd - Both added as download clients when you have them on, with a `books` category and an `audiobooks` category.
+- Destinations - Ebooks go to `Media/Books`, which is what Kavita reads. Audiobooks go to `Media/Audiobooks`, which is what Audiobookshelf reads.
+- Path mappings - The two mappings Shelfmark needs to find what the download clients finished.
+
+A re-run fixes a changed Prowlarr key or `QBITTORRENT_PASS`. It leaves alone anything you changed in Shelfmark's own settings, including a Prowlarr or a download client of your own on another host.
+
+On first launch Shelfmark shows a short onboarding wizard. It asks you to pick a metadata provider, which is where book titles and covers come from. Open Library needs no key. Hardcover needs a free API token and gives better results.
+
+Note: Shelfmark has no login out of the box. Anyone on your LAN can open it and request a book. You can turn on a login under Settings -> Security in Shelfmark.
+
+On Shelfmark's sources we should be straight with you. Besides Prowlarr it can search direct-download sites, including Anna's Archive mirrors, Libgen, and IRC. Those are off, which is also how Shelfmark ships. The installer uses Shelfmark's lite image, which leaves out the browser those sources need. Prowlarr is the only source configured, so it behaves like the rest of your stack out of the box. The settings are still there in its own UI. What you do with them is your call.
+
+One consequence worth knowing. With those sources off, Prowlarr is Shelfmark's only source. If the Prowlarr link doesn't get set up, Shelfmark has nothing to search and every search comes back empty with no error explaining why. The installer checks for this and warns you. The fix is to re-run the installer, or to add Prowlarr under Settings -> Prowlarr in Shelfmark.
+
+### What You Finish By Hand in Mylar3
+
+Unlike Sonarr, Radarr, and Shelfmark, Mylar3 isn't fully configured for you, and it's better you hear that here than discover it:
+
+- **Point it at a download client.** Open Mylar3's own settings and add SABnzbd (`sabnzbd:8080`) or qBittorrent (`gluetun:49156`). The installer creates the matching SABnzbd `comics` category for you, so you just pick it from the list.
+- **Set the library folder** to `/comics`. That's the path the container sees.
 - **Mylar3 needs a ComicVine key.** It's [free](https://comicvine.gamespot.com/api/). Put it in `MYLAR_COMICVINE_KEY` and the installer writes it straight into Mylar3 for you.
 
   Do supply it, because of how Mylar3 fails without one: **the search page comes back completely blank.** Mylar3 returns an empty response instead of an error, so there's nothing on screen to tell you a key is missing. If you've already installed without one, paste it into Mylar3 → Settings → ComicVine and searching starts working.
 
-One more honest caveat: comic coverage on general-purpose indexers is thinner than TV or movies, so expect a lower hit rate than Sonarr gives you. That's the cost of using your own indexers rather than a comics-specific source.
+One more honest caveat: comic and book coverage on general-purpose indexers is thinner than TV or movies, so expect a lower hit rate than Sonarr gives you. That's the cost of using your own indexers rather than a dedicated source.
 
-On LazyLibrarian we should be straight with you: it ships with several direct-download providers built in, including Anna's Archive, Z-Library, and IRC. The installer writes those off and configures the Prowlarr-fed path instead, so it behaves like the rest of your stack out of the box. The settings are still there in its own UI. What you do with them is your call.
+### Coming From LazyLibrarian
 
-One consequence worth knowing. With those providers off, Prowlarr is LazyLibrarian's only source. If the Prowlarr link doesn't get set up, LazyLibrarian has nothing to search and every search comes back empty with no error explaining why. The installer checks for this and warns you, and the fix is either to add the app under Prowlarr → Settings → Apps, or to turn its own providers back on.
+LazyLibrarian was the book automation here until v0.33.0. It tracked authors, which Shelfmark doesn't, and it needed its download client and library folder set by hand, which Shelfmark doesn't. We swapped it because Shelfmark needs nothing finished by hand and covers audiobooks too.
+
+When you update an install that had it on:
+
+- The LazyLibrarian container is stopped and removed. Its settings and database stay where they were, in the `lazylibrarian` folder of your install directory.
+- Your books in `Media/Books` aren't touched.
+- The LazyLibrarian entry the installer added to Prowlarr is removed, so Prowlarr doesn't keep failing to sync to it.
+- `ENABLE_LAZYLIBRARIAN` does nothing now. Shelfmark isn't switched on for you. Tick it in the installer, or set `ENABLE_SHELFMARK=true`.
+
+Note: updating through the installer's Update button doesn't remove the old container. A full re-run of the installer does.
+
+If author tracking is what you used LazyLibrarian for, you can keep running it yourself from its own compose file, pointed at the settings folder the installer left in place.
 
 ### Manga: Not Automated, and That's Not an Oversight
 
@@ -120,7 +156,33 @@ It covers the two things nothing else in this stack touches. Drop audiobooks int
 
 The apps are the good part. Android is a normal Play Store install. On iOS the official app is TestFlight-only and the beta is usually full, but that's less of a wall than it sounds: ShelfPlayer and Plappa are both on the App Store, both talk to an Audiobookshelf server, and Plappa syncs your position back.
 
-There's no Sonarr for audiobooks in this stack, deliberately. The tools that exist are either unreleased or lean on sources that don't match the rest of the setup. If you want an audiobook tracker, MyAnonamouse is the one worth having, and you add it to Prowlarr yourself once you have an account.
+### Getting Audiobooks In
+
+There are two ways to fill `Media/Audiobooks` without doing it by hand. You can run either, or both.
+
+- **Shelfmark** - The same search page as for ebooks, covered above. One book at a time, nothing to set up.
+- **ReadMeABook** on `http://<NAS-IP>:49164` - Sonarr plus Seerr for audiobooks. Browse an Audible-backed catalog, request a book, or watch a series or an author and new releases are requested for you.
+
+ReadMeABook is the heavier of the two. One container runs the app, its own PostgreSQL, and Redis, so give it a minute or two on first boot. It needs a library to import into, so turn Audiobookshelf on with it unless you use a Plex audiobook library.
+
+The best audiobook source for either is MyAnonamouse, which is invite-only. You add it to Prowlarr yourself once you have an account.
+
+### What You Finish By Hand in ReadMeABook
+
+Unlike Shelfmark, ReadMeABook isn't configured for you. It keeps its settings in its own encrypted database, and the only way in is its first-run wizard. The folders already line up, so most steps are a paste and a "Test". Here's what to enter:
+
+- Backend - Choose Audiobookshelf, and your Audible region. Pick the region carefully. Changing it later can re-request books you already have.
+- Audiobookshelf - Address `http://audiobookshelf:13378`, plus an API token. In Audiobookshelf that's under Settings -> Users -> your user. Then pick your audiobook library.
+- Prowlarr - Address `http://prowlarr:9696`, plus the API key from Prowlarr -> Settings -> General. Then choose which indexers it may search.
+- qBittorrent - Address `http://gluetun:49156`, or `http://qbittorrent:49156` if you run without the VPN. Use your qBittorrent login.
+- SABnzbd - Address `http://sabnzbd:8080`, plus its API key from SABnzbd -> Config -> General. The installer creates the `readmeabook` category for you.
+- Paths - Leave the defaults. `/downloads` and `/media/audiobooks` are already the right folders.
+
+Note: your Audiobookshelf library has to read from `/audiobooks`, which is where it sees `Media/Audiobooks`. ReadMeABook writes into that same folder.
+
+If you use Plex for audiobooks, ReadMeABook needs that library on the Audnexus metadata agent. It matches books by the Audible ID that agent adds, and without it requests stay stuck at Downloaded.
+
+ReadMeABook can also fetch the ebook of a book you requested. Its ebook sources include Anna's Archive, and it's off until you turn it on in its settings. Same as with Shelfmark, that's your call.
 
 ## Turning It On
 
@@ -130,7 +192,9 @@ They're toggles on the installer's Services screen, or set them by hand in `.env
 ENABLE_KOMGA=true            # comics + manga reader
 ENABLE_KAVITA=true           # ebook reader
 ENABLE_MYLAR=true            # comic automation
-ENABLE_LAZYLIBRARIAN=true    # book automation
+ENABLE_SHELFMARK=true        # ebook and audiobook search
+ENABLE_AUDIOBOOKSHELF=true   # audiobook and podcast player
+ENABLE_READMEABOOK=true      # audiobook automation
 ```
 
 Pick whichever you want. A reader with no automation is a perfectly normal setup, and so is automation feeding a library you read somewhere else.

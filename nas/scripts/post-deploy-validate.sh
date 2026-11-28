@@ -157,8 +157,9 @@ is_optin_enabled ENABLE_LIBRARIAN && CONTAINERS+=(librarian)
 is_optin_enabled ENABLE_KOMGA  && CONTAINERS+=(komga)
 is_optin_enabled ENABLE_KAVITA && CONTAINERS+=(kavita)
 is_optin_enabled ENABLE_MYLAR         && CONTAINERS+=(mylar3)
-is_optin_enabled ENABLE_LAZYLIBRARIAN && CONTAINERS+=(lazylibrarian)
+is_optin_enabled ENABLE_SHELFMARK     && CONTAINERS+=(shelfmark)
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && CONTAINERS+=(audiobookshelf)
+is_optin_enabled ENABLE_READMEABOOK && CONTAINERS+=(readmeabook)
 is_optin_enabled ENABLE_ROMARR && CONTAINERS+=(romarr)
 
 for container in "${CONTAINERS[@]}"; do
@@ -511,19 +512,26 @@ is_optin_enabled ENABLE_KOMGA && check_url_lenient "Komga" "http://$LAN_IP:49158
 # Reading acquisition (opt-in). Lenient like the rest: both build a database on
 # first boot. Mylar3 additionally crawls ComicVine on its first library scan,
 # which is rate-limited and slow, so a not-yet-serving Mylar3 must warn rather
-# than fail the install. "Mylar3" matches the DoneScreen SERVICES entry;
-# LazyLibrarian has no Homepage widget upstream so it gets no tile assertion,
-# but it still gets a reachability check here.
+# than fail the install. "Mylar3" matches the DoneScreen SERVICES entry.
 is_optin_enabled ENABLE_MYLAR && check_url_lenient "Mylar3" "http://$LAN_IP:49159" \
     "Mylar3 builds its database on first boot — give it a moment, then re-run."
-is_optin_enabled ENABLE_LAZYLIBRARIAN && check_url_lenient "LazyLibrarian" "http://$LAN_IP:49160" \
-    "LazyLibrarian builds its database on first boot — give it a moment, then re-run."
+# Shelfmark (opt-in). /api/health needs no login and is the route upstream's own
+# compose healthcheck polls. It answers 503 when the download coordinator isn't
+# running, which is the state where every download sits queued forever, so a
+# warn here is worth acting on rather than waiting out.
+is_optin_enabled ENABLE_SHELFMARK && check_url_lenient "Shelfmark" "http://$LAN_IP:49163/api/health" \
+    "Shelfmark is still starting. If this stays down, restart the shelfmark container: a 503 here means its download queue isn't running."
 # Audiobookshelf (opt-in). Lenient for the usual first-boot reason, but this one
 # is worth reading carefully if it warns: Audiobookshelf runs non-root and dies
 # with EACCES when /config or /metadata is root-owned (upstream #4471). If it
 # never comes up, that ownership is the first thing to check.
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && check_url_lenient "Audiobookshelf" "http://$LAN_IP:49161" \
     "Audiobookshelf sets up its database on first boot. If it stays down, check that ${INSTALL_DIR}/audiobookshelf/{config,metadata} are owned by PUID:PGID."
+# ReadMeABook (opt-in). The slowest starter of the reading services: PostgreSQL
+# comes up and the migrations run before /api/health answers, and the image's
+# own healthcheck allows it 60s. Lenient, so a first boot warns instead of fails.
+is_optin_enabled ENABLE_READMEABOOK && check_url_lenient "ReadMeABook" "http://$LAN_IP:49164/api/health" \
+    "ReadMeABook starts its own PostgreSQL first, which takes a minute or two on first boot. Give it a moment, then re-run."
 # ROMarr (opt-in). /api/health is the one route it serves without a login, and
 # it's what the image's own HEALTHCHECK polls, so a 200 there means it's up even
 # while the UI is still waiting for its first password.
@@ -818,11 +826,11 @@ if is_enabled ENABLE_HOMEPAGE; then
         is_optin_enabled ENABLE_MYLAR  && EXPECTED_TILES+=("ENABLE_MYLAR:Mylar3")
         is_optin_enabled ENABLE_AUDIOBOOKSHELF && EXPECTED_TILES+=("ENABLE_AUDIOBOOKSHELF:Audiobookshelf")
         is_optin_enabled ENABLE_ROMARR && EXPECTED_TILES+=("ENABLE_ROMARR:ROMarr")
-        # LazyLibrarian has no Homepage WIDGET upstream (so no live stats), but
-        # it does get an ordinary tile with a status dot — and this check is
-        # about the tile existing, not about widget stats. It was being skipped
-        # on reasoning that didn't apply.
-        is_optin_enabled ENABLE_LAZYLIBRARIAN && EXPECTED_TILES+=("ENABLE_LAZYLIBRARIAN:LazyLibrarian")
+        # Neither of these has a Homepage WIDGET upstream (so no live stats), but
+        # each gets an ordinary tile with a status dot, and this check is about
+        # the tile existing, not about widget stats.
+        is_optin_enabled ENABLE_SHELFMARK && EXPECTED_TILES+=("ENABLE_SHELFMARK:Shelfmark")
+        is_optin_enabled ENABLE_READMEABOOK && EXPECTED_TILES+=("ENABLE_READMEABOOK:ReadMeABook")
         MISSING=()
         for pair in "${EXPECTED_TILES[@]}"; do
             flag="${pair%%:*}"

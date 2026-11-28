@@ -31,6 +31,10 @@ const RENDER = readFileSync(join(SRC, 'shared', 'env-render.ts'), 'utf8')
  *  and metadata keys belong here. Derived or toggle-driven keys do not. */
 const USER_SETTABLE = [
   'MYLAR_COMICVINE_KEY',
+  'ROMARR_RAWG_KEY',
+  'ROMARR_IGDB_CLIENT_ID',
+  'ROMARR_IGDB_CLIENT_SECRET',
+  'ROMARR_STEAMGRIDDB_KEY',
 ]
 
 describe('every user-settable env key is reachable from the UI', () => {

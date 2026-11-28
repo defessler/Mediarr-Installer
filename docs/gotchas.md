@@ -9,14 +9,27 @@ number below was re-checked against the tree that day.
   connectivity failure, which sent someone hunting container networking that was fine.
 - Prowlarr supports exactly seven application types (LazyLibrarian, Lidarr, Mylar,
   Radarr, Readarr, Sonarr, Whisparr). Manga has none, which is why there's no manga
-  automation.
-- Writing a config file under a running container mostly won't stick. Mylar3 and
-  LazyLibrarian hold config in memory and write it back on shutdown. A restart lands
-  their save after ours. Stop, write, start.
-- Both of those apps also lowercase every option name through their own writers. A
-  case-sensitive lookup adds a second key beside the existing one, their strict reader
-  raises `DuplicateOptionError`, and the app refuses to start. It only shows up on the
-  second run.
+  automation. Shelfmark, ReadMeABook and ROMarr aren't on the list either. They're
+  Prowlarr clients, so the link is written into them and nothing is added to Prowlarr.
+- Writing a config file under a running container mostly won't stick. Mylar3 (and
+  LazyLibrarian, until v0.33.0 removed it) holds config in memory and writes it back on
+  shutdown. A restart lands its save after ours. Stop, write, start. Shelfmark is the
+  exception: it only writes a settings file when someone saves in its UI, so write and
+  restart is enough there.
+- Mylar3 also lowercases every option name through its own writer. A case-sensitive
+  lookup adds a second key beside the existing one, its strict reader raises
+  `DuplicateOptionError`, and the app refuses to start. It only shows up on the second
+  run.
+- An env var that is set but empty isn't the same as unset. Shelfmark treats
+  `PROWLARR_API_KEY=` as a value and locks the field in its UI, and ROMarr seeds from env
+  once and never again. Both would store Prowlarr's key blank on a fresh install, where it
+  doesn't exist yet at `compose up`. Neither gets its links from compose env for that
+  reason.
+- A service that leaves the stack keeps running. `compose up -d` never touches a
+  container whose service is gone from the file. `stop_disabled_services` in `setup.sh`
+  reaps LazyLibrarian by name, and `stop-all.sh` and `relocate-stack.sh` still list it.
+  The Update path doesn't run `setup.sh`, so an install updated that way keeps the old
+  container until a full re-run.
 - Generating bash out of a Python string eats backslashes. The result still passes
   `bash -n` before it fails on a live NAS. The live example is
   `_TAG_BY_INDEXER_TEMPLATE` at `setup-arr-config.py:2789`, a plain triple-quoted (not

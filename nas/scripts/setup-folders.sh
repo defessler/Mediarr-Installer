@@ -124,10 +124,17 @@ CONFIG_DIRS=(
     # owned up front or Komga boots and then fails to open its database.
     "$INSTALL_DIR/komga/config"
     "$INSTALL_DIR/kavita/config"
-    # Reading acquisition (opt-in). Both are linuxserver images that self-chown
-    # /config, but pre-creating keeps the bind source from starting out root-owned.
+    # Reading acquisition (opt-in). Both chown /config themselves on start, but
+    # pre-creating keeps the bind source from starting out root-owned.
+    # setup-arr-config.py also writes Shelfmark's settings into config/plugins.
     "$INSTALL_DIR/mylar3/config"
-    "$INSTALL_DIR/lazylibrarian/config"
+    "$INSTALL_DIR/shelfmark/config"
+    # ReadMeABook (opt-in). ONLY config, on purpose. Its cache, redis and pgdata
+    # dirs sit beside this one and are left for docker to create and the
+    # entrypoint to chown. pgdata in particular must stay owned by the image's
+    # own postgres user (UID 102): listed here, a MEDIARR_FIX_PERMS=1 run would
+    # chown -R it to PUID and PostgreSQL would refuse to start.
+    "$INSTALL_DIR/readmeabook/config"
     # Audiobookshelf (opt-in). BOTH of these must exist and be PUID:PGID-owned
     # BEFORE first start. It runs non-root via the `user:` directive with no
     # linuxserver chown safety net, and upstream issue #4471 is exactly this:
@@ -173,10 +180,18 @@ DATA_DIRS=(
     "$DATA_ROOT/Media/Books"
     # Download categories for the reading acquirers, mirroring the arrs' own
     # per-category dirs so imports hardlink instead of copying.
+    #
+    # books and audiobooks are Shelfmark's two categories, readmeabook is
+    # ReadMeABook's default one. Neither app chowns anything under /data, so
+    # these have to be PUID:PGID-owned from here.
     "$DATA_ROOT/Downloads/Usenet/complete/comics"
     "$DATA_ROOT/Downloads/Usenet/complete/books"
+    "$DATA_ROOT/Downloads/Usenet/complete/audiobooks"
+    "$DATA_ROOT/Downloads/Usenet/complete/readmeabook"
     "$DATA_ROOT/Downloads/Torrents/Completed/mylar"
-    "$DATA_ROOT/Downloads/Torrents/Completed/lazylibrarian"
+    "$DATA_ROOT/Downloads/Torrents/Completed/books"
+    "$DATA_ROOT/Downloads/Torrents/Completed/audiobooks"
+    "$DATA_ROOT/Downloads/Torrents/Completed/readmeabook"
     # Audiobookshelf libraries (opt-in). Podcasts is written BY the app when
     # its RSS auto-download pulls new episodes, so it is not read-only.
     "$DATA_ROOT/Media/Audiobooks"

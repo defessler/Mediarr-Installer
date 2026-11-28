@@ -98,9 +98,10 @@ A self-hosted media automation stack running on a Synology DS1522+. Tell it what
 | **Komga** | Opt-in — comics & manga reader on `:49158`. Serves `Media/Comics` and `Media/Manga` read-only, with a first-party Mihon extension for Android and OPDS for everything else. Plex and Jellyfin cannot serve these formats at all, which is why it's standalone |
 | **Kavita** | Opt-in — ebook reader on `:49157`. Serves `Media/Books` read-only, with an EPUB/PDF reader, two-way KOReader progress sync, and one-click send-to-Kindle |
 | **Mylar3** | Opt-in — comic automation on `:49159`. A native Prowlarr Application, so your existing indexers sync into it automatically. Unlike the arrs it is not fully auto-configured: after install, point it at a download client and set its library folder in its own settings, then paste in a free ComicVine API key |
-| **LazyLibrarian** | Opt-in — book automation on `:49160`. Also a native Prowlarr Application, and the same finish-by-hand step applies (download client + library folder). Ships with direct-download providers built in (Anna's Archive, Z-Library, IRC), and the installer writes those off and uses the Prowlarr-fed path instead |
+| **Shelfmark** | Opt-in — ebook and audiobook search on `:49163`. Look a book up, pick a release, and it lands in `Media/Books` or `Media/Audiobooks`. A Prowlarr client, not a Prowlarr Application, so the installer writes the Prowlarr link, both download clients and the path mappings into its settings files. It does not track authors. Its direct-download sources (Anna's Archive mirrors, Libgen, IRC) ship off and stay off. Replaced LazyLibrarian in v0.33.0 |
 | **Audiobookshelf** | Opt-in — audiobooks & podcasts on `:49161`. Serves `Media/Audiobooks` with per-user position tracking and its own iOS/Android apps. Podcasts are the one thing it downloads itself, straight from RSS. Runs non-root via `user:`, so its config and metadata dirs are pre-chowned by setup-folders.sh |
-| **ROMarr** | Opt-in — game ROM automation on `:49162`. Wanted list → Prowlarr search → qBittorrent or SABnzbd → filed under `Media/Games/<platform>`. Not a Prowlarr Application, so the installer writes the Prowlarr link, both download clients and the path mappings into ROMarr through its own API. Its login uses `ARR_PASSWORD`, or the first visitor sets one |
+| **ReadMeABook** | Opt-in — audiobook automation on `:49164`. Request from an Audible-backed catalog, or watch a series or an author. Searches Prowlarr and imports into `Media/Audiobooks` for Audiobookshelf. Configured in its own first-run wizard, not by the installer. One image runs the app, PostgreSQL and Redis |
+| **ROMarr** | Opt-in — game ROM automation on `:49162`. Wanted list → Prowlarr search → qBittorrent or SABnzbd → filed under `Media/Games/<platform>`. Not a Prowlarr Application, so the installer writes the Prowlarr link, both download clients, the path mappings and a folder library into ROMarr through its own API, then has ROMarr test each one. Metadata providers (RAWG, IGDB, SteamGridDB) are written too when you supply their keys. Its login uses `ARR_PASSWORD`, or the first visitor sets one |
 | **LibrARRian** | Opt-in — storage report on `:8890`. Reads size and quality out of Sonarr/Radarr/Lidarr, ranks your biggest items by bytes-per-hour (which finds bloated remuxes, where raw size only finds long shows), shows space by quality tier, and flags what is large and never played when Tautulli or Jellyfin can tell it. Sort any column, filter by size or by bytes-per-hour. Write mode is on by default so it can re-grab items at a different quality, with deletes gated behind a configured Recycle Bin. `LIBRARIAN_ALLOW_ACTIONS=false` makes it a read-only report |
 
 ### Key concepts
@@ -277,9 +278,10 @@ rm /volume1/docker/media/.setup.lock
 | Kavita       | http://192.168.1.242:49157       |
 | Komga        | http://192.168.1.242:49158       |
 | Mylar3       | http://192.168.1.242:49159       |
-| LazyLibrarian | http://192.168.1.242:49160      |
 | Audiobookshelf | http://192.168.1.242:49161     |
 | ROMarr       | http://192.168.1.242:49162       |
+| Shelfmark    | http://192.168.1.242:49163       |
+| ReadMeABook  | http://192.168.1.242:49164       |
 
 ### Internal Hostnames
 

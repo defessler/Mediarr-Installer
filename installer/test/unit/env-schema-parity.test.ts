@@ -46,9 +46,14 @@ const VARIANTS: EnvFormValues[] = [
     ENABLE_KOMGA: 'true',
     ENABLE_KAVITA: 'true',
     ENABLE_MYLAR: 'true',
-    ENABLE_LAZYLIBRARIAN: 'true',
+    ENABLE_SHELFMARK: 'true',
     ENABLE_AUDIOBOOKSHELF: 'true',
+    ENABLE_READMEABOOK: 'true',
     ENABLE_ROMARR: 'true',
+    ROMARR_RAWG_KEY: 'rawgkey',
+    ROMARR_IGDB_CLIENT_ID: 'igdbid',
+    ROMARR_IGDB_CLIENT_SECRET: 'igdbsecret',
+    ROMARR_STEAMGRIDDB_KEY: 'sgdbkey',
   },
   ...(['nordvpn', 'protonvpn', 'mullvad', 'airvpn', 'surfshark', 'custom'] as const).map(
     (p): EnvFormValues => ({

@@ -33,6 +33,18 @@ The second trap is `UpdateRunScreen.tsx`, which has two separate embedded bash b
 around lines 549 and 765. Miss those and enabling the service through Update appears to
 succeed while starting nothing.
 
+Line numbers above were last checked on 2026-08-16 and have drifted since ROMarr,
+Shelfmark and ReadMeABook went in. Search for the array or helper name.
+
+Removing a service is the same list in reverse, plus one thing the list doesn't show. The
+container outlives its compose service, so it needs reaping by name. LazyLibrarian's
+removal in v0.33.0 is the worked case: `stop_disabled_services` in `setup.sh` removes the
+container and warns when the old flag is still on, `remove_retired_prowlarr_app` in
+`setup-arr-config.py` takes its application out of Prowlarr, and its name stays in the
+`stop-all.sh` leftover loop and both `relocate-stack.sh` lists. Its config folder is the
+user's and is never deleted. Give the replacement a new port so the old container can't
+collide with it before it's reaped.
+
 Each service also answers to three spellings that don't interchange. Mylar3 is
 `ENABLE_MYLAR` as the env key, `mylar` as the compose profile, and `mylar3` as the
 container and config dir. The wrong one silently no-ops rather than erroring.

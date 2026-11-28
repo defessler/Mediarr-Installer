@@ -26,19 +26,34 @@ Note: `ARR_PASSWORD` only seeds the login once. Change it later and ROMarr keeps
 
 ## What the Installer Sets Up
 
-The installer sets up more for ROMarr than it does for Mylar3 or LazyLibrarian. There's very little to finish by hand.
+The installer sets up nearly everything ROMarr needs. There's very little to finish by hand.
 
 - Prowlarr - Added as ROMarr's indexer, with Prowlarr's real API key. Every tracker you've added to Prowlarr is searchable from ROMarr.
 - qBittorrent - Added as a download client when you have qBittorrent on, with the `romarr` category. It goes through the VPN like the rest of your torrents.
 - SABnzbd - Added as a download client when you have SABnzbd on. The installer also creates its `romarr` category.
 - Path mappings - Two mappings so ROMarr can find what the download clients finished: `/downloads = /data/Downloads/Torrents` for qBittorrent and `/data/complete = /data/Downloads/Usenet/complete` for SABnzbd.
-- Library - A plain folder library at `Media/Games`. ROMarr makes the per-platform folders under it as it files things.
+- Library - A plain folder library at `Media/Games`. ROMarr makes the per-platform folders under it as it files things. If ROMarr comes up with no library at all, the installer adds this one.
+- Usenet provider - Nothing to set in ROMarr. It downloads through SABnzbd, which already has the provider you gave the installer.
+
+After writing those, the installer asks ROMarr to test each one, the same check as the "Test" button in its settings. You'll see a line per link in the install log. A saved link that doesn't answer shows up as a warning with ROMarr's own reason.
 
 A re-run rewrites those entries, which is how a changed Prowlarr key or `QBITTORRENT_PASS` gets fixed. It only touches the entries it made. If you've added your own Prowlarr or your own qBittorrent on another host, the installer leaves yours alone and doesn't add a second one.
 
+### Covers and Descriptions Need a Key From You
+
+This is the one part the installer can't do alone. ROMarr gets covers, descriptions, and ratings from metadata providers, and every one of them needs a key of your own. Without any, games still download and file correctly. They show up as bare titles, and ROMarr's Discover shelf stays empty.
+
+Give the installer whichever keys you have, under Games on the Configure screen, and it writes them into ROMarr:
+
+- `ROMARR_RAWG_KEY` - RAWG. The one to start with. The key is [free](https://rawg.io/apiv2) with no approval step.
+- `ROMARR_IGDB_CLIENT_ID` and `ROMARR_IGDB_CLIENT_SECRET` - IGDB. Both come from a [Twitch developer application](https://dev.twitch.tv/console/apps), and it needs both.
+- `ROMARR_STEAMGRIDDB_KEY` - SteamGridDB. Box art only, for games the others had no cover for.
+
+You can also add them later in ROMarr under Settings -> Metadata. ScreenScraper is set there too. It needs developer credentials you apply for, so the installer doesn't collect them.
+
 ### Why It's Wired Differently
 
-Mylar3 and LazyLibrarian are Prowlarr Applications. Prowlarr pushes your indexers into them. ROMarr can't work that way. Prowlarr supports exactly seven application types and none of them is a game app. So the link runs the other way. ROMarr holds a Prowlarr entry with Prowlarr's address and key.
+Mylar3 is a Prowlarr Application. Prowlarr pushes your indexers into it. ROMarr can't work that way. Prowlarr supports exactly seven application types and none of them is a game app. So the link runs the other way. ROMarr holds a Prowlarr entry with Prowlarr's address and key.
 
 ROMarr can also read those settings from environment variables. It only reads them on its very first boot, though. On a fresh install Prowlarr's key doesn't exist yet at that point. That route would store an empty key for good. The installer sets them through ROMarr's API after Prowlarr is up instead.
 

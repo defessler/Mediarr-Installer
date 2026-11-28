@@ -131,8 +131,9 @@ PUBLIC_TORRENT_INDEXERS = [
     "Tokyo Toshokan",    # Japanese media (long-running, broad)
     "AniDex",            # Anime / manga / Asian video, public
     # ── Books / comics ────────────────────────────────────────────────────────
-    # Feeds Mylar3 (comics, cat 7030) and LazyLibrarian (books 7000/7020,
-    # audiobooks 3030). Worth knowing before you go looking for more: the
+    # Feeds Mylar3 (comics, cat 7030), Shelfmark (books 7000/7020, audiobooks
+    # 3030) and ReadMeABook (audiobooks 3030). Worth knowing before you go
+    # looking for more: the
     # general trackers above ALREADY carry these categories — The Pirate Bay,
     # 1337x and Knaben all map 7030 plus the book cats, and AniDex covers manga
     # and light novels. EBookBay is the one dedicated source in Prowlarr's whole
@@ -141,9 +142,9 @@ PUBLIC_TORRENT_INDEXERS = [
     #
     # Prowlarr ships NO shadow-library definitions at all — no Library Genesis,
     # no Anna's Archive, no Z-Library — so there is nothing here to exclude and
-    # the stack's posture holds automatically at this layer. LazyLibrarian's OWN
-    # built-in providers are the place that matters, and setup-arr-config.py
-    # writes those off.
+    # the stack's posture holds automatically at this layer. Shelfmark's OWN
+    # direct-download sources are the place that matters. They ship off, and
+    # the installer leaves them off.
     "EBookBay",          # Ebooks + audiobooks + comics, public, no account
 ]
 

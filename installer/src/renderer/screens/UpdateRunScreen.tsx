@@ -563,8 +563,9 @@ is_optin ENABLE_LIBRARIAN && P+=("librarian")
 is_optin ENABLE_KOMGA && P+=("komga")
 is_optin ENABLE_KAVITA && P+=("kavita")
 is_optin ENABLE_MYLAR && P+=("mylar")
-is_optin ENABLE_LAZYLIBRARIAN && P+=("lazylibrarian")
+is_optin ENABLE_SHELFMARK && P+=("shelfmark")
 is_optin ENABLE_AUDIOBOOKSHELF && P+=("audiobookshelf")
+is_optin ENABLE_READMEABOOK && P+=("readmeabook")
 is_optin ENABLE_ROMARR && P+=("romarr")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 
@@ -780,8 +781,9 @@ is_optin ENABLE_LIBRARIAN && P+=("librarian")
 is_optin ENABLE_KOMGA && P+=("komga")
 is_optin ENABLE_KAVITA && P+=("kavita")
 is_optin ENABLE_MYLAR && P+=("mylar")
-is_optin ENABLE_LAZYLIBRARIAN && P+=("lazylibrarian")
+is_optin ENABLE_SHELFMARK && P+=("shelfmark")
 is_optin ENABLE_AUDIOBOOKSHELF && P+=("audiobookshelf")
+is_optin ENABLE_READMEABOOK && P+=("readmeabook")
 is_optin ENABLE_ROMARR && P+=("romarr")
 [ "\${#P[@]}" -gt 0 ] && export COMPOSE_PROFILES="$(IFS=,; echo "\${P[*]}")"
 export COMPOSE_PROGRESS=plain COMPOSE_ANSI=never DOCKER_CLI_HINTS=false

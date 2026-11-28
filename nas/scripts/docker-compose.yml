@@ -925,8 +925,10 @@ services:
 
   # ── Reading acquisition (comics, books) ───────────────────
   #
-  # Both are ordinary Prowlarr Applications, exactly like Sonarr/Radarr/Lidarr:
-  # Prowlarr push-syncs the user's own indexers into them, and the actual
+  # Mylar3 is an ordinary Prowlarr Application, exactly like Sonarr/Radarr/
+  # Lidarr: Prowlarr push-syncs the user's own indexers into it. Shelfmark is
+  # a Prowlarr CLIENT instead (it searches through Prowlarr's API), so
+  # setup-arr-config.py gives it Prowlarr's URL and key. Either way the actual
   # transfers happen in SABnzbd and qBittorrent. No new download path, no new
   # source surface, and the torrent leg is already inside gluetun.
   #
@@ -959,23 +961,48 @@ services:
     logging: *logging
     restart: unless-stopped
 
-  lazylibrarian:
-    image: lscr.io/linuxserver/lazylibrarian:latest
-    container_name: lazylibrarian
-    profiles: ["lazylibrarian"]
+  # Shelfmark replaced LazyLibrarian in v0.33.0. It is a search-and-request
+  # page for ebooks and audiobooks rather than an author tracker: you look a
+  # book up, pick a release, and it lands in Media/Books or Media/Audiobooks.
+  #
+  # The LITE image on purpose. The standard image bundles a Chromium that
+  # exists only to get past Cloudflare for Shelfmark's direct-download
+  # sources, wants 2GB of RAM for it, and those sources are off here anyway
+  # (they are off by default upstream too, and need mirror URLs the user
+  # supplies). Lite is the same app without the browser.
+  #
+  # Deliberately NO PROWLARR_* / QBITTORRENT_* / SABNZBD_* env, though
+  # Shelfmark reads all of them. Two reasons, both from its
+  # core/settings_registry.py. An env var that is SET BUT EMPTY still counts
+  # as set, and on a fresh install PROWLARR_API_KEY is blank at `compose up`,
+  # so Shelfmark would store an empty key. And any value that comes from env
+  # is shown LOCKED in its settings page, so the user could never change it
+  # there. setup-arr-config.py writes the same settings into
+  # /config/plugins/*.json once the keys exist, which Shelfmark treats as
+  # ordinary saved settings.
+  shelfmark:
+    image: ghcr.io/calibrain/shelfmark-lite:latest
+    container_name: shelfmark
+    profiles: ["shelfmark"]
     networks: [media]
     security_opt: *security
+    # Starts as root and drops to PUID:PGID itself (its entrypoint), so the
+    # usual pair works. Its own `user:` mode only supports 1000:1000, which is
+    # wrong on UGOS (1000:10), so no `user:` line.
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - UMASK=002
     ports:
-      - ${LAN_IP}:49160:5299
+      - ${LAN_IP}:49163:8084
     volumes:
-      - ${INSTALL_DIR}/lazylibrarian/config:/config
-      # Writes the ebook library that Kavita reads.
-      - ${DATA_ROOT}/Media/Books:/books
+      - ${INSTALL_DIR}/shelfmark/config:/config
+      # Same /data root the arrs get. The destinations are /data/Media/Books
+      # (what Kavita reads) and /data/Media/Audiobooks (what Audiobookshelf
+      # reads), and finished downloads sit on the same mount so an audiobook
+      # torrent can be hardlinked instead of copied. qBit's /downloads and
+      # SABnzbd's /data/complete are remote path mappings
+      # setup-arr-config.py writes, the same pairs Sonarr gets.
       - ${DATA_ROOT}:/data
     logging: *logging
     restart: unless-stopped
@@ -1011,6 +1038,66 @@ services:
       # its podcast RSS auto-download writes new episodes into Podcasts.
       - ${DATA_ROOT}/Media/Audiobooks:/audiobooks
       - ${DATA_ROOT}/Media/Podcasts:/podcasts
+    logging: *logging
+    restart: unless-stopped
+
+  # ── Audiobook acquisition ─────────────────────────────────
+  #
+  # ReadMeABook is Sonarr plus Seerr for audiobooks: an Audible-backed catalog
+  # to request from, series and author watching, a Prowlarr search, and a
+  # clean import into the folder Audiobookshelf reads. Like Shelfmark it is a
+  # Prowlarr CLIENT, not a Prowlarr Application.
+  #
+  # Nothing is pre-wired here and that is not an oversight. Its settings live
+  # in its own PostgreSQL, encrypted with a key it generates on first boot,
+  # and the only way in is its first-run wizard. There are no env vars for
+  # Prowlarr or the download clients. site/content/reading.md lists what to
+  # type on each wizard step.
+  #
+  # One image runs the app, PostgreSQL and Redis under supervisord, which is
+  # why it is the heaviest of the reading services and why stop_grace_period
+  # is long.
+  readmeabook:
+    image: ghcr.io/kikootwo/readmeabook:latest
+    container_name: readmeabook
+    profiles: ["readmeabook"]
+    networks: [media]
+    security_opt: *security
+    # supervisord stops the app, Redis and PostgreSQL in turn. Upstream puts
+    # the worst case at 80s, and docker's default 10s would SIGKILL PostgreSQL
+    # mid-write on every stop, update and reboot.
+    stop_grace_period: 90s
+    # Starts as root and remaps itself: the app and Redis run as PUID:PGID,
+    # PostgreSQL keeps the image's own postgres UID (102) with PGID as its
+    # group. No `user:` line, or the entrypoint can't chown its volumes.
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      # The address people type. Plex sign-in redirects back to it, so with
+      # this unset a Plex-mode login from another machine bounces to
+      # localhost:3030 and fails.
+      - PUBLIC_URL=http://${LAN_IP}:49164
+    ports:
+      - ${LAN_IP}:49164:3030
+    volumes:
+      # config holds .secrets, the key that encrypts every saved password and
+      # API key. Lose it and the saved credentials are unreadable.
+      - ${INSTALL_DIR}/readmeabook/config:/app/config
+      - ${INSTALL_DIR}/readmeabook/cache:/app/cache
+      # Only config is pre-created by setup-folders.sh. pgdata MUST stay owned
+      # by the image's postgres user or PostgreSQL refuses to start, so it is
+      # left for docker to create and the entrypoint to chown.
+      - ${INSTALL_DIR}/readmeabook/pgdata:/var/lib/postgresql/data
+      - ${INSTALL_DIR}/readmeabook/redis:/var/lib/redis
+      # The SAME container paths qBittorrent and SABnzbd use, so a finished
+      # download is at the path the client reports and the wizard's defaults
+      # work with no remote path mapping. /downloads is its default download
+      # folder and /media/audiobooks its default library folder.
+      - ${DATA_ROOT}/Downloads/Torrents:/downloads
+      - ${DATA_ROOT}/Downloads/Usenet:/data
+      - ${DATA_ROOT}/Media/Audiobooks:/media/audiobooks
     logging: *logging
     restart: unless-stopped
 

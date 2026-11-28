@@ -190,14 +190,18 @@ add_rules() {
     case "$(grep -m1 '^ENABLE_KOMGA=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT ;;
     esac
-    # Reading acquisition: Mylar3 (49159) and LazyLibrarian (49160), same OPT-IN
+    # Reading acquisition: Mylar3 (49159) and Shelfmark (49163), same OPT-IN
     # semantics. LAN web UIs only — the grabs themselves go out through SABnzbd
     # and qBittorrent, which have their own rules above.
     case "$(grep -m1 '^ENABLE_MYLAR=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
         true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT ;;
     esac
-    case "$(grep -m1 '^ENABLE_LAZYLIBRARIAN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
-        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT ;;
+    case "$(grep -m1 '^ENABLE_SHELFMARK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49163 -j ACCEPT ;;
+    esac
+    # ReadMeABook (49164) — OPT-IN, same semantics. LAN web UI only.
+    case "$(grep -m1 '^ENABLE_READMEABOOK=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | tr '[:upper:]' '[:lower:]' | xargs)" in
+        true|1|yes|on) iptables -I INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49164 -j ACCEPT ;;
     esac
     # Audiobookshelf (49161) — OPT-IN, same semantics. Its phone apps talk to
     # this port over the LAN, so this rule is what makes them work at all.
@@ -285,10 +289,14 @@ remove_rules() {
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49157 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49158 -j ACCEPT 2>/dev/null
 
-    # Reading acquisition (Mylar3, LazyLibrarian). Unconditional -D.
+    # Reading acquisition (Mylar3, Shelfmark, ReadMeABook). Unconditional -D.
+    # 49160 was LazyLibrarian's until v0.33.0. Nothing adds that rule any more,
+    # but this -D stays so an install that upgraded gets its old rule cleaned up.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49159 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49160 -j ACCEPT 2>/dev/null
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49161 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49163 -j ACCEPT 2>/dev/null
+    iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49164 -j ACCEPT 2>/dev/null
     # ROMarr. Unconditional -D.
     iptables -D INPUT -s "$LOCAL_SUBNET" -p tcp --dport 49162 -j ACCEPT 2>/dev/null
 

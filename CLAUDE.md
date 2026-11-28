@@ -39,7 +39,7 @@ From `installer/`:
 ```
 npm run dev:mock     # whole wizard end to end, no NAS needed
 npm run dev          # same wizard against a real NAS
-npm run test:run     # vitest, 213 tests across 23 files
+npm run test:run     # vitest, 245 tests across 24 files
 npm run typecheck    # tsc over both tsconfigs
 npm run copy-payload # refresh resources/nas-payload/ from nas/
 npm run build:win    # the Windows artifact
@@ -200,9 +200,9 @@ what the symptom looked like, not just what the fix does.
 
 ## Gotchas Worth Knowing Up Front
 
-Twelve of them, most recording a live failure that cost real debugging time, in
+Fourteen of them, most recording a live failure that cost real debugging time, in
 `docs/gotchas.md`. Read it before touching `setup-arr-config.py`, the Prowlarr wiring,
-Mylar3 or LazyLibrarian config, the Windows self-updater, or README's platform claim.
+Mylar3, Shelfmark or ROMarr config, the Windows self-updater, or README's platform claim.
 
 ## Roadmap, todos, builds and tests
 
@@ -218,7 +218,7 @@ pwsh -File C:/Projects/BuildPipeline/docker/gate/gate.ps1 -Project C:/Projects/N
 pwsh -File C:/Projects/BuildPipeline/docker/gate/gate.ps1 -Project C:/Projects/NAS -Run 'Set-Location installer; npm run typecheck; if ($LASTEXITCODE) { exit $LASTEXITCODE }; npm run build'
 ```
 
-The `PATH` line puts Git's `bash` where the cross-language suites look for it. Without it they skip, and the run reports well short of all 213 (131 of 202 when last counted). The repo-root `test/` fake-NAS harness starts its own containers, so it takes `-OnHost`.
+The `PATH` line puts Git's `bash` where the cross-language suites look for it. Without it they skip, and the run reports well short of all 245 (131 of 202 when last counted). The repo-root `test/` fake-NAS harness starts its own containers, so it takes `-OnHost`.
 
 Note: this repo is public, so anything written in TODO.md, ROADMAP.md or their pages goes public on the next push.
 

@@ -547,14 +547,17 @@ is_optin_enabled ENABLE_LIBRARIAN && PROFILES+=("librarian")
 # media bridge, so like Dispatcharr/LibrARRian neither pulls in a "vpn" sidecar.
 is_optin_enabled ENABLE_KOMGA  && PROFILES+=("komga")
 is_optin_enabled ENABLE_KAVITA && PROFILES+=("kavita")
-# Reading acquisition (Mylar3 = comics, LazyLibrarian = books) is OPT-IN too.
-# Both are plain bridge services that hand work to SABnzbd/qBittorrent, so
-# neither pulls in the "vpn" sidecar.
-is_optin_enabled ENABLE_MYLAR         && PROFILES+=("mylar")
-is_optin_enabled ENABLE_LAZYLIBRARIAN && PROFILES+=("lazylibrarian")
+# Reading acquisition (Mylar3 = comics, Shelfmark = books and audiobooks) is
+# OPT-IN too. Both are plain bridge services that hand work to
+# SABnzbd/qBittorrent, so neither pulls in the "vpn" sidecar.
+is_optin_enabled ENABLE_MYLAR     && PROFILES+=("mylar")
+is_optin_enabled ENABLE_SHELFMARK && PROFILES+=("shelfmark")
 # Audiobooks/podcasts (Audiobookshelf) is OPT-IN too. Plain bridge service,
 # no VPN coupling.
 is_optin_enabled ENABLE_AUDIOBOOKSHELF && PROFILES+=("audiobookshelf")
+# Audiobook automation (ReadMeABook) is OPT-IN too. Same shape as Shelfmark:
+# a bridge service that hands work to SABnzbd/qBittorrent.
+is_optin_enabled ENABLE_READMEABOOK && PROFILES+=("readmeabook")
 # Game ROM automation (ROMarr) is OPT-IN too. Plain bridge service that hands
 # work to SABnzbd/qBittorrent, so no "vpn" sidecar.
 is_optin_enabled ENABLE_ROMARR && PROFILES+=("romarr")
@@ -745,8 +748,9 @@ stop_disabled_services() {
         "komga:ENABLE_KOMGA"
         "kavita:ENABLE_KAVITA"
         "mylar3:ENABLE_MYLAR"
-        "lazylibrarian:ENABLE_LAZYLIBRARIAN"
+        "shelfmark:ENABLE_SHELFMARK"
         "audiobookshelf:ENABLE_AUDIOBOOKSHELF"
+        "readmeabook:ENABLE_READMEABOOK"
         "romarr:ENABLE_ROMARR"
     )
     local pair container flag stopped=0
@@ -762,8 +766,9 @@ stop_disabled_services() {
         if [ "$flag" = "ENABLE_SOULSEEK" ] || [ "$flag" = "ENABLE_PLAYLIST_SYNC" ] \
            || [ "$flag" = "ENABLE_DISPATCHARR" ] || [ "$flag" = "ENABLE_LIBRARIAN" ] \
            || [ "$flag" = "ENABLE_KOMGA" ] || [ "$flag" = "ENABLE_KAVITA" ] \
-           || [ "$flag" = "ENABLE_MYLAR" ] || [ "$flag" = "ENABLE_LAZYLIBRARIAN" ] \
-           || [ "$flag" = "ENABLE_AUDIOBOOKSHELF" ] || [ "$flag" = "ENABLE_ROMARR" ]; then
+           || [ "$flag" = "ENABLE_MYLAR" ] || [ "$flag" = "ENABLE_SHELFMARK" ] \
+           || [ "$flag" = "ENABLE_AUDIOBOOKSHELF" ] || [ "$flag" = "ENABLE_READMEABOOK" ] \
+           || [ "$flag" = "ENABLE_ROMARR" ]; then
             is_optin_enabled "$flag" && continue
         else
             is_enabled "$flag" && continue
@@ -776,6 +781,35 @@ stop_disabled_services() {
             stopped=$((stopped + 1))
         fi
     done
+    # Retired services. LazyLibrarian left the stack in v0.33.0, when Shelfmark
+    # replaced it. Its compose service is gone, so `up -d` never touches the
+    # old container again and the loop above has no flag to reap it by. Left
+    # alone it keeps running on 49160 forever, on an image nothing updates.
+    # Only the CONTAINER goes. ${INSTALL_DIR}/lazylibrarian (its database and
+    # settings) is the user's and stays exactly where it is.
+    local had_lazylibrarian=0
+    if $CONTAINER_RUNTIME ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "lazylibrarian"; then
+        $CONTAINER_RUNTIME stop lazylibrarian >/dev/null 2>&1 || true
+        $CONTAINER_RUNTIME rm   lazylibrarian >/dev/null 2>&1 || true
+        echo "  ✔ Removed lazylibrarian (retired in this version; its settings are kept in $INSTALL_DIR/lazylibrarian)"
+        stopped=$((stopped + 1))
+        had_lazylibrarian=1
+    fi
+    # Say so when the user had it switched ON. Otherwise book automation just
+    # vanishes on an update with nothing on screen to explain it. A warn, not
+    # a fail: nothing is broken, but they have a decision to make.
+    #
+    # Two signals, because either can be missing. The installer rewrites .env
+    # from the keys it knows, so a wizard run has already dropped
+    # ENABLE_LAZYLIBRARIAN and only the container shows it was in use. A
+    # hand-edited .env still has the flag on a second run, after the container
+    # is long gone.
+    if { [ "$had_lazylibrarian" -eq 1 ] || is_optin_enabled ENABLE_LAZYLIBRARIAN; } \
+       && ! is_optin_enabled ENABLE_SHELFMARK; then
+        echo "  ⚠ LazyLibrarian is no longer part of this stack, so book automation is off until you pick its replacement."
+        echo "    Shelfmark replaced it. Set ENABLE_SHELFMARK=true (or tick Shelfmark in the installer) and re-run."
+        echo "    Your books in Media/Books are untouched."
+    fi
     # Media-server switch reaper. When the user flips MEDIA_SERVER, the
     # other server (and Plex-only Tautulli) drops out of the active
     # profile set — but `compose up -d` only (re)creates services IN the
@@ -955,10 +989,14 @@ check_port_conflicts() {
     is_optin_enabled ENABLE_KOMGA  && pairs+=("komga:49158")
     is_optin_enabled ENABLE_KAVITA && pairs+=("kavita:49157")
     # Reading acquisition (opt-in): single plain LAN bind each, published
-    # host ports 49159/49160 (container 8090/5299).
-    is_optin_enabled ENABLE_MYLAR         && pairs+=("mylar3:49159")
-    is_optin_enabled ENABLE_LAZYLIBRARIAN && pairs+=("lazylibrarian:49160")
+    # host ports 49159/49163 (container 8090/8084). 49160 was LazyLibrarian's
+    # and is deliberately not reused, so an old container that hasn't been
+    # reaped yet can't collide with Shelfmark.
+    is_optin_enabled ENABLE_MYLAR     && pairs+=("mylar3:49159")
+    is_optin_enabled ENABLE_SHELFMARK && pairs+=("shelfmark:49163")
     is_optin_enabled ENABLE_AUDIOBOOKSHELF && pairs+=("audiobookshelf:49161")
+    # ReadMeABook (opt-in): published host port 49164 (container 3030).
+    is_optin_enabled ENABLE_READMEABOOK && pairs+=("readmeabook:49164")
     # ROMarr (opt-in): published host port 49162 (container 6868).
     is_optin_enabled ENABLE_ROMARR && pairs+=("romarr:49162")
     # Snapshot the listening sockets ONCE, up front. netstat is NOT
@@ -1103,13 +1141,17 @@ wait_for_services() {
     # must not stall on it. Opt-in, so the explicit-true helper.
     is_optin_enabled ENABLE_KOMGA  && services="$services komga"
     is_optin_enabled ENABLE_KAVITA && services="$services kavita"
-    # Reading acquisition: both are linuxserver Python apps that boot quickly.
-    is_optin_enabled ENABLE_MYLAR         && services="$services mylar3"
-    is_optin_enabled ENABLE_LAZYLIBRARIAN && services="$services lazylibrarian"
+    # Reading acquisition: both are Python apps that boot quickly.
+    is_optin_enabled ENABLE_MYLAR     && services="$services mylar3"
+    is_optin_enabled ENABLE_SHELFMARK && services="$services shelfmark"
     # Audiobookshelf is neither of those — it's a Node app on its own image, and
     # a library rather than an acquirer. Same .State.Status readiness signal, and
     # the same rule that this wait must not stall waiting for HTTP.
     is_optin_enabled ENABLE_AUDIOBOOKSHELF && services="$services audiobookshelf"
+    # ReadMeABook starts PostgreSQL and runs its migrations before it serves
+    # anything, so "running" comes a good minute before HTTP does. Same rule:
+    # this wait reads .State.Status and post-deploy's lenient check covers HTTP.
+    is_optin_enabled ENABLE_READMEABOOK && services="$services readmeabook"
     # ROMarr is a Python app on its own image (su-exec entrypoint, not s6).
     # Same .State.Status signal. Its HTTP readiness is setup-arr-config.py's job.
     is_optin_enabled ENABLE_ROMARR && services="$services romarr"

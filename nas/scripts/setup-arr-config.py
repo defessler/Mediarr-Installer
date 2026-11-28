@@ -652,18 +652,20 @@ def sabnzbd_ini_set(ini_path, keyword, value):
 
 def reading_app_api_setup(label, container, ini_path, api_section,
                           enabled_key, key_key, probe_url=None, extra=()):
-    """Turn on the REST API in a Mylar3 / LazyLibrarian config.ini and return
-    its API key, so Prowlarr can be wired to it like any other app.
+    """Turn on the REST API in Mylar3's config.ini and return its API key, so
+    Prowlarr can be wired to it like any other app.
 
-    Both apps ship their API DISABLED with an empty key (Mylar3's API_ENABLED
-    defaults False; LazyLibrarian's API_ENABLED defaults 0), and neither exposes
-    it as an environment variable — it is a config.ini setting or nothing. So
-    unlike the arrs, whose keys we simply HARVEST from config.xml, these two have
-    to be configured before there is a key to harvest.
+    Mylar3 ships its API DISABLED with an empty key (API_ENABLED defaults
+    False), and doesn't expose it as an environment variable — it is a
+    config.ini setting or nothing. So unlike the arrs, whose keys we simply
+    HARVEST from config.xml, it has to be configured before there is a key to
+    harvest. LazyLibrarian was the second caller until Shelfmark replaced it in
+    v0.33.0, which is why this takes a label and section names rather than
+    hardcoding Mylar3's.
 
     `extra` carries additional (section, key, value) triples — used to write
-    LazyLibrarian's provider posture. Returns the API key, or None if the file
-    never appeared or couldn't be written.
+    Mylar3's ComicVine key. Returns the API key, or None if the file never
+    appeared or couldn't be written.
 
     Idempotent: an existing non-empty key is reused as-is, and the container is
     only restarted when something actually changed, so a re-run doesn't bounce a
@@ -1732,6 +1734,34 @@ def configure_jellyfin_notification(base, key, api, jf_apikey, jf_host='jellyfin
 
 # ── Prowlarr ──────────────────────────────────────────────────────────────────
 
+def remove_retired_prowlarr_app(prowlarr_base, prowlarr_key):
+    """Take LazyLibrarian's application out of Prowlarr on an upgraded install.
+
+    LazyLibrarian left the stack in v0.33.0 and setup.sh removes its container.
+    The application we added for it would otherwise stay in Prowlarr forever,
+    failing every sync against a host that no longer resolves and showing as a
+    permanent health warning.
+
+    Only the row THIS installer made: implementation LazyLibrarian AND a base
+    URL on the `lazylibrarian` container. Someone running their own
+    LazyLibrarian somewhere else has a different host there, and keeps it."""
+    apps = GET(prowlarr_base, prowlarr_key, "/api/v1/applications")
+    for app in apps or []:
+        if not isinstance(app, dict) or app.get('implementation') != 'LazyLibrarian':
+            continue
+        base_url = next((str(f.get('value') or '') for f in app.get('fields') or []
+                         if str(f.get('name', '')).lower() == 'baseurl'), '')
+        if (urlparse(base_url).hostname or '').lower() != 'lazylibrarian':
+            continue
+        _, code = _safe_request(f"{prowlarr_base}/api/v1/applications/{app.get('id')}",
+                                _arr_headers(prowlarr_key), 'DELETE')
+        if code is not None and 200 <= code < 300:
+            ok("Prowlarr app: LazyLibrarian removed (retired, replaced by Shelfmark)")
+        else:
+            warn("Prowlarr still lists LazyLibrarian, which is no longer installed. "
+                 "Delete it under Prowlarr → Settings → Apps.")
+
+
 def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
                      config_contract, app_internal_url, app_key, sync_categories,
                      optional=False):
@@ -1841,10 +1871,11 @@ def add_prowlarr_app(prowlarr_base, prowlarr_key, app_name, implementation,
              f"indexers to it once {app_name} is reachable)")
         return True
     # Previously a bare `return`, which handed back None. The contract here is
-    # True/False, and the LazyLibrarian caller branches on it to decide whether
-    # to warn that the app has no search sources at all — so a None from the
-    # SUCCESS path read as failure and printed the scary zero-providers warning
-    # about an app that had just been wired up fine.
+    # True/False, and callers branch on it to decide whether to warn that the
+    # app has no search sources — so a None from the SUCCESS path read as
+    # failure and printed the scary zero-providers warning about an app that
+    # had just been wired up fine. (First seen with LazyLibrarian, since
+    # removed. The Mylar3 caller branches the same way.)
     detail = {401: "Prowlarr rejected our API key (401)",
               400: "Prowlarr rejected the request body (400)",
               404: "Prowlarr has no such application type (404)"}.get(
@@ -2002,8 +2033,147 @@ def _romarr_upsert(base, key, path, kind, label, wanted, rows):
     return True
 
 
-def configure_romarr(base, config_json, prowlarr_key, qb, sab_key):
-    """Point ROMarr at Prowlarr and the stack's download clients.
+# Where ROMs are filed, as ROMarr sees it. Same value compose hands it in
+# LIBRARY_PATH; setup-folders.sh creates the host side as Media/Games.
+_ROMARR_LIBRARY_PATH = '/data/Media/Games'
+
+# ROMarr's metadata providers and the .env key behind each field. Every one of
+# them needs a credential only the user can get, which is why these are keys in
+# .env and not something the installer can just switch on. `token` is ROMarr's
+# storage name for IGDB's Twitch client SECRET (see its metadata.py), not a
+# bearer token. ScreenScraper is left out on purpose: it wants developer
+# credentials that take a forum application to get, so it stays a setting in
+# ROMarr's own UI.
+_ROMARR_METADATA = [
+    ('rawg',        'RAWG.io',     {'api_key': 'ROMARR_RAWG_KEY'}),
+    ('igdb',        'IGDB',        {'client_id': 'ROMARR_IGDB_CLIENT_ID',
+                                    'token': 'ROMARR_IGDB_CLIENT_SECRET'}),
+    ('steamgriddb', 'SteamGridDB', {'api_key': 'ROMARR_STEAMGRIDDB_KEY'}),
+]
+
+
+def _romarr_library(base, key):
+    """Make sure ROMarr has a library to import into, and that it can use it.
+
+    Compose's LIBRARY_KIND/LIBRARY_PATH seed one on first boot, and unlike the
+    client seeding that works on a fresh install, because the path is known at
+    `compose up`. This is the net under it. ROMarr marks libraries as seeded
+    whether or not it stored one, so an install that ever booted without those
+    two variables has an empty Libraries page for good, and every finished
+    download then sits in the client with nowhere to go. Returns True when a
+    usable library is in place."""
+    data = GET(base, key, "/api/v1/library/config")
+    if data is None:
+        warn("ROMarr: could not read its libraries, so the library was not checked.")
+        return False
+    rows = [r for r in (data.get('items') or []) if isinstance(r, dict)]
+    lib = next((r for r in rows if r.get('enable', True)), None)
+    if lib is not None:
+        skip(f"ROMarr: library ({lib.get('name') or lib.get('type')} → {lib.get('path')})")
+    elif rows:
+        # Theirs, and switched off on purpose. Adding a second one beside it
+        # would start filing ROMs somewhere they didn't choose.
+        warn("ROMarr: every library is switched off, so nothing can be imported. "
+             "Enable one in ROMarr → Settings → Libraries.")
+        return False
+    else:
+        lib, code = POST_status(base, key, "/api/v1/library", {
+            'type': 'folder', 'name': 'Folder', 'enable': True, 'url': '',
+            'path': _ROMARR_LIBRARY_PATH, 'is_default': True, 'platforms': [],
+        })
+        if lib is None or not lib.get('id'):
+            warn(f"ROMarr: could not add a library (HTTP {code}), so finished "
+                 f"downloads have nowhere to go. Add a Folder library at "
+                 f"{_ROMARR_LIBRARY_PATH} in ROMarr → Settings → Libraries.")
+            return False
+        ok(f"ROMarr: library added → {_ROMARR_LIBRARY_PATH}")
+    # A stored row is not a working one. ROMarr's own test reports a path that
+    # isn't mounted separately from a server it can't reach.
+    verdict = POST(base, key, "/api/v1/library/test", lib)
+    if not isinstance(verdict, dict):
+        # No answer is not a pass. Same reading _romarr_selftest gives it.
+        warn("ROMarr: its library is set, but ROMarr did not answer the test, "
+             "so it is unchecked.")
+        return False
+    if not verdict.get('ok'):
+        warn(f"ROMarr: its library is set but does not work: "
+             f"{verdict.get('message') or 'no reason given'}")
+        return False
+    return True
+
+
+def _romarr_metadata(base, key, env):
+    """Write the metadata providers the user supplied keys for.
+
+    Without one ROMarr still finds and files games, but they have no covers,
+    descriptions or ratings, and its Discover shelf stays empty. Rewritten on
+    every run for the same reason the clients are: the key comes back masked,
+    so resending it is the only way a corrected key in .env takes effect."""
+    data = GET(base, key, "/api/v1/metadataprovider")
+    if data is None:
+        warn("ROMarr: could not read its metadata providers, so none were set.")
+        return
+    rows = [r for r in (data.get('items') or []) if isinstance(r, dict)]
+    wrote = 0
+    for kind, label, fields in _ROMARR_METADATA:
+        values = {f: str(env.get(k) or '').strip() for f, k in fields.items()}
+        if not all(values.values()):
+            if any(values.values()):
+                warn(f"ROMarr: {label} needs " + " and ".join(sorted(fields.values()))
+                     + " both set. Only one is, so it was skipped.")
+            continue
+        mine = next((r for r in rows if str(r.get('type', '')).lower() == kind), None)
+        # On an update keep their name and their on/off switch, and replace
+        # only the credential.
+        body = dict(mine, **values) if mine else dict(
+            {'type': kind, 'name': label, 'enable': True}, **values)
+        result, code = POST_status(base, key, "/api/v1/metadataprovider", body)
+        if result is None or not result.get('id'):
+            warn(f"ROMarr: could not save the {label} metadata provider (HTTP {code}).")
+            continue
+        ok(f"ROMarr: metadata provider {label} {'updated' if mine else 'added'}")
+        wrote += 1
+    if not rows and not wrote:
+        info("ROMarr: no metadata provider set, so games have no covers or "
+             "descriptions. A free RAWG key in ROMARR_RAWG_KEY fixes that.")
+
+
+def _romarr_selftest(base, key):
+    """Ask ROMarr to test the rows we just stored, the way its Test button does.
+
+    Saving a row proves nothing: ROMarr stores a wrong password as happily as
+    a right one, and the first sign is a grab that silently goes nowhere.
+    These are warns, never fails. A dead ROMarr link breaks games and nothing
+    else. Returns True when everything tested answered."""
+    cfg = GET(base, key, "/api/v1/config") or {}
+    all_ok = True
+    for rows, path, kinds in (
+        (cfg.get('indexers') or [], "/api/v1/indexer/test", ('prowlarr',)),
+        (cfg.get('download_clients') or [], "/api/v1/downloadclient/test",
+         ('qbittorrent', 'sabnzbd')),
+    ):
+        for row in rows:
+            if not isinstance(row, dict) or not row.get('enable', True):
+                continue
+            if str(row.get('type', '')).lower() not in kinds:
+                continue
+            label = row.get('name') or row.get('type')
+            # The row carries its id, so ROMarr tests the STORED secret and
+            # not the ******** it just sent us.
+            verdict = POST(base, key, path, row)
+            if isinstance(verdict, dict) and verdict.get('ok'):
+                ok(f"ROMarr: {label} answers ({verdict.get('message') or 'connected'})")
+            else:
+                reason = (verdict or {}).get('message') if isinstance(verdict, dict) else None
+                warn(f"ROMarr: {label} is saved but its test failed: "
+                     f"{reason or 'no answer from ROMarr'}")
+                all_ok = False
+    return all_ok
+
+
+def configure_romarr(base, config_json, prowlarr_key, qb, sab_key, env=None):
+    """Point ROMarr at Prowlarr and the stack's download clients, then make
+    sure it has a library, its metadata providers, and that all of it answers.
 
     ROMarr is the one acquirer here that ISN'T a Prowlarr Application, so
     nothing can push indexers into it. The link runs the other way: ROMarr
@@ -2089,7 +2259,265 @@ def configure_romarr(base, config_json, prowlarr_key, qb, sab_key):
              "downloads won't import. Add them in ROMarr → Settings → General: " +
              ", ".join(f"{m['remote']} = {m['local']}" for m in missing))
         all_ok = False
+
+    all_ok &= _romarr_library(base, rom_key)
+    _romarr_metadata(base, rom_key, env or {})
+    all_ok &= _romarr_selftest(base, rom_key)
     return all_ok
+
+# ── Shelfmark ─────────────────────────────────────────────────────────────────
+
+# Shelfmark keeps each settings tab in its own JSON file under
+# /config/plugins, named after the tab (core/settings_registry.py
+# _get_config_file_path). These are the four tabs we write.
+_SHELFMARK_TABS = ('prowlarr_config', 'prowlarr_clients', 'downloads', 'advanced')
+
+# Same idea as _ROMARR_OUR_HOSTS: a URL on one of these hosts is a link this
+# stack wrote, so a re-run may correct it. Anything else is the user's.
+_SHELFMARK_OUR_HOSTS = {
+    'prowlarr':    {'prowlarr'},
+    'qbittorrent': {'gluetun', 'qbittorrent'},
+    'sabnzbd':     {'sabnzbd'},
+}
+
+# Shelfmark mounts the whole ${DATA_ROOT} at /data, like the arrs and ROMarr,
+# so the two clients' own paths need the same translation Sonarr gets.
+# `host` is Shelfmark's name for the client the mapping applies to.
+_SHELFMARK_PATH_MAPPINGS = [
+    {'host': 'qbittorrent', 'remotePath': '/downloads',
+     'localPath': '/data/Downloads/Torrents'},
+    {'host': 'sabnzbd', 'remotePath': '/data/complete',
+     'localPath': '/data/Downloads/Usenet/complete'},
+]
+
+
+def _shelfmark_host(url):
+    url = str(url or '').strip()
+    if not url:
+        return ''
+    return (urlparse(url if '//' in url else 'http://' + url).hostname or '').lower()
+
+
+def shelfmark_plan(current, prowlarr_key, qb, sab_key, first_run):
+    """What to change in Shelfmark's settings, as {tab: {key: value}}.
+
+    Pure on purpose: no files, no network, so the rules can be tested without
+    a Shelfmark to run them against. `current` is {tab: {key: value}} as read
+    from disk, `qb` is (host, port, user, password) or None.
+
+    Three kinds of setting, and they get different treatment:
+
+      * LINKS (URLs, keys, passwords) are rewritten on every run while they
+        point at this stack, so a rotated Prowlarr key or a flipped
+        VPN_ENABLED is fixed by a re-run. A URL on any other host is the
+        user's own Prowlarr or client and is left alone.
+      * DEFAULTS WE REPLACE (destinations, the client pickers) are set only
+        while they still hold Shelfmark's shipped value, so anything the user
+        changed stays changed.
+      * ONE-TIME CHOICES (the Prowlarr on/off switch, the category names) are
+        set on the first run only. Nothing about their value says whether the
+        user picked it, so after the first run they are never touched again.
+        Without that, a re-run would switch Prowlarr back on for someone who
+        turned it off."""
+    def cur(tab, key, default=''):
+        value = (current.get(tab) or {}).get(key, default)
+        return default if value is None else value
+
+    plan = {tab: {} for tab in _SHELFMARK_TABS}
+
+    def put(tab, key, value):
+        if cur(tab, key, None) != value:
+            plan[tab][key] = value
+
+    def ours(tab, key, kind):
+        return _shelfmark_host(cur(tab, key)) in ({''} | _SHELFMARK_OUR_HOSTS[kind])
+
+    if prowlarr_key and ours('prowlarr_config', 'PROWLARR_URL', 'prowlarr'):
+        put('prowlarr_config', 'PROWLARR_URL', 'http://prowlarr:9696')
+        put('prowlarr_config', 'PROWLARR_API_KEY', prowlarr_key)
+        if first_run:
+            put('prowlarr_config', 'PROWLARR_ENABLED', True)
+
+    if qb and ours('prowlarr_clients', 'QBITTORRENT_URL', 'qbittorrent'):
+        qb_host, qb_port, qb_user, qb_pass = qb
+        put('prowlarr_clients', 'QBITTORRENT_URL', f'http://{qb_host}:{qb_port}')
+        put('prowlarr_clients', 'QBITTORRENT_USERNAME', qb_user)
+        put('prowlarr_clients', 'QBITTORRENT_PASSWORD', qb_pass)
+        if not cur('prowlarr_clients', 'PROWLARR_TORRENT_CLIENT'):
+            put('prowlarr_clients', 'PROWLARR_TORRENT_CLIENT', 'qbittorrent')
+    if sab_key and ours('prowlarr_clients', 'SABNZBD_URL', 'sabnzbd'):
+        put('prowlarr_clients', 'SABNZBD_URL', 'http://sabnzbd:8080')
+        put('prowlarr_clients', 'SABNZBD_API_KEY', sab_key)
+        if not cur('prowlarr_clients', 'PROWLARR_USENET_CLIENT'):
+            put('prowlarr_clients', 'PROWLARR_USENET_CLIENT', 'sabnzbd')
+    if first_run:
+        # Separate audiobook categories, so an audiobook torrent doesn't land
+        # in the same client folder as an ebook. setup-folders.sh makes the
+        # folders and configure_sabnzbd the SABnzbd side.
+        put('prowlarr_clients', 'QBITTORRENT_CATEGORY', 'books')
+        put('prowlarr_clients', 'QBITTORRENT_CATEGORY_AUDIOBOOK', 'audiobooks')
+        put('prowlarr_clients', 'SABNZBD_CATEGORY', 'books')
+        put('prowlarr_clients', 'SABNZBD_CATEGORY_AUDIOBOOK', 'audiobooks')
+
+    # /books is Shelfmark's shipped destination and nothing is mounted there
+    # in this stack, so left alone every download would land inside the
+    # container and vanish with it.
+    if cur('downloads', 'INGEST_DIR') in ('', '/books'):
+        put('downloads', 'INGEST_DIR', '/data/Media/Books')
+    if not cur('downloads', 'DESTINATION_AUDIOBOOK'):
+        put('downloads', 'DESTINATION_AUDIOBOOK', '/data/Media/Audiobooks')
+
+    mappings = [m for m in (cur('advanced', 'PROWLARR_REMOTE_PATH_MAPPINGS', []) or [])
+                if isinstance(m, dict)]
+    have = {(str(m.get('host', '')).lower(), str(m.get('remotePath', '')).rstrip('/'))
+            for m in mappings}
+    missing = [m for m in _SHELFMARK_PATH_MAPPINGS
+               if (m['host'], m['remotePath']) not in have]
+    if missing:
+        plan['advanced']['PROWLARR_REMOTE_PATH_MAPPINGS'] = mappings + missing
+
+    return {tab: values for tab, values in plan.items() if values}
+
+
+def configure_shelfmark(base, config_dir, prowlarr_key, qb, sab_key):
+    """Give Shelfmark its Prowlarr link, download clients and destinations.
+
+    Through its config files, not compose env and not its HTTP API. Env is out
+    because Shelfmark counts a set-but-empty variable as set (Prowlarr's key is
+    blank at first `compose up`) and locks every env-supplied field in its UI.
+    The API is out because it sits behind whatever login the user picks, and a
+    re-run would then fail the moment they turn one on. The files work either
+    way. Shelfmark reads them at start, so it is restarted after a change.
+
+    `qb` is (host, port, user, password) or None when qBittorrent is off."""
+    section("Shelfmark")
+    plugins = os.path.join(config_dir, 'plugins')
+    marker = os.path.join(config_dir, '.mediarr-seeded')
+
+    # Let it finish its own first boot before touching its files. It writes
+    # every tab's defaults on first start, and a file that appears underneath
+    # that is harmless but confusing to debug. /api/health needs no login.
+    deadline = time.time() + 120
+    up = False
+    while True:
+        try:
+            req = Request(f"{base}/api/health", headers={'User-Agent': 'setup-arr-config/1.0'})
+            with urlopen(req, timeout=10):
+                up = True
+        except HTTPError as e:
+            # 503 means the app is serving but its download queue isn't
+            # running yet. That is still "booted" for our purposes.
+            up = e.code == 503
+        except Exception:
+            up = False
+        if up or time.time() >= deadline:
+            break
+        time.sleep(3)
+    if not up:
+        warn("Shelfmark: not answering yet, so its Prowlarr link and download "
+             "clients were not written. Re-run this step once it's up.")
+        note_unreachable()
+        return False
+
+    current = {}
+    for tab in _SHELFMARK_TABS:
+        try:
+            with open(os.path.join(plugins, tab + '.json'), encoding='utf-8') as f:
+                data = json.load(f)
+            current[tab] = data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            current[tab] = {}
+        except Exception as e:
+            # Unreadable is not the same as empty. Writing over a file we
+            # couldn't parse would throw away whatever the user had in it.
+            warn(f"Shelfmark: couldn't read {tab}.json ({e}), so nothing was changed. "
+                 f"Set Prowlarr and the download clients in Shelfmark → Settings.")
+            return False
+
+    first_run = not os.path.exists(marker)
+    plan = shelfmark_plan(current, prowlarr_key, qb, sab_key, first_run)
+
+    if not plan:
+        skip("Shelfmark: Prowlarr link, download clients and destinations")
+    else:
+        try:
+            os.makedirs(plugins, exist_ok=True)
+            # Shelfmark runs as PUID:PGID and has to be able to save these
+            # files from its own settings page afterwards. This script runs as
+            # root, so hand each file to whoever owns the config dir.
+            owner = os.stat(config_dir)
+            chown_failed = False
+            for tab, values in plan.items():
+                path = os.path.join(plugins, tab + '.json')
+                merged = dict(current[tab], **values)
+                tmp = path + '.mediarr-tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    json.dump(merged, f, indent=2)
+                try:
+                    os.chown(tmp, owner.st_uid, owner.st_gid)
+                except AttributeError:
+                    pass  # no os.chown off POSIX, e.g. the test host
+                except OSError:
+                    chown_failed = True
+                os.replace(tmp, path)
+            try:
+                os.chown(plugins, owner.st_uid, owner.st_gid)
+            except AttributeError:
+                pass
+            except OSError:
+                chown_failed = True
+            if chown_failed:
+                # The settings load fine, but the files stay root-owned, and
+                # then Shelfmark's own Save button fails with nothing to say
+                # why. Worth a line here, where the cause is known.
+                warn(f"Shelfmark: couldn't hand its settings files to the container's "
+                     f"user, so saving in Shelfmark's own Settings may fail. "
+                     f"Fix with: chown -R {owner.st_uid}:{owner.st_gid} {plugins}")
+        except Exception as e:
+            warn(f"Shelfmark: couldn't write its settings ({e}). Set Prowlarr and "
+                 f"the download clients in Shelfmark → Settings.")
+            return False
+        wrote = ", ".join(sorted(k for values in plan.values() for k in values
+                                 if not k.endswith(('_KEY', '_PASSWORD'))))
+        # Check the exit code, not just for an exception. A restart that
+        # returns non-zero raised nothing, and reporting success there would
+        # claim settings are live that Shelfmark hasn't read.
+        restarted, why = False, ''
+        try:
+            r = subprocess.run([CONTAINER_RT, 'restart', 'shelfmark'],
+                               capture_output=True, timeout=120, text=True)
+            restarted = r.returncode == 0
+            why = (r.stderr or '').strip()[:200]
+        except Exception as e:
+            why = str(e)
+        if restarted:
+            ok(f"Shelfmark: wrote {wrote}")
+        else:
+            warn(f"Shelfmark: settings written ({wrote}), but the container didn't "
+                 f"restart ({why or 'no reason given'}). Restart it yourself and "
+                 f"they'll load.")
+
+    linked = bool(prowlarr_key) or bool(
+        (current.get('prowlarr_config') or {}).get('PROWLARR_API_KEY'))
+    if linked and first_run:
+        # Only once Prowlarr's key actually went in. Marking a run that had no
+        # key as "seeded" would leave the Prowlarr switch off for good.
+        try:
+            with open(marker, 'w', encoding='utf-8') as f:
+                f.write("Shelfmark's first-run settings were written by the Mediarr "
+                        "installer. Delete this file to have them written again.\n")
+        except Exception:
+            pass
+    if not linked:
+        # A warn, not a fail, and it needs saying: direct downloads are off, so
+        # Prowlarr is Shelfmark's only source. With no link every search comes
+        # back empty and nothing in its UI says why.
+        warn("Shelfmark has no Prowlarr link, so book searches will find nothing. "
+             "Re-run this step, or add it in Shelfmark → Settings → Prowlarr.")
+    if not qb and not sab_key:
+        warn("Shelfmark has no download client: qBittorrent and SABnzbd are both off, "
+             "so it can find releases but not fetch them.")
+    return linked
 
 # ── SABnzbd ───────────────────────────────────────────────────────────────────
 
@@ -2167,18 +2595,26 @@ def configure_sabnzbd(base, key, ini_path, env=None):
             skip(f"{label}: {value}"); continue
         _sab_set(label, keyword, value)
 
-    # Categories — tv / movies / music, plus comics / books when the reading
-    # acquirers are enabled. setup-folders.sh already creates the matching
-    # Downloads/Usenet/complete/{comics,books} dirs, so the category is the
-    # other half of that pair. Mylar3 and LazyLibrarian still need their
-    # download client pointed at SABnzbd inside their own settings — this only
-    # makes sure the category they'd select already exists.
+    # Categories — tv / movies / music, plus the reading acquirers' own when
+    # they are enabled. setup-folders.sh already creates the matching
+    # Downloads/Usenet/complete/<category> dirs, so the category is the other
+    # half of that pair. Mylar3 still needs its download client pointed at
+    # SABnzbd inside its own settings — this only makes sure the category it
+    # would select already exists.
     reading_cats = []
     if env is not None:
         if is_optin_enabled(env, 'ENABLE_MYLAR'):
             reading_cats.append(('comics', '/data/complete/comics'))
-        if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
+        # Shelfmark is pointed at SABnzbd for you (configure_shelfmark), with
+        # these two category names. An undefined category would drop its jobs
+        # loose in /data/complete.
+        if is_optin_enabled(env, 'ENABLE_SHELFMARK'):
             reading_cats.append(('books', '/data/complete/books'))
+            reading_cats.append(('audiobooks', '/data/complete/audiobooks'))
+        # ReadMeABook's default category. You pick it in its own wizard, and
+        # this makes sure it is there to pick.
+        if is_optin_enabled(env, 'ENABLE_READMEABOOK'):
+            reading_cats.append(('readmeabook', '/data/complete/readmeabook'))
         # ROMarr's own default category name. Unlike Mylar3 it IS pointed at
         # SABnzbd for you (configure_romarr), and an undefined category would
         # drop its jobs loose in /data/complete.
@@ -4388,14 +4824,18 @@ def render_homepage_services(env, ip):
         automation.append(block("Radarr",   f"http://{ip}:49151", "Movie automation",   "radarr.png"))
     if is_enabled(env, 'ENABLE_LIDARR'):
         automation.append(block("Lidarr",   f"http://{ip}:49154", "Music automation",   "lidarr.png"))
-    # Mylar3 and LazyLibrarian sit with the arrs because that is exactly what
-    # they are: same Prowlarr sync, same download clients, same watch-and-grab
-    # loop, just for comics and books. Splitting them into a separate section
-    # implied they worked differently, which was misleading.
+    # The reading acquirers sit with the arrs because that is what they are:
+    # same Prowlarr indexers, same download clients, just for comics, books
+    # and audiobooks. Splitting them into a separate section implied they
+    # worked differently, which was misleading.
     if is_optin_enabled(env, 'ENABLE_MYLAR'):
         automation.append(block("Mylar3", f"http://{ip}:49159", "Comic automation", "mylar.png"))
-    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
-        automation.append(block("LazyLibrarian", f"http://{ip}:49160", "Book automation", "mdi-book-search"))
+    # mdi- glyphs for both, same reason as ROMarr below: a png that
+    # dashboard-icons doesn't carry renders as a broken image.
+    if is_optin_enabled(env, 'ENABLE_SHELFMARK'):
+        automation.append(block("Shelfmark", f"http://{ip}:49163", "Book search & requests", "mdi-book-search"))
+    if is_optin_enabled(env, 'ENABLE_READMEABOOK'):
+        automation.append(block("ReadMeABook", f"http://{ip}:49164", "Audiobook automation", "mdi-headphones"))
     # ROMarr is the same watch-and-grab loop for game ROMs, so it sits here too.
     # mdi- glyph rather than a png: dashboard-icons has no romarr entry at time
     # of writing, and a missing png renders as a broken image.
@@ -5288,12 +5728,13 @@ def main():
         # working run re-applies Lidarr's baseline.
         note_unreachable()
 
-    # ── Reading acquisition (Mylar3, LazyLibrarian) ───────────────────────────
-    # Prepared BEFORE the Prowlarr section because both need their API turned on
-    # in config.ini (and the container bounced) before Prowlarr can be pointed at
-    # them — Prowlarr's POST /applications runs a synchronous reachability test.
+    # ── Reading acquisition (Mylar3) ──────────────────────────────────────────
+    # Prepared BEFORE the Prowlarr section because it needs its API turned on in
+    # config.ini (and the container bounced) before Prowlarr can be pointed at
+    # it — Prowlarr's POST /applications runs a synchronous reachability test.
+    # Shelfmark is the other reading acquirer and goes AFTER Prowlarr, because
+    # it is a Prowlarr client and needs Prowlarr's key, not the other way round.
     MYLAR_KEY = None
-    LAZYLIB_KEY = None
     # Same resolution the rest of the script uses: .env wins, discovered
     # install root is the fallback. There is no INSTALL_DIR module global.
     _install_dir = env.get('INSTALL_DIR') or INSTALL_DIR_DEFAULT
@@ -5329,34 +5770,6 @@ def main():
             warn("Mylar3: get a free key at https://comicvine.gamespot.com/api/ "
                  "then put it in MYLAR_COMICVINE_KEY and re-run, or paste it "
                  "into Mylar3 → Settings → ComicVine.")
-    if is_optin_enabled(env, 'ENABLE_LAZYLIBRARIAN'):
-        section("LazyLibrarian")
-        # Provider posture, written explicitly rather than left at defaults.
-        # LazyLibrarian ships with direct-download providers (Anna's Archive,
-        # Z-Library, AudioBookBay) and IRC visible, which is a different posture
-        # from the rest of this stack — everything else grabs from indexers the
-        # user configured in Prowlarr. SHOW_DIRECT_PROV and SHOW_IRC_PROV are the
-        # master switches for those groups; SHOW_NEWZ_PROV and SHOW_TORZ_PROV are
-        # the Newznab/Torznab path Prowlarr syncs into, so those stay ON.
-        # This is a DEFAULT, not a lock: the settings remain in LazyLibrarian's
-        # own UI for anyone who decides otherwise.
-        LAZYLIB_KEY = reading_app_api_setup(
-            "LazyLibrarian", "lazylibrarian",
-            os.path.join(_install_dir, 'lazylibrarian', 'config', 'config.ini'),
-            # Section names are CamelCase as LazyLibrarian writes them, but the
-            # option names go in LOWERCASE to match its own writer. It reads
-            # case-insensitively either way, and find_key() above matches
-            # case-insensitively, so this is belt and braces — but writing the
-            # app's own convention keeps the file looking like it wrote it.
-            'API', 'api_enabled', 'api_key',
-            probe_url=f"http://{LAN_IP}:49160/api?apikey={{key}}&cmd=getVersion",
-            extra=[
-                ('General', 'show_direct_prov', '0'),
-                ('General', 'show_irc_prov', '0'),
-                ('General', 'show_newz_prov', '1'),
-                ('General', 'show_torz_prov', '1'),
-            ])
-
     # ── Prowlarr ──────────────────────────────────────────────────────────────
 
     section("Prowlarr")
@@ -5382,12 +5795,13 @@ def main():
             add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Lidarr", "Lidarr",
                              "LidarrSettings", LIDARR_INT, LIDARR_KEY,
                              [3000, 3010, 3030, 3040, 3050])
-        # Reading apps. Both are native Prowlarr Application types — the
-        # implementation strings are "Mylar" and "LazyLibrarian", straight out of
-        # Prowlarr's src/NzbDrone.Core/Applications (which has exactly seven:
+        # Mylar3 is a native Prowlarr Application type — the implementation
+        # string is "Mylar", straight out of Prowlarr's
+        # src/NzbDrone.Core/Applications (which has exactly seven:
         # LazyLibrarian, Lidarr, Mylar, Radarr, Readarr, Sonarr, Whisparr).
-        # Categories: 7030 is Books/Comics; LazyLibrarian takes Books + EBook +
-        # Audiobook so an audiobook-capable indexer isn't filtered out.
+        # Category 7030 is Books/Comics. Shelfmark and ReadMeABook are NOT on
+        # that list: they search through Prowlarr's API as clients, so there is
+        # no application to add for them here.
         #
         # Note there is deliberately no manga equivalent — manga has no
         # Torznab/Newznab lane at all, so it stays a documented standalone
@@ -5396,31 +5810,13 @@ def main():
             if not add_prowlarr_app(PROWLARR, PROWLARR_KEY, "Mylar3", "Mylar",
                                     "MylarSettings", "http://mylar3:8090", MYLAR_KEY,
                                     [7030], optional=True):
-                # Same shape as the LazyLibrarian warning below. Mylar3 keeps its
-                # own providers, so this isn't the total-blackout case, but with
-                # no Prowlarr link it searches nothing the rest of the stack can
-                # see and its UI gives no hint why results come back empty.
+                # Mylar3 keeps its own providers, so this isn't a total
+                # blackout, but with no Prowlarr link it searches nothing the
+                # rest of the stack can see and its UI gives no hint why
+                # results come back empty.
                 warn("Mylar3 has no indexers: the Prowlarr sync above did not "
                      "land, so comic searches will find nothing until it does.")
-        if LAZYLIB_KEY:
-            wired = add_prowlarr_app(PROWLARR, PROWLARR_KEY, "LazyLibrarian", "LazyLibrarian",
-                                     "LazyLibrarianSettings", "http://lazylibrarian:5299",
-                                     LAZYLIB_KEY, [3030, 7000, 7020], optional=True)
-            if not wired:
-                # This one needs spelling out. We deliberately switch OFF
-                # LazyLibrarian's built-in direct providers so it matches the
-                # rest of the stack's posture, which means Prowlarr is its ONLY
-                # source. When the sync fails it is left with zero providers and
-                # every search returns nothing at all, forever, with no error in
-                # its UI to explain why. Left to its defaults it would at least
-                # have had its own providers, so our posture choice is what
-                # turns a failed sync into a silently useless app.
-                warn("LazyLibrarian has NO search sources right now: its built-in "
-                     "providers are switched off by design and the Prowlarr sync "
-                     "above did not land, so searches will find nothing.")
-                warn("Fix either way: add the app in Prowlarr → Settings → Apps, "
-                     "or re-enable its own providers in LazyLibrarian → Settings "
-                     "→ Providers.")
+        remove_retired_prowlarr_app(PROWLARR, PROWLARR_KEY)
         # Prowlarr doesn't have a /config/mediamanagement endpoint
         # (no media files of its own), but it DOES have the same Bind
         # Address pitfall as the arrs — Sync Apps tests fail if
@@ -5456,6 +5852,21 @@ def main():
         configure_romarr(
             f"http://{LAN_IP}:49162",
             f"{B}/romarr/config/romarr.json",
+            PROWLARR_KEY,
+            (QB_HOST, QB_PORT, QB_USER, QB_PASS) if is_enabled(env, 'ENABLE_QBITTORRENT') else None,
+            SABNZBD_KEY if is_enabled(env, 'ENABLE_SABNZBD') else None,
+            env,
+        )
+
+    # ── Shelfmark ─────────────────────────────────────────────────────────────
+    # After Prowlarr and SABnzbd for the same reasons as ROMarr: it needs
+    # Prowlarr's key, and its two SABnzbd categories have to exist first.
+    # ReadMeABook has no block here. Its settings are only reachable through
+    # its own first-run wizard.
+    if is_optin_enabled(env, 'ENABLE_SHELFMARK'):
+        configure_shelfmark(
+            f"http://{LAN_IP}:49163",
+            f"{B}/shelfmark/config",
             PROWLARR_KEY,
             (QB_HOST, QB_PORT, QB_USER, QB_PASS) if is_enabled(env, 'ENABLE_QBITTORRENT') else None,
             SABNZBD_KEY if is_enabled(env, 'ENABLE_SABNZBD') else None,

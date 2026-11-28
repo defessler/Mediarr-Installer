@@ -103,11 +103,11 @@ RELOCATE_STATE="$SCRIPT_DIR/.relocate-state"
 
 # Per-service config dirs under INSTALL_DIR (the dirs docker bind-mounts as
 # ${INSTALL_DIR}/<svc>/config).
-SERVICE_DIRS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr unpackerr homepage librarian slskd soularr playlistsync dispatcharr komga kavita mylar3 lazylibrarian audiobookshelf romarr"
+SERVICE_DIRS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr unpackerr homepage librarian slskd soularr playlistsync dispatcharr komga kavita mylar3 lazylibrarian shelfmark audiobookshelf readmeabook romarr"
 
 # The stack's fixed container_names. gluetun LAST (its namespace-sharers must be
 # removed first, or Docker refuses to rm it).
-STACK_CONTAINERS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr recyclarr-trigger unpackerr flaresolverr homepage librarian slskd soularr playlistsync dispatcharr komga kavita mylar3 lazylibrarian audiobookshelf romarr gluetun"
+STACK_CONTAINERS="plex jellyfin tautulli seerr prowlarr sonarr radarr lidarr bazarr qbittorrent sabnzbd recyclarr recyclarr-trigger unpackerr flaresolverr homepage librarian slskd soularr playlistsync dispatcharr komga kavita mylar3 lazylibrarian shelfmark audiobookshelf readmeabook romarr gluetun"
 
 container_exists() { $RT inspect "$1" >/dev/null 2>&1; }
 mount_src() { $RT inspect -f "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Source}}{{end}}{{end}}" "$1" 2>/dev/null; }
@@ -118,7 +118,7 @@ OLD_INSTALL=""
 # valid witness for the OLD install path. Keep this in step with the compose
 # file: a stack running ONLY services missing from this list detects nothing,
 # skips the whole per-service config move, and silently strands the old configs.
-for c in sonarr radarr lidarr bazarr prowlarr qbittorrent sabnzbd plex jellyfin tautulli recyclarr unpackerr homepage playlistsync komga kavita mylar3 lazylibrarian audiobookshelf romarr; do
+for c in sonarr radarr lidarr bazarr prowlarr qbittorrent sabnzbd plex jellyfin tautulli recyclarr unpackerr homepage playlistsync komga kavita mylar3 lazylibrarian shelfmark audiobookshelf romarr; do
     container_exists "$c" || continue
     src="$(mount_src "$c" /config)"
     [ -n "$src" ] || continue
@@ -130,8 +130,8 @@ OLD_DATA=""
 # DATA_ROOT, and a miss here is worse than a miss above: add_pair skips the
 # move silently, the stack comes up against the new empty DATA_ROOT, and the
 # output still reads like a clean relocation. A books-and-comics-only install
-# (Mylar3 + LazyLibrarian + the readers, no video arrs) hits exactly that.
-for c in sonarr radarr lidarr bazarr unpackerr mylar3 lazylibrarian; do
+# (Mylar3 + Shelfmark + the readers, no video arrs) hits exactly that.
+for c in sonarr radarr lidarr bazarr unpackerr mylar3 lazylibrarian shelfmark romarr; do
     container_exists "$c" || continue
     src="$(mount_src "$c" /data)"
     [ -n "$src" ] && { OLD_DATA="$src"; break; }

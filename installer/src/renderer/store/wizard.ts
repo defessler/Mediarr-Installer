@@ -180,12 +180,15 @@ const defaultConfig: Partial<EnvFormValues> = {
   // pre-seed. Separate keys because either is a normal install on its own.
   ENABLE_KOMGA: 'false',
   ENABLE_KAVITA: 'false',
-  // Reading acquisition (Mylar3, LazyLibrarian) — OPT-IN, default OFF. Their
-  // REST keys are generated into config.ini at install time, so nothing to seed.
+  // Reading acquisition (Mylar3, Shelfmark) — OPT-IN, default OFF. Mylar3's
+  // REST key is generated into config.ini at install time and Shelfmark is
+  // handed the stack's existing keys, so nothing to seed.
   ENABLE_MYLAR: 'false',
-  ENABLE_LAZYLIBRARIAN: 'false',
+  ENABLE_SHELFMARK: 'false',
   // Audiobookshelf — OPT-IN, default OFF. Library-only, nothing to seed.
   ENABLE_AUDIOBOOKSHELF: 'false',
+  // ReadMeABook — OPT-IN, default OFF. Set up in its own wizard, nothing to seed.
+  ENABLE_READMEABOOK: 'false',
   // ROMarr — OPT-IN, default OFF. setup-arr-config.py reads the API key
   // ROMarr generates for itself, so nothing to seed.
   ENABLE_ROMARR: 'false',

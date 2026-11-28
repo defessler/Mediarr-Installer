@@ -28,6 +28,28 @@ recommendation further down. The plan of record is:
   those written OFF in `config.ini` and Prowlarr-fed Torznab/Newznab as the configured path,
   with the docs saying plainly that the others exist and are disabled.
 
+### Update, 2026-11-27: LazyLibrarian out, Shelfmark and ReadMeABook in
+
+Two of the decisions on this page were reversed in v0.33.0. The text below is left as
+written, so read it with this in mind.
+
+- LazyLibrarian is removed. Shelfmark (`ghcr.io/calibrain/shelfmark-lite`, `:49163`)
+  replaced it. The reason this page gives for passing on Shelfmark no longer holds as
+  written. At v1.7.2 its direct-download sources are off by default and need mirror URLs
+  the user supplies, and the lite image ships without the browser they depend on. It
+  also takes every setting from files, so the installer writes the Prowlarr link and
+  both download clients, where LazyLibrarian needed them set by hand. What's lost is
+  author tracking. Shelfmark's README lists monitoring as a non-goal.
+- "No audiobook acquisition ships" is no longer true. ReadMeABook
+  (`ghcr.io/kikootwo/readmeabook`, `:49164`) is in as an opt-in. It was created
+  2025-11-11, has had stable releases since, and was at v1.3.0 on 2026-11-11. It's
+  configured in its own wizard because its settings live in an encrypted PostgreSQL.
+- Spokarr was looked at the same day and passed over. Its repo was created 2026-11-24
+  and had cut thirteen releases by 2026-11-27, which is the same no-pinnable-release
+  problem this page raises about Listenarr. Worth another look once it settles.
+
+Neither new service has run on a real NAS yet. `TODO.md` has an item for each.
+
 ### Phase 1: shipped
 
 Komga (`:49158`) and Kavita (`:49157`), both opt-in and default-off, wired across compose,

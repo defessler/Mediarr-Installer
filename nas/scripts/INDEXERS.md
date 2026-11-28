@@ -65,7 +65,7 @@ The wizard adds all three to Prowlarr at install time. Together they cover ~80% 
 | **EZTV** | https://eztv.re | TV (English) | TV-only catalogue, RSS-friendly. |
 | **Knaben** | https://knaben.org | General (Scandinavian-flavoured) | Norwegian-run general index with surprisingly good worldwide coverage; well-categorised. |
 | **ShowRSS** | https://showrss.info | TV (English) | Curated RSS feeds for TV shows — handy as a Sonarr "always-on" feed for popular shows. |
-| **EBookBay** | https://ebookbay.li | Ebooks, audiobooks, comics | The one dedicated books source in Prowlarr's whole catalogue that is public and English. Feeds LazyLibrarian (books + audiobooks) and Mylar3 (comics). Worth knowing: 1337x, The Pirate Bay and Knaben already carry those categories too, so this widens coverage rather than unlocking it. |
+| **EBookBay** | https://ebookbay.li | Ebooks, audiobooks, comics | The one dedicated books source in Prowlarr's whole catalogue that is public and English. Feeds Shelfmark (books + audiobooks), ReadMeABook (audiobooks) and Mylar3 (comics). Worth knowing: 1337x, The Pirate Bay and Knaben already carry those categories too, so this widens coverage rather than unlocking it. |
 
 The wizard adds all of these to Prowlarr automatically. You'll get them on a fresh install with no extra config.
 

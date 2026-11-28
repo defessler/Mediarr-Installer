@@ -61,18 +61,30 @@ export const envObject = z.object({
   ENABLE_KOMGA: optStr,
   ENABLE_KAVITA: optStr,
   // OPT-IN (default off). Like the readers above, no superRefine entry:
-  // Mylar3's ComicVine key is set in its own UI (no env var exists for it) and
-  // both apps' REST keys are generated into their config.ini by
-  // setup-arr-config.py, so there is no credential here to escalate to
-  // required. A missing key stays OFF everywhere.
+  // Mylar3's ComicVine key is optional and its REST key is generated into
+  // config.ini by setup-arr-config.py, so there is no credential here to
+  // escalate to required. A missing key stays OFF everywhere.
   ENABLE_MYLAR: optStr,
   MYLAR_COMICVINE_KEY: optStr,
-  ENABLE_LAZYLIBRARIAN: optStr,
+  // OPT-IN (default off). Replaced ENABLE_LAZYLIBRARIAN in v0.33.0. Its
+  // Prowlarr link and download clients are written by setup-arr-config.py
+  // from keys the stack already has, so nothing to require here.
+  ENABLE_SHELFMARK: optStr,
   // OPT-IN (default off). Library-only, no credentials, no superRefine entry.
   ENABLE_AUDIOBOOKSHELF: optStr,
+  // OPT-IN (default off). Configured in its own first-run wizard, so the
+  // installer holds no credential for it at all.
+  ENABLE_READMEABOOK: optStr,
   // OPT-IN (default off). Its login reuses ARR_PASSWORD and its API key is one
   // ROMarr generates itself, so no credentials and no superRefine entry.
   ENABLE_ROMARR: optStr,
+  // ROMarr's metadata providers. Every one is optional, which is why none has
+  // a superRefine entry: ROMarr finds and files games without them and only
+  // the covers and descriptions go missing.
+  ROMARR_RAWG_KEY: optStr,
+  ROMARR_IGDB_CLIENT_ID: optStr,
+  ROMARR_IGDB_CLIENT_SECRET: optStr,
+  ROMARR_STEAMGRIDDB_KEY: optStr,
   // Re-grab actions (upgrade / shrink). Explicit-true only, and gated
   // separately from ENABLE_LIBRARIAN on purpose: LibrARRian has no auth,
   // so turning the report on must not also hand everyone on the LAN a

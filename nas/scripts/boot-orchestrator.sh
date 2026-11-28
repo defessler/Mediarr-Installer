@@ -231,15 +231,18 @@ esac
 case "$(env_val ENABLE_KAVITA | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("kavita") ;;
 esac
-# Reading acquisition (Mylar3, LazyLibrarian) — OPT-IN, same case-guard.
+# Reading acquisition (Mylar3, Shelfmark) — OPT-IN, same case-guard.
 case "$(env_val ENABLE_MYLAR | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("mylar") ;;
 esac
-case "$(env_val ENABLE_LAZYLIBRARIAN | tr '[:upper:]' '[:lower:]')" in
-    true|1|yes|on) PROFILES+=("lazylibrarian") ;;
+case "$(env_val ENABLE_SHELFMARK | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("shelfmark") ;;
 esac
 case "$(env_val ENABLE_AUDIOBOOKSHELF | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("audiobookshelf") ;;
+esac
+case "$(env_val ENABLE_READMEABOOK | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) PROFILES+=("readmeabook") ;;
 esac
 case "$(env_val ENABLE_ROMARR | tr '[:upper:]' '[:lower:]')" in
     true|1|yes|on) PROFILES+=("romarr") ;;

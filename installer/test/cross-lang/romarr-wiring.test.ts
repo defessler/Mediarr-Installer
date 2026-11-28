@@ -15,13 +15,24 @@ import { PYTHON, NAS_SCRIPTS, runPython } from '../helpers/shell.js'
 // (romarr/app.py at a875dad): POST /api/v1/indexer and /api/v1/downloadclient
 // replace the row whose id matches or append a new one, and GET /api/v1/config
 // returns settings with indexers, download_clients and remote_path_mappings.
+// Libraries and metadata providers have their own routes (GET
+// /api/v1/library/config and /api/v1/metadataprovider, each returning
+// {items}), and the three .../test routes answer {ok, message} for a row
+// without saving it. Those were read from app.py on 2026-11-27.
 
 const ARR_PY = join(NAS_SCRIPTS, 'setup-arr-config.py')
 
-const NAMES = ['_ROMARR_OUR_HOSTS', '_ROMARR_PATH_MAPPINGS', '_romarr_host', '_romarr_upsert', 'configure_romarr']
+const NAMES = [
+  '_ROMARR_OUR_HOSTS', '_ROMARR_PATH_MAPPINGS', '_romarr_host', '_romarr_upsert',
+  '_ROMARR_LIBRARY_PATH', '_ROMARR_METADATA', '_romarr_library', '_romarr_metadata',
+  '_romarr_selftest', 'configure_romarr',
+]
 
 type Row = Record<string, unknown>
-type Store = { indexers: Row[]; download_clients: Row[]; remote_path_mappings: Row[] }
+type Store = {
+  indexers: Row[]; download_clients: Row[]; remote_path_mappings: Row[]
+  libraries: Row[]; metadata_providers: Row[]
+}
 type Outcome = { ret: boolean; store: Store; posts: string[]; puts: number; log: [string, string][]; unreachable: number }
 
 function run(opts: {
@@ -30,8 +41,15 @@ function run(opts: {
   prowlarrKey?: string | null
   qb?: [string, number, string, string] | null
   sabKey?: string | null
+  /** .env values, for the metadata provider keys. */
+  env?: Record<string, string>
+  /** Row types whose Test ROMarr answers with ok:false. */
+  failing?: string[]
 }): Outcome {
-  const store: Store = { indexers: [], download_clients: [], remote_path_mappings: [], ...opts.store }
+  const store: Store = {
+    indexers: [], download_clients: [], remote_path_mappings: [],
+    libraries: [], metadata_providers: [], ...opts.store,
+  }
   const program = [
     'import ast, json, types',
     'from urllib.parse import urlparse',
@@ -59,11 +77,27 @@ function run(opts: {
     "ns['read_json_key'] = lambda path, *keys: ROM_KEY if path.endswith('romarr.json') and keys == ('settings', '_api_key') else None",
     `STORE = json.loads(${JSON.stringify(JSON.stringify(store))})`,
     'seq = [0]',
-    "ns['GET'] = lambda b, k, p: json.loads(json.dumps(STORE)) if p == '/api/v1/config' and k == ROM_KEY else None",
+    `FAILING = json.loads(${JSON.stringify(JSON.stringify(opts.failing ?? []))})`,
+    'def _get(b, k, p):',
+    '    if k != ROM_KEY: return None',
+    "    if p == '/api/v1/config': return json.loads(json.dumps(STORE))",
+    "    if p == '/api/v1/library/config': return {'items': json.loads(json.dumps(STORE['libraries']))}",
+    "    if p == '/api/v1/metadataprovider': return {'items': json.loads(json.dumps(STORE['metadata_providers']))}",
+    '    return None',
+    "ns['GET'] = _get",
+    'def _test(b, k, p, body):',
+    "    assert k == ROM_KEY and p.endswith('/test'), p",
+    "    bad = body.get('type') in FAILING",
+    "    return {'ok': not bad, 'message': 'refused' if bad else 'Connected'}",
+    "ns['POST'] = _test",
+    "COLLS = {'/api/v1/indexer': 'indexers', '/api/v1/downloadclient': 'download_clients',",
+    "         '/api/v1/library': 'libraries', '/api/v1/metadataprovider': 'metadata_providers'}",
     'def _post(b, k, p, body):',
     "    assert k == ROM_KEY",
-    "    coll = 'indexers' if p == '/api/v1/indexer' else 'download_clients'",
-    "    posts.append(body['type'])",
+    "    coll = COLLS[p]",
+    // `posts` stays the indexer and client writes only, which is what the
+    // duplicate-row tests below count.
+    "    if coll in ('indexers', 'download_clients'): posts.append(body['type'])",
     '    body = dict(body)',
     "    if not body.get('id'):",
     "        seq[0] += 1; body['id'] = f'new{seq[0]}'; STORE[coll].append(body)",
@@ -80,7 +114,8 @@ function run(opts: {
     `QB = json.loads(${JSON.stringify(JSON.stringify(opts.qb === undefined ? ['gluetun', 49156, 'admin', 'qbpass'] : opts.qb))})`,
     `PK = json.loads(${JSON.stringify(JSON.stringify(opts.prowlarrKey === undefined ? 'PROWKEY' : opts.prowlarrKey))})`,
     `SK = json.loads(${JSON.stringify(JSON.stringify(opts.sabKey === undefined ? 'SABKEY' : opts.sabKey))})`,
-    "ret = ns['configure_romarr']('http://nas:49162', '/i/romarr/config/romarr.json', PK, tuple(QB) if QB else None, SK)",
+    `ENV = json.loads(${JSON.stringify(JSON.stringify(opts.env ?? {}))})`,
+    "ret = ns['configure_romarr']('http://nas:49162', '/i/romarr/config/romarr.json', PK, tuple(QB) if QB else None, SK, ENV)",
     "print(json.dumps({'ret': ret, 'store': STORE, 'posts': posts, 'puts': counts['puts'], 'log': log, 'unreachable': counts['unreachable']}))",
   ].join('\n')
   return JSON.parse(runPython(program).stdout.trim())
@@ -161,5 +196,94 @@ describe.skipIf(!PYTHON)('ROMarr wiring', () => {
     expect(o.ret).toBe(false)
     expect(o.posts).toEqual([])
     expect(o.unreachable).toBe(1)
+  })
+
+  // ── Library ────────────────────────────────────────────────────────────
+  // ROMarr marks libraries as seeded whether or not it stored one, so an
+  // install that ever booted without LIBRARY_PATH has none for good. With no
+  // library every finished download sits in the client with nowhere to go.
+
+  it('adds a Folder library at Media/Games when ROMarr has none', () => {
+    const o = run({})
+    expect(o.store.libraries).toHaveLength(1)
+    expect(o.store.libraries[0]).toMatchObject({
+      type: 'folder', path: '/data/Media/Games', enable: true, is_default: true,
+    })
+  })
+
+  it('leaves the library ROMarr already has alone', () => {
+    const theirs = { id: 'L1', type: 'romm', name: 'RomM', enable: true, path: '/roms', url: 'http://romm:8080' }
+    const o = run({ store: { libraries: [theirs] } })
+    expect(o.store.libraries).toEqual([theirs])
+  })
+
+  it('does not add a second library beside one the user switched off', () => {
+    const off = { id: 'L1', type: 'folder', name: 'Folder', enable: false, path: '/data/Media/Games' }
+    const o = run({ store: { libraries: [off] } })
+    expect(o.store.libraries).toEqual([off])
+    expect(o.ret).toBe(false)
+    expect(warnings(o)).toContain('every library is switched off')
+  })
+
+  it('warns when the library is stored but ROMarr cannot use it', () => {
+    const o = run({ failing: ['folder'] })
+    expect(o.ret).toBe(false)
+    expect(warnings(o)).toContain('does not work')
+  })
+
+  // ── Metadata providers ─────────────────────────────────────────────────
+
+  it('writes a provider for each key the user supplied', () => {
+    const o = run({ env: {
+      ROMARR_RAWG_KEY: 'rawg1', ROMARR_IGDB_CLIENT_ID: 'cid', ROMARR_IGDB_CLIENT_SECRET: 'sec',
+      ROMARR_STEAMGRIDDB_KEY: 'sg1',
+    } })
+    expect(ofType(o.store.metadata_providers, 'rawg')[0]).toMatchObject({ api_key: 'rawg1', enable: true })
+    // ROMarr stores IGDB's client SECRET under `token`. The wrong field name
+    // saves fine and then never authenticates.
+    expect(ofType(o.store.metadata_providers, 'igdb')[0]).toMatchObject({ client_id: 'cid', token: 'sec' })
+    expect(ofType(o.store.metadata_providers, 'steamgriddb')[0]).toMatchObject({ api_key: 'sg1' })
+  })
+
+  it('updates the provider in place on a re-run, keeping the on/off switch', () => {
+    const first = run({ env: { ROMARR_RAWG_KEY: 'old' } })
+    first.store.metadata_providers[0].enable = false
+    const again = run({ store: first.store, env: { ROMARR_RAWG_KEY: 'new' } })
+    const rows = ofType(again.store.metadata_providers, 'rawg')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ api_key: 'new', enable: false })
+  })
+
+  it('skips IGDB, with a warning, when only half of its pair is set', () => {
+    const o = run({ env: { ROMARR_IGDB_CLIENT_ID: 'cid' } })
+    expect(o.store.metadata_providers).toEqual([])
+    expect(warnings(o)).toContain('ROMARR_IGDB_CLIENT_SECRET')
+  })
+
+  it('says so, without warning, when no provider is set at all', () => {
+    // An info, not a warn: nothing is broken and games still download. A warn
+    // would put every keyless install in the Issues panel.
+    const o = run({})
+    expect(o.store.metadata_providers).toEqual([])
+    expect(o.log.some(([l, m]) => l === 'info' && m.includes('no metadata provider'))).toBe(true)
+    expect(warnings(o)).not.toContain('metadata')
+  })
+
+  // ── Connection tests ───────────────────────────────────────────────────
+
+  it('reports each stored link as answering', () => {
+    const o = run({})
+    const oks = o.log.filter(([l]) => l === 'ok').map(([, m]) => m).join(' ')
+    expect(oks).toContain('Prowlarr answers')
+    expect(oks).toContain('qBittorrent answers')
+    expect(oks).toContain('SABnzbd answers')
+  })
+
+  it('warns, and returns false, when a saved client fails its test', () => {
+    // Saving proves nothing. ROMarr stores a wrong password as happily as a
+    // right one.
+    const o = run({ failing: ['qbittorrent'] })
+    expect(o.ret).toBe(false)
+    expect(warnings(o)).toContain('qBittorrent is saved but its test failed: refused')
   })
 })
